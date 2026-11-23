@@ -46,7 +46,6 @@ import os
 import re
 import shutil
 import zipfile
-from dataclasses import dataclass
 from io import BufferedIOBase
 from pathlib import Path
 
@@ -91,62 +90,10 @@ def ota_asset_name(current: str, target: str, arch: str) -> str:
     return f"MAAComponent-OTA-v{current.removeprefix('v')}_v{target.removeprefix('v')}-win-{arch}.zip"
 
 
-@dataclass(frozen=True)
-class NativeRoundDownloads:
-    """原生 Mirror 酱差分包名不含基线，只采信本次 MAA 实际下载的包。"""
-
-    release: tuple[str, str]
-    files: dict[Path, os.stat_result]
-
-    @classmethod
-    def capture(
-        cls, root: Path, release: tuple[str, str]
-    ) -> NativeRoundDownloads | None:
-        try:
-            files = {
-                p: p.stat()
-                for p in root.resolve().iterdir()
-                if p.name.casefold().startswith("mirrorchyanapp")
-                and p.suffix.casefold() == ".zip"
-            }
-            return cls(release, files)
-        except OSError as error:
-            logger.warning(f"无法确认现有 Mirror 酱更新包：{error}")
-            return None
-
-
-def _native_package_path(root: Path, target: str, path: Path) -> bool:
-    return (
-        path.parent == root.resolve()
-        and path.name.casefold() == f"MirrorChyanApp{target}.zip".casefold()
-    )
-
-
-def _native_identity(release: tuple[str, str], stat: os.stat_result) -> list[str | int]:
-    return [*release, stat.st_ino, stat.st_size, stat.st_mtime_ns]
-
-
-def _new_native_identity(
-    root: Path, pending: tuple[str, str], path: Path, native: NativeRoundDownloads
-) -> list[str | int] | None:
-    live = _utils_io.read_dict_file(root / "config/gui.new.json").get("Update")
-    if (
-        not isinstance(live, dict)
-        or (live.get("Name"), live.get("UpdatePackage")) != pending
-    ):
-        return None
-    old, new = native.files.get(path), path.stat()
-    identity = _native_identity(native.release, new)
-    if old is None or _native_identity(native.release, old) != identity:
-        return identity
-    return None
-
-
 def round_package_ready(
     root: Path,
     pending: tuple[str, str],
     release: tuple[str, str] | None,
-    native: NativeRoundDownloads | None,
 ) -> bool | None:
     """就绪返回 True，明确不兼容返回 False，未能确认就绪返回 None。"""
     target, package = pending
@@ -177,23 +124,12 @@ def round_package_ready(
                         with archive.open(entry) as stream:
                             return read_pe_architecture(stream) == release[1]
                 return None
-        if (
-            path.name.casefold()
-            == ota_asset_name(release[0], target, release[1]).casefold()
-        ):
-            return True
-        if not _native_package_path(root, target, path):
-            return False
-        identity = _read_deferred_native_identity(root, pending)
-        if identity == _native_identity(release, path.stat()):
-            return True
-        if (
-            native is not None
-            and native.release == release
-            and _new_native_identity(root, pending, path, native) is not None
-        ):
-            return True
-        return False if identity is not None or native is not None else None
+        if path.name.casefold().startswith("maacomponent-ota-"):
+            return (
+                path.name.casefold()
+                == ota_asset_name(release[0], target, release[1]).casefold()
+            )
+        return True
     except (FileNotFoundError, zipfile.BadZipFile):
         return None
 
@@ -323,6 +259,23 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     return "", ""
 
 
+def has_pending_update_for_view(maa_root: Path) -> bool:
+    """只读预览前检查主配置及 .bak，任一含现存待装包即拦截。"""
+    for name, group, _, package_key in _PENDING_FIELDS:
+        for candidate in (name, f"{name}.bak"):
+            values = _utils_io.read_dict_file(
+                maa_root / "config" / candidate, format=".json"
+            ).get(group)
+            if (
+                isinstance(values, dict)
+                and isinstance(package := values.get(package_key), str)
+                and package
+                and (maa_root / package).is_file()
+            ):
+                return True
+    return False
+
+
 def clear_matching_package(root: Path, pending: tuple[str, str]) -> None:
     """只撤下对应版本和路径的登记，保留 ZIP 及其他待装包。"""
     for name, group, version_key, package_key in _PENDING_FIELDS:
@@ -353,43 +306,16 @@ def round_resource_record(maa_root: Path) -> Path:
     return _deferred_update_path(maa_root).with_suffix(".resources.json")
 
 
-def _read_deferred_native_identity(
-    root: Path, pending: tuple[str, str]
-) -> list[str | int] | None:
-    data = _utils_io.read_dict_file(_deferred_update_path(root))
-    if (
-        data.get("install") == _utils_config_archive.config_root_key(root)
-        and (data.get("version"), data.get("package")) == pending
-        and isinstance(identity := data.get("native"), list)
-    ):
-        return identity
-    return None
-
-
-def save_deferred_update(
-    maa_root: Path,
-    *,
-    version: str,
-    package: str,
-    native: NativeRoundDownloads | None = None,
-) -> None:
-    """按安装归属保存待装登记，并保留同一原生下载的基线和文件身份。"""
-    pending = (version, package)
-    path = (maa_root / package).resolve()
-    data: dict[str, object] = {
-        "install": _utils_config_archive.config_root_key(maa_root),
-        "version": version,
-        "package": package,
-    }
-    if _native_package_path(maa_root, version, path):
-        identity = (
-            _new_native_identity(maa_root, pending, path, native) if native else None
-        )
-        if identity is None:
-            identity = _read_deferred_native_identity(maa_root, pending)
-        if identity is not None:
-            data["native"] = identity
-    _utils_io.write_file(_deferred_update_path(maa_root), data)
+def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
+    """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
+    _utils_io.write_file(
+        _deferred_update_path(maa_root),
+        {
+            "install": _utils_config_archive.config_root_key(maa_root),
+            "version": version,
+            "package": package,
+        },
+    )
 
 
 def clear_deferred_update(maa_root: Path) -> None:

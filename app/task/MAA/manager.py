@@ -86,10 +86,10 @@ from .tools.resource_update import (
     read_resource_clock,
 )
 from .tools.software_package import (
-    NativeRoundDownloads,
     clear_deferred_update,
     clear_matching_package,
     has_delegated_update_failure,
+    has_pending_update_for_view,
     load_deferred_update,
     read_pending_update,
     round_package_ready,
@@ -259,7 +259,7 @@ class MaaManager(ScriptManagerBase):
             if not (root / self._pending_update[1]).is_file():
                 return
             ready = await asyncio.to_thread(
-                round_package_ready, root, self._pending_update, release, None
+                round_package_ready, root, self._pending_update, release
             )
             if not ready:
                 clear_matching_package(root, self._pending_update)
@@ -420,9 +420,14 @@ class MaaManager(ScriptManagerBase):
                 ) or not await process.is_process_stopped(install / "MAA.exe"):
                     raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
                 if self.task_info.view_only:
-                    # MAA 启动时会处理已登记的包，即使会话关闭了自动安装。
-                    version, package = read_pending_update(install)
-                    if version and package and (install / package).is_file():
+                    # 主配置或 .bak 含现存待装包时均拒绝预览，避免 MAA 启动时触发安装。
+                    try:
+                        has_pending = has_pending_update_for_view(install)
+                    except (OSError, ValueError) as error:
+                        raise MaaUpdateUnsafeError(
+                            "MAA 配置无法读取，请检查后再查看历史备份"
+                        ) from error
+                    if has_pending:
                         raise MaaUpdateUnsafeError(
                             "MAA 有待安装的更新，请先完成更新，再查看历史备份"
                         )
@@ -439,12 +444,8 @@ class MaaManager(ScriptManagerBase):
         if root_path is None:
             raise ValueError("Path未配置，请检查路径设置")
         self.maa_set_path = root_path / "config"
-        if self.task_info.view_only and (
-            root_path != install or not (self.maa_set_path / "gui.new.json").is_file()
-        ):
-            raise MaaUpdateUnsafeError(
-                "MAA 安装目录已变更或主配置不存在，请检查后再查看历史备份"
-            )
+        if self.task_info.view_only and root_path != install:
+            raise MaaUpdateUnsafeError("MAA 安装目录已变更，请检查后再查看历史备份")
         self.temp_path = snapshot_path
 
         # 初始化模拟器管理器
@@ -698,7 +699,6 @@ class MaaManager(ScriptManagerBase):
             else:
                 kwargs["game_update_result"] = update_result
                 kwargs["capture_adb"] = capture_adb
-                kwargs["install_round_update"] = self._install_round_update
             task = METHOD_BOOK[self.execution_mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
@@ -711,8 +711,8 @@ class MaaManager(ScriptManagerBase):
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
-            if isinstance(task, AutoProxyTask) and task.round_update_error is not None:
-                raise task.round_update_error
+            if isinstance(task, AutoProxyTask) and not task.stopped_manually:
+                await self._install_account_update()
 
     async def prefetch_script_update(self) -> None:
         from .tools.fluxdown_update import PreparedUpdate
@@ -936,9 +936,8 @@ class MaaManager(ScriptManagerBase):
         )
         return True
 
-    async def _install_round_update(
-        self, pending: tuple[str, str] | None, native: NativeRoundDownloads | None
-    ) -> None:
+    async def _install_account_update(self) -> None:
+        pending = self._pending_update
         if pending is None:
             return
         root = self.maa_set_path.parent
@@ -953,9 +952,7 @@ class MaaManager(ScriptManagerBase):
         ):
             return
         try:
-            ready = await asyncio.to_thread(
-                round_package_ready, root, pending, release, native
-            )
+            ready = await asyncio.to_thread(round_package_ready, root, pending, release)
         except (OSError, ValueError) as error:
             logger.warning(f"无法读取本轮 MAA 更新包，等待下次检查：{error}")
             return
@@ -997,6 +994,8 @@ class MaaManager(ScriptManagerBase):
                 target=pending[0],
                 pending=pending,
             )
+            clear_deferred_update(root)
+            self._pending_update = None
             if resource_clock is not None:
                 await self._recover_unconfirmed_update()
         except (MaaUpdaterRunningError, MaaUpdateUnsafeError):
@@ -1023,7 +1022,7 @@ class MaaManager(ScriptManagerBase):
                         or not requested
                         or compare_versions(requested, current) <= 0
                         or not await asyncio.to_thread(
-                            round_package_ready, root, pending, release, None
+                            round_package_ready, root, pending, release
                         )
                     ):
                         # 解开无效登记对接管下载的占用，保留 ZIP 文件。

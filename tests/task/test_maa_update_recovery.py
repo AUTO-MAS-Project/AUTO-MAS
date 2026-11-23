@@ -10,11 +10,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.task.MAA import manager
-from app.task.MAA.AutoProxy import AutoProxyTask
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.tools import UpdateMAA as installer
 from app.task.MAA.tools.software_package import (
-    NativeRoundDownloads,
     read_pending_update,
     round_package_ready,
     round_resource_record,
@@ -111,13 +109,16 @@ async def test_round_installs_ready_package_before_return(
 
     launcher = AsyncMock(side_effect=launch)
     monkeypatch.setattr(installer.ProcessRunner, "run_process", launcher)
-    await scheduler._install_round_update(None, None)
+    scheduler._pending_update = None
+    await scheduler._install_account_update()
     launcher.assert_not_awaited()
     pending = ("v6.1.0", package.name)
-    await scheduler._install_round_update(pending, None)
+    scheduler._pending_update = pending
+    await scheduler._install_account_update()
     assert version == pending[0] and io_utils.read_dict_file(config) == original
+    assert scheduler._pending_update is None
     assert not round_resource_record(root).exists()
-    await scheduler._install_round_update(pending, None)
+    await scheduler._install_account_update()
     launcher.assert_awaited_once()
 
 
@@ -180,10 +181,8 @@ async def test_package_without_target_does_not_block_takeover(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "resumed", ["round", "takeover", "different-release", "replaced"]
-)
-async def test_stopped_native_download_resumes_only_for_the_same_package(
+@pytest.mark.parametrize("resumed", ["account", "takeover", "already-updated"])
+async def test_stopped_native_download_resumes_on_next_run(
     installation, monkeypatch, resumed
 ):
     root, _, original, scheduler = installation
@@ -191,38 +190,19 @@ async def test_stopped_native_download_resumes_only_for_the_same_package(
     package = root / f"MirrorChyanApp{target}.zip"
     pending = (target, package.name)
     release = ("v6.1.0", "x64")
-    before = NativeRoundDownloads.capture(root, release)
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr("changes.json", "{}")
-    write_pending_update(root, version=target, package=package.name)
+    save_deferred_update(root, version=target, package=package.name)
 
-    task = object.__new__(AutoProxyTask)
-    task.pending_update = None
-    task.maa_root_path = root
-    task._native_downloads = before
-    task._round_started = True
-    task._stopped_manually = True
-    task.install_round_update = AsyncMock()
-    task._remember_pending_update()
-    await task._finish_round_update()
-    task.install_round_update.assert_not_awaited()
-
-    scheduler._active_proxy_task = task
-    scheduler._pending_update = None
-    scheduler._remember_pending_update()
     config = root / "config/gui.new.json"
     original["Update"]["UpdatePackage"] = ""
     io_utils.write_file(config, original)
     scheduler._pending_update = None
-    scheduler._active_proxy_task = None
-    if resumed == "different-release":
-        release = ("v6.1.1", "x64")
-    if resumed == "replaced":
-        with zipfile.ZipFile(package, "w") as archive:
-            archive.writestr("changes.json", '{"different":true}')
+    if resumed == "already-updated":
+        release = (target, "x64")
     monkeypatch.setattr(manager, "read_installed_release", lambda _: release)
     await scheduler._restore_pending_update()
-    if resumed in ("different-release", "replaced"):
+    if resumed == "already-updated":
         assert read_pending_update(root) == ("", "")
         assert package.is_file()
         return
@@ -247,34 +227,24 @@ async def test_stopped_native_download_resumes_only_for_the_same_package(
         await scheduler._install_pending_software_update(target=target)
     else:
         io_utils.write_file(config, original)  # 账号注入临时清空登记。
-        snapshot = NativeRoundDownloads.capture(root, release)
-        await scheduler._install_round_update(pending, snapshot)
+        scheduler._pending_update = pending
+        await scheduler._install_account_update()
     assert release == (target, "x64")
 
 
-def test_round_ota_matches_baseline_or_fresh_native_download(tmp_path):
+def test_round_ota_matches_baseline_or_native_package(tmp_path):
     release, target = ("v6.0.0+build1", "x64"), "v6.2.0"
     path = tmp_path / f"MirrorChyanApp{target}.zip"
     pending = (target, path.name)
-    io_utils.write_file(
-        tmp_path / "config/gui.new.json",
-        {"Update": {"Name": target, "UpdatePackage": path.name}},
-    )
-    before = NativeRoundDownloads.capture(tmp_path, release)
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("changes.json", "{}")
-    assert round_package_ready(tmp_path, pending, release, before)
-    assert not round_package_ready(
-        tmp_path, pending, release, NativeRoundDownloads.capture(tmp_path, release)
-    )
+    assert round_package_ready(tmp_path, pending, release)
     ota = path.rename(tmp_path / "MAAComponent-OTA-v6.0.0+build1_v6.2.0-win-x64.zip")
-    assert round_package_ready(tmp_path, (target, ota.name), release, None)
+    assert round_package_ready(tmp_path, (target, ota.name), release)
     assert not round_package_ready(
-        tmp_path, (target, ota.name), ("v6.0.0+build2", "x64"), None
+        tmp_path, (target, ota.name), ("v6.0.0+build2", "x64")
     )
-    assert not round_package_ready(
-        tmp_path, (target, ota.name), (release[0], "arm64"), None
-    )
+    assert not round_package_ready(tmp_path, (target, ota.name), (release[0], "arm64"))
 
 
 @pytest.mark.asyncio

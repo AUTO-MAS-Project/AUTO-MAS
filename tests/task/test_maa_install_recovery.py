@@ -163,6 +163,8 @@ async def test_maa_manager_resource_recovery_goes_through_common_entry(
     [
         "resource-recovery",
         "registered-package",
+        "bak-fallback",
+        "missing-name",
         "snapshot",
         "journal",
         "relocated",
@@ -186,6 +188,14 @@ async def test_view_with_pending_update_keeps_installation_intact(
         package.write_bytes(b"downloaded package")
         if pending == "registered-package":
             update.update(original_update)
+        elif pending == "missing-name":
+            update["UpdatePackage"] = package.name
+        elif pending == "bak-fallback":
+            io_utils.write_file(
+                config_file.with_name("gui.new.json.bak"),
+                {"Update": original_update},
+                format=".json",
+            )
     io_utils.write_file(config_file, {"Update": update})
     original_record = record.read_bytes() if record.is_file() else None
     original_config = config_file.read_bytes()

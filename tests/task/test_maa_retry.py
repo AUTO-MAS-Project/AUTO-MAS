@@ -152,21 +152,7 @@ async def test_task_failure_retry_scope(
         open=AsyncMock(return_value=DeviceInfo("test", DeviceStatus.ONLINE, "")),
         close=AsyncMock(return_value=True),
     )
-    completed = []
-
-    async def install_round_update(pending, native):
-        if annihilation and proxy.mode == "Annihilation":
-            assert pending == ("v6.1.0", "ready.zip")
-        completed.append(proxy.mode)
-
-    proxy = AutoProxyTask(
-        script,
-        config,
-        users,
-        emulator,
-        capture_adb=AsyncMock(),
-        install_round_update=install_round_update,
-    )
+    proxy = AutoProxyTask(script, config, users, emulator, capture_adb=AsyncMock())
     from app.task.history_core import TaskHistorySession
 
     proxy.history = TaskHistorySession(task_info)
@@ -181,21 +167,11 @@ async def test_task_failure_retry_scope(
         queue = gui["Configurations"]["Default"]["TaskQueue"]
 
     async def open_process(*args, **kwargs):
-        assert completed == [mode for mode, _ in attempts]
         attempts.append((proxy.mode, deepcopy(queue)))
-
-    async def exit_maa():
-        if annihilation and proxy.mode == "Annihilation":
-            from app.task.MAA.tools.software_package import write_pending_update
-
-            (root / "ready.zip").touch()
-            (root / "config").mkdir(exist_ok=True)
-            (root / "config/gui.new.json").write_text("{}")
-            write_pending_update(root, version="v6.1.0", package="ready.zip")
 
     process = SimpleNamespace(
         open_process=open_process,
-        process=SimpleNamespace(wait=exit_maa),
+        process=SimpleNamespace(wait=AsyncMock()),
         kill=AsyncMock(),
         is_running=AsyncMock(return_value=True),
         main_pid=1,
@@ -315,7 +291,7 @@ async def test_task_failure_retry_scope(
         script_task_retrying.reset(retry_token)
         await proxy.callbacks.close()
 
-    assert completed == [mode for mode, _ in attempts] == expected_modes
+    assert [mode for mode, _ in attempts] == expected_modes
     # 只有同一模式重新启动 MAA 才通知 L2；切到下一个模式不应重置成功信号。
     assert retried_modes == [
         mode

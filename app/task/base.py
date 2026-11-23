@@ -1,8 +1,8 @@
 """脚本单账号自动运行的总时限保护。"""
 
 import asyncio
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager, suppress
+from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime
 
 from app.models.config import (
@@ -264,33 +264,12 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
             if _running_inflight_detection(self.script_info.script_id) is not None:
                 logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
 
-    _run_timeout: asyncio.Timeout | None = None
-
-    @contextmanager
-    def pause_run_timeout(self) -> Iterator[None]:
-        """独立限时的程序退出及更新结束后，续用原账号预算。"""
-        timer = self._run_timeout
-        if timer is None or (deadline := timer.when()) is None:
-            yield
-            return
-        loop = asyncio.get_running_loop()
-        remaining = deadline - loop.time()
-        timer.reschedule(None)
-        try:
-            yield
-        finally:
-            timer.reschedule(loop.time() + remaining)
-
     async def _run_main_task(self) -> None:
         """[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。"""
         timeout = asyncio.timeout(self.run_timeout_seconds)
         try:
             async with timeout:
-                self._run_timeout = timeout
-                try:
-                    await self.main_task()
-                finally:
-                    self._run_timeout = None
+                await self.main_task()
         except TimeoutError:
             # 脚本内部的 TimeoutError 仍交给原异常流程处理。
             if not timeout.expired():
