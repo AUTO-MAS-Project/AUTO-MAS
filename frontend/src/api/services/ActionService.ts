@@ -6,26 +6,21 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
-import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
-import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
-import type { Emulator2AvdUpdateActionOut } from '../models/Emulator2AvdUpdateActionOut';
-import type { Emulator2AvdUpdateIn } from '../models/Emulator2AvdUpdateIn';
-import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
-import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
-import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
-import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsApplyAllOut';
-import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
-import type { Emulator2SettingsApplyOut } from '../models/Emulator2SettingsApplyOut';
-import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
-import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
-import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
-import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
+import type { GameBatchIn } from '../models/GameBatchIn';
+import type { GameCreateIn } from '../models/GameCreateIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameIdIn } from '../models/GameIdIn';
+import type { GameSearchOut } from '../models/GameSearchOut';
+import type { GameSettingsOut } from '../models/GameSettingsOut';
 import type { MaaEndLogBundleIn } from '../models/MaaEndLogBundleIn';
 import type { MaaEndLogBundleOut } from '../models/MaaEndLogBundleOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
+import type { PluginCatalogRefreshIn } from '../models/PluginCatalogRefreshIn';
+import type { PluginInstallationOut } from '../models/PluginInstallationOut';
+import type { PluginInstallationRestartIn } from '../models/PluginInstallationRestartIn';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
@@ -36,12 +31,121 @@ import type { ShareAppearanceUploadOut } from '../models/ShareAppearanceUploadOu
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TriggerWriteIn } from '../models/TriggerWriteIn';
+import type { TriggerWriteOut } from '../models/TriggerWriteOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ActionService {
+    /**
+     * 从索引全量刷新目录并写入配置（读列表请再调 get）
+     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
+     * @param locale
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+        requestBody?: PluginCatalogRefreshIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/refresh',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Write Config Trigger
+     * 写入三态命令并立即返回受影响的任务 UUID。
+     * @param requestBody
+     * @returns TriggerWriteOut Successful Response
+     * @throws ApiError
+     */
+    public static writeConfigTriggerApiConfigTriggersWritePost(
+        requestBody: TriggerWriteIn,
+    ): CancelablePromise<TriggerWriteOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/write',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
     /**
      * 确认通知
      * @returns OutBase Successful Response
@@ -111,17 +215,17 @@ export class ActionService {
         });
     }
     /**
-     * 操作模拟器
+     * Create Game
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns GameGetOut Successful Response
      * @throws ApiError
      */
-    public static operationEmulatorApiEmulatorOperatePost(
-        requestBody: EmulatorOperateIn,
-    ): CancelablePromise<OutBase> {
+    public static createGameApiGamesCreatePost(
+        requestBody: GameCreateIn,
+    ): CancelablePromise<GameGetOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/operate',
+            url: '/api/games/create',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -130,21 +234,28 @@ export class ActionService {
         });
     }
     /**
-     * 打开游戏中心
-     * 在一台**已在线**的设备上打开模拟器自带的游戏中心。
-     *
-     * 雷电纯净模式会把游戏中心从桌面藏掉，这是它唯一的图形入口。
-     * 拉不起来返回 ``ok=false`` 和一句说明，不算接口错误；只有设备号解析不出来才是 500。
-     * @param requestBody
-     * @returns Emulator2StoreOpenOut Successful Response
+     * Search Games
+     * @returns GameSearchOut Successful Response
      * @throws ApiError
      */
-    public static openStoreApiEmulator2InstancesStoreOpenPost(
-        requestBody: Emulator2StoreOpenIn,
-    ): CancelablePromise<Emulator2StoreOpenOut> {
+    public static searchGamesApiGamesSearchPost(): CancelablePromise<GameSearchOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/instances/store/open',
+            url: '/api/games/search',
+        });
+    }
+    /**
+     * Import Game
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static importGameApiGamesImportPost(
+        requestBody: GameIdIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -153,21 +264,17 @@ export class ActionService {
         });
     }
     /**
-     * 修改实例设置
-     * 写一台设备的设置。
-     *
-     * 只提交用户改过的字段；``expected`` 与文件现状对不上就拒绝写入并交回冲突字段，
-     * 绝不把表单打开时的旧值整片盖回去。
+     * Apply Stable Mode
      * @param requestBody
-     * @returns Emulator2SettingsApplyOut Successful Response
+     * @returns GameSettingsOut Successful Response
      * @throws ApiError
      */
-    public static applySettingsApiEmulator2SettingsApplyPost(
-        requestBody: Emulator2SettingsApplyIn,
-    ): CancelablePromise<Emulator2SettingsApplyOut> {
+    public static applyStableModeApiGamesStableModeApplyPost(
+        requestBody: GameBatchIn,
+    ): CancelablePromise<GameSettingsOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/settings/apply',
+            url: '/api/games/stable-mode/apply',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -176,110 +283,17 @@ export class ActionService {
         });
     }
     /**
-     * 批量修改全部实例设置
-     * 把同一组设置写到全部实例上。
-     *
-     * 没有勾选也没有冲突比对——点它就是明确要求「所有实例都设成这组值」。
-     * 一台失败不影响其余，逐台交回结果。
+     * Capture Baselines
      * @param requestBody
-     * @returns Emulator2SettingsApplyAllOut Successful Response
+     * @returns GameSettingsOut Successful Response
      * @throws ApiError
      */
-    public static applySettingsToAllApiEmulator2SettingsApplyAllPost(
-        requestBody: Emulator2SettingsApplyAllIn,
-    ): CancelablePromise<Emulator2SettingsApplyAllOut> {
+    public static captureBaselinesApiGamesGuardCapturePost(
+        requestBody: GameBatchIn,
+    ): CancelablePromise<GameSettingsOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/settings/apply-all',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 应用稳定模式
-     * 把设备切进稳定模式：关掉会干扰截图识别的模拟器功能。
-     *
-     * ``slots`` 留空表示全部。每台交回实际改动了哪几项；已经安全的返回空改动列表。
-     * **关掉稳定模式不由这个接口负责**——我们不知道用户原来想要什么值，不替他猜。
-     * @param requestBody
-     * @returns Emulator2SettingsApplyAllOut Successful Response
-     * @throws ApiError
-     */
-    public static applyStableModeApiEmulator2StableModeApplyPost(
-        requestBody: Emulator2StableModeIn,
-    ): CancelablePromise<Emulator2SettingsApplyAllOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/stable-mode/apply',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 记录配置守卫的基准
-     * 把当前所有设备的设置记成守卫基准。开启守卫时调一次。
-     *
-     * 只记用户显式设过的字段：模拟器默认值和从没设过的项没有「应该是什么」可言，
-     * 写进基准等于替用户决定。
-     * @param requestBody
-     * @returns Emulator2GuardCaptureOut Successful Response
-     * @throws ApiError
-     */
-    public static captureBaselinesApiEmulator2GuardCapturePost(
-        requestBody: Emulator2DevicesIn,
-    ): CancelablePromise<Emulator2GuardCaptureOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/guard/capture',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 在 ModAVD 实例里安装 APK
-     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
-     * @param requestBody
-     * @returns Emulator2AvdApkInstallOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
-        requestBody: Emulator2AvdApkInstallIn,
-    ): CancelablePromise<Emulator2AvdApkInstallOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/instance/apk/install',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新 ModAVD
-     * 一键更新：查最新版本，下载（Mirror 酱或 GitHub，整包或增量）并核对，再换上。
-     * 有实例开着或正在开机时什么都不动，返回 ``instances_running``；开始后到结束这个根目录不许开机。
-     * 换上前发现还有程序开着模拟器文件时停在「已下载好」，下次直接换上。
-     * 立刻返回，进度经 WebSocket ``emulator2.avd-update.progress`` 推送。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateActionOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateApiEmulator2AvdUpdatePost(
-        requestBody: Emulator2AvdUpdateIn,
-    ): CancelablePromise<Emulator2AvdUpdateActionOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update',
+            url: '/api/games/guard/capture',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -353,18 +367,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/cancel/power',
-        });
-    }
-    /**
-     * 手动触发游戏社区签到
-     * 手动触发游戏社区签到
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign',
         });
     }
     /**
@@ -506,62 +508,6 @@ export class ActionService {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * 下载更新
-     * @param version
-     * @param downloader
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static downloadUpdateApiUpdateDownloadPost(
-        version?: (string | null),
-        downloader?: (string | null),
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/download',
-            query: {
-                'version': version,
-                'downloader': downloader,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 取消下载更新
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static cancelUpdateDownloadApiUpdateCancelDownloadPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/cancel-download',
-        });
-    }
-    /**
-     * 切换下载源到 CNB
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static switchUpdateDownloadToCnbApiUpdateSwitchToCnbPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/switch-to-cnb',
-        });
-    }
-    /**
-     * 安装更新
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static installUpdateApiUpdateInstallPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/update/install',
         });
     }
     /**

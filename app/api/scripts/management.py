@@ -21,7 +21,6 @@ import uuid
 from typing import (
     Dict,
     List,
-    Literal,
     Optional,
     Union,
 )
@@ -30,6 +29,7 @@ from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
+    SerializeAsAny,
     model_validator,
 )
 
@@ -37,11 +37,14 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
+from app.models.config.script import reject_invalid_log_formats
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     ScriptDeleteIn,
     UserInBase,
 )
+from app.models.script_access import script_users
 from app.utils import get_logger
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
@@ -80,12 +83,6 @@ MSSConfig = ConfigPayload[_config_models.MSSConfig]
 MSSConfigInput = ConfigInput[_config_models.MSSConfig]
 
 
-MaaConfig = ConfigPayload[_config_models.MaaConfig]
-
-
-MaaConfigInput = ConfigInput[_config_models.MaaConfig]
-
-
 MaaEndConfig = ConfigPayload[_config_models.MaaEndConfig]
 
 
@@ -110,18 +107,6 @@ OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
 OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
 
 
-SrcConfig = ConfigPayload[_config_models.SrcConfig]
-
-
-SrcConfigInput = ConfigInput[_config_models.SrcConfig]
-
-
-WhimboxConfig = ConfigPayload[_config_models.WhimboxConfig]
-
-
-WhimboxConfigInput = ConfigInput[_config_models.WhimboxConfig]
-
-
 ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
 
 
@@ -130,22 +115,25 @@ ZzzOdConfigInput = ConfigInput[_config_models.ZzzOdConfig]
 
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaConfig",
-        "GeneralConfig",
-        "OkwwConfig",
-        "OkNteConfig",
-        "SrcConfig",
-        "MaaEndConfig",
-        "M9AConfig",
-        "MaaFWConfig",
-        "HSRConfig",
-        "BetterGIConfig",
-        "ZzzOdConfig",
-        "BAAHConfig",
-        "WhimboxConfig",
-        "MSSConfig",
-    ] = Field(..., description="配置类型")
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "GeneralConfig",
+                "OkwwConfig",
+                "OkNteConfig",
+                "MaaEndConfig",
+                "M9AConfig",
+                "MaaFWConfig",
+                "HSRConfig",
+                "BetterGIConfig",
+                "ZzzOdConfig",
+                "BAAHConfig",
+                "MSSConfig",
+            ]
+        },
+        default=...,
+        description="配置类型",
+    )
 
     activityGame: str | None = Field(
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
@@ -153,23 +141,23 @@ class ScriptIndexItem(BaseModel):
 
 
 class ScriptCreateIn(BaseModel):
-    type: Literal[
-        "MAA",
-        "SRC",
-        "General",
-        "Okww",
-        "OkNte",
-        "MaaEnd",
-        "M9A",
-        "MaaFW",
-        "HSR",
-        "BetterGI",
-        "ZzzOd",
-        "BAAH",
-        "Whimbox",
-        "MSS",
-    ] = Field(
-        ...,
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "General",
+                "Okww",
+                "OkNte",
+                "MaaEnd",
+                "M9A",
+                "MaaFW",
+                "HSR",
+                "BetterGI",
+                "ZzzOd",
+                "BAAH",
+                "MSS",
+            ]
+        },
+        default=...,
         description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
@@ -180,8 +168,7 @@ class ScriptCreateIn(BaseModel):
 class ScriptCreateOut(OutBase):
     scriptId: str = Field(..., description="新创建的托管ID")
     data: Union[
-        MaaConfig,
-        SrcConfig,
+        SerializeAsAny[BaseModel],
         GeneralConfig,
         OkwwConfig,
         OkNteConfig,
@@ -192,7 +179,6 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
-        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="托管配置数据")
 
@@ -203,13 +189,12 @@ class ScriptGetIn(BaseModel):
     )
 
 
-class ScriptGetOut(OutBase):
+class ScriptGetOut(ConfigSnapshotOut):
     index: List[ScriptIndexItem] = Field(..., description="托管索引列表")
     data: Dict[
         str,
         Union[
-            MaaConfig,
-            SrcConfig,
+            SerializeAsAny[BaseModel],
             GeneralConfig,
             OkwwConfig,
             OkNteConfig,
@@ -220,7 +205,6 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
-            WhimboxConfig,
             MSSConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
@@ -230,15 +214,14 @@ class ScriptLockIn(UserInBase):
     userId: str | None = Field(default=None, description="省略时查询托管本体")
 
 
-class ScriptLockOut(OutBase):
+class ScriptLockOut(ConfigSnapshotOut):
     locked: bool = Field(default=False, description="目标配置当前是否被锁定")
 
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
     data: Union[
-        MaaConfigInput,
-        SrcConfigInput,
+        SerializeAsAny[BaseModel],
         GeneralConfigInput,
         OkwwConfigInput,
         OkNteConfigInput,
@@ -249,7 +232,6 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfigInput,
         ZzzOdConfigInput,
         BAAHConfigInput,
-        WhimboxConfigInput,
         MSSConfigInput,
     ] = Field(..., description="托管更新数据")
 
@@ -280,6 +262,18 @@ class ScriptConfigImportIn(UserInBase):
 
 
 router = APIRouter()
+
+
+class ScriptTypesOut(OutBase):
+    types: list[str] = Field(default_factory=list)
+
+
+@router.get("/types", tags=["Get"], response_model=ScriptTypesOut)
+async def get_script_types() -> ScriptTypesOut:
+    """返回当前已启用的内置和插件托管类型，供新建页面实时筛选能力。"""
+    return ScriptTypesOut(types=list(Config.script_classes))
+
+
 logger = get_logger("托管管理 API")
 
 
@@ -321,9 +315,17 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)
-        activity_games = {
+        activity_games: dict[str, str | None] = {
             config.__name__: game for config, game in SCRIPT_CALENDAR_GAMES.items()
         }
+        from app.core.plugin import Plugin
+
+        activity_games.update(
+            {
+                decl.script_type.__name__: decl.activity_game
+                for decl in Plugin.script_types.values()
+            }
+        )
         index = [
             ScriptIndexItem(**item, activityGame=activity_games.get(item["type"]))
             for item in index
@@ -342,7 +344,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             data={},
         )
     # 配置框架运行时生成具体投影类，保留现有联合响应的兼容契约。
-    return ScriptGetOut(index=index, data=data)  # pyright: ignore[reportArgumentType]
+    return ScriptGetOut(
+        index=index,
+        data=data,  # pyright: ignore[reportArgumentType]
+        uiSources=[
+            uuid.UUID(script.scriptId) if script.scriptId else Config.ScriptConfig.uid
+        ],
+    )
 
 
 @router.post(
@@ -352,10 +360,12 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
     script = Config.ScriptConfig.get(target.scriptId)
     if script is None:
         return ScriptLockOut(code=404, status="error", message="托管配置不存在")
-    config = script if target.userId is None else script.UserData.get(target.userId)
+    config = (
+        script if target.userId is None else script_users(script).get(target.userId)
+    )
     if config is None:
         return ScriptLockOut(code=404, status="error", message="用户配置不存在")
-    return ScriptLockOut(locked=config.is_locked)
+    return ScriptLockOut(locked=config.is_locked, uiSources=[config.uid])
 
 
 @router.post(
@@ -371,6 +381,10 @@ async def update_script(
 
     try:
         data = script.data.model_dump(exclude_unset=True)
+        # 日志格式写错要等到运行期准备阶段才炸，收尾也会跟着断：保存时就挡住。
+        invalid_format = reject_invalid_log_formats(data)
+        if invalid_format:
+            return OutBase(code=500, status="error", message=invalid_format)
         # 设备绑定不受支持时拦截保存，避免先提交配置。
         refusal = await Config.update_script_settings(script.scriptId, data)
         if refusal:

@@ -100,7 +100,9 @@ class ChannelRuntimeConfig(NotificationConfigReader, Protocol):
     def bind(self, name: str, callback: Callable[[Any], Any]) -> None: ...
 
 
-NotificationCommandAction = Literal["retry_script", "start_queue"]
+NotificationCommandAction = Literal[
+    "retry_script", "start_queue", "list_scripts", "list_queues"
+]
 NotificationCommandExecutor = Callable[[NotificationCommandAction, str], Awaitable[str]]
 
 

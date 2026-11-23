@@ -12,8 +12,8 @@
         :plan-list="planList"
         :active-plan-id="activePlanId"
         :creating="planOperationPending"
+        :remove-plan="handleRemovePlan"
         @add-plan="handleAddPlan"
-        @remove-plan="handleRemovePlan"
       />
 
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
@@ -69,13 +69,14 @@
 </template>
 
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import type { PlanIndexItem } from '@/api'
+import { projectPlanList, type PlanListItem } from './planList'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
@@ -85,7 +86,6 @@ import {
   DEFAULT_PLAN_CONFIG_TYPE,
   PLAN_TYPE_REGISTRY,
   PLAN_CONFIG_TYPES,
-  isKnownPlanType,
   type PlanChangeOptions,
   type PlanConfigData,
   type PlanConfigType,
@@ -106,12 +106,6 @@ const logger = window.electronAPI.getLogger('计划管理')
 
 const { getPlans, createPlan, updatePlan, deletePlan, reorderPlans } = usePlanApi()
 const route = useRoute()
-
-interface PlanListItem {
-  id: string
-  name: string
-  type: PlanConfigType
-}
 
 const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
@@ -521,41 +515,17 @@ const loadPlanData = async (planId: string, force = false, forceCustomStages = f
   }
 }
 
-const initPlans = async () => {
+const initPlans = useConfigLoader(['config', 'plans'], async read => {
   try {
-    const response = await getPlans()
+    const response = await getPlans(undefined, { silent: true })
+    read(response)
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
 
-    const nextPlanDataMap: Record<string, PlanConfigData> = {}
-    const nextPlanList: PlanListItem[] = []
-    const allPlanNames: string[] = []
-
-    response.index.forEach((item: PlanIndexItem) => {
-      const planId = item.uid
-      const planData = response.data[planId] as PlanConfigData | undefined
-      const planType = item.type as string
-
-      if (!isKnownPlanType(planType)) {
-        logger.error(`跳过未注册的计划表类型: ${planType}`)
-        return
-      }
-      if (!planData) {
-        logger.error(`跳过缺少配置数据的计划表: ${planId}`)
-        return
-      }
-
-      const planDescriptor = PLAN_TYPE_REGISTRY[planType]
-      let planName = planData.Info?.Name || ''
-      if (!planName || planName === planDescriptor.defaultName) {
-        planName = generateUniquePlanName(planType, allPlanNames)
-      }
-
-      allPlanNames.push(planName)
-      nextPlanDataMap[planId] = planData
-      nextPlanList.push({ id: planId, name: planName, type: planType })
-    })
+    const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
+      logger.error(message)
+    )
 
     planDataMap.value = nextPlanDataMap
     planList.value = nextPlanList
@@ -568,22 +538,23 @@ const initPlans = async () => {
 
     const queryPlanId = (route.query.planId as string) || ''
     const target = queryPlanId ? nextPlanList.find(plan => plan.id === queryPlanId) : null
-    const selectedPlanId = target?.id ?? nextPlanList[0].id
+    const current = nextPlanList.find(plan => plan.id === activePlanId.value)
+    const selectedPlanId = current?.id ?? target?.id ?? nextPlanList[0].id
 
-    syncCurrentPlan(selectedPlanId, true)
+    const draftName = isEditingPlanName.value ? currentPlanName.value : undefined
+    syncCurrentPlan(selectedPlanId, selectedPlanId !== activePlanId.value)
+    if (draftName !== undefined && selectedPlanId === activePlanId.value) {
+      currentPlanName.value = draftName
+    }
     activePlanId.value = selectedPlanId
     logger.info(`初始加载数据 (${selectedPlanId})`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`初始化计划失败: ${errorMsg}`)
-    planDataMap.value = {}
-    planList.value = []
-    activePlanId.value = ''
-    tableData.value = {}
   } finally {
     loading.value = false
   }
-}
+})
 
 const getDefaultPlanName = (planType: PlanConfigType) => {
   const existingNames = planList.value.map(plan => plan.name)

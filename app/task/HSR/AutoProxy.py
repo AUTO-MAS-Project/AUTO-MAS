@@ -38,7 +38,9 @@ from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification import NotifyPayload
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
-from app.utils import UTC4, ProcessManager, get_logger, is_process_running, process
+from app.task.run_flow import begin_attempt, point
+from app.utils import UTC4, ProcessManager, get_logger
+from app.utils.common.process.manager import has_process_window
 
 from .history import save_hsr_user_history
 from .task_mapping import (
@@ -373,21 +375,25 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.runtime.last_external_script = None
         self.runtime.game_transitioning = True
 
+        point(self, "stop_game")
         try:
-            await process.kill_process(game_exe_path)
+            await self._game_process_manager.kill()
             await self._game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
             )
             await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
-            if process_name and is_process_running(process_name):
+            if process_name and await has_process_window(process_name):
+                point(self, "stop_game", state="failed")
                 self._append_log(
                     f"等待后仍检测到游戏进程运行（{process_name}），"
                     "将继续按启动流程等待游戏就绪"
                 )
             else:
+                point(self, "stop_game", state="succeeded")
                 self._append_log("游戏进程已关闭，准备重新启动")
         except Exception as e:  # noqa: BLE001
+            point(self, "stop_game", state="failed")
             logger.warning(f"{reason}关闭 HSR 游戏失败：{e}")
             self._append_log(f"{reason}关闭游戏失败，将继续尝试启动流程：{e}")
 
@@ -506,6 +512,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 status=status,
                 reason=reason,
             )
+        )
+        point(
+            self,
+            "special",
+            key=module_key,
+            state="succeeded"
+            if status == "completed"
+            else "skipped"
+            if status == "skipped"
+            else "failed",
         )
 
     def _format_current_user_module_results(self) -> str:
@@ -1591,9 +1607,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     f"账号「{item.user_name}」执行{engine_label(item.script)}"
                     f"{item.module_name}：{item.description}"
                 )
+                point(self, "special", key=item.module_key)
                 try:
                     result = await self._run_item_with_game_guard(item)
                 except asyncio.CancelledError:
+                    point(self, "special", key=item.module_key, state="cancelled")
                     raise
                 except HSRNonRetryableTaskError as e:
                     # 云·星穹铁道的登录超时、排队超时、时长耗尽、浏览器起不来：
@@ -1697,6 +1715,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     continue
 
                 if bool(getattr(result, "success", False)):
+                    if item.module_key == "StartGame":
+                        point(self, "special", key=item.module_key, state="succeeded")
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
@@ -1741,6 +1761,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
 
                 if item.module_key == "StartGame":
+                    point(self, "special", key=item.module_key, state="failed")
                     remaining = self._remaining_items_after(
                         items,
                         phases=phases,
@@ -1776,7 +1797,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     break
                 if self.runtime.game_transitioning:
                     continue
-                if is_process_running(HSR_GAME_PROCESS_NAME):
+                if await has_process_window(HSR_GAME_PROCESS_NAME):
                     continue
                 # 进程刚消失时先让出一拍：让读输出的协程把 M7A 关游戏前打的
                 # 那行 ERROR 收进来，也给「脚本自己关掉游戏后紧接着退出」留出
@@ -1795,6 +1816,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
             run_task.cancel()
             with suppress(BaseException):
                 await run_task
+            raise
+        except Exception:
+            if item.module_key == "StartGame":
+                point(self, "special", key=item.module_key, state="failed")
             raise
 
     def _describe_game_exit(self, item: HSRRunItem) -> str:
@@ -1952,6 +1977,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             if not current_items:
                 break
 
+            begin_attempt(self, attempt)
             await self._start_user_log(
                 user_item,
                 user_name,
@@ -1967,7 +1993,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 else:
                     await self._prepare_before_retry_attempt(user_name)
 
+                point(self, "run")
                 failed_items = await self._run_queue_items(current_items)
+                point(self, "run", state="failed" if failed_items else "succeeded")
             except asyncio.CancelledError:
                 await self._mark_current_user_abnormal("任务被用户手动中止")
                 raise

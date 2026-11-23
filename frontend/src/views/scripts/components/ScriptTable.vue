@@ -103,12 +103,13 @@ import ScriptUserRow from '@/views/scripts/components/ScriptUserRow.vue'
 import { ref, watch } from 'vue'
 import { useStorage } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import draggable from 'vuedraggable'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const { reorderScript } = useScriptApi()
 const { reorderUser } = useUserApi()
 interface Props {
@@ -193,11 +194,11 @@ const handleDelete = (script: ScriptListItem) => {
 }
 
 const handleDeleteConfirm = (script: ScriptListItem) => {
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t('core.comp.deleteThisScript'),
-    content: t('core.comp.thisCannotBeUndone2'),
+    description: t('core.comp.thisCannotBeUndone2'),
     okText: t('core.comp.ok'),
-    okType: 'danger',
     cancelText: t('core.comp.cancel'),
     onOk: () => handleDelete(script),
   })

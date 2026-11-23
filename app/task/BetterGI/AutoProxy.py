@@ -36,22 +36,24 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import ClientProcess, client_executable_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     find_pids_by_name,
     push_dispatch_log,
     read_config_base,
 )
+from app.task.run_flow import begin_attempt, point
 from app.utils import (
     IS_ELEVATED,
     UTC4,
     LogMonitor,
     ProcessInfo,
     ProcessManager,
-    ProcessRunner,
     get_logger,
     process,
 )
+from app.utils.common.process.runner import kill_windows_process_tree_by_image
 
 from .tools import (
     account_switch,
@@ -76,7 +78,7 @@ from .tools.one_dragon_report import (
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
-from .tools.push_log import steps_to_push_log
+from .tools.push_log import step_state, steps_to_push_log
 
 logger = get_logger("BetterGI 自动代理")
 
@@ -482,7 +484,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             expected = _RESOURCE_EXPECTED_CHANNEL.get(resource)
             if expected:
                 info = game_info.read_game_info(
-                    root, str(self.cur_user_config.Switch.GamePath or "")
+                    root, str(client_executable_path(self.cur_user_config) or "")
                 )
                 if info["channel"] and info["channel"] != expected:
                     await self.cur_user_item.set_state(status="异常")
@@ -681,7 +683,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         self.launch_config_name = self.one_dragon_config
         self.bettergi_args = ["startOneDragon", self.launch_config_name]
 
-        self.run_book = False
+        self.run_complete = False
 
         # 通用战斗队伍/策略落到全局 config.json 前的叶子快照，None 表示尚未接管
         self._reseed_global_config: dict | None = None
@@ -1037,6 +1039,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.cur_user_config,
             on_log=self._push_dispatch_log,
             should_abort=lambda: task_stopped(self),
+            owner=self,
         ):
             await self.cur_user_item.set_state(status="异常")
             return
@@ -1071,6 +1074,12 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         execution_failure_summary = ""
         if self.exec_group_names:
             exec_ok = await self._run_execution_layer()
+            point(
+                self,
+                "special",
+                state="succeeded" if exec_ok else "failed",
+                key="execution_groups",
+            )
             if not exec_ok:
                 execution_failure_summary = self.cur_user_log.status
                 await self.script_info.set_log(
@@ -1086,7 +1095,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if not self._native_one_dragon_has_tasks():
             if exec_ok:
                 # 执行层已完成，原生一条龙无活可干：整体视为成功，直接收尾
-                self.run_book = True
+                self.run_complete = True
                 await self.script_info.set_log(
                     "执行层已完成；原生一条龙无启用任务，跳过阶段2"
                 )
@@ -1117,8 +1126,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
-            if self.run_book:
+            if self.run_complete:
                 break
+            begin_attempt(self, i + 1)
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
@@ -1157,6 +1167,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
 
             self.wait_event.clear()
+            point(self, "start_script")
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 *self.bettergi_args,
@@ -1168,6 +1179,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             # 传入可调用对象让监控器按日期滚动日志跨零点自动切换新文件，
             # 避免固定路径在午夜后读不到新日志行而误判超时
             await asyncio.sleep(1)
+            point(self, "run")
             await self.log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time
             )
@@ -1175,8 +1187,15 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             await self._wait_for_bgi_result()
             await self.log_monitor.stop()
 
+            point(
+                self,
+                "run",
+                state="succeeded"
+                if self.cur_user_log.status == "Success!"
+                else "failed",
+            )
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
                 await self.script_info.set_log(
                     "检测到 BetterGI 已完成任务\n正在等待 BetterGI 自行退出"
                 )
@@ -1440,6 +1459,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         monitor = LogMonitor(self.log_time_range, self.log_time_format, on_log)
 
         try:
+            point(self, "start_script")
             await self.bettergi_process_manager.open_process(
                 self.script_exe_path,
                 "--startGroups",
@@ -1449,6 +1469,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             )
             result["started"] = True
             await asyncio.sleep(1)
+            point(self, "run")
             await monitor.start_monitor_file(
                 self._resolve_log_file_path, datetime.now()
             )
@@ -1585,7 +1606,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         # 是全局单值，写入会污染其他「跟随全局」的账号（2026-09-23 实机）。
         # 生效方式：MAS 方式自行按账号路径拉起游戏；BGI 脚本方式由 MAS 预拉起
         # 后 BGI attach 运行中的客户端。
-        user_game_path = str(self.cur_user_config.Switch.GamePath or "").strip()
+        user_game_path = str(client_executable_path(self.cur_user_config) or "").strip()
 
         if self._account_switch_method() == "MAS":
             return await self._switch_account_mas(user_game_path)
@@ -1863,11 +1884,14 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         await self._push_dispatch_log(f"正在由 MAS 启动原神: {game_exe.name}")
         # 持有为实例属性：局部 ProcessManager 出栈后 asyncio 子进程 transport
         # 被 GC 会产生 unclosed 告警噪音；保留句柄不影响 CloseOnFinish 收尾语义
-        self.switch_game_manager = ProcessManager()
+        self.switch_game_manager = ClientProcess()
         # breakaway=True：游戏不该随后端退出（Runtime 用 KILL_ON_JOB_CLOSE 的
         # Job 监督后端，子进程默认留在 Job 里被连带回收；对齐模拟器/游戏客户端
         # 直拉调用点的既有惯例，见 windows/process.py 顶部契约说明）
-        await self.switch_game_manager.open_process(game_exe, breakaway=True)
+        point(self, "start_game")
+        await self.switch_game_manager.open_process(
+            game_exe, breakaway=True, owned=False
+        )
         await self._push_dispatch_log("原神已拉起，等待窗口就绪...")
         return game_exe
 
@@ -1951,7 +1975,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.stopped_manually,
         )
 
@@ -2155,16 +2179,22 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 statistics["user_result"] = (
-                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
+                    "代理任务全部完成"
+                    if self.run_complete
+                    else self.cur_user_item.result
                 )
-                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                if self.run_complete and (
+                    self.partial_failed_steps or self.warning_steps
+                ):
                     # 上游流程已完成；子任务失败和无法确认的检查结果仅作警告展示。
                     statistics["user_result"] = (
                         f"代理流程完成（有警告：{self.partial_failed_steps} 个步骤失败，"
                         f"{self.warning_steps} 项需关注）"
                     )
-                success_symbol = "√" if self.run_book else "X"
-                if self.run_book and (self.partial_failed_steps or self.warning_steps):
+                success_symbol = "√" if self.run_complete else "X"
+                if self.run_complete and (
+                    self.partial_failed_steps or self.warning_steps
+                ):
                     success_symbol = "⚠"
                 # 统计通知的字段清单：用于确认分步表/掉落表这类可选区块到底有没有下发
                 logger.info(
@@ -2191,7 +2221,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         if self.cur_user_config is None:
             return
 
-        if self.run_book:
+        if self.run_complete:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -2279,11 +2309,17 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         退出直至 60s 超时抛异常，反而跳过后续的强制关闭（旧实现的游戏残留根因），
         故这里直接 /F 结束。
         """
+        from app.plugin.base.client import ClientControl
+        from app.task.client import ClientProcess
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
+        if session is not None and isinstance(session.control, ClientControl):
+            await ClientProcess().kill()
+            return
         for image in names:
             try:
-                result = await ProcessRunner.run_process(
-                    "taskkill", "/IM", image, "/F", "/T"
-                )
+                result = await kill_windows_process_tree_by_image(image)
                 if result.returncode != 0:
                     reason = (result.stderr or result.stdout or "").strip()
                     if "没有找到进程" in reason or "not found" in reason.lower():
@@ -2312,6 +2348,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
             return
 
         await self._push_dispatch_log("任务结束，正在关闭游戏进程")
+        point(self, "stop_game")
         await self._kill_game_processes(_BGI_GAME_PROCESS_NAMES)
         await self._push_dispatch_log("游戏进程已关闭")
 
@@ -2405,6 +2442,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
         """
         if self.bettergi_process_manager is not None:
             try:
+                point(self, "stop_script")
                 await self.bettergi_process_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(
@@ -2436,6 +2474,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BetterGIConfig, BetterGIUserConfig]):
                 entries = await asyncio.to_thread(steps_to_push_log, snapshot)
                 for entry in entries:
                     await self.user_state(user).append_push_log(entry)
+                for step in snapshot:
+                    if name := step.get("task"):
+                        point(self, "special", key=name, state=step_state(step))
             except Exception:
                 logger.opt(exception=True).warning("BetterGI 节点结果交付失败")
 

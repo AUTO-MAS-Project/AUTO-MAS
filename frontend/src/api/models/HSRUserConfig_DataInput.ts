@@ -4,6 +4,18 @@
 /* eslint-disable */
 export type HSRUserConfig_DataInput = {
     /**
+     * 上次代理状态
+     */
+    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | '运行中' | null);
+    /**
+     * 上次代理日期
+     */
+    LastProxyDate?: (string | null);
+    /**
+     * 代理次数
+     */
+    ProxyTimes?: (number | null);
+    /**
      * 本周是否已完成历战余响
      */
     EchoOfWarCompletedThisWeek?: (boolean | null);
@@ -16,17 +28,9 @@ export type HSRUserConfig_DataInput = {
      */
     EchoOfWarLastResetWeek?: (string | null);
     /**
-     * 上次代理日期
-     */
-    LastProxyDate?: (string | null);
-    /**
      * M7A 兑换码指纹
      */
     M7ARedeemCodeFingerprint?: (string | null);
-    /**
-     * 代理次数
-     */
-    ProxyTimes?: (number | null);
     /**
      * 兑换码状态指纹（仅状态信息，不保存兑换码明文）
      */

@@ -28,6 +28,18 @@ export type OkwwUserConfig_TaskInput = {
      */
     WhichToFarm?: ('Tacet Suppression' | 'Forgery Challenge' | 'Simulation Challenge' | null);
     /**
+     * 专项高级面板的原生配置
+     */
+    NativeConfigs?: (Record<string, Record<string, any>> | null);
+    /**
+     * 日常任务原生配置面板
+     */
+    DailyConfig?: (Record<string, any> | null);
+    /**
+     * 4C 声骸原生配置覆写，空值继承来源配置
+     */
+    FarmEchoConfig?: (Record<string, any> | null);
+    /**
      * 启用自定义启动参数
      */
     IfCustomArguments?: (boolean | null);

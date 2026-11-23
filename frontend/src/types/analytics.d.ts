@@ -94,6 +94,7 @@ export type AnalyticsScreen =
   | 'user_edit'
   | 'plans'
   | 'emulators'
+  | 'games'
   | 'queue'
   | 'scheduler'
   | 'history'
@@ -103,6 +104,9 @@ export type AnalyticsScreen =
   | 'theme_store'
   | 'settings'
   | 'taskboard'
+  | 'plugins'
+  | 'plugin_market'
+  | 'plugin_settings'
 export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
   app_started: {
     launch_kind: 'manual' | 'auto_start' | 'scheduled_wakeup' | 'unknown'
@@ -207,7 +211,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     duration_bucket: AnalyticsDurationBucket
   }
   task_start_result: {
-    source: AnalyticsTaskSource
+    source: AnalyticsTaskSource | 'desktop_session'
     mode: AnalyticsTaskMode
     target_kind: 'script' | 'queue' | 'user' | 'unknown'
     outcome: 'accepted' | 'failure'

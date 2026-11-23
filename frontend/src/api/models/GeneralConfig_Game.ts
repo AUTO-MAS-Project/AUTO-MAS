@@ -8,14 +8,6 @@ export type GeneralConfig_Game = {
      */
     Arguments?: (string | null);
     /**
-     * 模拟器 ID
-     */
-    EmulatorId?: (string | null);
-    /**
-     * 模拟器索引
-     */
-    EmulatorIndex?: (string | null);
-    /**
      * 是否启用游戏
      */
     Enabled?: (boolean | null);

@@ -2,25 +2,28 @@ import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ApiError, Service } from '@/api'
+import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
+import { useGamesApi } from '@/composables/useGamesApi'
 import type { MaaEndScriptConfig } from '@/types/script'
 
 type GameConfig = MaaEndScriptConfig['Game']
 
 /** 自动路径只展示；只有手动选择才保存路径，保存成功后再更新界面。 */
 export function useMaaEndLauncher(options: {
-  game: GameConfig
   getScriptId: () => string
   enabled: () => boolean
   autoDetect?: () => boolean
   save: (patch: Partial<GameConfig>) => Promise<boolean>
 }) {
   const { t } = useI18n()
+  const bound = useBoundGameTarget()
+  const games = useGamesApi()
   const detecting = ref(false)
   const saving = ref(false)
   const detectedPath = ref('')
   const error = ref('')
-  const source = computed(() => (options.game.LauncherPath ? 'manual' : 'auto'))
-  const path = computed(() => options.game.LauncherPath || detectedPath.value)
+  const source = computed(() => (bound.launcher.value ? 'manual' : 'auto'))
+  const path = computed(() => bound.launcher.value || detectedPath.value)
   let generation = 0
   let disposed = false
 
@@ -33,7 +36,7 @@ export function useMaaEndLauncher(options: {
       !options.enabled() ||
       options.autoDetect?.() === false ||
       source.value === 'manual' ||
-      !options.game.Path
+      !bound.executable.value
     )
       return
     detecting.value = true
@@ -64,19 +67,18 @@ export function useMaaEndLauncher(options: {
     }
   }
 
-  const save = async (patch: Partial<GameConfig>) => {
+  const saveLauncher = async (launcher: string | null) => {
     if (saving.value || disposed) return false
+    const target = bound.target.value
+    if (target?.type.type !== 'win_process') {
+      error.value = t('core.games.selectTarget')
+      return false
+    }
     saving.value = true
     try {
-      const success = await options.save(patch)
-      if (disposed) return success
-      if (success) {
-        Object.assign(options.game, patch)
-        error.value = ''
-      } else {
-        error.value = t('core.edit.maaEndLauncherSaveFailed')
-      }
-      return success
+      await games.update(target, { info: { launch_path: launcher } })
+      if (!disposed) error.value = ''
+      return true
     } catch (reason) {
       if (!disposed) {
         error.value =
@@ -101,7 +103,7 @@ export function useMaaEndLauncher(options: {
         error.value = t('core.edit.maaEndPickLauncherExeError')
         return
       }
-      await save({ LauncherPath: selected })
+      await saveLauncher(selected)
     } catch (reason) {
       if (!disposed) {
         error.value =
@@ -113,13 +115,13 @@ export function useMaaEndLauncher(options: {
   const changeSource = async (value: 'auto' | 'manual') => {
     if (value === source.value) return
     if (value === 'manual') await selectFile()
-    else await save({ LauncherPath: null })
+    else await saveLauncher(null)
   }
 
-  const changeLaunchMode = (LaunchMode: GameConfig['LaunchMode']) => save({ LaunchMode })
+  const changeLaunchMode = (LaunchMode: GameConfig['LaunchMode']) => options.save({ LaunchMode })
 
   watch(
-    () => [options.enabled(), options.autoDetect?.(), options.game.Path, options.game.LauncherPath],
+    () => [options.enabled(), options.autoDetect?.(), bound.executable.value, bound.launcher.value],
     () => void refresh(),
     { immediate: true }
   )

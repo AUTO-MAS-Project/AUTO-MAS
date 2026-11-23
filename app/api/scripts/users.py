@@ -21,7 +21,6 @@ import uuid
 from typing import (
     Dict,
     List,
-    Literal,
     Optional,
     Union,
 )
@@ -30,6 +29,7 @@ from fastapi import APIRouter, Body
 from pydantic import (
     BaseModel,
     Field,
+    SerializeAsAny,
     model_validator,
 )
 
@@ -37,10 +37,12 @@ import app.models.config as _config_models
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.models.schema import (
+    ConfigSnapshotOut,
     OutBase,
     UserDeleteIn,
     UserInBase,
 )
+from app.models.script_access import script_users
 from app.utils import get_logger
 
 BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
@@ -91,12 +93,6 @@ MaaFWUserConfig = ConfigPayload[_config_models.MaaFWUserConfig]
 MaaFWUserConfigInput = ConfigInput[_config_models.MaaFWUserConfig]
 
 
-MaaUserConfig = ConfigPayload[_config_models.MaaUserConfig]
-
-
-MaaUserConfigInput = ConfigInput[_config_models.MaaUserConfig]
-
-
 OkNteUserConfig = ConfigPayload[_config_models.OkNteUserConfig]
 
 
@@ -109,18 +105,6 @@ OkwwUserConfig = ConfigPayload[_config_models.OkwwUserConfig]
 OkwwUserConfigInput = ConfigInput[_config_models.OkwwUserConfig]
 
 
-SrcUserConfig = ConfigPayload[_config_models.SrcUserConfig]
-
-
-SrcUserConfigInput = ConfigInput[_config_models.SrcUserConfig]
-
-
-WhimboxUserConfig = ConfigPayload[_config_models.WhimboxUserConfig]
-
-
-WhimboxUserConfigInput = ConfigInput[_config_models.WhimboxUserConfig]
-
-
 ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
 
 
@@ -129,22 +113,25 @@ ZzzOdUserConfigInput = ConfigInput[_config_models.ZzzOdUserConfig]
 
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
-    type: Literal[
-        "MaaUserConfig",
-        "GeneralUserConfig",
-        "OkwwUserConfig",
-        "OkNteUserConfig",
-        "SrcUserConfig",
-        "MaaEndUserConfig",
-        "M9AUserConfig",
-        "MaaFWUserConfig",
-        "HSRUserConfig",
-        "BetterGIUserConfig",
-        "ZzzOdUserConfig",
-        "BAAHUserConfig",
-        "WhimboxUserConfig",
-        "MSSUserConfig",
-    ] = Field(..., description="配置类型")
+    type: str = Field(
+        json_schema_extra={
+            "enum": [
+                "GeneralUserConfig",
+                "OkwwUserConfig",
+                "OkNteUserConfig",
+                "MaaEndUserConfig",
+                "M9AUserConfig",
+                "MaaFWUserConfig",
+                "HSRUserConfig",
+                "BetterGIUserConfig",
+                "ZzzOdUserConfig",
+                "BAAHUserConfig",
+                "MSSUserConfig",
+            ]
+        },
+        default=...,
+        description="配置类型",
+    )
 
 
 class UserConfigDirIn(UserInBase):
@@ -161,13 +148,12 @@ class UserGetIn(UserInBase):
     )
 
 
-class UserGetOut(OutBase):
+class UserGetOut(ConfigSnapshotOut):
     index: List[UserIndexItem] = Field(..., description="账号索引列表")
     data: Dict[
         str,
         Union[
-            MaaUserConfig,
-            SrcUserConfig,
+            SerializeAsAny[BaseModel],
             GeneralUserConfig,
             OkwwUserConfig,
             OkNteUserConfig,
@@ -178,7 +164,6 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
-            WhimboxUserConfig,
             MSSUserConfig,
         ],
     ] = Field(..., description="账号数据字典, key来自于index列表的uid")
@@ -187,8 +172,7 @@ class UserGetOut(OutBase):
 class UserCreateOut(OutBase):
     userId: str = Field(..., description="新创建的账号ID")
     data: Union[
-        MaaUserConfig,
-        SrcUserConfig,
+        SerializeAsAny[BaseModel],
         GeneralUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
@@ -199,7 +183,6 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
-        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="账号配置数据")
 
@@ -207,8 +190,7 @@ class UserCreateOut(OutBase):
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="账号ID")
     data: Union[
-        MaaUserConfigInput,
-        SrcUserConfigInput,
+        SerializeAsAny[BaseModel],
         GeneralUserConfigInput,
         OkwwUserConfigInput,
         OkNteUserConfigInput,
@@ -219,7 +201,6 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfigInput,
         ZzzOdUserConfigInput,
         BAAHUserConfigInput,
-        WhimboxUserConfigInput,
         MSSUserConfigInput,
     ] = Field(..., description="账号更新数据")
 
@@ -230,7 +211,9 @@ class UserUpdateIn(UserInBase):
         if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
             return value
         try:
-            target = Config.ScriptConfig[value["scriptId"]].UserData[value["userId"]]
+            target = script_users(Config.ScriptConfig[value["scriptId"]])[
+                value["userId"]
+            ]
         except (KeyError, ValueError, TypeError, AttributeError):
             return value
         payload = config_contract(type(target), mode="input").model_validate(
@@ -259,7 +242,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
-        user_configs = Config.ScriptConfig[uuid.UUID(user.scriptId)].UserData
+        user_configs = script_users(Config.ScriptConfig[uuid.UUID(user.scriptId)])
         data = {
             uid: ConfigPayload[type(user_configs[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
@@ -273,7 +256,13 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             index=[],
             data={},
         )
-    return UserGetOut(index=index, data=data)
+    return UserGetOut.model_validate(
+        {
+            "index": index,
+            "data": data,
+            "uiSources": [uuid.UUID(user.userId) if user.userId else user_configs.uid],
+        }
+    )
 
 
 @router.post(
@@ -310,7 +299,7 @@ async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDi
 async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
 
     try:
-        uid, config = await Config.add_user(user.scriptId)
+        uid, config = await Config.add_user(user.scriptId, native_defaults=True)
         data = ConfigPayload[type(config)](
             **config.model_dump(context={"audience": "api"})
         )

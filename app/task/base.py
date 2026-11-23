@@ -1,7 +1,7 @@
 """脚本单账号自动运行的总时限保护。"""
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime
 
@@ -9,19 +9,17 @@ from app.models.config import (
     BAAHConfig,
     BetterGIConfig,
     GeneralConfig,
-    MaaConfig,
     MaaEndConfig,
     OkNteConfig,
     OkwwConfig,
-    SrcConfig,
     UserConfigType,
-    WhimboxConfig,
     ZzzOdConfig,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import execute_script_task
 from app.task.failure_capture_core import FailureCapture
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import operation, point
 from app.utils import get_logger
 from app.utils.common.process.scope import detached_process_context
 
@@ -33,6 +31,7 @@ logger = get_logger("脚本运行")
 # 默认执行器里继续累积。按脚本条目（script_id）分槽：ok-nte 与 ok-ww 是不同的
 # 检测资源，互不阻塞。只有底层真正结束才释放。
 _INFLIGHT_DETECTIONS: dict[str, asyncio.Task] = {}
+type DesktopMaintenanceDetector = Callable[[], Awaitable[str | None]]
 
 
 def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
@@ -55,16 +54,13 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
 
 
 type ProxyScriptConfigType = (
-    MaaConfig
-    | MaaEndConfig
-    | SrcConfig
+    MaaEndConfig
     | OkwwConfig
     | OkNteConfig
     | GeneralConfig
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
-    | WhimboxConfig
 )
 
 
@@ -132,7 +128,12 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
                 if logs:
                     await logs[-1][1].append_content(message + "\n")
 
-    async def skip_on_game_maintenance(self, detect: Callable[[], str | None]) -> bool:
+    async def skip_on_game_maintenance(
+        self,
+        detect: Callable[[], str | None],
+        *,
+        detect_in_desktop: DesktopMaintenanceDetector | None = None,
+    ) -> bool:
         """游戏画面维护检测：命中维护弹窗文本则把当前账号记为维护跳过。
 
         公告通道（ScriptManagerBase.skip_maintenance_user）在启动前完成跳过；
@@ -143,7 +144,9 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         cur_user_log 赋值之后调用。
         """
 
-        maintenance_text = await self._detect_game_maintenance(detect)
+        maintenance_text = await self._detect_game_maintenance(
+            detect, detect_in_desktop=detect_in_desktop
+        )
         if maintenance_text is None:
             return False
 
@@ -161,7 +164,10 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         await self.notify_maintenance_skip(reason)
 
     async def _detect_game_maintenance(
-        self, detect: Callable[[], str | None]
+        self,
+        detect: Callable[[], str | None],
+        *,
+        detect_in_desktop: DesktopMaintenanceDetector | None = None,
     ) -> str | None:
         """执行一次维护检测，返回命中原文；未命中、失败或超时返回 None。
 
@@ -170,6 +176,15 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         按 script_id 持有，跨账号与重新运行都有效；其真正结束前不再投递新的
         检测，避免卡住的截图/OCR 在执行器里叠加。
         """
+
+        if detect_in_desktop is not None:
+            try:
+                # 分身检测可取消，等待执行器退出后再继续任务或注销子会话。
+                async with asyncio.timeout(self._MAINTENANCE_DETECT_TIMEOUT_SECONDS):
+                    return await detect_in_desktop()
+            except Exception as e:
+                logger.warning(f"分身游戏画面维护检测失败（忽略，继续正常流程）: {e}")
+                return None
 
         script_id = self.script_info.script_id
         if _running_inflight_detection(script_id) is not None:
@@ -200,7 +215,11 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
             logger.opt(exception=True).warning("维护跳过通知推送失败（忽略）")
 
     async def watch_game_maintenance(
-        self, detect: Callable[[], str | None], stop: asyncio.Event
+        self,
+        detect: Callable[[], str | None],
+        stop: asyncio.Event,
+        *,
+        detect_in_desktop: DesktopMaintenanceDetector | None = None,
     ) -> None:
         """脚本运行期间的维护弹窗后台监视（与等待脚本结果并行）。
 
@@ -221,7 +240,9 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
             await asyncio.sleep(self._MAINTENANCE_WATCH_INTERVAL_SECONDS)
             if stop.is_set():
                 return
-            maintenance_text = await self._detect_game_maintenance(detect)
+            maintenance_text = await self._detect_game_maintenance(
+                detect, detect_in_desktop=detect_in_desktop
+            )
             if maintenance_text is None:
                 hits = 0
                 continue
@@ -255,14 +276,16 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
 
         收尾时成对执行后置脚本；收尾被取消或异常中断也仍会尝试执行。"""
 
-        try:
-            await super()._finalize_task()
-        finally:
-            await self.run_user_scripts_after()
-            # 收尾不等待卡住的检测：只留一条可查的说明。句柄由进程级 registry
-            # 持有并在底层结束后自动回收，既不堆积线程、也不拖住收尾。
-            if _running_inflight_detection(self.script_info.script_id) is not None:
-                logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
+        if self.stopped_manually:
+            point(self, "task", state="cancelled")
+        with operation(self, "finalize"):
+            try:
+                await super()._finalize_task()
+            finally:
+                await self.run_user_scripts_after()
+                # 不等待后台截图；句柄仍在时，后续轮次不再投递同一检测。
+                if _running_inflight_detection(self.script_info.script_id) is not None:
+                    logger.warning("上一轮游戏画面维护检测仍未结束，本轮不再投递新检测")
 
     async def _run_main_task(self) -> None:
         """[兼容旧专项] 旧主流程加超时保护；新 L4 的业务超时在执行器所属层实现。"""

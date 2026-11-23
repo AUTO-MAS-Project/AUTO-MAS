@@ -3,10 +3,15 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { OkNteUserConfig_Data } from './OkNteUserConfig_Data';
+import type { OkNteUserConfig_game } from './OkNteUserConfig_game';
 import type { OkNteUserConfig_Info } from './OkNteUserConfig_Info';
 import type { OkNteUserConfig_Notify } from './OkNteUserConfig_Notify';
 import type { OkNteUserConfig_Task } from './OkNteUserConfig_Task';
 export type OkNteUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (OkNteUserConfig_game | null);
     Data?: (OkNteUserConfig_Data | null);
     Info?: (OkNteUserConfig_Info | null);
     Notify?: (OkNteUserConfig_Notify | null);

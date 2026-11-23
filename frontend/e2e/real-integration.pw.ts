@@ -99,21 +99,6 @@ const createOperationObserver = async (page: Page, config: RealConfig) => {
   const createdTaskIds = new Set<string>()
   const runningAccounts = new Set<string>()
   const taskUpdates = new Map<string, WebSocketRoute>()
-  let pending:
-    | {
-        operation: Operation
-        resolve: (ok: boolean) => void
-        timer: NodeJS.Timeout
-      }
-    | undefined
-
-  const cancel = () => {
-    if (!pending) return
-    clearTimeout(pending.timer)
-    pending.resolve(false)
-    pending = undefined
-  }
-
   const handleFrame = (payload: string | Buffer, route: WebSocketRoute) => {
     let message: unknown
     try {
@@ -178,21 +163,6 @@ const createOperationObserver = async (page: Page, config: RealConfig) => {
       })
       return
     }
-    if (!pending || message.id !== 'EmulatorManager') return
-    if (message.type !== 'emulator.operation.finished') return
-    if (
-      data.emulatorId !== pending.operation.emulatorId ||
-      data.index !== pending.operation.index ||
-      data.operate !== pending.operation.operate
-    ) {
-      return
-    }
-
-    const ok = data.ok === true
-    clearTimeout(pending.timer)
-    const resolve = pending.resolve
-    pending = undefined
-    resolve(ok)
   }
 
   const connection = await observeMainConnection(page, handleFrame)
@@ -205,26 +175,12 @@ const createOperationObserver = async (page: Page, config: RealConfig) => {
     updatedOn: (taskId: string, route: WebSocketRoute) => taskUpdates.get(taskId) === route,
     reconnect: connection.reconnect,
     connected: () => connection.connections.some(socket => !socket.closed),
-    cancel,
-    dispose: () => {
-      cancel()
-    },
-    waitFor: (operation: Operation, timeoutMs: number): Promise<boolean> => {
-      if (pending) throw new Error('真实 E2E 同时等待多个模拟器操作')
-      return new Promise(resolve => {
-        const timer = setTimeout(() => {
-          pending = undefined
-          resolve(false)
-        }, timeoutMs)
-        pending = { operation, resolve, timer }
-      })
-    },
   }
 }
 
 const getDevice = async (page: Page, config: EmulatorBoundConfig): Promise<Device> => {
-  const response = await page.request.post(apiUrl('/api/emulator/status'), {
-    data: { emulatorId: config.emulatorId },
+  const response = await page.request.post(apiUrl('/api/games/get'), {
+    data: { gameId: config.emulatorId },
     timeout: 15_000,
   })
   const body = await readBody(response)
@@ -236,8 +192,10 @@ const getDevice = async (page: Page, config: EmulatorBoundConfig): Promise<Devic
   const allEmulators = isRecord(body.data) ? body.data : {}
   const emulatorData = allEmulators[config.emulatorId]
   const emulator = isRecord(emulatorData) ? emulatorData : {}
-  const device = emulator[config.emulatorIndex]
-  const devices = isRecord(device) ? device : {}
+  const collection = isRecord(emulator.devices) ? emulator.devices : {}
+  const deviceData = isRecord(collection.data) ? collection.data : {}
+  const device = deviceData[config.emulatorIndex]
+  const devices = isRecord(device) && isRecord(device.info) ? device.info : {}
   return {
     status: typeof devices.status === 'number' ? devices.status : -1,
     adbAddress: typeof devices.adb_address === 'string' ? devices.adb_address.trim() : '',
@@ -359,24 +317,41 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         if (!config.emulatorId || !config.emulatorIndex) {
           throw new Error('当前脚本未绑定模拟器')
         }
-        const operation = observer.waitFor(
-          { emulatorId: config.emulatorId, index: config.emulatorIndex, operate: action },
-          timeoutMs
-        )
-        try {
-          const response = await page.request.post(apiUrl('/api/emulator/operate'), {
-            data: {
-              emulatorId: config.emulatorId,
-              index: config.emulatorIndex,
-              operate: action,
-            },
-            timeout: 15_000,
-          })
-          expect((await readBody(response)).code).toBe(200)
-          expect(await operation, '模拟器操作未成功完成').toBeTruthy()
-        } finally {
-          observer.cancel()
+        const refresh = await page.request.post(apiUrl('/api/config/triggers/write'), {
+          data: { configUid: config.emulatorId, group: 'action', field: 'refresh', value: true },
+        })
+        const refreshBody = await readBody(refresh)
+        expect(refreshBody.code).toBe(200)
+        const waitTrigger = async (taskId: unknown) => {
+          if (typeof taskId !== 'string') {
+            throw new Error('设备操作未返回唯一操作标识')
+          }
+          let state: unknown
+          await expect
+            .poll(
+              async () => {
+                const body = await readBody(
+                  await page.request.post(apiUrl('/api/config/triggers/result'), {
+                    data: { taskId },
+                  })
+                )
+                const info = isRecord(body.data) ? body.data : {}
+                state = info.state
+                return ['succeeded', 'failed', 'cancelled', 'timed_out'].includes(String(state))
+              },
+              { timeout: timeoutMs, intervals: [500, 1000] }
+            )
+            .toBe(true)
+          expect(state, '设备操作未成功完成').toBe('succeeded')
         }
+        await waitTrigger(refreshBody.data)
+        const response = await page.request.post(apiUrl('/api/config/triggers/write'), {
+          data: { configUid: config.emulatorIndex, group: 'action', field: action, value: true },
+          timeout: 15_000,
+        })
+        const body = await readBody(response)
+        expect(body.code).toBe(200)
+        await waitTrigger(body.data)
       }
 
       try {
@@ -403,14 +378,52 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         expect(info.Status === true && info.RemainedDay !== 0).toBe(true)
         expect((readString(info.Name) ?? config.userId) === config.accountName).toBe(true)
 
+        // 旧数据根先由正常启动升级，再读取本轮真正的稳定目标及设备 UID。
+        const bindingScriptBody = await readBody(
+          await page.request.post(apiUrl('/api/scripts/get'), {
+            data: { scriptId: config.scriptId },
+          })
+        )
+        const bindingScripts = isRecord(bindingScriptBody.data) ? bindingScriptBody.data : {}
+        const rawBindingScript = bindingScripts[config.scriptId]
+        const boundScript = isRecord(rawBindingScript) ? rawBindingScript : {}
+        const accountBinding = isRecord(user) && isRecord(user.game) ? user.game : {}
+        const binding =
+          accountBinding.game_id && accountBinding.game_id !== '-'
+            ? accountBinding
+            : isRecord(boundScript.game)
+              ? boundScript.game
+              : {}
+        if (typeof binding.game_id === 'string' && binding.game_id !== '-') {
+          const games = await readBody(
+            await page.request.post(apiUrl('/api/games/get'), {
+              data: { gameId: binding.game_id },
+            })
+          )
+          const types = await readBody(await page.request.post(apiUrl('/api/games/types')))
+          const order = Array.isArray(games.order) ? games.order : []
+          const target = order.find(item => isRecord(item) && item.uid === binding.game_id)
+          const type = (Array.isArray(types.data) ? types.data : []).find(
+            item => isRecord(item) && isRecord(target) && item.configType === target.type
+          )
+          if (isRecord(type) && type.kind === 'emulator') {
+            config.emulatorId = binding.game_id
+            config.emulatorIndex = readString(binding.device_id)
+            expect(config.emulatorIndex, '升级后的目标缺少有效设备绑定').toBeTruthy()
+          } else {
+            delete config.emulatorId
+            delete config.emulatorIndex
+          }
+        }
+
         if (config.emulatorId && config.emulatorIndex) {
           const emulatorConfig: EmulatorBoundConfig = {
             ...config,
             emulatorId: config.emulatorId,
             emulatorIndex: config.emulatorIndex,
           }
-          const emulatorResponse = await page.request.post(apiUrl('/api/emulator/get'), {
-            data: { emulatorId: emulatorConfig.emulatorId },
+          const emulatorResponse = await page.request.post(apiUrl('/api/games/get'), {
+            data: { gameId: emulatorConfig.emulatorId },
           })
           const emulatorBody = await readBody(emulatorResponse)
           expect(emulatorBody.code).toBe(200)
@@ -485,19 +498,19 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
         const options = page.locator('.ant-select-dropdown:visible .ant-select-item-option-content')
         await options.filter({ hasText: queueName }).click()
 
-        // 「本次运行范围」收在弹窗里：先展开，再按账号名勾选
-        const scopeTrigger = page.locator('.task-control .control-row button:has(.anticon-team)')
-        await expect(scopeTrigger).toBeVisible()
+        const scopeTrigger = page.getByRole('button', { name: /^Run scope:/ })
         await scopeTrigger.click()
-        const scopePanel = page.locator('.scheduler-scope-modal .ant-modal:visible')
-        await expect(scopePanel).toBeVisible()
-        const accountRows = scopePanel.locator('.scope-users label.ant-checkbox-wrapper')
-        await expect(accountRows).toHaveCount(1)
-        expect((await accountRows.first().innerText()).trim() === config.accountName).toBe(true)
-        await accountRows.first().getByRole('checkbox').check()
-        await expect(accountRows.first().getByRole('checkbox')).toBeChecked()
-        await scopePanel.getByRole('button', { name: 'OK', exact: true }).click()
-        await expect(page.locator('.scheduler-scope-modal .ant-modal:visible')).toHaveCount(0)
+        const scopePanel = page.getByRole('region', { name: 'Run scope' })
+        await scopePanel
+          .getByRole('button', { name: `Show accounts for ${scriptLabel}`, exact: true })
+          .click()
+        const accounts = scopePanel.getByRole('group', { name: scriptLabel }).getByRole('checkbox')
+        await expect(accounts).toHaveCount(1)
+        await expect(accounts).toHaveAccessibleName(config.accountName)
+        await accounts.check()
+        await expect(accounts).toBeChecked()
+        await page.keyboard.press('Escape')
+        await expect(scopePanel).toBeHidden()
         const beforeStart = await readBody(
           await page.request.get(apiUrl('/api/dispatch/runtime-snapshot'))
         )
@@ -802,7 +815,7 @@ test.describe(`@real @game-schedule @account ${emulatorTag} real game flow`, () 
             taskAndEmulatorCleanupStatus = 'failed'
           }
         }
-        observer.dispose()
+
         if (stage !== 'history-verified' && stage !== 'restarted-and-cancelled') {
           await app.evidence('real-e2e-failed').catch(() => undefined)
         }

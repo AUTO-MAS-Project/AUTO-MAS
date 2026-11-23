@@ -17,6 +17,7 @@ export type PlanGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 计划索引列表
      */

@@ -4,6 +4,7 @@ import { readBackendDocument } from './backendConfig'
 import { getAppRoot } from './environmentService'
 import { isDevelopmentEnvironment } from './instanceConfig'
 import { AnalyticsService } from './analytics'
+import { clearStartupHardware, revokeHardwareUpload } from './startupHardware/monitor'
 
 const APP_KEY = 'A-SH-2309665908'
 const EVENT_URL = 'https://telemetry.auto-mas.top/api/v0/event'
@@ -25,6 +26,7 @@ function isAnalyticsAllowed(): boolean {
 
 export const analyticsService = new AnalyticsService({
   isAllowed: isAnalyticsAllowed,
+  onDisabled: revokeHardwareUpload,
   systemProps: () => ({
     isDebug: false,
     locale: app.getLocale(),
@@ -79,6 +81,7 @@ export function syncAnalyticsPreference(enabled: unknown): void {
 }
 
 export function disposeAnalytics(): void {
+  clearStartupHardware()
   clearTimeout(preferenceTimer)
   analyticsService.dispose()
 }

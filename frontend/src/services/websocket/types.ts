@@ -25,6 +25,10 @@ export interface WSEnvelope<T = WSJsonObject> {
 // ==================== 固定路由 ID ====================
 
 export const WS_ID_MAIN = 'Main'
+export const WS_ID_CONFIG = 'Config'
+export const WS_CONFIG_UI_CHANGED = 'config.ui.changed'
+export const WS_ID_PLUGIN = 'Plugin'
+export const WS_PLUGIN_CAPABILITIES_UPDATED = 'plugin.capabilities.updated'
 export const WS_ID_MCP = 'MCP'
 export const WS_MCP_STATUS_UPDATED = 'mcp.status.updated'
 export const WS_ID_I18N = 'I18n'
@@ -94,6 +98,7 @@ export const WS_SYSTEM_NOTICE = 'system.notice'
 
 /** 任务提示消息数据 (type=task.notice) */
 export interface WSTaskNoticeData {
+  sourceScriptType?: string | null
   level: 'info' | 'warning' | 'error'
   message: string
   messageKey?: string | null
@@ -162,6 +167,7 @@ export interface WSTaskScriptFinishedData extends WSTaskScriptStartedData {
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */
 export interface WSTaskCreatedData {
+  targetId?: string | null
   trigger?: TaskTriggerReason
   taskId: string
   mode: WSTaskMode
@@ -319,6 +325,7 @@ type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
 interface WSMessageDataMap {
+  [WS_CONFIG_UI_CHANGED]: { nodeUids: string[] }
   [WS_MCP_STATUS_UPDATED]: McpStatusData
   [WS_I18N_UPDATED]: { revision: string }
   [WS_TASK_INFO_UPDATED]: WSTaskInfoUpdatedData

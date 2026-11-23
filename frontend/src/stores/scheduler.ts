@@ -200,8 +200,15 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     return tab
   }
   function ensureRun(state: TaskRuntimeState) {
-    if (tabs.value.some(tab => tab.taskId === state.taskId)) return
+    const targetId = state.mode === TaskMode.AUTO_PROXY ? state.targetId : null
+    const existing = tabs.value.find(tab => tab.taskId === state.taskId)
+    if (existing) {
+      if (existing.automatic && existing.selectedTaskId === null && targetId)
+        existing.selectedTaskId = targetId
+      return
+    }
     const tab = addTab()
+    tab.selectedTaskId = targetId
     tab.automatic = true
     bindRun(tab, state.taskId)
   }

@@ -29,6 +29,7 @@ from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.notification.report import TaskResultReport, UserReportText
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
+from app.task.client import ClientProcess
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
 from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger, log_box
@@ -168,7 +169,7 @@ class OkNteManager(ScriptManagerBase):
             self.script_config.Game.LaunchBeforeTask
             or self.script_config.Game.CloseOnFinish
         ):
-            self.game_manager = ProcessManager()
+            self.game_manager = ClientProcess()
 
         if self.execution_mode in ("AutoProxy", "ScriptConfig"):
             script_config_path = self.script_config.Script.ConfigPath

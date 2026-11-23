@@ -3,9 +3,10 @@ import os
 import subprocess
 import time
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from threading import Lock
-from typing import Any, Unpack
+from typing import Any
 
 import psutil
 import pywintypes
@@ -15,27 +16,66 @@ import win32job
 import win32process
 
 from app.utils.common.process.runner import ProcessRunner
+from app.utils.common.process.session import (
+    desktop_process_target,
+    process_in_scope,
+    restricted_session,
+)
 
-from ..contracts.process import ElevatedProcess, EmulatorPopenOptions
+from ..contracts.process import ElevatedProcess
 
 
 class WindowsTaskProcessJob:
     # 先挂起创建，加入任务 Job 后再恢复，避免短命包装器抢先派生并退出。
     creation_flags = 0x00000004  # CREATE_SUSPENDED
 
-    def __init__(self) -> None:
+    def __init__(self, *, kill_on_close: bool = False) -> None:
         self._lock = Lock()
         self._closed = False
         self._stopping = False
-        inherited = win32job.CreateJobObject(None, "")
+        inherited = self._create_job()
         try:
-            detached = win32job.CreateJobObject(None, "")
+            detached = self._create_job()
         except Exception:
             inherited.Close()
             raise
         # 脱离 Runtime 的进程不能与继承 Runtime 的进程共用同一个嵌套 Job。
         self._handles = {False: inherited, True: detached}
         self._adopted: list[Any] = []
+        if kill_on_close:
+            try:
+                for job in self._handles.values():
+                    limits = win32job.QueryInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation
+                    )
+                    limits["BasicLimitInformation"]["LimitFlags"] |= (
+                        win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+                    )
+                    win32job.SetInformationJobObject(
+                        job, win32job.JobObjectExtendedLimitInformation, limits
+                    )
+            except BaseException:
+                self.close()
+                raise
+
+    @staticmethod
+    def _create_job() -> Any:
+        job = win32job.CreateJobObject(None, "")
+        try:
+            info = win32job.QueryInformationJobObject(
+                job, win32job.JobObjectExtendedLimitInformation
+            )
+            # 默认继承任务归属；只有脚本显式申请的新子进程才允许脱离。
+            info["BasicLimitInformation"]["LimitFlags"] |= (
+                win32job.JOB_OBJECT_LIMIT_BREAKAWAY_OK
+            )
+            win32job.SetInformationJobObject(
+                job, win32job.JobObjectExtendedLimitInformation, info
+            )
+        except BaseException:
+            job.Close()
+            raise
+        return job
 
     def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
         # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。
@@ -70,18 +110,21 @@ class WindowsTaskProcessJob:
         with self._lock:
             if self._closed or self._stopping:
                 raise asyncio.CancelledError
+            if not process_in_scope(pid):
+                raise ProcessLookupError("进程不属于桌面分身")
             root = psutil.Process(pid)
             if root.create_time() != create_time:
                 raise psutil.NoSuchProcess(pid, msg="接管进程的 PID 已复用")
             pending, seen = [root], set()
             while pending:
                 target = pending.pop()
-                if target.pid in seen:
+                if target.pid in seen or not process_in_scope(target.pid):
                     continue
                 seen.add(target.pid)
 
                 try:
-                    # 先保留已发现的孩子，父进程在接管期间退出也不能丢掉它们。
+                    # 包装进程可能在 OpenProcess 期间退出，先保存已发现的孩子，
+                    # 父进程消失后仍继续接管；登记后再补扫一轮登记前出生的后代。
                     pending.extend(target.children())
                     process = win32api.OpenProcess(
                         win32con.PROCESS_SET_QUOTA
@@ -96,23 +139,84 @@ class WindowsTaskProcessJob:
                             continue
                         jobs = (*self._handles.values(), *self._adopted)
                         if any(win32job.IsProcessInJob(process, job) for job in jobs):
+                            if target.pid == root.pid:
+                                return
                             continue
-                        # 外部进程可能来自不同的系统 Job，不能共用一个嵌套 Job。
-                        job = win32job.CreateJobObject(None, "")
+                        # 登记对进程原子生效：此后正常新生的后代由系统继承归属，
+                        # 无需暂停进程。登记前已存在的后代不会补进 Job，按登记
+                        # 时刻下限补扫；登记后才出生的是脚本显式脱离的进程，
+                        # 不能重新接管，否则会关掉脚本主动放手的游戏。
+                        # 外部进程可能来自不同的系统 Job，不能共用嵌套 Job。
+                        job = self._create_job()
                         try:
+                            assigned_at = time.time()
                             win32job.AssignProcessToJobObject(job, process)
                         except BaseException:
                             job.Close()
                             raise
                         self._adopted.append(job)
-                        # 标记后新生的孩子自动继承，再补登记期间已有的孩子。
-                        pending.extend(target.children())
+                        for child in target.children():
+                            with suppress(psutil.NoSuchProcess):
+                                if child.create_time() <= assigned_at:
+                                    pending.append(child)
                     finally:
                         process.Close()
                 except (psutil.NoSuchProcess, pywintypes.error):
                     # 只容忍已退出或 PID 已复用的旧目标；存活目标的权限等错误仍需上报。
                     if target.is_running():
                         raise
+
+    def kill_tree(self, pid: int) -> bool:
+        """仅清理受本任务管理的进程树；未接管的根交给调用方处理。"""
+        with self._lock:
+            if self._closed:
+                return False
+            jobs = (*self._handles.values(), *self._adopted)
+
+            def belongs(process: Any) -> bool:
+                return any(win32job.IsProcessInJob(process, job) for job in jobs)
+
+            try:
+                root = psutil.Process(pid)
+                root.create_time()
+                handle = win32api.OpenProcess(
+                    win32con.PROCESS_QUERY_INFORMATION, False, pid
+                )
+                try:
+                    if not root.is_running():
+                        return True
+                    if not belongs(handle):
+                        return False
+                finally:
+                    handle.Close()
+                targets = [*reversed(root.children(recursive=True)), root]
+                stopped = []
+                for target in targets:
+                    try:
+                        if not target.is_running():
+                            continue
+                        handle = win32api.OpenProcess(
+                            win32con.PROCESS_QUERY_INFORMATION
+                            | win32con.PROCESS_TERMINATE,
+                            False,
+                            target.pid,
+                        )
+                        try:
+                            # /T 会越过 Job 边界，连已脱离的游戏一起关闭。
+                            if belongs(handle) and target.is_running():
+                                win32api.TerminateProcess(handle, 1)
+                                stopped.append(target)
+                        finally:
+                            handle.Close()
+                    except (psutil.NoSuchProcess, pywintypes.error):
+                        if target.is_running():
+                            raise
+                _, alive = psutil.wait_procs(stopped, timeout=1)
+                if alive:
+                    raise TimeoutError("任务进程树强制终止后仍有进程存活")
+            except psutil.NoSuchProcess:
+                pass
+            return True
 
     def kill(self) -> None:
         with self._lock:
@@ -142,6 +246,15 @@ class WindowsTaskProcessJob:
                 errors.append(error)
             if errors:
                 raise ExceptionGroup("部分任务进程组未能强制终止", errors)
+
+    def has_active_processes(self) -> bool:
+        with self._lock:
+            return not self._closed and any(
+                win32job.QueryInformationJobObject(
+                    job, win32job.JobObjectBasicAccountingInformation
+                )["ActiveProcesses"]
+                for job in (*self._handles.values(), *self._adopted)
+            )
 
     def close(self) -> None:
         with self._lock:
@@ -179,27 +292,39 @@ class WindowsProcessPlatform:
     #
     # 父进程若恰好处在一个不允许 breakaway 的 Job 里，带这个标志的
     # CreateProcess 会以 ERROR_ACCESS_DENIED（WinError 5）失败；
-    # process_runner.create_subprocess 对此有去掉该位重试一次的兜底。
+    # ProcessPlatform.breakaway_rejected 对此给出去掉该位重试一次的判据。
+    # 也注意 DETACHED_PROCESS 本身不会让子进程脱离 Job，必须靠这个位。
     creation_flags = subprocess.CREATE_NO_WINDOW
     breakaway_flags = subprocess.CREATE_BREAKAWAY_FROM_JOB
-    # 自更新时接替当前进程的安装程序必须活过后端退出，因此这组标志固定带
-    # 脱离位。注意 DETACHED_PROCESS 本身不会让子进程脱离 Job，必须靠
-    # CREATE_BREAKAWAY_FROM_JOB 才行，不要以为 DETACHED_PROCESS 已经处理了
-    # 这件事。
-    detached_flags = (
-        subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.DETACHED_PROCESS
-        | subprocess.CREATE_NO_WINDOW
-        | subprocess.CREATE_BREAKAWAY_FROM_JOB
-    )
 
     async def open_protocol(self, protocol_url: str) -> None:
-        os.startfile(protocol_url)
+        desktop = desktop_process_target.get()
+        if desktop is None:
+            os.startfile(protocol_url)
+            return
+        from app.utils.common.process.scope import current_process_scope
+        from app.utils.windows.desktop_session.process_runner import open_in_desktop
+
+        if (scope := current_process_scope.get()) is not None:
+            scope.ensure_can_start()
+        await open_in_desktop(desktop, protocol_url)
 
     async def kill_process(self, pid: int, kill_tree: bool = False) -> tuple[bool, str]:
         """用 taskkill 终止进程，返回 (是否成功, 失败原因)。"""
 
+        if (session_id := restricted_session()) is not None:
+            if not process_in_scope(pid):
+                return False, "进程不属于桌面分身"
+        from app.utils.common.process.scope import current_process_scope
+
+        scope = current_process_scope.get()
+        if kill_tree and scope is not None:
+            if await asyncio.to_thread(scope.kill_process_tree, pid):
+                return True, ""
+
         args = ["taskkill", "/F"]
+        if session_id is not None:
+            args.extend(["/FI", f"SESSION eq {session_id}"])
         if kill_tree:
             args.append("/T")
         args.extend(["/PID", str(pid)])
@@ -211,29 +336,6 @@ class WindowsProcessPlatform:
         return True, ""
 
     agent_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-    emulator_flags = (
-        subprocess.CREATE_NO_WINDOW
-        | subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.CREATE_BREAKAWAY_FROM_JOB
-    )
-
-    @staticmethod
-    def popen_emulator(
-        args: Sequence[str], **kwargs: Unpack[EmulatorPopenOptions]
-    ) -> subprocess.Popen[bytes]:
-        try:
-            return subprocess.Popen(
-                args, creationflags=WindowsProcessPlatform.emulator_flags, **kwargs
-            )
-        except OSError as exc:
-            if getattr(exc, "winerror", None) != 5:
-                raise
-            return subprocess.Popen(
-                args,
-                creationflags=WindowsProcessPlatform.emulator_flags
-                & ~WindowsProcessPlatform.breakaway_flags,
-                **kwargs,
-            )
 
     @staticmethod
     def prepare_elevated() -> ElevatedProcess:

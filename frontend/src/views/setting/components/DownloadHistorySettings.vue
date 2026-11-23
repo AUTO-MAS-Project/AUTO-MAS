@@ -38,7 +38,6 @@ const openUpdateHistory = async () => {
 // 历史记录的状态是后端英文枚举，展示时按当前语言映射，未知值原样显示
 const historyStatusLabels = computed<Record<string, string>>(() => ({
   success: t('core.setting.others.historyStatusSuccess'),
-  diagnostic: '下载包诊断',
   failed: t('core.setting.others.historyStatusFailed'),
   checksum_fail: t('core.setting.others.historyStatusChecksumFail'),
   interrupted: t('core.setting.others.historyStatusInterrupted'),
@@ -56,7 +55,7 @@ const formatHistoryDuration = (ms?: number | null) => (ms ? `${(ms / 1000).toFix
 const canExportHistory = (item: FluxdownRecord) =>
   Boolean(item.diagnostic || (item.status && item.status !== 'success'))
 
-// 失败/回退记录可导出：把这条下载记录存成 JSON 文件
+// 有诊断摘要或失败信息的单条下载记录可导出为 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
   try {
     const fileName = `fluxdown-download-${(item.timestamp ?? '').replace(/[: ]/g, '-')}.json`

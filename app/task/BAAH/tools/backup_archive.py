@@ -57,7 +57,7 @@ from app.task.BAAH.tools.config_manager import (
     SOFTWARE_CONFIG_RELATIVE,
     resolve_config_name,
 )
-from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import get_logger
 from app.utils.common.config import archive as _utils_config_archive
 
 OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
@@ -67,11 +67,11 @@ logger = get_logger("BAAH 配置备份")
 
 # ══════════════════ MAS 账号字段侧车 ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "ConfigName")
-"""MAS 编辑页字段（UserData.Info；当前均为元字段，预留未来扩展）"""
+_OVERLAY_INFO_KEYS = ("ConfigName", "IfQuickConfig")
+"""MAS 编辑页字段（UserData.Info）"""
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Base", "IfQuickConfig"}
-"""历史兼容字段仅预览不回填；BAAH 运行不消费 Base / IfQuickConfig"""
+_OVERLAY_PREVIEW_ONLY_KEYS = {"IfQuickConfig"}
+"""历史兼容字段仅预览不回填；BAAH 运行不消费 IfQuickConfig"""
 
 
 def read_overlay_values(config) -> dict:
@@ -87,7 +87,7 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段分组（恢复回填 BAAHUserConfig 用）。
 
-    Base / IfQuickConfig 仅兼容保留，不参与 BAAH 运行，维持只预览不回填的规则。
+    IfQuickConfig 仅兼容保留，不参与 BAAH 运行，维持只预览不回填的规则。
     """
 
     grouped: dict[str, dict] = {}
@@ -289,21 +289,12 @@ def _summary_text(value) -> str:
 
 
 def build_overlay_preview(overlay: dict) -> dict:
-    """mas 池预览：历史兼容来源与当前绑定的 BAAH 配置文件名。"""
+    """mas 池预览：当前绑定的 BAAH 配置文件名。"""
 
     def _row(key: str, value) -> dict:
         return {"key": key, "value": _summary_text(value)}
 
     sections: list[dict] = []
-
-    mas_rows: list[dict] = []
-    if "Base" in overlay:
-        base = str(overlay["Base"])
-        mas_rows.append(
-            _row("历史配置来源（不参与运行）", BASE_SOURCE_LABELS.get(base, base))
-        )
-    if mas_rows:
-        sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
     baah_rows: list[dict] = []
     if "ConfigName" in overlay:

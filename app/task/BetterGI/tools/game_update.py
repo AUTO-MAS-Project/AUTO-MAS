@@ -50,7 +50,10 @@ from pathlib import Path
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.services.common.gi_updater import genshin as _service_genshin_updater
 from app.task.BetterGI.tools import game_info
+from app.task.client import client_executable_path
+from app.task.run_flow import point
 from app.utils import get_logger
+from app.utils.common.process.operations import is_process_stopped
 
 logger = get_logger("原神更新 BetterGI")
 
@@ -80,14 +83,12 @@ _CHANNEL_TO_REGION: dict[str, str] = {
     game_info.CHANNEL_GLOBAL: "global",
 }
 
-#: 本地客户端进程名（与 BGI 侧口径一致），用来判「游戏正在运行」
-_LOCAL_PROCESS_NAMES: tuple[str, ...] = ("YuanShen.exe", "GenshinImpact.exe")
-
 
 async def ensure_game_updated(
     script_config: BetterGIConfig,
     user_config: BetterGIUserConfig,
     *,
+    owner: object,
     on_log: LogHook | None = None,
     manual: bool = False,
     should_abort: AbortHook | None = None,
@@ -113,7 +114,7 @@ async def ensure_game_updated(
         return True
 
     root_path = Path(str(script_config.Info.RootPath or "."))
-    user_game_path = str(user_config.Switch.GamePath or "")
+    user_game_path = str(client_executable_path(user_config) or "")
     try:
         game_exe = game_info.resolve_game_exe(root_path, user_game_path)
     except Exception as error:  # noqa: BLE001
@@ -142,9 +143,9 @@ async def ensure_game_updated(
         logger.warning("原神更新：未能识别客户端渠道（{}），本轮跳过", game_exe)
         return True
 
-    running = game_info.find_running_game_exe(_LOCAL_PROCESS_NAMES)
-    if running is not None:
-        message = f"检测到游戏正在运行（{running}）"
+    # 安装目录由所有桌面会话共享，只有确认目标游戏已退出才允许更新。
+    if not await is_process_stopped(game_exe, all_sessions=True):
+        message = f"无法确认此路径下的游戏已完全退出（{game_exe}）"
         if manual:
             raise RuntimeError(f"{message}，请先完全退出游戏")
         await _report(on_log, f"原神更新：{message}，跳过更新以免写坏文件")
@@ -154,6 +155,7 @@ async def ensure_game_updated(
         """只进调度台：更新过程的日志由编排层统一写 app.log，这里不再复述。"""
         await _report(on_log, line)
 
+    point(owner, "game_update")
     result = await _service_genshin_updater.update_genshin_client(
         str(game_exe.parent),
         resource=resource,
@@ -164,11 +166,18 @@ async def ensure_game_updated(
     if result.kind == _service_genshin_updater.UpdateKind.Unknown.value:
         # 问不出结论：自动流程已由编排层放行并留了 app.log，手动入口是用户当面来问的，
         # 查不出就是查不出，要把原因摊开而不是回一句「已是最新」
+        point(owner, "game_update", state="skipped", key="unknown")
         if manual:
             raise RuntimeError(result.message)
         return True
 
     if result.success:
+        point(
+            owner,
+            "game_update",
+            state="succeeded",
+            key="UpToDate" if result.noop else "Updated",
+        )
         if result.noop:
             # 「已是最新」对手动入口是必须当面回答的结论；自动流程只留 app.log 一行。
             # 编排层附带的结论（例如官方开了预下载）一并说全，用户才知道下一步去哪
@@ -185,6 +194,7 @@ async def ensure_game_updated(
             )
         return True
 
+    point(owner, "game_update", state="failed")
     if manual:
         raise RuntimeError(f"更新未完成：{result.message}")
     await report(f"原神客户端更新未完成：{result.message}")

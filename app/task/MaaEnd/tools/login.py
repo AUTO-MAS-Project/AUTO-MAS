@@ -39,19 +39,16 @@ import numpy as np
 from app.core import Config
 from app.utils import IS_WINDOWS
 from app.utils import display as _utils_display
+from app.utils.common import game_window as _game_window
 
 if TYPE_CHECKING:
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
 
 if IS_WINDOWS:
     # pyautogui 在无图形会话(如无 DISPLAY 的 Linux)导入即失败，
     # 且下方使用它的函数均为 Windows 专属路径，随 win32 一并惰性导入
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
 from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
@@ -89,8 +86,11 @@ _TEMPLATES = {
 
 Box = tuple[int, int, int, int]
 OCRItem = tuple[str, Box]
-_FRAME_WIDTH = 1920
-_FRAME_HEIGHT = 1080
+_FRAME_WIDTH = _game_window.FRAME_WIDTH
+_FRAME_HEIGHT = _game_window.FRAME_HEIGHT
+
+# 异常与日志里的窗口称呼
+_WINDOW_LABEL = "终末地主窗口"
 _LOGIN_FORM_ROI: Box = (480, 270, 1440, 810)
 _STARTUP_TIMEOUT = 3600
 _STARTUP_STALL_TIMEOUT = 1800
@@ -141,33 +141,11 @@ def _load_template(path: Path) -> np.ndarray | None:
 
 
 def _activate_window(hwnd: int) -> None:
-    if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("终末地主窗口已失效")
-
-    show_command = (
-        win32con.SW_RESTORE
-        if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW
-        if not win32gui.IsWindowVisible(hwnd)
-        else None
-    )
-    if show_command is not None:
-        win32gui.ShowWindow(hwnd, show_command)
-        time.sleep(0.15)
-
-    try:
-        win32gui.BringWindowToTop(hwnd)
-        win32gui.SetForegroundWindow(hwnd)
-    except win32gui.error:
-        logger.debug("终末地主窗口焦点请求被系统忽略，继续按前置窗口处理")
-
-    time.sleep(0.1)
+    _game_window.activate_window(hwnd, label=_WINDOW_LABEL)
 
 
 def _client_size(hwnd: int, *, check_ratio: bool = True) -> tuple[int, int]:
-    _, _, width, height = win32gui.GetClientRect(hwnd)
-    if width <= 0 or height <= 0:
-        raise RuntimeError("终末地主窗口尺寸异常")
+    width, height = _game_window.client_size(hwnd, label=_WINDOW_LABEL)
     if check_ratio and abs(width / height - 16 / 9) > 0.02:
         raise RuntimeError("终末地登录仅支持 16:9 游戏分辨率")
     return width, height
@@ -176,29 +154,21 @@ def _client_size(hwnd: int, *, check_ratio: bool = True) -> tuple[int, int]:
 def _capture_window_image(
     hwnd: int, *, activate: bool = True, check_ratio: bool = True
 ) -> Image.Image:
-    with _utils_display.per_monitor_dpi():
-        if activate:
-            _activate_window(hwnd)
-        width, height = _client_size(hwnd, check_ratio=check_ratio)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
-        virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        return pyautogui.screenshot(allScreens=True).crop(
-            (
-                left - virtual_left,
-                top - virtual_top,
-                left - virtual_left + width,
-                top - virtual_top + height,
-            )
+    """按客户区截图；``check_ratio`` 只决定是否做 16:9 校验。"""
+
+    if not check_ratio:
+        # 诊断图要的是「哪怕尺寸异常也留下证据」，所以跳过尺寸校验
+        return _game_window.capture_window_image(
+            hwnd, label=_WINDOW_LABEL, activate=activate, check_size=False
         )
+    _client_size(hwnd, check_ratio=True)
+    return _game_window.capture_window_image(
+        hwnd, label=_WINDOW_LABEL, activate=activate
+    )
 
 
 def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
-    screenshot = _capture_window_image(hwnd, activate=activate)
-    screenshot = screenshot.resize(
-        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
-    )
-    return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+    return _game_window.capture_window(hwnd, label=_WINDOW_LABEL, activate=activate)
 
 
 def _save_error_screenshot(

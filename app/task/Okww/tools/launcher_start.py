@@ -42,7 +42,7 @@
 - 启动器左侧有账号信息卡与活动公告等富文本干扰，且下载进度行的速度/总量并不
   一直显示（可能只剩计时与百分比），因此状态判定与点击只认右下角动作区，
   下载卡死签名只取百分比/体积/速度并剥离计时文本。
-- 启动器其它弹窗状态（自更新、公告等）待实测后按既有分支模式补充。
+- 启动器自更新弹窗优先于右下角动作区。更新时允许主窗口消失，等待启动器重开。
 """
 
 import asyncio
@@ -67,6 +67,8 @@ from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common import game_window as _game_window
+from app.utils.common.process.operations import iter_processes
 
 from .maintenance import find_game_maintenance_text
 
@@ -74,8 +76,6 @@ if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
     import win32process
     import win32ui
@@ -123,7 +123,7 @@ def _describe_window(hwnd: int) -> str:
     """诊断旁路：描述窗口归属进程与标题，排查是否错抓同名/子进程窗口。"""
     try:
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        exe = _process_exe(pid) or _process_name(pid) or "?"
+        exe = _game_window.process_exe(pid) or _game_window.process_name(pid) or "?"
         title = win32gui.GetWindowText(hwnd)
         return f"pid={pid} exe={exe} title={title!r}"
     except Exception:
@@ -142,12 +142,18 @@ _GAME_WINDOW_CLASS = "UnrealWindow"
 _LAUNCHER_PROCESS_NAMES = frozenset({"launcher.exe", "launcher_main.exe"})
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
-_FRAME_WIDTH = 1920
-_FRAME_HEIGHT = 1080
+_FRAME_WIDTH = _game_window.FRAME_WIDTH
+_FRAME_HEIGHT = _game_window.FRAME_HEIGHT
+
+# 异常与日志里的窗口称呼
+_WINDOW_LABEL = "鸣潮启动器窗口"
 
 # 右下角动作区（相对 1080p 帧）：启动器按钮与下载进度都在此区域，左侧用户
 # 信息卡/活动公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
 _ACTION_ROI: _tool_ocr.Box = (1240, 820, 1920, 1080)
+# 自更新弹窗居中，和右下角的游戏更新按钮分开识别。
+_SELF_UPDATE_ROI: _tool_ocr.Box = (600, 360, 1300, 750)
+_SELF_UPDATE_BUSY_TEXTS = ("资源下载中", "资源校验中", "资源解压中")
 
 # 首次找到按钮的等待；点击「进入游戏」后等游戏起窗；点「更新」后等下载完成
 _FIND_BUTTON_TIMEOUT = 120
@@ -195,57 +201,11 @@ _SELECTION_READ_RETRY_SECONDS = 6.0
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
 
 
-def _process_name(pid: int) -> str | None:
-    """按 pid 读取进程名；提权进程可能被拒，返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _process_exe(pid: int) -> str | None:
-    """按 pid 读取进程 exe 完整路径；被拒时返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).exe()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _window_area(hwnd: int) -> int:
-    try:
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        return (right - left) * (bottom - top)
-    except Exception:
-        return 0
-
-
 def _find_hwnd(
     process_name: str, window_class: str | None = None, *, pids: set[int] | None = None
 ) -> int | None:
-    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。
-
-    ``pids`` 给定时只认这些进程的窗口：``Client-Win64-Shipping.exe`` 是虚幻
-    通用进程名，同机可能有其它同名游戏，单按名取最大窗口会认错对象。
-    """
-    candidates: list[int] = []
-
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-            if window_class is not None and win32gui.GetClassName(hwnd) != window_class:
-                return True
-        except Exception:
-            return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pids is not None and pid not in pids:
-            return True
-        if pid and _process_name(pid) == process_name:
-            candidates.append(hwnd)
-        return True
-
-    win32gui.EnumWindows(_enum, 0)
-    return max(candidates, key=_window_area) if candidates else None
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
+    return _game_window.find_window(process_name, window_class, pids=pids)
 
 
 def _is_launcher_process(pid: int, root_prefix: str) -> bool:
@@ -253,10 +213,10 @@ def _is_launcher_process(pid: int, root_prefix: str) -> bool:
 
     exe 路径不可读时无法确认安装归属，跳过同名窗口，避免在其它启动器上操作。
     """
-    name = _process_name(pid)
+    name = _game_window.process_name(pid)
     if name is None or name.casefold() not in _LAUNCHER_PROCESS_NAMES:
         return False
-    exe = _process_exe(pid)
+    exe = _game_window.process_exe(pid)
     if exe is None:
         logger.debug(
             f"无法读取同名启动器进程路径（进程已退出或权限不足），跳过窗口: pid={pid}"
@@ -268,21 +228,9 @@ def _is_launcher_process(pid: int, root_prefix: str) -> bool:
 def _find_launcher_hwnd(launcher_path: Path) -> int | None:
     """在启动器安装根目录树内按进程家族找最大可见窗口；不存在返回 None。"""
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
-    candidates: list[int] = []
-
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-        except Exception:
-            return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid and _is_launcher_process(pid, root_prefix):
-            candidates.append(hwnd)
-        return True
-
-    win32gui.EnumWindows(_enum, 0)
-    return max(candidates, key=_window_area) if candidates else None
+    return _game_window.find_window(
+        owner=lambda pid: _is_launcher_process(pid, root_prefix)
+    )
 
 
 def find_launcher_pids(launcher_path: Path) -> list[int]:
@@ -294,7 +242,7 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     """
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
-    for process in psutil.process_iter(["name", "exe"]):
+    for process in iter_processes(["name", "exe"]):
         try:
             name = (process.info["name"] or "").casefold()
             if name not in _LAUNCHER_PROCESS_NAMES:
@@ -326,7 +274,7 @@ def find_game_pids(launcher_path: Path) -> list[int]:
 
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
-    for process in psutil.process_iter(["name", "exe"]):
+    for process in iter_processes(["name", "exe"]):
         try:
             name = (process.info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
@@ -359,7 +307,7 @@ def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set
     if client_exe is None:
         return pids
     target = str(client_exe).casefold()
-    for process in psutil.process_iter(["name", "exe"]):
+    for process in iter_processes(["name", "exe"]):
         try:
             name = (process.info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
@@ -408,74 +356,25 @@ def _wait_launcher_hwnd(
 
 
 def _activate_window(hwnd: int, *, stop_event: Event | None = None) -> None:
-    _pause(0, stop_event)
-    if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("鸣潮启动器窗口已失效")
-    show_command = (
-        win32con.SW_RESTORE
-        if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW
-        if not win32gui.IsWindowVisible(hwnd)
-        else None
+    _game_window.activate_window(
+        hwnd,
+        label=_WINDOW_LABEL,
+        pause=lambda seconds: _pause(seconds, stop_event),
     )
-    if show_command is not None:
-        win32gui.ShowWindow(hwnd, show_command)
-        _pause(0.15, stop_event)
-    try:
-        if win32gui.GetForegroundWindow() != hwnd:
-            # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
-            # 的输入队列，再置前，绕过系统限制（与账号切换同理）。
-            foreground = win32gui.GetForegroundWindow()
-            fg_thread = win32process.GetWindowThreadProcessId(foreground)[0]
-            win32process.AttachThreadInput(
-                win32api.GetCurrentThreadId(), fg_thread, True
-            )
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                win32gui.SetForegroundWindow(hwnd)
-            finally:
-                win32process.AttachThreadInput(
-                    win32api.GetCurrentThreadId(), fg_thread, False
-                )
-        else:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-    except win32gui.error:
-        logger.debug("鸣潮启动器窗口焦点请求被系统忽略，继续按前置窗口处理")
-    _pause(0.1, stop_event)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
-    _, _, width, height = win32gui.GetClientRect(hwnd)
-    if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮启动器窗口已失效或尺寸异常，可能启动器已关闭")
-    return width, height
+    return _game_window.client_size(hwnd, label=_WINDOW_LABEL)
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _utils_display.per_monitor_dpi():
-        if activate:
-            _activate_window(hwnd)
-        width, height = _client_size(hwnd)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
-        virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        return pyautogui.screenshot(allScreens=True).crop(
-            (
-                left - virtual_left,
-                top - virtual_top,
-                left - virtual_left + width,
-                top - virtual_top + height,
-            )
-        )
+    return _game_window.capture_window_image(
+        hwnd, label=_WINDOW_LABEL, activate=activate
+    )
 
 
 def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
-    screenshot = _capture_window_image(hwnd, activate=activate)
-    screenshot = screenshot.resize(
-        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
-    )
-    return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+    return _game_window.capture_window(hwnd, label=_WINDOW_LABEL, activate=activate)
 
 
 def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
@@ -613,9 +512,11 @@ def detect_game_maintenance_text(pids: set[int] | None = None) -> str | None:
     return find_game_maintenance_text(text for text, _ in _tool_ocr.ocr_image(frame))
 
 
-def _items_in_action_roi(items: list[_tool_ocr.OCRItem]) -> list[_tool_ocr.OCRItem]:
-    """按文字框中心过滤出右下角动作区内的条目（排除左侧卡片等富文本干扰）。"""
-    left, top, right, bottom = _ACTION_ROI
+def _items_in_roi(
+    items: list[_tool_ocr.OCRItem], roi: _tool_ocr.Box
+) -> list[_tool_ocr.OCRItem]:
+    """按文字框中心筛选区域内的条目。"""
+    left, top, right, bottom = roi
     selected: list[_tool_ocr.OCRItem] = []
     for text, (x, y, width, height) in items:
         center_x = x + width / 2
@@ -719,7 +620,7 @@ def start_game_via_launcher(
     「校验解压」阶段，与下载同样按忙碌态动态续延等待，解压多久等多久；同时以
     百分比/体积/速度构造进度签名，长时间无变化判定卡死提前失败。
 
-    状态判定与点击只认右下角动作区（左侧用户卡片/活动公告为富文本干扰源）。
+    自更新弹窗先于右下角动作区处理，等待启动器重开后再判断游戏是否就绪。
 
     Args:
         launcher_path: 启动器 exe 路径（鸣潮官方启动器 launcher.exe）。
@@ -785,17 +686,53 @@ def start_game_via_launcher(
         busy_since: float | None = None
         ready_since: float | None = None
         selection_unavailable_since: float | None = None
+        self_update_hwnd: int | None = None
+        self_update_clicked_at: float | None = None
+        foreground_wait_since: float | None = None
         iter_count = 0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
             _pause(0, stop_event)
-            if not update_only and _find_game_hwnd() is not None:
+            if (
+                not update_only
+                and self_update_hwnd is None
+                and _find_game_hwnd() is not None
+            ):
                 on_log("已检测到鸣潮游戏窗口")
                 return True
 
             try:
+                if self_update_hwnd is not None:
+                    current_hwnd = _find_launcher_hwnd(launcher_path)
+                    if current_hwnd is None:
+                        _pause(2, stop_event)
+                        continue
+                    if current_hwnd != hwnd:
+                        hwnd = current_hwnd
+                        foreground_wait_since = None
+                        _write_diagnostic(
+                            f"自更新后发现启动器窗口 hwnd={hwnd} {_describe_window(hwnd)}\n"
+                        )
+                    if (
+                        hwnd != self_update_hwnd
+                        and win32gui.GetForegroundWindow() != hwnd
+                    ):
+                        _activate_window(hwnd, stop_event=stop_event)
+                    if win32gui.GetForegroundWindow() != hwnd:
+                        if hwnd != self_update_hwnd:
+                            now = time.monotonic()
+                            if foreground_wait_since is None:
+                                foreground_wait_since = now
+                            elif now - foreground_wait_since >= _FIND_BUTTON_TIMEOUT:
+                                raise RuntimeError("鸣潮启动器已重开，但无法切到前台")
+                        _pause(2, stop_event)
+                        continue
+                    foreground_wait_since = None
                 items = _read_texts(hwnd)
-            except RuntimeError:
+            except (RuntimeError, win32gui.error):
+                if self_update_hwnd is not None and not win32gui.IsWindow(hwnd):
+                    _pause(2, stop_event)
+                    continue
                 # 启动器点击「进入游戏」后会直接退出：只等游戏起窗
                 if start_clicks > 0:
                     exit_wait_polls += 1
@@ -806,6 +743,46 @@ def start_game_via_launcher(
                     _pause(2, stop_event)
                     continue
                 raise
+
+            # 下载与校验页可能占用旧窗口，也可能出现在一个临时窗口。
+            # 这时选择记录和主界面按钮均可能暂不可用。
+            if _find_text(items, _SELF_UPDATE_BUSY_TEXTS) is not None:
+                if self_update_hwnd is None:
+                    deadline = time.monotonic() + _UPDATE_TIMEOUT
+                    on_log("官方启动器正在更新自身，等待启动器重开...")
+                self_update_hwnd = hwnd
+                self_update_clicked_at = None
+                ready_since = None
+                _pause(2, stop_event)
+                continue
+
+            now = time.monotonic()
+            popup_items = _items_in_roi(items, _SELF_UPDATE_ROI)
+            self_update_popup = any(
+                text.strip() == "启动器版本更新" for text, _ in popup_items
+            )
+            # 点击后，旧窗口可能仍显示被遮罩的按钮。看到下载或校验后，
+            # 允许在同一窗口识别恢复的主界面。
+            if hwnd == self_update_hwnd and self_update_clicked_at is not None:
+                if (
+                    self_update_popup
+                    and now - self_update_clicked_at >= _FIND_BUTTON_TIMEOUT
+                ):
+                    raise RuntimeError(
+                        "鸣潮启动器版本更新弹窗未关闭，请确认更新是否启动"
+                    )
+                _pause(2, stop_event)
+                continue
+
+            action_items = _items_in_roi(items, _ACTION_ROI)
+            if (
+                self_update_hwnd is not None
+                and not self_update_popup
+                and _find_text(action_items, ("进入游戏", "更新")) is None
+                and _find_busy_box(action_items) is None
+            ):
+                _pause(2, stop_event)
+                continue
 
             # 新版统一启动器可切换游戏；每轮操作前确认仍在鸣潮页，避免更新其它游戏。
             try:
@@ -827,7 +804,31 @@ def start_game_via_launcher(
                 _write_diagnostic(f"\n[{datetime.now():%H:%M:%S}] 第 {iter_count} 轮\n")
                 _dump_ocr_items(items)
 
-            now = time.monotonic()
+            if self_update_popup:
+                ready_since = None
+                update_launcher_box = next(
+                    (box for text, box in popup_items if text.strip() == "更新"), None
+                )
+                if update_launcher_box is not None:
+                    on_log("检测到启动器版本更新，点击「更新」并等待启动器重开...")
+                    _click_box(
+                        hwnd, update_launcher_box, after_sleep=0, stop_event=stop_event
+                    )
+                    if self_update_hwnd is None:
+                        deadline = now + _UPDATE_TIMEOUT
+                    self_update_hwnd = hwnd
+                    self_update_clicked_at = now
+                    start_clicks = 0
+                    last_start_click = None
+                    start_click_exhausted_logged = False
+                _pause(2, stop_event)
+                continue
+
+            if self_update_hwnd is not None:
+                self_update_hwnd = None
+                self_update_clicked_at = None
+                deadline = now + _FIND_BUTTON_TIMEOUT
+                on_log("官方启动器已恢复主界面，继续检查游戏更新...")
 
             # 弹窗防护：「提示」类弹窗以遮罩覆盖启动器，此时按钮仍可被 OCR
             # 看到，但点击会落在遮罩上被吞掉：必须先点「确定」/「忽略」关掉
@@ -847,9 +848,6 @@ def start_game_via_launcher(
                     start_click_exhausted_logged = False
                     _pause(1, stop_event)
                     continue
-
-            # 状态判定与点击只认右下角动作区，排除左侧富文本干扰
-            action_items = _items_in_action_roi(items)
 
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
@@ -987,6 +985,8 @@ def start_game_via_launcher(
             _pause(2, stop_event)
 
         _pause(0, stop_event)
+        if self_update_hwnd is not None:
+            raise RuntimeError("等待鸣潮启动器更新后重开超时，请确认官方启动器状态")
         if not update_only and _find_game_hwnd() is not None:
             on_log("已检测到鸣潮游戏窗口")
             return True
@@ -1018,6 +1018,18 @@ async def async_start_game_via_launcher(
     update_only: bool = False,
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop,
+            "okww_start_game",
+            {"launcher_path": str(launcher_path), "update_only": update_only},
+            on_log,
+        )
+
     stop_event = Event()
     worker = asyncio.create_task(
         asyncio.to_thread(

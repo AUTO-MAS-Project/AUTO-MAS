@@ -51,22 +51,19 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import psutil
 from PIL import Image
 
 from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common import game_window as _game_window
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
-    import win32process
     import win32ui
 
 logger = get_logger("OK-NTE 启动器启动")
@@ -84,8 +81,11 @@ _AUTOPLAY_START_TIMEOUT = 180.0
 _AUTOPLAY_PROGRESS_SECONDS = 15.0
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
-_FRAME_WIDTH = 1920
-_FRAME_HEIGHT = 1080
+_FRAME_WIDTH = _game_window.FRAME_WIDTH
+_FRAME_HEIGHT = _game_window.FRAME_HEIGHT
+
+# 异常与日志里的窗口称呼
+_WINDOW_LABEL = "异环启动器窗口"
 # 主按钮位于右下角；左侧新闻可能含「更新」等文字。
 _ACTION_ROI = (1240, 820, 1920, 1080)
 
@@ -133,56 +133,15 @@ _START_CLICK_INTERVAL_SECONDS = 12.0
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
 
 
-def _process_name(pid: int) -> str | None:
-    """按 pid 读取进程名；提权进程可能被拒，返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _window_area(hwnd: int) -> int:
-    try:
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        return (right - left) * (bottom - top)
-    except Exception:
-        return 0
-
-
 def _find_process_hwnd(
     process_name: str, *, exe_path: Path | None = None
 ) -> int | None:
     """按所属进程名找最大可见窗口；不存在返回 None（区别于切号的必存抛错）。"""
-    candidates: list[int] = []
-
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-        except Exception:
-            return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        name = _process_name(pid) if pid else None
-        if name is not None and name.casefold() == process_name.casefold():
-            if exe_path is not None:
-                try:
-                    if Path(psutil.Process(pid).exe()) != exe_path:
-                        return True
-                except (
-                    psutil.NoSuchProcess,
-                    psutil.AccessDenied,
-                    psutil.ZombieProcess,
-                ):
-                    return True
-            candidates.append(hwnd)
-        return True
-
-    win32gui.EnumWindows(_enum, 0)
-    return max(candidates, key=_window_area) if candidates else None
+    return _game_window.find_window(process_name, exe_path=exe_path)
 
 
 def _find_game_hwnd() -> int | None:
-    return _find_process_hwnd(_GAME_PROCESS)
+    return _game_window.find_window(_GAME_PROCESS)
 
 
 def launcher_process_paths(launcher_path: Path) -> tuple[Path, ...]:
@@ -228,73 +187,21 @@ def _wait_launcher_hwnd(
 
 
 def _activate_window(hwnd: int) -> None:
-    if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("异环启动器窗口已失效")
-    show_command = (
-        win32con.SW_RESTORE
-        if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW
-        if not win32gui.IsWindowVisible(hwnd)
-        else None
-    )
-    if show_command is not None:
-        win32gui.ShowWindow(hwnd, show_command)
-        time.sleep(0.15)
-    try:
-        if win32gui.GetForegroundWindow() != hwnd:
-            # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
-            # 的输入队列，再置前，绕过系统限制（与 OK-NTE 切号同理）。
-            foreground = win32gui.GetForegroundWindow()
-            fg_thread = win32process.GetWindowThreadProcessId(foreground)[0]
-            win32process.AttachThreadInput(
-                win32api.GetCurrentThreadId(), fg_thread, True
-            )
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                win32gui.SetForegroundWindow(hwnd)
-            finally:
-                win32process.AttachThreadInput(
-                    win32api.GetCurrentThreadId(), fg_thread, False
-                )
-        else:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-    except win32gui.error:
-        logger.debug("异环启动器窗口焦点请求被系统忽略，继续按前置窗口处理")
-    time.sleep(0.1)
+    _game_window.activate_window(hwnd, label=_WINDOW_LABEL)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
-    _, _, width, height = win32gui.GetClientRect(hwnd)
-    if width <= 0 or height <= 0:
-        raise RuntimeError("异环启动器窗口尺寸异常")
-    return width, height
+    return _game_window.client_size(hwnd, label=_WINDOW_LABEL)
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _utils_display.per_monitor_dpi():
-        if activate:
-            _activate_window(hwnd)
-        width, height = _client_size(hwnd)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
-        virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        return pyautogui.screenshot(allScreens=True).crop(
-            (
-                left - virtual_left,
-                top - virtual_top,
-                left - virtual_left + width,
-                top - virtual_top + height,
-            )
-        )
+    return _game_window.capture_window_image(
+        hwnd, label=_WINDOW_LABEL, activate=activate
+    )
 
 
 def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
-    screenshot = _capture_window_image(hwnd, activate=activate)
-    screenshot = screenshot.resize(
-        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
-    )
-    return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+    return _game_window.capture_window(hwnd, label=_WINDOW_LABEL, activate=activate)
 
 
 def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:
@@ -566,6 +473,18 @@ async def async_wait_autoplay_game(
     on_log: Callable[[str], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程轮询游戏窗口，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop,
+            "oknte_wait_autoplay",
+            {"launcher_path": str(launcher_path), "timeout": timeout},
+            on_log,
+        )
+
     return await asyncio.to_thread(
         wait_autoplay_game, launcher_path, timeout=timeout, on_log=on_log
     )
@@ -860,6 +779,15 @@ async def async_start_game_via_launcher(
     launcher_path: Path, *, on_log: Callable[[str], None] | None = None
 ) -> bool:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
+    from app.utils.common.process.session import desktop_process_target
+
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.task.desktop_session_worker import run_desktop_action
+
+        return await run_desktop_action(
+            desktop, "oknte_start_game", {"launcher_path": str(launcher_path)}, on_log
+        )
+
     return await asyncio.to_thread(
         start_game_via_launcher, launcher_path, on_log=on_log
     )

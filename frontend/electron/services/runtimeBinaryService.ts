@@ -1,3 +1,4 @@
+import { operationAttempt } from './startupHardware/monitor'
 import { beginMainFeature } from './featureAnalytics'
 /**
  * Runtime 可执行文件对齐到线上最新版
@@ -963,12 +964,14 @@ async function downloadTarget(
 
     logger.info(`尝试从 ${label} 下载 Runtime ${target.version}: ${source.url}`)
     const downloadPath = nextDownloadPath(runtimePath)
+    const observeDownload = operationAttempt()?.beginDesktopDownload(index + 1)
     const result = await downloadWithTimeout(
       download,
       source.url,
       downloadPath,
       Math.min(deadline - Date.now(), sourceTimeoutMs),
-      progress =>
+      progress => {
+        observeDownload?.(progress.downloadedSize, progress.speed)
         options.onProgress?.({
           phase: 'download',
           progress: progress.progress,
@@ -982,7 +985,8 @@ async function downloadTarget(
           bytesPerSecond: progress.speed,
           current: progress.downloadedSize,
           total: progress.totalSize,
-        }),
+        })
+      },
       isCancelled
     )
     if (result.cancelled) return { status: 'cancelled' }

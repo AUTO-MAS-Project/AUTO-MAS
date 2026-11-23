@@ -29,27 +29,31 @@ if TYPE_CHECKING:
     from .community import Community as Community
     from .config import Config as Config
     from .desktop_guard import DesktopGuard as DesktopGuard
-    from .emulator_manager import EmulatorManager as EmulatorManager
+    from .downloads import Downloads as Downloads
     from .game_calendar import GameCalendar as GameCalendar
     from .game_maintenance import GameMaintenance as GameMaintenance
+    from .game_manager import GameManager as GameManager
     from .history import History as History
     from .i18n import I18n as I18n
     from .lifecycle import ShutdownCoordinator as ShutdownCoordinator
     from .maa_manager import MaaFWManager as MaaFWManager
     from .mcp import MCP as MCP
     from .notify import Notify as Notify
+    from .plugin import Plugin as Plugin
     from .power import Power as Power
     from .startup import Startup as Startup
     from .task_manager import TaskManager as TaskManager
     from .taskboard import Taskboard as Taskboard
     from .timer import MainTimer as MainTimer
-    from .update import Updater as Updater
     from .ws import Commands as Commands
     from .ws import Dispatcher as Dispatcher
     from .ws import MainConnection as MainConnection
     from .ws import Publisher as Publisher
 
 _LAZY_EXPORTS = {
+    "Plugin": (".plugin", "Plugin"),
+    "Downloads": (".downloads", "Downloads"),
+    "GameManager": (".game_manager", "GameManager"),
     "Power": (".power", "Power"),
     "Config": (".config", "Config"),
     "Notify": (".notify", "Notify"),
@@ -58,8 +62,6 @@ _LAZY_EXPORTS = {
     "TaskManager": (".task_manager", "TaskManager"),
     "MainTimer": (".timer", "MainTimer"),
     "Startup": (".startup", "Startup"),
-    "EmulatorManager": (".emulator_manager", "EmulatorManager"),
-    "Updater": (".update", "Updater"),
     "MaaFWManager": (".maa_manager", "MaaFWManager"),
     "DesktopGuard": (".desktop_guard", "DesktopGuard"),
     "GameCalendar": (".game_calendar", "GameCalendar"),
@@ -86,6 +88,9 @@ def __getattr__(name: str):
 
 
 __all__ = [
+    "Plugin",
+    "Downloads",
+    "GameManager",
     "Power",
     "Config",
     "Notify",
@@ -94,8 +99,6 @@ __all__ = [
     "TaskManager",
     "MainTimer",
     "Startup",
-    "EmulatorManager",
-    "Updater",
     "MaaFWManager",
     "DesktopGuard",
     "GameCalendar",

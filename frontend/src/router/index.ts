@@ -5,9 +5,12 @@ import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
-import { buildScriptEditorRoutes, MAA_CULTIVATE_ROUTE } from './scriptEditorRoutes'
+import { buildScriptEditorRoutes } from './scriptEditorRoutes'
+import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
+import { translate as t } from '@/i18n'
+import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
@@ -48,7 +51,50 @@ const devRoutes =
       ]
     : []
 
+// 插件中心三个页签共用一个外壳；viewKey 相同，切换页签时外壳实例与进行中的安装不被重建。
+const PluginCenterView = () => import('@/views/Plugins.vue')
+const PLUGIN_CENTER_VIEW_KEY = 'plugin-center'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** 同值的路由在内容区复用同一页面实例；缺省按路径区分。 */
+    viewKey?: string
+  }
+}
+
 const routes = [
+  {
+    path: '/plugins',
+    name: 'Plugins',
+    component: PluginCenterView,
+    meta: { title: '插件', viewKey: PLUGIN_CENTER_VIEW_KEY },
+  },
+  {
+    path: '/plugins/market',
+    name: 'PluginMarket',
+    component: PluginCenterView,
+    meta: { title: '插件市场', viewKey: PLUGIN_CENTER_VIEW_KEY },
+  },
+  {
+    path: '/plugins/updates',
+    name: 'PluginUpdates',
+    component: PluginCenterView,
+    meta: { title: '插件更新', viewKey: PLUGIN_CENTER_VIEW_KEY },
+  },
+  {
+    path: '/plugins/:pluginId/settings',
+    name: 'PluginSettings',
+    component: () =>
+      /* 进入插件配置路由时按需加载声明式设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
+  {
+    path: '/plugins/:pluginId/:pageId',
+    name: 'PluginPage',
+    component: () =>
+      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
+    meta: { title: '插件设置' },
+  },
   {
     path: '/tools',
     name: 'Tools',
@@ -82,11 +128,17 @@ const routes = [
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
   ...maafwRoutes.userEdit,
-  MAA_CULTIVATE_ROUTE,
+  ...SCRIPT_PLUGIN_ROUTES,
   {
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',
     component: () => import('@/views/plan/OkNtePlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
+  },
+  {
+    path: '/plans/:planId/okww/:day',
+    name: 'OkwwPlanDetail',
+    component: () => import('@/views/plan/OkwwPlanDetail.vue'),
     meta: { title: 'core.plan.oknte.detail' },
   },
   {
@@ -96,10 +148,11 @@ const routes = [
     meta: { title: '计划管理' },
   },
   {
-    path: '/emulators',
-    name: 'Emulators',
-    component: () => import('../views/Emulator.vue'),
-    meta: { title: '模拟器管理' },
+    path: '/games',
+    alias: '/emulators',
+    name: 'Games',
+    component: () => import('../views/games/index.vue'),
+    meta: { title: '游戏管理' },
   },
   {
     path: '/queue',
@@ -188,6 +241,17 @@ const routes = [
     name: 'VirtualDisplayPrompt',
     component: () => import('../views/VirtualDisplayPrompt.vue'),
     meta: { title: '虚拟显示器', skipGuard: true },
+  },
+  {
+    path: '/desktop-session',
+    name: 'DesktopSession',
+    component: () => import('../views/desktopSession/DesktopSessionWindow.vue'),
+    meta: {
+      get title() {
+        return t('bootstrap.desktopSession.title')
+      },
+      skipGuard: true,
+    },
   },
 ]
 
@@ -278,6 +342,19 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
+})
+
+// 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+router.beforeResolve(async to => {
+  const type = to.meta.scriptType
+  if (type !== 'MAA' && type !== 'SRC') return
+  try {
+    const types = await fetchScriptCapabilities()
+    if (types.includes(type)) return
+  } catch (error) {
+    logger.warn(`读取 ${type} 插件能力失败: ${String(error)}`)
+  }
+  return { path: '/plugins/market' }
 })
 
 export function navigateTo(

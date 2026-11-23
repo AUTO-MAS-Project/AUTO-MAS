@@ -22,6 +22,7 @@ import {
 // 导入日志服务
 import { getLogger } from './logger'
 import { canRetryStartup } from './startupRecovery'
+import { localStartupAttempt, inStartupOperation } from './startupHardware/monitor'
 const logger = getLogger('初始化服务')
 
 // ==================== 类型定义 ====================
@@ -149,6 +150,7 @@ export class InitializationService {
         let prepareEnvironment = fullInitialization
         for (let attempt = 1; attempt <= 2; attempt += 1) {
           if (this.closing) return this.cancelledStartup()
+          if (attempt > 1) localStartupAttempt()?.retry()
           const startedAt = performance.now()
           logger.info(`桌面启动尝试 ${attempt}/2 开始`)
           let failedProgress: InitializationProgress | undefined
@@ -418,7 +420,19 @@ export class InitializationService {
       status: 'started',
     })
 
-    const backendResult = await this.backendService.startBackend()
+    const backendResult = await inStartupOperation(() =>
+      this.backendService.startBackend({
+        onProgress: message =>
+          onProgress?.({
+            stage: 'backend',
+            stageIndex: INITIALIZATION_STAGE_INDEX.backend,
+            totalStages,
+            progress: 0,
+            message,
+            status: 'started',
+          }),
+      })
+    )
     if (!backendResult.success) {
       onProgress?.({
         stage: 'backend',

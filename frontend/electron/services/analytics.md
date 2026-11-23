@@ -4,9 +4,11 @@ Electron 主进程按 Aptabase 的单事件协议向
 `https://telemetry.auto-mas.top/api/v0/event` 发送数据。App Key 是公开的客户端写入标识，
 不包含管理或查询凭据。Vue 通过受限 preload / IPC 交给主进程，不初始化 Web 或 Electron SDK。
 
-采集环境统一由 Electron 打包状态决定，并在页面执行前通过 preload 传入 Vue。源码运行禁报，
+采集环境由 Electron 打包状态和显式开发后端选择决定，并在页面执行前通过 preload 传入 Vue。源码运行或安装版显式设置 `AUTO_MAS_BACKEND_REPO` 时禁报，
 打包运行仍遵守用户遥测开关；Runtime 启动模式与宿主的 `NODE_ENV` 不改变应用环境。
 后端仅在显式收到 `AUTO_MAS_ENV=production` 时启用生产行为，不再依赖 `.env` 文件。
+
+发行版复用源码后端时沿用现有启动、关闭和失败结果观察，不新增事件；开发环境隔离继续禁止实际发送。源码路径和环境变量内容不进入事件属性。
 
 后续新增或修改可观察业务流程时，按 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)
 主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；
@@ -23,6 +25,12 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 
 ## 当前采集范围
 
+插件管理继续使用 `plugin_action_finished`：由 `usePluginApi` 在配置保存或独立命令查询确认结果后结束。
+命令受理不计为执行成功，失败、取消及无法确认结果分别记录；不发送插件名、配置或操作 ID。
+插件安装还会等待候选环境在新进程中完成加载确认，再记录最终结果；需要换版已加载依赖时，
+后端重启复用 `backend_restart_finished` 的 `update` 原因，失败后的旧环境恢复使用 `recovery`。
+本轮仅调整命令提交与等待接线，沿用既有 action/outcome 词表及开关，不增加采集字段。
+
 定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
 
 静默启动保存复用 `settings_change_finished`，改用 `silent_start` 区分旧的 `start_minimized` 类别；开机自启仍为 `auto_start`。关闭至托盘的 `close_to_tray` 类别改由 `useAppClosePreferences` 在前端关闭偏好写入成功或失败时确认，设置页和关闭确认框共用同一入口；不再以旧的 `UI.IfToTray` 写入推断关闭行为。窗口最小化和静默隐藏不新增事件，启动来源与正常退出继续复用原主进程观察者。
@@ -38,8 +46,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `initialization_finished_v2` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
 | `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
 | `mcp_retry_requested` | MCP 手动重新加载请求的受理结果 | `outcome`、耗时桶 | 每次实际请求一次；受理不等于加载完成 |
-| `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次 |
-| `user_create_finished` | 用户创建接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
+| `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次；自动建号失败时为部分完成 |
+| `user_create_finished` | 自动或手动建号的接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
 | `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功独立随机 1/10 采样 |
 | `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
 | `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
@@ -85,6 +93,8 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
 | `stop_all_requested` | 紧急停止入口的需求 | `source` |
 | `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
+| `desktop_session_connection_finished` | 桌面分身连接结果，主进程确认子会话已登记后记成功 | `reason_kind` |
+| `desktop_session_environment_repair_finished` | 桌面分身环境修复与复查结果 | — |
 | `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
 | `system_resume_recovery_finished` | 电脑唤醒后能否继续使用 | `recovery_kind` |
 | `script_manage_finished` | 复制、删除、重排入口的使用 | `action`、`script_type`、`count_bucket` |
@@ -97,6 +107,9 @@ OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固
 | `emulator_operation_observed_finished` | 前端观察到的模拟器操作结局 | `emulator_family`、`operation` |
 | `emulator_instance_manage_finished` | 实例创建、删除与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
 | `emulator_guard_changed` | 稳定模式和配置守卫是否解决使用障碍 | `guard_kind`、`action` |
+| `game_target_changed` | 游戏目标管理、发现、设置及批量操作结果 | `adapter`、`action` |
+| `game_operation_result` | 插件设备命令是否被受理 | `adapter`、`operation` |
+| `game_operation_observed_finished` | 由唯一操作标识确认的设备操作终态 | `adapter`、`operation` |
 | `avd_root_added` | 自定义 AVD 安装导入完成率 | `reason_kind` |
 | `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
@@ -233,7 +246,8 @@ MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类�
 因此这些高级报表仍需后续补展示或分析能力，当前不宣称已有自动成功率看板。
 旧版本只有整任务事件，不能从历史 `multi` 或整轮循环汇总反推出逐脚本次数。
 下载只观察本地启动的操作，取消 API 与 WS 共用一次终态；快照只对账，超时或网络结果不明记
-`observation_unknown`，不推断后台失败。主动关闭、计划内重启和被其他窗口接管不算断线事故；
+`observation_unknown`，不推断后台失败。换源沿同一次前端下载继续，内部停止旧源不结束下载观察；
+用户取消或最终完成/失败才结束一次，来源切换仍由 `update_source_changed` 记录。主动关闭、计划内重启和被其他窗口接管不算断线事故；
 自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
 
 主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
@@ -339,3 +353,38 @@ Sentry 的诊断事件另保留退出码、退出次数、耗时和加载错误�
 Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发旧结果；不等待发送或新增退出 flush。
 
 通用脚本计划表按原有计划管理与原生配置会话边界观察；仅新增计划类型分类 `UniversalPlanConfig`。
+
+OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `adapter_setup_finished`（`script_type=Okww`、`operation_kind=save`），由 `useOkwwNativeConfigApi` 按保存响应确认结果；字段读取、表单渲染不额外采集，配置内容不进入事件。
+
+后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
+
+MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。
+
+## 启动硬件统计
+
+桌面启动时按一次尝试启用只读采样器，每秒取样，最多十分钟。关闭匿名遥测后继续将实测值和失败前十五秒写入本地 debug/startup-hardware.log，现有日志包会包含它。其他平台和 Windows 探针不可用时使用系统 CPU、内存和卷空间读数；无法读取的 GPU 引擎或磁盘性能保留未知。错误详情只取最近的有效样本。整体与阶段结果使用已有事件，仅主进程附加有限字段。目录按用途映射并归桶；旧 Runtime 沿用原错误。手动重试另起尝试，运行中关闭会撤销上传许可并关闭 Runtime 的取样管道。重新开启从下次尝试开始。
+
+看板选 `initialization_finished_v2`，先按应用版本和 `flow_kind` 筛选，再按 `install_media`、`ram` 或 `cpu_series` 分组。每组确认成败的失败率以 success 和 failure 为分母。总尝试、取消、跳过、未确认和缺样数分别展示。以 `coverage=sampled` 统计有硬件读数的覆盖；旧版本或配置未确认造成的缺失不能当低负载。阶段耗时用 `initialization_stage_finished_v2` 按 stage 和 duration_bucket 分组。
+
+可复验本机日志导出与关闭开关的行为。在 frontend 运行 `yarn build:main` 后运行 `node scripts/check-startup-hardware.cjs`。脚本创建独立临时目录，复用导出收集器生成 logs.zip，上传验证使用本机临时 HTTP 接收器。
+
+下面的 ClickHouse 查询按安装盘和启动场景统计尝试数、失败率和缺样数。应用编号为查询参数。启动前准备材料的时间包含在 startup_duration，原有 duration_bucket 保留界面侧口径。
+
+```sql
+SELECT app_version,
+       JSONExtractString(string_props, 'flow_kind') AS flow,
+       if(empty(JSONExtractString(string_props, 'install_media')), 'unknown', JSONExtractString(string_props, 'install_media')) AS disk,
+       count() AS attempts,
+       countIf(JSONExtractString(string_props, 'coverage') != 'sampled') AS missing,
+       countIf(JSONExtractString(string_props, 'outcome') = 'failure') AS failures,
+       countIf(JSONExtractString(string_props, 'outcome') = 'success') AS successes,
+       countIf(JSONExtractString(string_props, 'outcome') = 'cancelled') AS cancelled,
+       countIf(JSONExtractString(string_props, 'outcome') = 'skipped') AS skipped,
+       countIf(JSONExtractString(string_props, 'outcome') = 'unconfirmed') AS unconfirmed,
+       round(100 * failures / nullIf(successes + failures, 0), 2) AS confirmed_failure_percent
+FROM events
+WHERE app_id = {app:String} AND timestamp >= now() - INTERVAL 30 DAY
+  AND event_name = 'initialization_finished_v2'
+GROUP BY app_version, flow, disk
+ORDER BY attempts DESC
+```

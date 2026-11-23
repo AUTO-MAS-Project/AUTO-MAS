@@ -21,11 +21,9 @@ export namespace ScriptIndexItem {
      * 配置类型
      */
     export enum type {
-        MAA_CONFIG = 'MaaConfig',
         GENERAL_CONFIG = 'GeneralConfig',
         OKWW_CONFIG = 'OkwwConfig',
         OK_NTE_CONFIG = 'OkNteConfig',
-        SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
         M9ACONFIG = 'M9AConfig',
         MAA_FWCONFIG = 'MaaFWConfig',
@@ -33,8 +31,10 @@ export namespace ScriptIndexItem {
         BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
         BAAHCONFIG = 'BAAHConfig',
-        WHIMBOX_CONFIG = 'WhimboxConfig',
         MSSCONFIG = 'MSSConfig',
+        MAA_CONFIG = 'MaaConfig',
+        WHIMBOX_CONFIG = 'WhimboxConfig',
+        SRC_CONFIG = 'SrcConfig',
     }
 }
 

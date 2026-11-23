@@ -33,7 +33,9 @@ from app.core.ws import protocol
 from app.models.config import MaaEndConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
+from app.task.client import client_executable_path
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import game_update_result, point
 from app.utils import get_logger
 
 from .tools.update import ensure_game_updated
@@ -68,9 +70,10 @@ class EndfieldUpdateTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         await self.cur_user_item.set_state(status="运行")
-        game_exe = Path(str(self.script_config.Game.Path or "").strip())
+        game_exe = Path(str(client_executable_path(self.script_config) or "").strip())
 
         # 不看 Game.IfAutoUpdate：那是自动门的开关，用户当面点下按钮即为授权。
+        point(self, "game_update")
         try:
             result = await ensure_game_updated(
                 game_exe,
@@ -81,8 +84,13 @@ class EndfieldUpdateTask(TaskExecuteBase):
         except asyncio.CancelledError:
             # 取消不走 on_crash，也不落下面那三个状态：不收口这个账号就永远停在「运行」，
             # 已结束的快照里还显示他在跑
+            point(self, "game_update", state="cancelled")
             await self.cur_user_item.set_state(status="异常")
             raise
+        except Exception:
+            point(self, "game_update", state="failed")
+            raise
+        game_update_result(self, result)
         # 结论先落进日志再抛：toast 三秒就没了，弹窗里这一行才是留下的那份
         await self._push_dispatch_log(result.message)
         if result.status == "Skipped":
@@ -104,5 +112,7 @@ class EndfieldUpdateTask(TaskExecuteBase):
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 # 只推原因本身；「终末地更新失败: 」这层前缀由前端词表加，两边都加会说两遍
-                data=WSTaskNoticeData(level="error", message=f"{e}"),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd", level="error", message=f"{e}"
+                ),
             )

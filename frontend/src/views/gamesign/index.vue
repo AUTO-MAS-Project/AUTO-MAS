@@ -11,6 +11,7 @@ import {
   WS_ID_GAME_SIGN,
   type WSGameSignResultData,
 } from '@/services/websocket/types'
+import { AppPage, PageHeader, PageSurface } from '@/components/ui'
 import CommunityActivityView from './CommunityActivityView.vue'
 import TabGameSign from './TabGameSign.vue'
 
@@ -204,11 +205,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="gamesign-container">
-    <div class="gamesign-header">
-      <h1 class="page-title">{{ t('core.gamesign.title') }}</h1>
-    </div>
-    <div class="gamesign-content">
+  <AppPage layout="scroll">
+    <PageHeader :title="t('core.gamesign.title')" />
+    <PageSurface padding="none" :scrollable="false">
       <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
         <a-tab-pane key="sign" :tab="t('core.gamesign.nav.sign')">
           <TabGameSign
@@ -223,44 +222,11 @@ onUnmounted(() => {
           <CommunityActivityView />
         </a-tab-pane>
       </a-tabs>
-    </div>
-  </div>
+    </PageSurface>
+  </AppPage>
 </template>
 
 <style scoped>
-/* 与工具/设置页统一的页面布局与内容卡片样式 */
-.gamesign-container {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.gamesign-header {
-  margin-bottom: 16px;
-  padding: 0 4px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--app-page-title-color, var(--ant-color-text));
-}
-
-.gamesign-content {
-  background: var(--ant-color-bg-container);
-  border-radius: 8px;
-  width: 100%;
-  flex: 1;
-}
-
 .community-tabs {
   margin: 0;
   padding: 12px;

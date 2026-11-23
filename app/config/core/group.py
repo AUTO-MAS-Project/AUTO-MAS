@@ -5,7 +5,7 @@
 - 普通 / ref / 内置类型：读经 ``entry._resolve_field``，写经 ``entry`` 框架链。
 - 加密字段：内存 ``EncryptedValue``，读 unwrap 为明文。
 - 虚拟字段：只读；运行时计算。
-- 触发器字段：bool 闲置 ``False`` / 写 ``True`` 触发；Literal 闲置 ``None`` / 写字面量触发并传参。
+- 触发器字段：读取空闲或操作 UUID，按三态命令派发。
 - 日期时间：Pydantic 校验后统一存为 UTC；属性读取按预设转换，序列化直接导出存储值。
 """
 
@@ -13,10 +13,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, ClassVar, cast
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
     ConfigDict,
+    PrivateAttr,
     SerializationInfo,
     field_validator,
     model_serializer,
@@ -30,6 +32,7 @@ from ..fields import (
     is_virtual_model_field,
 )
 from ..fields.hints import UI_MASKED_VALUE, UiVisibility
+from ..fields.ref import validate_trigger_command
 from ..types import TzMarker
 from .node import ExportContext, NodeState
 from .staging import StagedOp
@@ -42,6 +45,7 @@ class ConfigGroup(BaseModel):
     """L3 配置分组。"""
 
     model_config = ConfigDict(validate_assignment=True, validate_default=True)
+    _trigger_uids: dict[str, UUID] = PrivateAttr(default_factory=dict)
 
     @field_validator("*", mode="after")
     @classmethod
@@ -85,11 +89,10 @@ class ConfigGroup(BaseModel):
         state: dict[str, object] = object.__getattribute__(self, "__dict__")
         entry = state.get("_entry")
         group = state.get("_group")
-        value = (
-            state.get(name)
-            if entry is None or group is None
-            else cast("ConfigEntry", entry)._resolve_field(str(group), name)
-        )
+        if entry is None or group is None:
+            value = None if is_trigger_model_field(fields[name]) else state.get(name)
+        else:
+            value = cast("ConfigEntry", entry)._resolve_field(str(group), name)
         if isinstance(value, datetime):
             try:
                 return value.astimezone(self._read_zone(name))
@@ -118,33 +121,7 @@ class ConfigGroup(BaseModel):
             raise AttributeError(f"虚拟字段 {group}.{name} 只读")
 
         if is_trigger_model_field(field):
-            if (group, name) not in type(entry)._cfg_trigger_specs:
-                raise AttributeError(f"触发器 {group}.{name} 须经 @trigger_field 注册")
-            # 与 entry.update 一致：HIDE/DISABLE 不接受开闸
-            if (
-                entry._ui_visibility(group, name)
-                in (
-                    UiVisibility.HIDE,
-                    UiVisibility.DISABLE,
-                )
-                or entry._ui_visibility(group) == UiVisibility.DISABLE
-            ):
-                return
-            mode, allowed, _idle = type(entry)._cfg_trigger_modes[(group, name)]
-            if mode == "bool":
-                if not isinstance(value, bool):
-                    raise TypeError(f"触发器 {name} 仅接受 bool 类型")
-                if value:
-                    entry._dispatch_trigger(group, name, True)
-                return
-            # Literal：None 空操作；字面量触发并传参
-            if value is None:
-                return
-            if value not in allowed:
-                raise TypeError(
-                    f"触发器 {name} 仅接受 {allowed!r} 或 None，收到 {value!r}"
-                )
-            entry._dispatch_trigger(group, name, value)
+            entry._apply_trigger_field(group, name, validate_trigger_command(value))
             return
 
         workspace = entry.effective
@@ -219,12 +196,12 @@ class ConfigGroup(BaseModel):
                 if not include_reactive:
                     data.pop(name, None)
                 else:
-                    idle: object = False
-                    if entry is not None and isinstance(group_name, str):
-                        tmode = type(entry)._cfg_trigger_modes.get((group_name, name))
-                        if tmode is not None:
-                            idle = tmode[2]
-                    data[name] = idle
+                    value = (
+                        entry._resolve_field(group_name, name)
+                        if entry is not None and isinstance(group_name, str)
+                        else None
+                    )
+                    data[name] = str(value) if isinstance(value, UUID) else None
         return data
 
 

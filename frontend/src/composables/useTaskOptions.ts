@@ -1,19 +1,23 @@
-import { GetService, TaskMode, type TaskCreateIn } from '@/api'
+import { GetService, TaskMode, type PowerSignal, type TaskCreateIn } from '@/api'
 import { queryClient } from '@/services/queryClient'
 import { queryRequest } from '@/utils/queryRequest'
 import { translate as t } from '@/i18n'
 import { indexed, targetRequest, type TaskScopeDraft, type TaskScopeEntry } from './taskSelection'
+import type { ConfigSnapshot } from '@/services/configUiSync'
 
 export interface TaskTarget {
   value: string
   label: string
   name: string
   kind: 'queue' | 'script'
+  afterAccomplish?: PowerSignal
 }
 
 /** 候选目标只读取配置，不因运行锁而消失；共享同一轮在途查询。 */
-export function fetchTaskTargets(): Promise<TaskTarget[]> {
-  return queryClient.fetchQuery({
+export async function fetchTaskTargets(
+  read?: (snapshot: ConfigSnapshot) => void
+): Promise<TaskTarget[]> {
+  const snapshot = await queryClient.fetchQuery({
     queryKey: ['task-config-targets'],
     staleTime: 0,
     queryFn: async ({ signal }) => {
@@ -23,12 +27,13 @@ export function fetchTaskTargets(): Promise<TaskTarget[]> {
       ])
       if (queues.code !== 200) throw new Error(queues.message)
       if (scripts.code !== 200) throw new Error(scripts.message)
-      return [
+      const targets = [
         ...queues.index.map(item => ({
           value: item.uid,
           name: queues.data[item.uid]?.Info?.Name ?? item.uid,
           label: `${t('core.scheduler.scope.queue')} · ${queues.data[item.uid]?.Info?.Name ?? item.uid}`,
           kind: 'queue' as const,
+          afterAccomplish: queues.data[item.uid]?.Info?.AfterAccomplish ?? undefined,
         })),
         ...scripts.index.map(item => ({
           value: item.uid,
@@ -37,8 +42,11 @@ export function fetchTaskTargets(): Promise<TaskTarget[]> {
           kind: 'script' as const,
         })),
       ]
+      return { targets, uiSources: [...(queues.uiSources ?? []), ...(scripts.uiSources ?? [])] }
     },
   })
+  read?.(snapshot)
+  return snapshot.targets
 }
 
 export async function configuredTaskRequest(

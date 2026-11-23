@@ -35,7 +35,7 @@ export type FluxdownRecord = {
      */
     checksum?: (string | null);
     /**
-     * 统一下载诊断摘要
+     * 统一下载诊断摘要（不包含凭据和原始压缩包）
      */
     diagnostic?: (Record<string, any> | null);
     /**

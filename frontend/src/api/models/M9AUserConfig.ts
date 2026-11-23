@@ -4,10 +4,15 @@
 /* eslint-disable */
 import type { M9AUserConfig_Data } from './M9AUserConfig_Data';
 import type { M9AUserConfig_Device } from './M9AUserConfig_Device';
+import type { M9AUserConfig_game } from './M9AUserConfig_game';
 import type { M9AUserConfig_Info } from './M9AUserConfig_Info';
 import type { M9AUserConfig_Notify } from './M9AUserConfig_Notify';
 import type { M9AUserConfig_Task } from './M9AUserConfig_Task';
 export type M9AUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (M9AUserConfig_game | null);
     Data?: (M9AUserConfig_Data | null);
     Device?: (M9AUserConfig_Device | null);
     Info?: (M9AUserConfig_Info | null);

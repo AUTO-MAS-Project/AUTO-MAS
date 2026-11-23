@@ -6,7 +6,7 @@ import asyncio
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
@@ -15,13 +15,16 @@ from app.core import BackgroundTaskManager, Publisher
 from app.core.background_tasks import BackgroundTaskGroup, BackgroundTaskHandle
 from app.core.ws import protocol
 from app.models.schema import WSTaskNoticeData
+from app.models.script_access import script_users
 from app.models.task import TaskMode
 from app.task.lifecycle import TaskBase
 from app.utils import get_logger
+from app.utils.common.log_box.results import Entry, LogEntry
 
 if TYPE_CHECKING:
+    from app.models.config import ScriptConfigType
     from app.models.schema import TaskRequirements
-    from app.models.task import TaskItem, TaskUserItem
+    from app.models.task import TaskItem, TaskScriptItem, TaskUserItem
     from app.task.context import TaskContext
     from app.task.history_core import TaskHistorySession
     from app.utils.common.process.scope import TaskProcessScope
@@ -36,9 +39,7 @@ class LegacyUserState:
     旧专项的维护判断和通知素材，不属于公共任务树。"""
 
     maintenance_skipped: bool = False
-    push_log: list[tuple[str, str] | tuple[str, str, float | None]] = field(
-        default_factory=list
-    )
+    push_log: list[Entry] = field(default_factory=list)
     push_log_mode: str = "汇总"
 
     async def append_push_log(self, value) -> None:
@@ -147,7 +148,7 @@ def maintenance_requirements(target_id: str) -> TaskRequirements:
             (
                 entry
                 for entry in Config.ScriptConfig.values()
-                if target in entry.UserData
+                if target in script_users(entry)
             ),
             None,
         )
@@ -234,7 +235,11 @@ class _LegacyExecution(TaskBase):
                     pass
                 raise
         finally:
-            current_process_scope.reset(token)
+            try:
+                if self._owns_scope:
+                    await self._process_scope.close_desktop_processes()
+            finally:
+                current_process_scope.reset(token)
 
     def request_stop_checks(self):
         if self._owns_scope and self._stop_request is None:
@@ -324,6 +329,8 @@ class TaskExecuteBase(ABC):
 
     task_info: TaskItem
     history: TaskHistorySession
+    # [兼容旧专项] L2 注入锁后预下载复核；新插件在 L3 派发前由 L2 直接准备。
+    after_config_lock: Callable[[ScriptConfigType], Awaitable[None]] | None = None
     # [兼容旧专项] 停止确认阶段限时等待已开始的收尾，不改变来源 TaskBase。
     stop_finalizer_timeout: float | None = 10.0
     STOP_CHECK_TIMEOUTS = {"update": 30.0, "finalize": 10.0}
@@ -339,10 +346,59 @@ class TaskExecuteBase(ABC):
         self.maintenance = False
         self._user_states: dict[UUID, LegacyUserState] = {}
         self._active_child: TaskExecuteBase | None = None
+        self._emulator_instance = None
+
+    @property
+    def emulator_manager(self):
+        """[兼容旧专项] 旧调用面借用当前账号设备，不保留独立资源占用。"""
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
+        if session is not None and session.control is not None:
+            return session.emulator
+        return self._emulator_instance
+
+    @emulator_manager.setter
+    def emulator_manager(self, value):
+        self._emulator_instance = value
+
+    @property
+    def emulator(self):
+        """[兼容旧专项] 与插件执行器共享的设备借用属性。"""
+        return self.emulator_manager
 
     def user_state(self, user: TaskUserItem) -> LegacyUserState:
         """[兼容旧专项] 只读取旧专项私有素材；新代码不依赖此状态容器。"""
         return self._user_states.setdefault(user.uid, LegacyUserState())
+
+    def finalize_completion_details(self, script: TaskScriptItem) -> None:
+        """[兼容旧专项] 排版已收尾的 LogBox 节点，供本轮完成摘要展示。"""
+        from app.core.notify.report import (
+            render_aggregate_push_log,
+            render_scatter_push_log,
+        )
+        from app.utils.common.log.patterns import LOG_TYPE_ERROR
+
+        has_uncompleted = any(
+            user.info.status in ("异常", "等待") for user in script.users.values()
+        )
+        for uid, user in script.users.items():
+            state = self._user_states.get(uid)
+            if state is None or state.push_log_mode == "关闭" or not state.push_log:
+                continue
+            entries: list[LogEntry] = []
+            for item in state.push_log:
+                entry = (
+                    item if isinstance(item, LogEntry) else LogEntry.from_legacy(item)
+                )
+                if entry.log_type != LOG_TYPE_ERROR or has_uncompleted:
+                    entries.append(entry)
+            render = (
+                render_aggregate_push_log
+                if state.push_log_mode == "汇总"
+                else render_scatter_push_log
+            )
+            user._completion_details = tuple(render(entries))
 
     @property
     def execution_mode(self) -> TaskMode | Literal["Update"]:
@@ -443,10 +499,39 @@ class TaskExecuteBase(ABC):
             await script.set_state(status="运行")
         # shield 中的账号收尾仍属于当前子任务，停止通知要覆盖到它真正结束。
         self._active_child = child
+        from app.task.game import current_game_session
+
+        session = current_game_session.get()
         try:
+            if session is not None and script is not None:
+                from app.core import Config
+
+                config = Config.ScriptConfig.get(script.info.script_id)
+                index = script.current_index
+                user = script.user_list[index] if index >= 0 else None
+                owner = (
+                    script_users(config).get(user.info.user_id)
+                    if config is not None
+                    and user is not None
+                    and user.info.user_id != "default"
+                    else None
+                )
+                try:
+                    await session.select(owner)
+                except Exception as error:
+                    await session.release()
+                    if user is None:
+                        raise
+                    await user.set_state(status="异常")
+                    await script.set_log(str(error))
+                    return
             await self.execution.spawn(child.execution)
         finally:
-            self._active_child = None
+            try:
+                if session is not None:
+                    await session.release_account()
+            finally:
+                self._active_child = None
 
     def execute(self):
         """[兼容旧专项] 旧启动方法名；新顶层执行器使用 TaskBase.start()。"""

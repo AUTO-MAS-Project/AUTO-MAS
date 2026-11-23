@@ -31,7 +31,6 @@ type DraftGroup<T, Nullable extends keyof T = never> = {
 export interface MAAScriptConfig {
   Info: DraftGroup<NonNullable<MaaConfig['Info']>, 'Path'>
   Run: DraftGroup<NonNullable<MaaConfig['Run']>>
-  Emulator: DraftGroup<NonNullable<MaaConfig['Emulator']>>
   Update: DraftGroup<
     Pick<
       NonNullable<MaaConfig['Update']>,
@@ -51,7 +50,6 @@ export interface SRCScriptConfig {
   Update: DraftGroup<NonNullable<SrcConfig['Update']>>
   Info: DraftGroup<NonNullable<SrcConfig['Info']>, 'Path'>
   Run: DraftGroup<NonNullable<SrcConfig['Run']>>
-  Emulator: DraftGroup<NonNullable<SrcConfig['Emulator']>>
 }
 
 type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {
@@ -99,8 +97,6 @@ export interface MaaEndScriptConfig {
     LauncherPath: string | null
     Arguments: string
     WaitTime: number
-    EmulatorId: string
-    EmulatorIndex: string
     RestoreAutoHDR: 'Unchanged' | 'Disable' | 'Enable'
     AutoHDR: 'Unchanged' | 'Disable' | 'Enable'
     SetResolution: boolean
@@ -134,16 +130,13 @@ export type MaaFWGameUpdateMode = 'Off' | 'Check' | 'AutoInstall'
 export type MaaFWLoginMode = 'Project' | 'Mas'
 
 export interface MaaFWScriptConfig {
+  game: { game_id: string; device_id: string }
   Info: {
     Name: string
     ProjectLabel?: string
     Path: string | null
     Controller: string
     Resource: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
   }
   Device: {
     AdbPath: string | null
@@ -325,12 +318,8 @@ export interface MaaFWUserConfig {
     ScriptAfterTask: string | null
     Notes: string
     Tag?: string | null
-    Account: string
+    Id: string
     Password: string
-    Resource?: string
-    Base?: 'shared' | 'independent' | 'native'
-    /** 快速配置：独立于配置来源的用户级开关 */
-    IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
     PlanMode?: string
     /** 仅 MSS 用户携带：队列里没加活动任务时，是否在活动期间自动加入并排到最前 */
@@ -351,7 +340,6 @@ export interface MaaFWUserConfig {
   Data: {
     LastProxyDate: string
     ProxyTimes: number
-    IfPassCheck: boolean
     LastProxyStatus: string
     PeriodTaskRecords: string | Record<string, Record<string, string>>
   }

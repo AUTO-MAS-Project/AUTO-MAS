@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import StrEnum
+from math import isfinite
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -14,8 +16,35 @@ from app.utils import get_logger
 logger = get_logger("背景任务")
 
 
+async def run_in_worker[T](
+    factory: Callable[[], T], *, executor: ThreadPoolExecutor | None = None
+) -> T:
+    """将阻塞调用交给线程，并等待实际退出后再传播取消。"""
+    worker = asyncio.get_running_loop().run_in_executor(executor, factory)
+    return await wait_until_settled(worker)
+
+
+async def wait_until_settled[T](worker: asyncio.Future[T]) -> T:
+    """传播取消前，先等不能中断的工作实际结束。"""
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # 取消等待不等于副作用已退出。
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if not worker.cancelled():
+            worker.exception()
+        raise
+
+
 class BackgroundTaskState(StrEnum):
     RUNNING = "running"
+    CANCELLING = "cancelling"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
@@ -54,15 +83,30 @@ class BackgroundTaskHandle[T]:
     """不暴露 asyncio.Task；等待方取消不会取消背景执行。"""
 
     def __init__(self, group: BackgroundTaskGroup, uid: UUID) -> None:
+        """绑定任务组与任务标识，建立完成事件和回调列表，供调用方等待和订阅任务收尾。"""
         self.group = group
         self.uid = uid
         self._completed = asyncio.Event()
+        self._callbacks: list[Callable[[BackgroundTaskHandle[T]], None]] = []
+
+    def add_done_callback(
+        self, callback: Callable[[BackgroundTaskHandle[T]], None]
+    ) -> None:
+        """登记同步完成消费者；完成后可立即提取结果，不受轮询和 TTL 影响。"""
+        if self.done():
+            callback(self)
+        else:
+            self._callbacks.append(callback)
 
     def done(self) -> bool:
         return self._completed.is_set()
 
     def cancel(self) -> None:
         self.group._cancel(self.uid)
+
+    def cancelling(self) -> bool:
+        task = self.group._running.get(self.uid)
+        return task is not None and task.cancelling() > 0
 
     async def wait_done(self, timeout: float | None = None) -> bool:
         """只等待执行退出，不提取结果；超时返回 False。"""
@@ -114,6 +158,7 @@ class BackgroundTaskGroup:
         self.closing = False
         self._owner = owner
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._executor: ThreadPoolExecutor | None = None
         self._records: dict[UUID, _TaskRecord] = {}
         self._running: dict[UUID, asyncio.Task[Any]] = {}
 
@@ -122,8 +167,16 @@ class BackgroundTaskGroup:
         factory: Callable[[], Coroutine[Any, Any, T]],
         *,
         retain_result: bool = True,
+        execution_timeout: float | None = None,
     ) -> BackgroundTaskHandle[T] | None:
-        """准入后才调用工厂；关闭或容量不足时拒绝，不创建协程。"""
+        """准入后才调用工厂；未指定执行超时时继承任务组默认值。"""
+        if execution_timeout is not None and (
+            not isfinite(execution_timeout) or execution_timeout <= 0
+        ):
+            raise ValueError("背景任务执行超时必须为有限的正数秒")
+        timeout = (
+            self.execution_timeout if execution_timeout is None else execution_timeout
+        )
         loop = asyncio.get_running_loop()
         if self._loop is not None and self._loop is not loop:
             raise RuntimeError("背景任务组不能跨事件循环使用")
@@ -149,11 +202,17 @@ class BackgroundTaskGroup:
         self._records[handle.uid] = record
         self._running[handle.uid] = task
         task.add_done_callback(lambda done: self._finish(record, done))
-        if self.execution_timeout is not None:
-            record.deadline = loop.call_later(
-                self.execution_timeout, self._timeout, handle.uid
-            )
+        if timeout is not None:
+            record.deadline = loop.call_later(timeout, self._timeout, handle.uid)
         return handle
+
+    async def run_sync[T](self, factory: Callable[[], T]) -> T:
+        """在线程中执行同步处理器，取消期间仍持有执行席位，直到线程退出。"""
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(
+                max_workers=self.max_running, thread_name_prefix=self.name
+            )
+        return await run_in_worker(factory, executor=self._executor)
 
     def query[T](self, handle: BackgroundTaskHandle[T]) -> BackgroundTaskInfo | None:
         """查询不提取、不延长结果期限；已提取或已丢弃返回 None。"""
@@ -225,6 +284,7 @@ class BackgroundTaskGroup:
             self._cancel(uid)
 
     def _finish(self, record: _TaskRecord, task: asyncio.Task[Any]) -> None:
+        """收集任务终态并唤醒完成等待者，按保留策略保存结果、触发回调并处理关闭中的任务组。"""
         uid = record.handle.uid
         self._running.pop(uid)
         if record.deadline is not None:
@@ -244,7 +304,15 @@ class BackgroundTaskGroup:
             )
         record.outcome = outcome
         record.handle._completed.set()
-        if self.closing or not record.retain_result:
+        callbacks, record.handle._callbacks = record.handle._callbacks, []
+        for callback in callbacks:
+            try:
+                callback(record.handle)
+            except Exception:
+                logger.exception(f"背景任务组 {self.name} 的完成接收者失败")
+        if uid not in self._records:
+            pass
+        elif self.closing or not record.retain_result:
             self._discard(uid)
         else:
             assert self._loop is not None
@@ -270,6 +338,8 @@ class BackgroundTaskGroup:
 
     def _close(self) -> None:
         self.closing = True
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
         for uid in tuple(self._running):
             self._cancel(uid)
         for uid in tuple(self._records):

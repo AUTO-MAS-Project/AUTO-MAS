@@ -1,3 +1,4 @@
+import { useConfigLoader, type ConfigSnapshot } from '@/services/configUiSync'
 import { Service } from '@/api'
 import { ref } from 'vue'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -15,6 +16,8 @@ const logger = window.electronAPI.getLogger('脚本列表')
 export function useScriptList() {
   const { getScripts, loading, error: requestError } = useScriptApi()
   const error = ref<string | null>(null)
+  const scripts = ref<ScriptListItem[]>([])
+  const loadedOnce = ref(false)
 
   const getScriptUsers = async (
     scriptId: string
@@ -36,11 +39,13 @@ export function useScriptList() {
   }
 
   // 列表仅获取并组合展示数据，不重建专项配置或参与配置保存。
-  const getScriptsWithUsers = async (): Promise<ScriptListItem[]> => {
+  const getScriptsWithUsers = async (
+    read?: (snapshot: ConfigSnapshot) => void
+  ): Promise<ScriptListItem[]> => {
     loading.value = true
     try {
       // 列表页呈现失败原因与重试，避免请求层再弹同一错误。
-      const scripts = await getScripts(false, { showError: false })
+      const scripts = await getScripts(false, { showError: false, read })
       error.value = requestError.value
       return await Promise.all(
         scripts.map(async script => {
@@ -53,5 +58,19 @@ export function useScriptList() {
     }
   }
 
-  return { getScriptsWithUsers, getScriptUsers, loading, error }
+  const loadScripts = useConfigLoader(['config', 'script-list'], async read => {
+    try {
+      const result = await getScriptsWithUsers(read)
+      if (!error.value) scripts.value = result
+    } catch (failure) {
+      const errorMsg = getApiErrorMessage(failure, t('core.apiErrors.scriptListFailed'))
+      logger.error(`加载脚本列表失败: ${errorMsg}`)
+      error.value = errorMsg
+    } finally {
+      // 首次加载结束（不论成功失败）后置位，避免初始闪烁
+      loadedOnce.value = true
+    }
+  })
+
+  return { scripts, loadedOnce, loadScripts, getScriptUsers, loading, error }
 }

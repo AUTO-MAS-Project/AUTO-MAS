@@ -1,5 +1,30 @@
 # 匿名统计场景覆盖台账
 
+- 桌面分身由主进程的 `DesktopSessionService` 记录实际连接和环境修复复查结果。后端返回运行 ID 后，
+  每个实际派发的队列或托管沿用 `task_start_result` 的 `desktop_session` 来源，包含用户确认转到
+  主桌面运行的任务。预览、跳过及取消派发不产生受理事件，任务终态沿用调度观察。
+  上报仅使用有限的结果、类型、原因和耗时，不发送凭据、会话 ID、任务名称或日志。
+  断开、进程清理及安装占用检查无单独事件。
+
+- 游戏管理由 `useGamesApi` 记录 `game_target_changed`，批量结果区分成功、部分失败和全部失败。
+  默认与账号绑定保存复用配置保存观察者。`useGameOperations` 分开记录命令受理与操作 ID 的终态，
+  页面卸载不重复提交；查询失败归 unknown。只发送五种适配类别及 unknown、有限操作、结果和耗时桶，
+  不发送目标、设备、操作标识、路径、ADB 地址或恢复材料。后台恢复重试不逐次采集。
+  新页面使用 `screen_view/games`；历史模拟器事件保留原含义。
+
+- 启动期插件兼容升级复用 `BackendService.startBackend` 的 `backend_start_finished`：
+  插件与业务初始化完成、自动业务放行确认后才记录成功；升级失败记录启动失败。
+  初始化页面沿用既有阶段结果，不新增逐包或逐次健康轮询事件，不发送插件名称、版本或依赖内容。
+
+- 插件管理复用 `plugin_action_finished`，唯一观察者为 `usePluginApi`。配置保存读取保存结果，
+  插件安装跨重启等待持久结果确认，候选准备完成不计成功；后端重启与恢复沿用主进程的结果观察。
+  独立命令按返回身份查询实际终态；轮询失败耗尽记 unknown，取消记 cancelled，不重复提交命令。
+  受控前端检查覆盖成功、失败、取消、查询故障及纯配置保存；浏览器覆盖命令提交和 UI 属性刷新，
+  不代表市场真实安装或生产事件入库。操作身份仅用于本地查询，不进入上报。
+  发现冲突导致的安装拒绝沿该终态入口记录，启动失败沿 `backend_start_finished` 记录；
+  源码监视刷新不逐次采集，不发送冲突身份、导入名或本地路径。
+  插件市场沿用页面访问事件，只有手动发起新刷新批次时才记录 `plugin_action_finished`。
+
 - 定时唤醒开关复用设置保存事件的 `scheduled_wakeup` 类别，唤醒启动复用
   `app_started` 的同名来源。只记录配置保存和应用 ready，不推断硬件唤醒结果，
   不发送定时时刻、星期、队列或安装路径。
@@ -49,7 +74,7 @@
 | T020 | system_resume_recovery_finished：电脑唤醒后能否继续使用 | 已接入，持续复核 |
 | T021 | script_create_finished：新增托管漏斗和导入失败率 | 已接入，持续复核 |
 | T022 | script_manage_finished：复制、删除、重排入口的使用 | 已接入，持续复核 |
-| T023 | user_create_finished：第一次建托管账号是否顺利 | 已接入，持续复核 |
+| T023 | user_create_finished：自动和手动创建托管账号是否顺利 | 共用账号创建接口的观察入口 |
 | T024 | user_manage_finished：删除、启停和批量账号管理 | 已接入，持续复核 |
 | T025 | config_write_finished：配置保存失败是否普遍 | 已接入，持续复核 |
 | T026 | user_config_write_finished：账号配置草稿与联动保存是否可靠 | 已接入，持续复核 |
@@ -67,7 +92,7 @@
 | T038 | plan_edit_finished：简单/复杂视图与轮换计划是否好用 | 已接入，持续复核 |
 | T039 | update_check_finished：手动检查更新能否得到结果 | 已接入，持续复核 |
 | T040 | update_download_started：用户选择更新后的进入率 | 已接入，持续复核 |
-| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，持续复核 |
+| T041 | update_download_finished：本体下载成功、失败和取消 | 已接入，换源内部停旧不结束整次观察 |
 | T042 | update_source_changed：低速后换源能否改善 | 已接入，持续复核 |
 | T043 | update_install_requested：下载后启动安装器还是稍后安装 | 已接入，持续复核 |
 | T044 | emulator_discovery_finished：搜索、导入模拟器是否顺利 | 已接入，持续复核 |
@@ -107,7 +132,7 @@
 | T078 | adapter_setup_finished：M9A flavor 配置入口使用 | 已接入现有引导入口，详见下文 |
 | T079 | adapter_setup_finished：MSS flavor 配置与计划入口使用 | 已接入现有引导入口，详见下文 |
 | T080 | adapter_setup_finished：BetterGI 原生配置、更新与托管模式 | 已接入现有引导入口，详见下文 |
-| T081 | adapter_setup_finished：OK-WW 自动发现路径、更新与配置 | 已接入现有引导入口，详见下文 |
+| T081 | adapter_setup_finished：OK-WW 自动发现路径、更新与配置 | 动态日常/4C/高级面板保存由 useOkwwNativeConfigApi 记录 save 结果；读取不采集，其他入口见下文 |
 | T082 | adapter_setup_finished：OK-NTE 配置编辑与原生窗口 | 已接入现有引导入口，详见下文 |
 | T083 | adapter_setup_finished：ZZZ-OD 原生实例与配置会话 | 已接入现有引导入口，详见下文 |
 | T084 | adapter_setup_finished：奇想盒配置与原生会话 | 已接入现有引导入口，详见下文 |
@@ -168,14 +193,16 @@
 `app_started`。关闭前后、旧代次和额外字段未增加生产请求。原始 ASAR/配置已恢复。
 仅证明该传输与开关边界，未把契约样本当成真实游戏、扫码、升级、硬件或真实混合/循环队列验收。
 
-QQ 官方机器人私聊和群内提及重试托管、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、托管开始与完成通知，
+QQ 官方机器人私聊和群内提及重试托管、启动队列（运行一次）复用 `TaskManager.start` 的 `task.created`、托管开始与完成通知，
 由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
 `script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
 不上传聊天正文、托管名称或 QQ 标识；没有 Renderer 观察者时不补报。
 
 群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
+命令帮助、托管和队列名称列表属于只读查询，不新增遥测；英文别名复用相同执行入口，不上传命令或配置名称。
 
 - 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
+  任务建树使用宿主类型目录的公开标识，奇想盒任务和原生配置结果沿用 `Whimbox` 分类。
 - 队列托管更新预下载：复用 `taskAnalytics.ts` 的脚本运行及任务终态观察者；首节点计时、缓存命中与下载完成属于内部调度，不新增完成事件，不将预下载成功当作安装成功。
 
 - SRC 本体托管更新：设置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`，更新失败继续、安装阻断沿用 `task_observed_finished`；Git 预取不等同于依赖安装完成，不采集仓库、提交、代理或路径。
@@ -217,3 +244,13 @@ MAA / MaaEnd / MFW 家族全量与增量更新方式：保存沿用 `useScriptAp
 Okww 日常计划复用计划管理及保存事件，账号绑定复用用户配置写入事件；不采集计划内容。
 
 - OK-WW 自定义启动参数的账号保存复用 `useUserApi.updateUser` 的 `config_write_finished`；运行复用既有任务启动和终态事件，不采集参数内容或任务名称。
+
+后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
+
+前端更新暂存材料的创建、交接及回收不单独采集，下载结果继续由 update_download_finished 确认，后端更新及单步重试继续由 backend_update_finished 确认；Runtime 对齐复用既有事件。安装器启动只表示受理，不新增安装完成统计；进程身份、路径、版本和恢复记录仅用于本地清理。
+
+预检未完成和确定不兼容继续由现有更新入口记录失败，原重试作为新的用户操作观察；不新增逐镜像或错误类别事件，不采集 stderr、索引地址和内部路径。插件网关错误信封修正继续复用原有业务结果观察，不把传输响应当作插件任务完成。
+
+MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。
+
+T003/T004 复用初始化整体和阶段结果；主进程在当前尝试与持久化开关代次匹配时附加硬件档位和负载摘要。Runtime 在原有错误发送前通过一次性本机管道获取最新摘要。

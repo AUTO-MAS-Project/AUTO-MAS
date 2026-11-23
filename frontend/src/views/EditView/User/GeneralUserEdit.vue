@@ -202,7 +202,8 @@ const generalSessionViewOnly = ref(false) // 当前会话是否为查看（只�
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
 
-// 通用脚本默认用户数据
+// 通用脚本默认用户数据。
+// 字段与默认值以 app/models/config/script.py 的 GeneralUserConfig 为准，后端改字段时需同步这里。
 const getDefaultGeneralUserData = () => ({
   Info: {
     Name: '',
@@ -213,7 +214,6 @@ const getDefaultGeneralUserData = () => ({
     Base: 'independent',
     // 固定配置，或按日轮换的通用计划 ID
     PlanMode: 'Fixed',
-    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
@@ -226,8 +226,6 @@ const getDefaultGeneralUserData = () => ({
     IfSendStatistic: false,
     IfServerChan: false,
     ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
   },
   Data: {
     LastProxyDate: '2000-01-01T00:00:00+04:00',
@@ -302,30 +300,23 @@ const handleFieldSave = async (key: string, value: any) => {
 
 // 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
 
-// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存
-// 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
+// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存。
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   if (isInitializing.value || configModeSaving.value || !userId) return
   if (formData.Info.Base === value) return
 
   const previousMode = formData.Info.Base
-  const previousIfUseMas = formData.Info.IfUseMasConfig
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  formData.Info.IfUseMasConfig = value !== 'native'
   configModeSaving.value = true
 
   try {
     const saved = await updateUser(scriptId, userId, {
-      Info: {
-        Base: formData.Info.Base as 'shared' | 'independent' | 'native',
-        IfUseMasConfig: formData.Info.IfUseMasConfig,
-      },
+      Info: { Base: formData.Info.Base as 'shared' | 'independent' | 'native' },
     })
 
     if (!saved) {
       formData.Info.Base = previousMode
-      formData.Info.IfUseMasConfig = previousIfUseMas
       return
     }
 

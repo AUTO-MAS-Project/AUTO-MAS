@@ -22,7 +22,7 @@ from time import time_ns
 import app.core.notify.formats.maaend as _format_maaend
 import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
-from app.core import Config, EmulatorManager, Notify, Publisher
+from app.core import Config, GameManager, Notify, Publisher
 from app.core.notify.task_content import screenshot_entries as screenshot_entries
 from app.core.script_update import (
     ScriptUpdateRequest,
@@ -37,9 +37,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, UserItem
 from app.services import capture_adb, capture_win32, script_install
 from app.services import endfield_launcher as _service_endfield_launcher
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator
+from app.task.game import game_device_id, game_target_id
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import push_dispatch_log
+from app.task.run_flow import game_update_result, point
 from app.utils import (
     BASE_NATIVE,
     BASE_SHARED,
@@ -51,13 +54,14 @@ from app.utils import (
 )
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 
 from .AutoProxy import AutoProxyTask
 from .resource_loader import MaaEndResourceLoader, load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_base
 from .tools import script_update
-from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.backup_archive import archive_native_backup
+from .tools.managed_recovery import MaaEndInstallAdapter
 from .tools.update import ensure_game_updated
 from .Update import EndfieldUpdateTask
 
@@ -110,6 +114,28 @@ class MaaEndManager(ScriptManagerBase):
         self._program_update_prepared = False
         self._update_candidate: script_update.PreparedUpdate | str | None = None
 
+    @staticmethod
+    async def check_prefetch(config) -> list:
+        """在允许接管更新且已配置安装目录时检查更新候选，返回文件身份和适用渠道的下载请求。"""
+        from app.models.schema import DownloadRequest
+
+        if (
+            not config.Update.TakeoverEnabled
+            or config.Info.Path is None
+            or config.Update.PackageMode == "incremental"
+        ):
+            return []
+        candidate = await script_update.check_update(config.Info.Path, config)
+        if isinstance(candidate, str):
+            return []
+        return [
+            DownloadRequest(
+                url=candidate.url,
+                content_hash=candidate.digest or None,
+                downloader="builtin" if candidate.source == "MirrorChyan" else None,
+            )
+        ]
+
     async def prefetch_script_update(self) -> None:
         config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         if config.Update.TakeoverEnabled and config.Info.Path is not None:
@@ -153,23 +179,32 @@ class MaaEndManager(ScriptManagerBase):
         except (OSError, KeyError, ValueError) as error:
             return f"MaaEnd 控制器配置读取失败: {error}"
 
+        if (
+            desktop_process_target.get() is not None
+            and self.controller_protocol != "Win32"
+        ):
+            return "MaaEnd 桌面分身仅支持 PC 控制器"
+
         if self.execution_mode == "Update":
             # 只更新 PC 客户端：不读 mxu-MaaEnd.json，也不起模拟器。
             if self.controller_protocol != "Win32":
                 return (
                     "终末地客户端更新仅支持 PC 控制器, 请检查托管配置中的控制器设置！"
                 )
-            if not Path(str(script_config.Game.Path or "").strip()).is_file():
+            if not Path(
+                str(client_executable_path(script_config) or "").strip()
+            ).is_file():
                 return "未完成游戏配置, 请检查托管配置中的游戏设置！"
             return "Pass"
 
         if self.controller_protocol == "Adb" and (
-            script_config.Game.EmulatorId == "-"
-            or script_config.Game.EmulatorIndex in ["", "-"]
+            game_target_id(script_config) == "-"
+            or game_device_id(script_config) in ["", "-"]
         ):
             return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
         elif self.controller_protocol == "Win32" and (
-            not script_config.Game.Path or not script_config.Game.Path.exists()
+            not client_executable_path(script_config)
+            or not client_executable_path(script_config).exists()
         ):
             return "未完成游戏配置, 请检查托管配置中的游戏设置！"
         if self.controller_protocol == "Win32" and self.execution_mode == "AutoProxy":
@@ -180,20 +215,22 @@ class MaaEndManager(ScriptManagerBase):
             if launch_mode == "MaaEnd":
                 if controller_name not in loader.pretask_controllers("LaunchGamePC"):
                     return "当前 MaaEnd 或控制器不支持「MaaEnd 启动」，请选择启动器启动或 MAS 启动"
-                if script_config.Game.LauncherPath:
+                if client_launcher_path(script_config):
                     try:
                         _service_endfield_launcher.resolve_launcher_exe(
-                            Path(str(script_config.Game.Path)),
-                            str(script_config.Game.LauncherPath),
+                            Path(str(client_executable_path(script_config))),
+                            str(client_launcher_path(script_config)),
                         )
                     except ValueError as error:
                         return str(error)
             else:
                 # MAS 两种启动方式需要有效启动器；原生模式由 MaaEnd 自行定位。
-                client_exe = Path(str(script_config.Game.Path or "").strip())
+                client_exe = Path(
+                    str(client_executable_path(script_config) or "").strip()
+                )
                 try:
                     launcher = _service_endfield_launcher.resolve_launcher_exe(
-                        client_exe, str(script_config.Game.LauncherPath or "")
+                        client_exe, str(client_launcher_path(script_config) or "")
                     )
                 except ValueError as error:
                     return str(error)
@@ -247,15 +284,13 @@ class MaaEndManager(ScriptManagerBase):
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
         self._recover_previous_run()
-        await self._prepare_program_update(root_path)
+        await self._prepare_script_update(root_path)
 
         # 初始化模拟器管理器
         if self.controller_protocol == "Adb":
-            device_provider = (
-                self._device_provider or EmulatorManager.get_emulator_instance
-            )
+            device_provider = self._device_provider or GameManager.get_emulator_instance
             self.emulator_manager = await device_provider(
-                str(self.script_config.Game.EmulatorId)
+                str(game_target_id(self.script_config))
             )
         else:
             self.emulator_manager = None
@@ -292,7 +327,7 @@ class MaaEndManager(ScriptManagerBase):
             f"账号列表加载完成, 已筛选账号数: {len(self.script_info.user_list)}"
         )
 
-    async def _prepare_program_update(self, root: Path) -> None:
+    async def _prepare_script_update(self, root: Path) -> None:
         if self._program_update_prepared:
             return
         if (
@@ -301,6 +336,7 @@ class MaaEndManager(ScriptManagerBase):
         ):
             return
         await push_dispatch_log(self.script_info, "正在检查 MaaEnd 程序更新…")
+        point(self, "script_update")
 
         async def progress(downloaded: int, total: int, speed: float) -> None:
             await self.script_info.set_log(
@@ -326,8 +362,10 @@ class MaaEndManager(ScriptManagerBase):
                     progress=progress,
                 )
         except (script_install.InstallUnsafeError, FluxdownCancelUnconfirmed):
+            point(self, "script_update", state="failed")
             raise
         except Exception as error:
+            point(self, "script_update", state="failed")
             await script_update.confirm_current_install(root)
             result = f"MaaEnd 更新准备未完成，沿用当前安装继续任务：{error}"
             logger.warning(result)
@@ -336,9 +374,12 @@ class MaaEndManager(ScriptManagerBase):
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="warning", message=result),
+                    data=WSTaskNoticeData(
+                        sourceScriptType="MaaEnd", level="warning", message=result
+                    ),
                 )
         else:
+            point(self, "script_update", state="succeeded", key="checked")
             await push_dispatch_log(self.script_info, result)
         await self._refresh_after_program_install(root)
         self._program_update_prepared = True
@@ -414,7 +455,7 @@ class MaaEndManager(ScriptManagerBase):
             and self.script_info.user_list[0].status == "完成"
         )
 
-    async def _ensure_game_client_updated(self) -> str | None:
+    async def _prepare_game_update(self) -> str | None:
         """任务启动前接管终末地 PC 客户端更新。
 
         更新对象是托管级的 `Game.Path`，多账号与重试轮次都只该检查一次，所以要赶在本轮
@@ -451,7 +492,7 @@ class MaaEndManager(ScriptManagerBase):
             # 改成模拟器后这个勾选会留着；静默跳过会被当成已生效，留一行可查的说明
             logger.info("终末地客户端更新仅支持 PC 控制器，当前控制器已跳过")
             return None
-        game_exe = Path(str(script_config.Game.Path or "").strip())
+        game_exe = Path(str(client_executable_path(script_config) or "").strip())
         if not game_exe.is_file():
             # 路径填错或客户端被移走时留一行可查的说明，别让这道门静默消失
             logger.info(f"未找到终末地客户端，本轮不检查更新: {game_exe}")
@@ -461,6 +502,7 @@ class MaaEndManager(ScriptManagerBase):
             await push_dispatch_log(self.script_info, line)
 
         try:
+            point(self, "game_update")
             result = await ensure_game_updated(
                 game_exe,
                 time_limit_minutes=int(script_config.Game.UpdateTimeLimit),
@@ -469,6 +511,7 @@ class MaaEndManager(ScriptManagerBase):
         except Exception as error:
             # 能走到这里的只剩「已经开始写游戏目录之后」出的岔子：放行等于让脚本
             # 跑在半写入的客户端上，一律阻断。
+            point(self, "game_update", state="failed")
             logger.opt(exception=True).error(
                 f"终末地客户端更新接管异常，中止本轮任务: {error}"
             )
@@ -476,6 +519,7 @@ class MaaEndManager(ScriptManagerBase):
 
         # 结论也要在调度台留一句：拦住本轮的那句之外，「已更新至 x」与「判不了所以放行」
         # 同样得看得见；UpToDate 每轮任务都会出，重复播没人看
+        game_update_result(self, result)
         if result.status != "UpToDate":
             await push_dispatch_log(self.script_info, result.message)
         if result.status == "NeedManualUpdate":
@@ -569,7 +613,7 @@ class MaaEndManager(ScriptManagerBase):
                     await self._refresh_after_program_install(root)
                     self._program_update_prepared = True
                 else:
-                    await self._prepare_program_update(root)
+                    await self._prepare_script_update(root)
             elif script_install.record_path(root, "installed.json").exists():
                 # 非接管模式沿用 MXU 自行更新的安装。恢复事务仍须完成，
                 # 但旧 MAS 回执不应阻断后续配置或运行，也不重算哈希冒充可信。
@@ -580,7 +624,11 @@ class MaaEndManager(ScriptManagerBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=self.check_result),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd",
+                    level="error",
+                    message=self.check_result,
+                ),
             )
             return
 
@@ -599,7 +647,7 @@ class MaaEndManager(ScriptManagerBase):
             await self.spawn(EndfieldUpdateTask(self.script_info, self.script_config))
             return
 
-        failure = await self._ensure_game_client_updated()
+        failure = await self._prepare_game_update()
         if failure is not None:
             # 绝不能改 self.check_result：final_task 在它不是 Pass 时早退并跳过
             # unlock()，而此刻脚本配置已被 prepare() 锁上，写它就是永久泄锁。
@@ -609,7 +657,9 @@ class MaaEndManager(ScriptManagerBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=failure),
+                data=WSTaskNoticeData(
+                    sourceScriptType="MaaEnd", level="error", message=failure
+                ),
             )
             return
 
@@ -674,9 +724,7 @@ class MaaEndManager(ScriptManagerBase):
             if self.execution_mode in ["AutoProxy"]:
                 # 准备期间才开始维护时，未实际代理任何账号，不关闭原有模拟器。
                 if self.has_proxy_run:
-                    await close_emulator(
-                        self, index=self.script_config.Game.EmulatorIndex
-                    )
+                    await close_emulator(self, index=game_device_id(self.script_config))
                 await config_manager.flush()
 
                 summary = self.collect_user_results()
@@ -728,7 +776,9 @@ class MaaEndManager(ScriptManagerBase):
                         id=self.task_info.task_id,
                         type=protocol.TASK_NOTICE,
                         data=WSTaskNoticeData(
-                            level="error", message=f"推送代理结果时出现异常: {e}"
+                            sourceScriptType="MaaEnd",
+                            level="error",
+                            message=f"推送代理结果时出现异常: {e}",
                         ),
                     )
 
@@ -767,7 +817,11 @@ class MaaEndManager(ScriptManagerBase):
         await Publisher.send(
             id=self.task_info.task_id,
             type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(level="error", message=f"MaaEnd任务出现异常: {e}"),
+            data=WSTaskNoticeData(
+                sourceScriptType="MaaEnd",
+                level="error",
+                message=f"MaaEnd任务出现异常: {e}",
+            ),
         )
 
     def _render_user_results(self, *, has_uncompleted: bool) -> str:

@@ -5,11 +5,35 @@
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
 import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
+import type { OkNteTaskArgumentOut } from '../models/OkNteTaskArgumentOut';
 import type { OutBase } from '../models/OutBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class OknteService {
+    /**
+     * 预览 OK-NTE 任务启动参数
+     * @param scriptId
+     * @param taskIndex
+     * @returns OkNteTaskArgumentOut Successful Response
+     * @throws ApiError
+     */
+    public static getOknteTaskArgumentApiScriptsOknteTaskArgumentGet(
+        scriptId: string,
+        taskIndex: number,
+    ): CancelablePromise<OkNteTaskArgumentOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/oknte/task-argument',
+            query: {
+                'script_id': scriptId,
+                'task_index': taskIndex,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。

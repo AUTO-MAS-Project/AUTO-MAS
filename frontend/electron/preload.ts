@@ -31,12 +31,20 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
+    beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
+    finishInitialization: (
+      context: number | null,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => ipcRenderer.send('analytics:initialization-finish', context, attempt, event),
     trackEvent: (context: number, event: RendererAnalyticsEvent) =>
       ipcRenderer.send('analytics:event', context, event),
   },
   isMacOS: process.platform === 'darwin',
   installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
+  verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
+    ipcRenderer.invoke('mystery:verify', accessCode, context),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   saveTextFile: (
@@ -175,7 +183,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置文件操作
   saveConfig: (config: unknown, defaults?: unknown) =>
     ipcRenderer.invoke('save-config', config, defaults),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
+  loadConfig: (strict?: boolean) =>
+    strict === true ? ipcRenderer.invoke('load-config', true) : ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 应用初始化版本（保存前端版本号用于比对）
@@ -334,6 +343,43 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pullRepository: (rebuild?: boolean) => ipcRenderer.invoke('pull-repository', rebuild),
   installDependencies: (rebuild?: boolean) => ipcRenderer.invoke('install-dependencies', rebuild),
   getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
+  appUpdateCheck: (input: import('./services/appUpdateTypes').AppUpdateSettings) =>
+    /* 将应用版本检查请求交给主进程，渲染进程只接收查询结果。 */ ipcRenderer.invoke(
+      'app-update:check',
+      input
+    ),
+  appUpdateStatus: () =>
+    /* 向主进程读取当前应用更新快照，用于恢复界面状态。 */ ipcRenderer.invoke('app-update:status'),
+  appUpdateStart: (
+    version: string,
+    input: import('./services/appUpdateTypes').AppUpdateSettings,
+    downloader?: 'builtin' | 'fluxdown'
+  ) =>
+    /* 将目标版本、来源设置和可选下载渠道交给主进程启动下载。 */ ipcRenderer.invoke(
+      'app-update:start',
+      version,
+      input,
+      downloader
+    ),
+  appUpdateCancel: () =>
+    /* 请求主进程取消当前应用更新下载并等待收尾。 */ ipcRenderer.invoke('app-update:cancel'),
+  appUpdateSwitch: () =>
+    /* 请求主进程将当前 GitHub 更新下载切换到 CNB。 */ ipcRenderer.invoke('app-update:switch'),
+  appUpdateInstall: () =>
+    /* 请求主进程校验并安装已经完成准备的应用更新包。 */ ipcRenderer.invoke('app-update:install'),
+  onAppUpdate: (callback: (event: import('./services/appUpdateTypes').AppUpdateEvent) => void) => {
+    // 订阅应用更新事件，并返回取消订阅函数供页面生命周期清理。
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      event: import('./services/appUpdateTypes').AppUpdateEvent
+    ) => /* 移除 Electron 原始事件参数，仅将约定的更新事件交给页面回调。 */ callback(event)
+    ipcRenderer.on('app-update:event', listener)
+    return () =>
+      /* 解除当前回调对应的应用更新事件监听，避免页面卸载后重复处理。 */ ipcRenderer.removeListener(
+        'app-update:event',
+        listener
+      )
+  },
   checkRuntimeBinaryUpdate: () => ipcRenderer.invoke('check-runtime-binary-update'),
   updateRuntimeBinary: () => ipcRenderer.invoke('update-runtime-binary'),
   onRuntimeBinaryProgress: (callback: (progress: unknown) => void) => {
@@ -345,6 +391,44 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // API 端点获取
   getApiEndpoint: (key: string) => ipcRenderer.invoke('get-api-endpoint', key),
+  desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
+  desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
+    ipcRenderer.invoke('desktop-session:open', input),
+  desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
+  desktopSessionRepair: (
+    plan: import('./services/desktopSessionProtocol').DesktopSessionRepair[]
+  ) => ipcRenderer.invoke('desktop-session:repair', plan),
+  desktopSessionExportLogs: () => ipcRenderer.invoke('desktop-session:export-logs'),
+  desktopSessionPending: () => ipcRenderer.invoke('desktop-session:pending'),
+  desktopSessionStart: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
+    ipcRenderer.invoke('desktop-session:start', input),
+  desktopSessionBounds: (bounds: Electron.Rectangle) =>
+    ipcRenderer.send('desktop-session:bounds', bounds),
+  desktopSessionWindow: (action: 'show' | 'hide') =>
+    ipcRenderer.send('desktop-session:window', action),
+  desktopSessionVolume: (volume: number) => ipcRenderer.send('desktop-session:volume', volume),
+  desktopSessionLogs: () => ipcRenderer.invoke('desktop-session:logs'),
+  onDesktopSessionState: (
+    callback: (state: import('./services/desktopSessionProtocol').DesktopSessionSnapshot) => void
+  ) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: Parameters<typeof callback>[0]) =>
+      callback(state)
+    ipcRenderer.on('desktop-session:state', listener)
+    return () => ipcRenderer.removeListener('desktop-session:state', listener)
+  },
+  onDesktopSessionPending: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-session:pending', listener)
+    return () => ipcRenderer.removeListener('desktop-session:pending', listener)
+  },
+  onDesktopSessionTasksStarted: (
+    callback: (tasks: import('./services/desktopSessionProtocol').DesktopQueueResult[]) => void
+  ) => {
+    const listener = (_event: Electron.IpcRendererEvent, tasks: Parameters<typeof callback>[0]) =>
+      callback(tasks)
+    ipcRenderer.on('desktop-session:tasks-started', listener)
+    return () => ipcRenderer.removeListener('desktop-session:tasks-started', listener)
+  },
 
   // Runtime 完整初始化流程
   initialize: (targetBranch?: string, startBackend?: boolean) =>
@@ -352,7 +436,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 后端服务管理（startBackend/stopBackend 与 backendStart 两套命名都有渲染进程在用，先都保留）
   backendStart: (retry?: boolean) => ipcRenderer.invoke('backend-start', retry),
-  backendRestart: (reason?: 'manual' | 'recovery') => ipcRenderer.invoke('backend-restart', reason),
+  backendRestart: (reason?: 'manual' | 'recovery' | 'update') =>
+    ipcRenderer.invoke('backend-restart', reason),
   backendStatus: () => ipcRenderer.invoke('backend-status'),
   checkRuntimeBackendUpdate: () => ipcRenderer.invoke('check-runtime-backend-update'),
 

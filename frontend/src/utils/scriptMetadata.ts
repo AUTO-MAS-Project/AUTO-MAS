@@ -3,14 +3,12 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
-import maaIcon from '@/assets/MAA.png'
+import { SCRIPT_PLUGIN_METADATA } from '@/plugins/scriptAdapters'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
-import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
-import whimboxIcon from '@/assets/whimbox.png'
 import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
@@ -124,24 +122,9 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  MAA: {
-    logo: maaIcon,
-    label: 'MAA',
-    typeTagColor: 'blue',
-    routeSuffix: 'maa',
-    routeTitles: {
-      script: '编辑MAA脚本',
-      userAdd: '添加MAA用户',
-      userEdit: '编辑MAA用户',
-    },
-    createOrder: 2,
-    create: {
-      titleKey: 'core.scripts.type.MAA',
-      descriptionKey: 'core.scripts.create.typeDesc.MAA',
-      keywords: ['maa', '明日方舟'],
-      group: 'specialized',
-    },
-  },
+  MAA: SCRIPT_PLUGIN_METADATA.MAA,
+  SRC: SCRIPT_PLUGIN_METADATA.SRC,
+  Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -229,42 +212,6 @@ export const SCRIPT_METADATA = {
       titleKey: 'core.scripts.type.Okww',
       descriptionKey: 'core.scripts.create.typeDesc.Okww',
       keywords: ['okww', 'ok-ww', 'ok-script'],
-      group: 'specialized',
-    },
-  },
-  SRC: {
-    logo: srcIcon,
-    label: 'SRC',
-    typeTagColor: 'purple',
-    routeSuffix: 'src',
-    routeTitles: {
-      script: '编辑SRC脚本',
-      userAdd: '添加SRC用户',
-      userEdit: '编辑SRC用户',
-    },
-    createOrder: 3,
-    create: {
-      titleKey: 'core.scripts.type.SRC',
-      descriptionKey: 'core.scripts.create.typeDesc.SRC',
-      keywords: ['src', '星穹铁道'],
-      group: 'specialized',
-    },
-  },
-  Whimbox: {
-    logo: whimboxIcon,
-    label: 'Whimbox',
-    typeTagColor: 'pink',
-    routeSuffix: 'whimbox',
-    routeTitles: {
-      script: '编辑奇想盒脚本',
-      userAdd: '添加奇想盒用户',
-      userEdit: '编辑奇想盒用户',
-    },
-    createOrder: 12,
-    create: {
-      titleKey: 'core.scripts.type.Whimbox',
-      descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
-      keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
       group: 'specialized',
     },
   },

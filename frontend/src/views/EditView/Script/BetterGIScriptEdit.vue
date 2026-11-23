@@ -202,11 +202,13 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
 const { t } = useI18n()
+const { alert } = useConfirm()
 const logger = window.electronAPI.getLogger('BetterGI脚本编辑')
 const route = useRoute()
 const router = useRouter()
@@ -356,9 +358,10 @@ const selectRootPath = async () => {
   const exePath = `${normalized}/${BGI_EXE_NAME}`
   const exists = await window.electronAPI.fileExists(exePath)
   if (!exists) {
-    Modal.error({
+    void alert({
+      tone: 'error',
       title: t('core.edit.bettergiInvalidDirectory'),
-      content: t('core.edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
+      description: t('core.edit.bettergiExeNotFound', { p0: BGI_EXE_NAME }),
       okText: t('core.edit.gotIt'),
     })
     return

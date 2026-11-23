@@ -8,10 +8,10 @@ from app.utils import (
     LOG_TYPE_NORMAL,
     MultiLineAggregator,
     RegexMatcher,
-    apply_patterns,
     compile_regex,
 )
 from app.utils import expression as _utils_expression
+from app.utils.common.log.patterns import first_pattern_match
 
 from .results import LogEntry
 
@@ -31,11 +31,16 @@ class LogPipeline:
         self.line_rules: list[RegexMatcher] = []
         self.scope_rules: list[MultiLineAggregator] = []
         self.results: list[ResultItem] = []
+        self.matched_keys: list[str] = []
         self._finished: tuple[LogEntry, ...] | None = None
         self._last_timestamp: float | None = None
 
     def add_rule(
-        self, match_regex: str, expr: str = "", log_type: str = LOG_TYPE_NORMAL
+        self,
+        match_regex: str,
+        expr: str = "",
+        log_type: str = LOG_TYPE_NORMAL,
+        key: str = "",
     ) -> None:
         """保留存量规则的空值、非法正则和表达式校验语义。"""
         if not match_regex.strip():
@@ -45,7 +50,7 @@ class LogPipeline:
             raise ValueError(f"匹配正则无效: {match_regex}")
         extract = _utils_expression.compile_expression(expr) if expr else None
         self.line_rules.append(
-            RegexMatcher(match=match_re, extract=extract, log_type=log_type)
+            RegexMatcher(match=match_re, extract=extract, log_type=log_type, key=key)
         )
 
     def feed(self, line: str, *, timestamp: float | None = None) -> None:
@@ -64,9 +69,12 @@ class LogPipeline:
         if not processed:
             return
         if self.line_rules:
-            matched = apply_patterns(processed, matchers=self.line_rules)
+            matched = first_pattern_match(processed, self.line_rules)
             if matched is not None:
-                self.results.append((*matched, timestamp))
+                rule, text = matched
+                self.results.append((rule.log_type, text, timestamp))
+                if rule.key:
+                    self.matched_keys.append(rule.key)
         for agg in self.scope_rules:
             result = agg.apply(processed)
             if result is not None:

@@ -168,6 +168,38 @@ const checkDisclosure = async (
 }
 
 test.describe('@config-mode-cards', () => {
+  test('saves OneDragon native configuration with another native account present', async ({
+    app,
+    page,
+  }) => {
+    const { scriptId } = await post(page.request, '/api/scripts/add', { type: 'ZzzOd' })
+    try {
+      const first = await post(page.request, '/api/scripts/user/add', { scriptId })
+      const second = await post(page.request, '/api/scripts/user/add', { scriptId })
+      const { userId } = second
+      await post(page.request, '/api/scripts/user/update', {
+        scriptId,
+        userId,
+        data: { Info: { Base: 'independent' } },
+      })
+      await app.goto(`/scripts/${scriptId}/users/${userId}/edit/zzzod`)
+      const group = page.locator('.config-mode-options').first()
+      await expect(group.locator('input[value=independent]')).toBeChecked()
+      await group.locator('.config-mode-option').last().click()
+      const loadAccounts = () => post(page.request, '/api/scripts/user/get', { scriptId })
+      await expect.poll(async () => (await loadAccounts()).data[userId].Info.Base).toBe('native')
+      const { data } = await loadAccounts()
+      expect(data[first.userId].Info.Base).toBe('native')
+      expect(second.data.Info).toMatchObject({ Base: 'native', IfQuickConfig: false })
+      await page.reload()
+      await expect(group.locator('input[value=native]')).toBeChecked()
+      await app.evidence('zzzod-multiple-native-accounts')
+    } finally {
+      await app.goto('/scripts')
+      await post(page.request, '/api/scripts/delete', { scriptId })
+    }
+  })
+
   test('keeps configuration choices readable and descriptions accessible in narrow containers', async ({
     app,
     page,

@@ -35,6 +35,7 @@ const screens = [
   'user_edit',
   'plans',
   'emulators',
+  'games',
   'queue',
   'scheduler',
   'history',
@@ -44,6 +45,9 @@ const screens = [
   'theme_store',
   'settings',
   'taskboard',
+  'plugins',
+  'plugin_market',
+  'plugin_settings',
 ]
 const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
   ...featureAnalyticsSchemas,
@@ -186,7 +190,16 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     duration_bucket: duration,
   },
   task_start_result: {
-    source: ['home', 'scheduler', 'tray', 'mascot', 'script_config', 'script_update', 'unknown'],
+    source: [
+      'home',
+      'scheduler',
+      'tray',
+      'mascot',
+      'script_config',
+      'script_update',
+      'desktop_session',
+      'unknown',
+    ],
     mode,
     target_kind: ['script', 'queue', 'user', 'unknown'],
     outcome: ['accepted', 'failure'],
@@ -355,6 +368,8 @@ export function validateAnalyticsEvent(value: unknown, renderer: boolean): Analy
       ...mainOnlyFeatureEvents,
     ].includes(value.name)
   )
+    return null
+  if (renderer && value.name === 'task_start_result' && value.props.source === 'desktop_session')
     return null
   const schema = schemas[value.name as AnalyticsEventName]
   if (Object.keys(value.props).length !== Object.keys(schema).length) return null

@@ -503,24 +503,10 @@
                     variant="form"
                   />
                 </template>
-                <PathPickerField
-                  v-model="generalConfig.Game.Path"
-                  mode="file"
-                  :placeholder="t('core.edit.pickGameExecutable2')"
-                  :pick-label="t('core.edit.pickFile')"
-                  @pick="selectGamePath"
-                />
+                <BoundGamePathField />
               </a-form-item>
             </a-col>
             <!-- 模拟器相关字段 -->
-            <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <EmulatorSelectField
-                v-model="generalConfig.Game.EmulatorId"
-                :options="emulatorOptions"
-                :loading="emulatorLoading"
-                @change="handleEmulatorChange"
-              />
-            </a-col>
 
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
               <a-form-item>
@@ -540,16 +526,6 @@
                   />
                 </a-input-group>
               </a-form-item>
-            </a-col>
-
-            <a-col v-if="generalConfig.Game.Type === 'Emulator'" :span="8">
-              <EmulatorInstanceField
-                v-model="generalConfig.Game.EmulatorIndex"
-                :emulator-id="generalConfig.Game.EmulatorId"
-                :options="emulatorDeviceOptions"
-                :loading="emulatorDeviceLoading"
-                @save="handleChange('Game', 'EmulatorIndex', $event)"
-              />
             </a-col>
           </a-row>
 
@@ -660,10 +636,10 @@
 </template>
 
 <script setup lang="ts">
+import BoundGamePathField from '@/components/BoundGamePathField.vue'
+
 import PathPickerField from '@/components/PathPickerField.vue'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
-import EmulatorInstanceField from './components/EmulatorInstanceField.vue'
-import EmulatorSelectField from './components/EmulatorSelectField.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import GeneralTemplateUpload from './components/GeneralTemplateUpload.vue'
 import { createGeneralScriptDraft } from './generalScriptDraft'
@@ -676,10 +652,8 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
-import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { useEmulatorOptions } from '@/composables/useEmulatorOptions'
 import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
@@ -981,12 +955,6 @@ const updatePathsBasedOnRoot = (newRootPath: string) => {
   }
 }
 const pageLoading = ref(false)
-const {
-  emulatorDeviceLoading,
-  emulatorDeviceOptions,
-  clearEmulatorDeviceOptions,
-  loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
 
 const formData = reactive({
   name: '',
@@ -1124,10 +1092,6 @@ const errorLogRegexError = computed(() => {
   return error ? `正则语法错误：${error}` : null
 })
 
-// 模拟器相关状态
-const { emulatorLoading, emulatorOptions, loadEmulatorOptions, clearEmulatorOptions } =
-  useEmulatorOptions()
-
 // 延迟注册 ConfigPathMode watcher（在加载脚本并完成初始化后再注册）
 // 注意：此 watcher 用于业务逻辑处理（配置文件类型切换时重置路径），而非简单的配置自动保存
 let stopConfigPathModeWatcher: (() => void) | null = null
@@ -1255,10 +1219,6 @@ onMounted(async () => {
   }
 
   await loadScript()
-  // 只有当游戏平台类型为模拟器时才加载模拟器选项
-  if (generalConfig.Game.Type === 'Emulator') {
-    await loadEmulatorOptions()
-  }
   // 在脚本加载完成并完成初始化后，再注册 ConfigPathMode 的 watcher，避免初始化阶段触发重置逻辑
   setupConfigPathModeWatcher()
   // 初始化完成后允许自动保存
@@ -1290,11 +1250,6 @@ const loadScript = async () => {
       // 对于 General 类型，在加载完成后初始化相对路径关系
       await nextTick()
       updatePathRelations()
-
-      // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
-      if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
-        void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
-      }
     } else {
       // 编辑现有脚本时，从API获取数据
       const scriptDetail = await getScript(scriptId)
@@ -1312,11 +1267,6 @@ const loadScript = async () => {
       // 对于 General 类型，在加载完成后初始化相对路径关系
       await nextTick()
       updatePathRelations()
-
-      // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
-      if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
-        void loadEmulatorDeviceOptions(generalConfig.Game.EmulatorId)
-      }
     }
 
     // 同步推送日志采集规则：将后端返回的 JSON 字符串解析为可编辑的列表
@@ -1337,32 +1287,9 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-// 模拟器相关方法
-const handleEmulatorChange = async (emulatorId: string) => {
-  // 清空模拟器实例选择
-  generalConfig.Game.EmulatorIndex = ''
-  if (emulatorId) {
-    void loadEmulatorDeviceOptions(emulatorId)
-  } else {
-    clearEmulatorDeviceOptions()
-  }
-
-  // 保存模拟器选择和清空的实例字段（与其他保存入口共用串行保存）
-  await persistFields(
-    {
-      Game: {
-        EmulatorId: emulatorId,
-        EmulatorIndex: '',
-      },
-    },
-    '模拟器配置'
-  )
-}
-
 const handleGameTypeChange = async (gameType: string) => {
   // 构建需要更新的字段对象
   let updateFields: Record<string, any> = { Type: gameType }
-  clearEmulatorDeviceOptions()
 
   // 当游戏平台类型改变时，清空相关字段
   if (gameType === 'Emulator') {
@@ -1380,19 +1307,12 @@ const handleGameTypeChange = async (gameType: string) => {
       WaitTime: 0,
       IfForceClose: false,
     }
-    // 加载模拟器选项
-    await loadEmulatorOptions()
   } else if (gameType === 'Client') {
     // 切换到PC客户端时，清空模拟器和URL相关字段
     generalConfig.Game.URL = ''
-    generalConfig.Game.EmulatorId = ''
-    generalConfig.Game.EmulatorIndex = ''
-    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       URL: '',
-      EmulatorId: '',
-      EmulatorIndex: '',
     }
   } else if (gameType === 'URL') {
     // 切换到URL时，清空PC客户端和模拟器相关字段
@@ -1400,17 +1320,12 @@ const handleGameTypeChange = async (gameType: string) => {
     generalConfig.Game.Arguments = ''
     generalConfig.Game.WaitTime = 0
     generalConfig.Game.IfForceClose = false
-    generalConfig.Game.EmulatorId = ''
-    generalConfig.Game.EmulatorIndex = ''
-    clearEmulatorOptions()
     updateFields = {
       ...updateFields,
       Path: '.',
       Arguments: '',
       WaitTime: 0,
       IfForceClose: false,
-      EmulatorId: '',
-      EmulatorIndex: '',
     }
   }
 

@@ -49,8 +49,6 @@ if TYPE_CHECKING:
     from .common import OCR as OCR
     from .common import config as config
     from .common import constants as constants
-    from .common import emulator as emulator
-    from .common import emulator2 as emulator2
     from .common import environment as environment
     from .common import errors as errors
     from .common import exception as exception
@@ -78,7 +76,6 @@ if TYPE_CHECKING:
     from .common import websocket as websocket
     from .common.constants import ANSI_ESCAPE_RE as ANSI_ESCAPE_RE
     from .common.constants import APPDATA_PATH as APPDATA_PATH
-    from .common.constants import ARKNIGHTS_GAME_DAY_TZ as ARKNIGHTS_GAME_DAY_TZ
     from .common.constants import BASE_INDEPENDENT as BASE_INDEPENDENT
     from .common.constants import BASE_NATIVE as BASE_NATIVE
     from .common.constants import BASE_SHARED as BASE_SHARED
@@ -88,7 +85,6 @@ if TYPE_CHECKING:
     from .common.constants import CYCLE_EMPTY_TIME as CYCLE_EMPTY_TIME
     from .common.constants import DEFAULT_DATETIME as DEFAULT_DATETIME
     from .common.constants import DES_RULE as DES_RULE
-    from .common.constants import EMULATOR_PATH_BOOK as EMULATOR_PATH_BOOK
     from .common.constants import (
         EMULATOR_SPLASH_ADS_PATH_BOOK as EMULATOR_SPLASH_ADS_PATH_BOOK,
     )
@@ -98,7 +94,6 @@ if TYPE_CHECKING:
     from .common.constants import ILLEGAL_CHARS as ILLEGAL_CHARS
     from .common.constants import KEYBOARD_KEYS as KEYBOARD_KEYS
     from .common.constants import LEGACY_BASE_SOURCES as LEGACY_BASE_SOURCES
-    from .common.constants import MAA_STAGE_KEY as MAA_STAGE_KEY
     from .common.constants import MAAEND_AUTO_COLLECT_MODES as MAAEND_AUTO_COLLECT_MODES
     from .common.constants import MAAEND_AUTO_COLLECT_TASK as MAAEND_AUTO_COLLECT_TASK
     from .common.constants import MAAEND_AUTO_ESSENCE_MENUS as MAAEND_AUTO_ESSENCE_MENUS
@@ -125,7 +120,6 @@ if TYPE_CHECKING:
     from .common.constants import MAAEND_STAGE_WITH_AB as MAAEND_STAGE_WITH_AB
     from .common.constants import MAAEND_TASK_GROUPS as MAAEND_TASK_GROUPS
     from .common.constants import MAAEND_TASKS as MAAEND_TASKS
-    from .common.constants import MATERIALS_MAP as MATERIALS_MAP
     from .common.constants import MIRROR_ERROR_INFO as MIRROR_ERROR_INFO
     from .common.constants import (
         MSS_DEFAULT_TRIBULATION_STAGE as MSS_DEFAULT_TRIBULATION_STAGE,
@@ -133,28 +127,13 @@ if TYPE_CHECKING:
     from .common.constants import MSS_TRIBULATION_STAGES as MSS_TRIBULATION_STAGES
     from .common.constants import PLAN_CONSUMER_VALUES as PLAN_CONSUMER_VALUES
     from .common.constants import RESERVED_NAMES as RESERVED_NAMES
-    from .common.constants import RESOURCE_STAGE_INFO as RESOURCE_STAGE_INFO
     from .common.constants import SKLAND_SM_CONFIG as SKLAND_SM_CONFIG
-    from .common.constants import (
-        STARRAIL_CN_UPDATE_LINK_URL as STARRAIL_CN_UPDATE_LINK_URL,
-    )
-    from .common.constants import STARRAIL_PACKAGE_NAME as STARRAIL_PACKAGE_NAME
-    from .common.constants import STARRAIL_STAGE_BOOK as STARRAIL_STAGE_BOOK
-    from .common.constants import (
-        STARRAIL_UPDATE_LINK_SERVER as STARRAIL_UPDATE_LINK_SERVER,
-    )
     from .common.constants import TASK_MODE_ZH as TASK_MODE_ZH
     from .common.constants import TIME_FIELDS as TIME_FIELDS
     from .common.constants import TYPE_BOOK as TYPE_BOOK
     from .common.constants import UTC4 as UTC4
     from .common.constants import UTC8 as UTC8
-    from .common.constants import game_now as game_now
-    from .common.constants import get_game_day_tz as get_game_day_tz
     from .common.constants import normalize_base_source as normalize_base_source
-    from .common.emulator import EMULATOR_TYPE_BOOK as EMULATOR_TYPE_BOOK
-    from .common.emulator import LDManager as LDManager
-    from .common.emulator import MumuManager as MumuManager
-    from .common.emulator import search_all_emulators as search_all_emulators
     from .common.errors import UnsupportedPlatformError as UnsupportedPlatformError
     from .common.mirrorchyan import MirrorChyanError as MirrorChyanError
     from .common.mirrorchyan import (
@@ -164,6 +143,9 @@ if TYPE_CHECKING:
     from .common.process.manager import ProcessManager as ProcessManager
     from .common.process.manager import is_process_alive as is_process_alive
     from .common.process.manager import is_process_running as is_process_running
+    from .common.process.manager import (
+        wait_process_window_ready as wait_process_window_ready,
+    )
     from .common.process.runner import ProcessResult as ProcessResult
     from .common.process.runner import ProcessRunner as ProcessRunner
     from .common.security import dpapi_decrypt as dpapi_decrypt
@@ -179,7 +161,7 @@ if TYPE_CHECKING:
     from .contracts.audio import AudioAPI
     from .contracts.display import DisplayAPI
     from .contracts.file_lock import FileLockAPI
-    from .contracts.host import HostAPI, HostPredicate
+    from .contracts.host import HostAPI, HostPredicate, IntegrityAPI
     from .contracts.process import ProcessAPI
     from .contracts.registry import RegistryAPI
     from .contracts.secret import SecretAPI
@@ -191,6 +173,7 @@ if TYPE_CHECKING:
     display: DisplayAPI
     file_lock: FileLockAPI
     host: HostAPI
+    integrity: IntegrityAPI
     process_platform: ProcessAPI
     registry: RegistryAPI
     secret: SecretAPI
@@ -206,8 +189,6 @@ if TYPE_CHECKING:
 _LAZY_EXPORTS = {
     "SIGN_MODE_REGEX": (".common.log.patterns", "SIGN_MODE_REGEX"),
     "SIGN_MODE_SPLIT": (".common.log.patterns", "SIGN_MODE_SPLIT"),
-    "get_game_day_tz": (".common.constants", "get_game_day_tz"),
-    "game_now": (".common.constants", "game_now"),
     "normalize_base_source": (".common.constants", "normalize_base_source"),
     "LOG_TYPE_ERROR": (".common.log.patterns", "LOG_TYPE_ERROR"),
     "LOG_TYPE_NORMAL": (".common.log.patterns", "LOG_TYPE_NORMAL"),
@@ -220,6 +201,10 @@ _LAZY_EXPORTS = {
     "ProcessResult": (".common.process.runner", "ProcessResult"),
     "is_process_running": (".common.process.manager", "is_process_running"),
     "is_process_alive": (".common.process.manager", "is_process_alive"),
+    "wait_process_window_ready": (
+        ".common.process.manager",
+        "wait_process_window_ready",
+    ),
     "RegexMatcher": (".common.log.patterns", "RegexMatcher"),
     "MultiLineAggregator": (".common.log.patterns", "MultiLineAggregator"),
     "compile_regex": (".common.log.patterns", "compile_regex"),
@@ -229,12 +214,9 @@ _LAZY_EXPORTS = {
     "debug_pattern": (".common.log.patterns", "debug_pattern"),
     "LogSignMatcher": (".common.log.patterns", "LogSignMatcher"),
     "compile_log_signs": (".common.log.patterns", "compile_log_signs"),
-    "MumuManager": (".common.emulator", "MumuManager"),
-    "LDManager": (".common.emulator", "LDManager"),
-    "search_all_emulators": (".common.emulator", "search_all_emulators"),
-    "EMULATOR_TYPE_BOOK": (".common.emulator", "EMULATOR_TYPE_BOOK"),
     "decode_bytes": (".common.tools", "decode_bytes"),
     "busy_wait": (".common.tools", "busy_wait"),
+    "to_pep440": (".common.tools", "to_pep440"),
     "WebSocketClient": (".common.websocket", "WebSocketClient"),
     "MirrorChyanError": (".common.mirrorchyan", "MirrorChyanError"),
     "compare_mirrorchyan_versions": (
@@ -270,8 +252,6 @@ _LAZY_EXPORTS = {
         "MAAEND_DELIVERY_COMMISSION_SOURCES",
     ),
     "MAAEND_AUTO_COLLECT_MODES": (".common.constants", "MAAEND_AUTO_COLLECT_MODES"),
-    "MAA_STAGE_KEY": (".common.constants", "MAA_STAGE_KEY"),
-    "ARKNIGHTS_GAME_DAY_TZ": (".common.constants", "ARKNIGHTS_GAME_DAY_TZ"),
     "MAAEND_SANITY_TASK_LABELS": (".common.constants", "MAAEND_SANITY_TASK_LABELS"),
     "MAAEND_SANITY_TASK_DETAIL_LABELS": (
         ".common.constants",
@@ -293,13 +273,6 @@ _LAZY_EXPORTS = {
     ),
     "MAAEND_SANITY_TASK_FIELDS": (".common.constants", "MAAEND_SANITY_TASK_FIELDS"),
     "ENDFIELD_SERVER_PRESETS": (".common.constants", "ENDFIELD_SERVER_PRESETS"),
-    "EMULATOR_PATH_BOOK": (".common.constants", "EMULATOR_PATH_BOOK"),
-    "RESOURCE_STAGE_INFO": (".common.constants", "RESOURCE_STAGE_INFO"),
-    "MATERIALS_MAP": (".common.constants", "MATERIALS_MAP"),
-    "STARRAIL_PACKAGE_NAME": (".common.constants", "STARRAIL_PACKAGE_NAME"),
-    "STARRAIL_CN_UPDATE_LINK_URL": (".common.constants", "STARRAIL_CN_UPDATE_LINK_URL"),
-    "STARRAIL_UPDATE_LINK_SERVER": (".common.constants", "STARRAIL_UPDATE_LINK_SERVER"),
-    "STARRAIL_STAGE_BOOK": (".common.constants", "STARRAIL_STAGE_BOOK"),
     "TIME_FIELDS": (".common.constants", "TIME_FIELDS"),
     "RESERVED_NAMES": (".common.constants", "RESERVED_NAMES"),
     "ILLEGAL_CHARS": (".common.constants", "ILLEGAL_CHARS"),
@@ -357,8 +330,6 @@ _COMMON_MODULES = {
     "game_update": ".common.game_update",
     "vdd": ".unsupported.vdd",
     "websocket": ".common.websocket",
-    "emulator": ".common.emulator",
-    "emulator2": ".common.emulator2",
     "OCR": ".common.OCR",
     "i18n": ".common.i18n",
     "expression": ".common.expression",
@@ -452,8 +423,6 @@ __all__ = [
     "file_lock",
     "SIGN_MODE_REGEX",
     "SIGN_MODE_SPLIT",
-    "get_game_day_tz",
-    "game_now",
     "normalize_base_source",
     "LOG_TYPE_ERROR",
     "LOG_TYPE_NORMAL",
@@ -466,6 +435,7 @@ __all__ = [
     "ProcessResult",
     "is_process_running",
     "is_process_alive",
+    "wait_process_window_ready",
     "RegexMatcher",
     "MultiLineAggregator",
     "compile_regex",
@@ -475,10 +445,6 @@ __all__ = [
     "debug_pattern",
     "LogSignMatcher",
     "compile_log_signs",
-    "MumuManager",
-    "LDManager",
-    "search_all_emulators",
-    "EMULATOR_TYPE_BOOK",
     "decode_bytes",
     "busy_wait",
     "WebSocketClient",
@@ -507,8 +473,6 @@ __all__ = [
     "MAAEND_AUTO_COLLECT_TASK",
     "MAAEND_DELIVERY_COMMISSION_SOURCES",
     "MAAEND_AUTO_COLLECT_MODES",
-    "MAA_STAGE_KEY",
-    "ARKNIGHTS_GAME_DAY_TZ",
     "MAAEND_SANITY_TASK_LABELS",
     "MAAEND_SANITY_TASK_DETAIL_LABELS",
     "MAAEND_SANITY_TASK_TYPES",
@@ -521,13 +485,6 @@ __all__ = [
     "MAAEND_INVENTORY_TARGET_DEFAULTS",
     "MAAEND_SANITY_TASK_FIELDS",
     "ENDFIELD_SERVER_PRESETS",
-    "EMULATOR_PATH_BOOK",
-    "RESOURCE_STAGE_INFO",
-    "MATERIALS_MAP",
-    "STARRAIL_PACKAGE_NAME",
-    "STARRAIL_CN_UPDATE_LINK_URL",
-    "STARRAIL_UPDATE_LINK_SERVER",
-    "STARRAIL_STAGE_BOOK",
     "TIME_FIELDS",
     "RESERVED_NAMES",
     "ILLEGAL_CHARS",
@@ -576,8 +533,6 @@ __all__ = [
     "game_update",
     "vdd",
     "websocket",
-    "emulator",
-    "emulator2",
     "OCR",
     "i18n",
     "expression",

@@ -38,62 +38,10 @@ function categoryKind(name: string): ChangelogCategoryKind {
   return 'normal'
 }
 
-interface ParsedVersion {
-  release: number[]
-  /** 无预发布段时为 null；正式版排在同号预发布版之前 */
-  pre: (number | string)[] | null
-}
+export { compareVersions } from '../../electron/services/updateVersion'
+import { compareVersions } from '../../electron/services/updateVersion'
 
-function parseVersion(raw: string): ParsedVersion {
-  const text = raw.trim().replace(/^v/i, '')
-  const [main, ...rest] = text.split('-')
-  const release = main.split('.').map(part => {
-    const n = Number.parseInt(part, 10)
-    return Number.isNaN(n) ? 0 : n
-  })
-  if (rest.length === 0) return { release, pre: null }
-  const pre = rest
-    .join('-')
-    .split(/[.-]/)
-    .filter(part => part.length > 0)
-    .map(part => (/^\d+$/.test(part) ? Number.parseInt(part, 10) : part.toLowerCase()))
-  return { release, pre }
-}
-
-function compareIdentifiers(a: number | string, b: number | string): number {
-  if (typeof a === 'number' && typeof b === 'number') return a - b
-  // 数字标识符排在字母标识符之前（与 semver 一致）
-  if (typeof a === 'number') return -1
-  if (typeof b === 'number') return 1
-  return a < b ? -1 : a > b ? 1 : 0
-}
-
-/** 版本号升序比较：a < b 返回负数。beta.10 大于 beta.2，正式版大于同号预发布版。 */
-export function compareVersions(a: string, b: string): number {
-  const pa = parseVersion(a)
-  const pb = parseVersion(b)
-  const len = Math.max(pa.release.length, pb.release.length)
-  for (let i = 0; i < len; i += 1) {
-    const diff = (pa.release[i] ?? 0) - (pb.release[i] ?? 0)
-    if (diff !== 0) return diff
-  }
-  if (pa.pre === null && pb.pre === null) return 0
-  if (pa.pre === null) return 1
-  if (pb.pre === null) return -1
-  const preLen = Math.max(pa.pre.length, pb.pre.length)
-  for (let i = 0; i < preLen; i += 1) {
-    const ia = pa.pre[i]
-    const ib = pb.pre[i]
-    if (ia === undefined) return -1
-    if (ib === undefined) return 1
-    const diff = compareIdentifiers(ia, ib)
-    if (diff !== 0) return diff
-  }
-  return 0
-}
-
-/** 版本号降序（最新在前） */
-/** 合并即入账的暂存段：不是版本号，比任何已发布版本都新，排最前 */
+/** 合并即入账的暂存段排在发布版本之前。 */
 const UNRELEASED_VERSION = '未发布'
 
 export function sortVersionsDesc(versions: string[]): string[] {

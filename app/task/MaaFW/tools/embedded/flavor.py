@@ -49,7 +49,7 @@
   在事件循环里 ``await``。要不要真正做事由钩子自己按配置判断（返回空串表示没做事）。
 - **签名**：``async def ensure_logged_in(self, *, script_config, user_config, resource_name,
   package_name, adb_path, adb_address, progress, host_adb=None) -> str | StartupTask``。``user_config`` 是本次运行的账号配置
-  （账号字段在 ``Info.Account``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
+  （账号字段在 ``Info.Id``）；``package_name`` 是这次随模拟器拉起的包名（空串表示没拉起，
   钩子可自行按包名拉起）；``host_adb`` 非空时截图与命令必须使用该私有通道；否则按 ``adb_path`` 连接；``progress`` 是写
   用户运行日志的异步回调。返回值是写进运行日志的一句话，空串表示不写。
 - Win32 控制器以空 ``adb_address`` 调用，供钩子拒绝不支持的登录模式。
@@ -175,7 +175,7 @@
 
 ModAVD（Emulator 2.0 的 ``avd`` 后端）不是特调声明：所有 MaaFW 脚本（通用项目与各特调）一律放行，
 ``runner_task`` 给门面 ``open`` 传 ``allow_mod_avd=True``、按设备构造 AVDExtras 截图配置；脚本保存时
-``app.core.EmulatorManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
+``app.core.GameManager.mod_avd_binding_error`` 读取宿主登记的设备能力，MaaFW 特调继承引擎声明。
 """
 
 from __future__ import annotations
@@ -187,6 +187,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
+from app.task.game import game_is_emulator
 from app.task.MaaFW.tools.core.interface import loader as _interface_loader
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.runner import run_plan as _run_plan
@@ -438,7 +439,7 @@ def sanitize_user_task_update(
         configured_controller=str(
             config_value(script_config, "Info", "Controller") or ""
         ),
-        emulator_selected=config_value(script_config, "Emulator", "Id") != "-",
+        emulator_selected=game_is_emulator(script_config),
         configured_resource=str(config_value(script_config, "Info", "Resource") or ""),
     )
     incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}
@@ -446,7 +447,7 @@ def sanitize_user_task_update(
         name: incoming_info[name]
         if name in incoming_info
         else config_value(user_config, "Info", name)
-        for name in ("Account", "Notes")
+        for name in ("Id", "Notes")
     }
     try:
         settled, info_updates = hook(

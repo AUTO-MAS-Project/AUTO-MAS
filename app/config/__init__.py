@@ -43,7 +43,6 @@ from .fields import (
     Select,
     TableHint,
     Trigger,
-    TriggerDecl,
     UiHintMarker,
     UiHintsMap,
     UiTablesList,
@@ -76,7 +75,14 @@ from .types import (
     path_policy,
     tz,
 )
-from .shortcuts import collection, ref, trigger_field, ui_visibility, virtual_field
+from .shortcuts import (
+    collection,
+    ref,
+    trigger,
+    trigger_field,
+    ui_visibility,
+    virtual_field,
+)
 # isort: on
 
 __all__ = [
@@ -97,7 +103,6 @@ __all__ = [
     # 字段
     "Virtual",
     "Trigger",
-    "TriggerDecl",
     "RefField",
     "RefDeleteAction",
     "OnDeleteCallback",
@@ -128,6 +133,7 @@ __all__ = [
     "ref",
     "collection",
     "virtual_field",
+    "trigger",
     "trigger_field",
     "ui_visibility",
     # 导出

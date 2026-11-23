@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 _MAX_ENTRIES = 100_000
 _MAX_MARKERS = 6
 _VERSION = re.compile(r"v?\d{1,4}(?:\.\d{1,4}){1,4}(?:[-.][A-Za-z0-9.-]+)?")
+_URL_IN_ERROR = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 _MARKER_NAMES = {"version.txt", "version", "version.json"}
 
 
@@ -24,6 +25,15 @@ def safe_origin(url: str) -> str:
         return f"{parsed.scheme}://{parsed.hostname}" if parsed.hostname else "(hidden)"
     except ValueError:
         return "(hidden)"
+
+
+def redact_history_error(error: str | None) -> str | None:
+    """保留错误描述，将其中的下载链接缩减为来源域名。"""
+    return (
+        _URL_IN_ERROR.sub(lambda match: safe_origin(match.group(0)), error)
+        if error
+        else error
+    )
 
 
 def describe_package(path: Path) -> dict[str, object]:

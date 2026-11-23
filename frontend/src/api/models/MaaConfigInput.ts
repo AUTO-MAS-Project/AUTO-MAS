@@ -2,12 +2,17 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { MaaConfig_EmulatorInput } from './MaaConfig_EmulatorInput';
+import type { MaaConfig_gameInput } from './MaaConfig_gameInput';
 import type { MaaConfig_InfoInput } from './MaaConfig_InfoInput';
+import type { MaaConfig_plugin_infoInput } from './MaaConfig_plugin_infoInput';
 import type { MaaConfig_RunInput } from './MaaConfig_RunInput';
 import type { MaaConfig_UpdateInput } from './MaaConfig_UpdateInput';
 export type MaaConfigInput = {
-    Emulator?: (MaaConfig_EmulatorInput | null);
+    /**
+     * 游戏与设备
+     */
+    game?: (MaaConfig_gameInput | null);
+    info?: (MaaConfig_plugin_infoInput | null);
     Info?: (MaaConfig_InfoInput | null);
     Run?: (MaaConfig_RunInput | null);
     Update?: (MaaConfig_UpdateInput | null);

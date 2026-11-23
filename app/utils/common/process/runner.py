@@ -13,10 +13,21 @@ import psutil
 
 from app.utils import get_logger
 
+from .platform import breakaway_rejected
 from .scope import current_process_scope, current_update_scope, detached_process_context
+from .session import desktop_process_target, restricted_session
 
 logger = get_logger("进程管理")
 _PROCESS_CLEANUP_SECONDS = 8
+
+
+async def kill_windows_process_tree_by_image(image: str) -> subprocess.CompletedProcess:
+    """按完整镜像名强制结束 Windows 进程树。"""
+    session_id = restricted_session()
+    filters = ("/FI", f"SESSION eq {session_id}") if session_id is not None else ()
+    return await ProcessRunner.run_process(
+        "taskkill", "/IM", image, "/F", "/T", *filters, cleanup=True
+    )
 
 
 class ProcessCleanupUnconfirmed(RuntimeError):
@@ -137,9 +148,17 @@ def observe_process_exit(
 def _terminate_process_tree(pid: int, *, grace_period: float = 3) -> None:
     """同步终止进程及其当前子进程，用于取消异步命令时的兜底清理。"""
 
+    from .session import process_in_scope
+
+    if not process_in_scope(pid):
+        return
     try:
         root = psutil.Process(pid)
-        processes = [*root.children(recursive=True), root]
+        processes = [
+            item
+            for item in [*root.children(recursive=True), root]
+            if process_in_scope(item.pid)
+        ]
     except psutil.NoSuchProcess:
         return
 
@@ -163,13 +182,19 @@ async def stop_process(
     kill_tree: bool = False,
     deadline: float | None = None,
 ) -> None:
+    scope = current_process_scope.get()
+
     async def stop_and_wait() -> None:
         if kill_tree and process.pid is not None:
-            await asyncio.to_thread(
-                _terminate_process_tree,
-                process.pid,
-                grace_period=0 if deadline is not None else 3,
+            handled = scope is not None and await asyncio.to_thread(
+                scope.kill_process_tree, process.pid
             )
+            if not handled:
+                await asyncio.to_thread(
+                    _terminate_process_tree,
+                    process.pid,
+                    grace_period=0 if deadline is not None else 3,
+                )
         else:
             with suppress(ProcessLookupError):
                 process.kill()
@@ -266,6 +291,7 @@ async def create_subprocess(
     *args: str,
     breakaway: bool = False,
     cleanup: bool = False,
+    owned: bool = True,
     **kwargs,
 ) -> asyncio.subprocess.Process:
     """按平台标志启动子进程；``breakaway=True`` 时额外脱离监督器的 Job Object。
@@ -273,6 +299,7 @@ async def create_subprocess(
     后端被 AUTO-MAS-Runtime 用 Job Object 监督时，子进程默认留在 Job 里，随
     后端一起被回收；只有游戏/模拟器这类不该随后端退出的进程才由调用点显式
     传 ``breakaway=True``（详见 WindowsProcessPlatform 的说明）。
+    ``owned=False`` 不登记任务清理，供调用方按用户选项单独关闭游戏。
 
     父进程若恰好处在一个不允许 breakaway 的 Job 里，带
     CREATE_BREAKAWAY_FROM_JOB 的 CreateProcess 会以 ERROR_ACCESS_DENIED
@@ -290,7 +317,7 @@ async def create_subprocess(
         scope.ensure_can_start()
 
     base_flags = platform_process.creation_flags | kwargs.pop("creationflags", 0)
-    if scope is not None:
+    if scope is not None and owned:
         base_flags |= scope.creation_flags
     breakaway_flags = platform_process.breakaway_flags if breakaway else 0
     creation_flags = base_flags | breakaway_flags
@@ -302,14 +329,18 @@ async def create_subprocess(
             **kwargs,
         )
     except OSError as exc:
-        if not breakaway_flags or getattr(exc, "winerror", None) != 5:
+        retry_flags = breakaway_rejected(
+            exc, flags=creation_flags, breakaway_flags=platform_process.breakaway_flags
+        )
+        if retry_flags is None:
             raise
 
         get_logger("进程管理").warning(
             f"带 CREATE_BREAKAWAY_FROM_JOB 启动子进程被拒绝(WinError 5)，"
             f"父进程所在 Job 不允许脱离，去掉该标志重试: {program}"
         )
-        creation_flags &= ~platform_process.breakaway_flags
+        # 后续按实际生效的标志登记归属：重试后子进程留在当前 Job 里。
+        creation_flags = retry_flags
         process = await asyncio.create_subprocess_exec(
             program,
             *args,
@@ -323,8 +354,10 @@ async def create_subprocess(
             except Exception as error:
                 raise asyncio.CancelledError from error
             raise asyncio.CancelledError
+        if not owned:
+            return process
         try:
-            scope.track(
+            scope.track_started(
                 process,
                 suspended=bool(scope.creation_flags),
                 writer=current_update_scope.get() is scope,
@@ -350,6 +383,7 @@ class ProcessRunner:
         env: Mapping[str, str] | None = None,
         deadline: float | None = None,
         cleanup: bool = False,
+        retain_desktop_descendants: bool = False,
     ) -> ProcessResult:
         """运行子进程并等待其结束，返回解码后的输出。
 
@@ -374,6 +408,39 @@ class ProcessRunner:
             if deadline is None
             else loop.time() + max(0, deadline - time.monotonic())
         )
+        desktop = desktop_process_target.get()
+        # 分身断线后仍需从主会话执行带会话范围的进程清理。
+        if desktop is not None and not cleanup:
+            from app.utils.windows.desktop_session.process_runner import (
+                launch_desktop_process,
+            )
+
+            scope = current_process_scope.get()
+            if scope is not None:
+                scope.ensure_can_start()
+            async with asyncio.timeout_at(expires_at):
+                remote = await launch_desktop_process(
+                    desktop,
+                    argv=command,
+                    cwd=cwd
+                    or (Path(program).parent if Path(program).is_file() else None),
+                    capture=True,
+                    merge=if_merge_std,
+                    env=env,
+                    retain=retain_desktop_descendants and scope is not None,
+                )
+                try:
+                    async with asyncio.timeout(timeout):
+                        code, stdout, stderr = await remote.wait_result()
+                    if code == 0 and retain_desktop_descendants and scope is not None:
+                        scope.retain_desktop_process(remote.stop)
+                    else:
+                        await remote.stop()
+                except BaseException:
+                    await remote.stop()
+                    raise
+            return ProcessResult(decode_bytes(stdout), decode_bytes(stderr), code)
+
         process = None
         try:
             async with asyncio.timeout_at(expires_at):

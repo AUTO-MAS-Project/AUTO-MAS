@@ -13,7 +13,7 @@ import httpx
 from packaging.version import Version
 
 from app.core import Config
-from app.core.update import download_file
+from app.core.downloads import download_file
 from app.services import script_install
 from app.services.common.update import transport
 from app.services.common.update.transport import DownloadProgress
@@ -222,7 +222,7 @@ async def download_incremental(
             destination.unlink(missing_ok=True)
         architecture = "x64" if arch == "x86_64" else "arm64"
         public_url = (
-            "https://data.auto-mas.top/api/v1/files/auto-mas/Client/"
+            "https://data.auto-mas.top/api/v1/files/maaend/ReleaseOTA/"
             f"maaend-{architecture}-{channel}-delta/download"
         )
         await download_file(

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { TaskMode } from '@/api'
-import { computed, defineAsyncComponent, onMounted, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider } from 'ant-design-vue'
 import { renderEmpty } from '@/components/renderEmpty'
@@ -18,6 +18,7 @@ import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import NewYearCelebration from './components/NewYearCelebration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
@@ -53,16 +54,34 @@ const { isInitialized, isBootstrapping, isAppReady } = useAppInitialization()
 const cursorEffectStore = useCursorEffectStore()
 const performanceStore = usePerformanceStore()
 const languageResources = useBackendI18nStore()
+const pageReady = ref(false)
 
 // 判断是否为初始化页面
 const isInitializationPage = computed(() => route.name === 'Initialization')
 
 // 判断是否为独立页面（不需要 AppLayout 的页面：日志窗口、虚拟显示器询问弹窗）
 const isStandalonePage = computed(
-  () => route.name === 'Logs' || route.name === 'VirtualDisplayPrompt'
+  () =>
+    route.name === 'Logs' ||
+    route.name === 'VirtualDisplayPrompt' ||
+    route.name === 'DesktopSession'
 )
 
 const { trackStartedTask } = useSchedulerStore()
+const desktopSessionTasks = window.electronAPI?.onDesktopSessionTasksStarted?.(tasks => {
+  if (isStandalonePage.value) return
+  for (const task of tasks) {
+    trackStartedTask({
+      taskId: task.taskId,
+      selectedTaskId: task.queueId,
+      taskLabel: task.label,
+      selectedMode: TaskMode.AUTO_PROXY,
+      modeLabel: t('core.scheduler.mode.autoProxy'),
+    })
+  }
+  void navigateTo('/scheduler')
+})
+onBeforeUnmount(() => desktopSessionTasks?.())
 useDesktopMascotHost({
   isStandalonePage,
   isInitializationPage: computed(() => isInitializationPage.value || !languageResources.ready),
@@ -164,7 +183,10 @@ onMounted(async () => {
     </div>
     <!-- 独立页面（如日志窗口）使用全屏布局，不包含 AppLayout -->
     <div v-else-if="isStandalonePage" class="standalone-container">
-      <router-view v-if="route.name === 'Logs' || languageResources.ready" />
+      <!-- 桌面分身使用启动词表，交接期间也能运行。 -->
+      <router-view
+        v-if="route.name === 'Logs' || route.name === 'DesktopSession' || languageResources.ready"
+      />
       <!-- 辅助窗口不能进入主应用初始化，否则会建立第二条主 WebSocket。 -->
       <I18nResourceGate
         v-else
@@ -176,7 +198,10 @@ onMounted(async () => {
     <!-- 其他页面使用带标题栏的应用布局 - 仅在初始化完成后挂载 -->
     <div v-else-if="isAppReady || languageResources.requested" class="app-container">
       <TitleBar />
-      <AppLayout v-if="languageResources.ready && performanceStore.initialized" />
+      <AppLayout
+        v-if="languageResources.ready && performanceStore.initialized"
+        @page-ready="pageReady = true"
+      />
       <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
     </div>
 
@@ -201,6 +226,17 @@ onMounted(async () => {
     <AppClosingOverlay :visible="isClosing" />
     <BackendStartupOverlay :visible="isBootstrapping && !languageResources.requested" />
     <CursorEffectLayer v-if="isAppReady && performanceStore.initialized" />
+    <NewYearCelebration
+      v-if="
+        isInitialized &&
+        pageReady &&
+        languageResources.ready &&
+        performanceStore.initialized &&
+        !isInitializationPage &&
+        !isStandalonePage &&
+        !isClosing
+      "
+    />
   </ConfigProvider>
 </template>
 

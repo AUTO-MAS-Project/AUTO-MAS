@@ -24,6 +24,7 @@ import time
 import uuid
 from contextlib import suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from app.config import ConfigCollection
@@ -38,32 +39,37 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
+from app.task.client import client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
-    kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
     resolve_config_base,
     split_args,
     user_uses_quick_config,
 )
+from app.task.run_flow import begin_attempt, operation, point
 from app.utils import (
     LOG_TYPE_NORMAL,
-    SIGN_MODE_SPLIT,
+    SIGN_MODE_REGEX,
     UTC4,
     LogMonitor,
-    LogSignMatcher,
     ProcessInfo,
     ProcessManager,
     compile_log_signs,
     get_logger,
     is_process_alive,
-    is_process_running,
     log_box,
     process,
 )
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
+from app.utils.common.log.patterns import match_log_signs
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
+from app.utils.common.process.session import desktop_process_target
 
 from . import push_log as _push_log
 from .config_schema import (
@@ -72,6 +78,7 @@ from .config_schema import (
     get_all_config_info,
 )
 from .tools.account_switch import async_switch_account
+from .tools.arguments import task_argument
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     ensure_quick_config_dir,
@@ -139,22 +146,23 @@ def _yes_no(value: bool) -> str:
 
 
 # 对齐 MaaEnd：专项内置致命日志片段（非账号 Success/Error 配置）；`Script.ErrorLog` 仅追加补充子串
-_OKNTE_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
-    ("connected:False", "OK-NTE 未连接游戏客户端"),
-    ("Resolution Error", "OK-NTE 游戏分辨率不符合要求"),
-    ("Timed out waiting for game process", "OK-NTE 等待游戏进程超时"),
-    ("Timed out waiting for launcher process", "OK-NTE 等待启动器进程超时"),
+_OKNTE_BUILTIN_FATAL = {
+    "disconnected": ("connected:False", "OK-NTE 未连接游戏客户端"),
+    "resolution_error": ("Resolution Error", "OK-NTE 游戏分辨率不符合要求"),
+    "game_timeout": ("Timed out waiting for game process", "OK-NTE 等待游戏进程超时"),
+    "launcher_timeout": (
+        "Timed out waiting for launcher process",
+        "OK-NTE 等待启动器进程超时",
+    ),
+}
+_OKNTE_BUILTIN_SUCCESS = compile_log_signs(
+    r"Successfully Executed Task|任务执行完成|(?ai:task completed)", SIGN_MODE_REGEX
 )
 
 _OKNTE_DAILY_TASK_INDEX = 2
 _OKNTE_DAILY_LEGACY_ACTIVITY_KEY = "完成每日活跃度"
 _OKNTE_DAILY_LEGACY_REQUIRED_SUCCESS = "完成每日活跃度"
 _OKNTE_DAILY_ROUTINE_ACTIVITY_IDS = ("daily_anomaly", "daily_anomaly_hunter")
-_OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS = ("日常领取", "Daily Claim")
-# 当日活跃度奖励已领取的特征：上游面板正常打开后，仅因找不到亮起的领取按钮
-# （无可领取项）而失败——邮件失败会抛异常中断、面板打不开走不到此步，
-# 故出现该文本即视为当日已领取
-_OKNTE_DAILY_CLAIM_NO_REWARD = "无法找到活跃度奖励领取框"
 _OKNTE_DAILY_LEGACY_SUCCESS_RE = re.compile(
     r"DailyTask:info_set success\s*(?P<success>\[[^\r\n]*\])"
 )
@@ -164,16 +172,6 @@ _OKNTE_DAILY_ROUTINE_SUCCESS_RE = re.compile(
 _OKNTE_DAILY_ROUTINE_SKIPPED_RE = re.compile(
     r"DailyRoutineTask:info_set skipped\s*(?P<skipped>\[[^\r\n]*\])"
 )
-
-
-def _oknte_log_indicates_success(log: str, success_log: LogSignMatcher) -> bool:
-    if (
-        "Successfully Executed Task" in log
-        or "任务执行完成" in log
-        or "task completed" in log.lower()
-    ):
-        return True
-    return success_log.search(log) is not None
 
 
 def _parse_oknte_info_list(raw: str) -> list[str]:
@@ -252,8 +250,8 @@ def _oknte_daily_task_success_error(
                 and bool(stamina)
                 and 0 < int(stamina[-1]) < limit
             )
-            claimed = name in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS and (
-                _OKNTE_DAILY_CLAIM_NO_REWARD in segment
+            claimed = name in _push_log.DAILY_CLAIM_NODES and (
+                _push_log.DAILY_CLAIM_NO_REWARD in segment
             )
             if not insufficient and not claimed:
                 return f"OK-NTE 日常任务失败: {name}"
@@ -265,9 +263,7 @@ def _oknte_daily_task_success_error(
     routine_success_matches = _OKNTE_DAILY_ROUTINE_SUCCESS_RE.findall(log)
     if routine_success_matches:
         success_items = _parse_oknte_info_list(routine_success_matches[-1])
-        if any(
-            required in success_items for required in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS
-        ):
+        if any(required in success_items for required in _push_log.DAILY_CLAIM_NODES):
             return None
         # 子任务被用户关闭时进 skipped 列表、未运行，
         # 不作为日常任务的必需成功项
@@ -275,12 +271,11 @@ def _oknte_daily_task_success_error(
         if skipped_matches:
             skipped_items = _parse_oknte_info_list(skipped_matches[-1])
             if any(
-                required in skipped_items
-                for required in _OKNTE_DAILY_ROUTINE_CLAIM_SUCCESS
+                required in skipped_items for required in _push_log.DAILY_CLAIM_NODES
             ):
                 return None
         # 当日活跃度奖励已领取：找不到领取框是"无可领取"的正常出口，不判失败
-        if _OKNTE_DAILY_CLAIM_NO_REWARD in log:
+        if _push_log.DAILY_CLAIM_NO_REWARD in log:
             return None
         return "OK-NTE 日常任务未完成日常领取"
 
@@ -330,9 +325,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.curdate = ""
         self.user_run_result_persisted = False
         self.daily_activity_required = True
-        # final_task 第一行就读取 run_book；prepare() 中途抛错也会进入收尾，
+        # final_task 第一行就读取 run_complete；prepare() 中途抛错也会进入收尾，
         # 因此必须在此初始化，否则收尾变成 AttributeError 并跳过进程清理。
-        self.run_book = False
+        self.run_complete = False
         # log_box：prepare 绑定用户会话，关闭模式不创建底层采集器。
         self._log_source: log_source.LogSource | None = None
         self._log_pipeline: log_box.LogPipeline | None = None
@@ -349,10 +344,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self.cur_user_config.commit()
 
     async def check(self) -> str:
-        if (
-            not self.script_config.Info.RootPath
-            or not self.script_config.Info.RootPath.is_dir()
-        ):
+        script_root_path = self.script_config.Info.RootPath
+        if not script_root_path or not script_root_path.is_dir():
             return "请设置 OK-NTE 脚本路径"
         if (
             not self.script_config.Script.ScriptPath
@@ -396,10 +389,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
             and self.script_config.Game.LaunchBeforeTask
-            and (
-                not self.script_config.Game.Path
-                or not self.script_config.Game.Path.is_file()
-            )
+            and self._resolve_launcher_path(use_script_fallback=False) is None
         ):
             return "请设置异环启动器路径"
         if (
@@ -411,6 +401,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 return "请设置异环游戏 URL"
             if not str(self.script_config.Game.ProcessName or "").strip():
                 return "请设置异环游戏进程名称"
+
+        self.task_index = 2 if self.plan_active else self.cur_user_config.Task.TaskIndex
+        try:
+            self.task_cli_value = await asyncio.to_thread(
+                task_argument, script_root_path, self.task_index
+            )
+        except ValueError as exc:
+            return str(exc)
         return "Pass"
 
     async def prepare(self):
@@ -453,21 +451,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         )
         # 成功/失败标志：按显式模式编译，Split 为存量「|」分隔关键字子串包含，
         # Regex 为整条正则；非法正则视为已配置但永不命中，不中断任务执行
-        self.success_log = compile_log_signs(
-            self.script_config.Script.SuccessLog,
-            self.script_config.Script.SuccessLogMode,
-        )
-        self.error_log = compile_log_signs(
-            self.script_config.Script.ErrorLog, self.script_config.Script.ErrorLogMode
-        )
-        for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
-            if matcher.invalid:
+        script = self.script_config.Script
+        self.log_signs = {
+            **{
+                key: compile_log_signs(needle)
+                for key, (needle, _) in _OKNTE_BUILTIN_FATAL.items()
+            },
+            "failure": compile_log_signs(script.ErrorLog, script.ErrorLogMode),
+            "builtin_success": _OKNTE_BUILTIN_SUCCESS,
+            "success": compile_log_signs(script.SuccessLog, script.SuccessLogMode),
+        }
+        for key, name in (("success", "成功"), ("failure", "失败")):
+            if self.log_signs[key].invalid:
                 logger.warning(f"OK-NTE {name}日志正则语法错误，该标志将不会命中")
-        if not self.error_log.configured:
+        if not self.log_signs["failure"].configured:
             # 回退到 OkNteConfig 的 ErrorLog 默认串（唯一来源，不在此另抄一份）
-            self.error_log = compile_log_signs(
-                OkNteConfig().Script.ErrorLog, SIGN_MODE_SPLIT
-            )
+            self.log_signs["failure"] = compile_log_signs(OkNteConfig().Script.ErrorLog)
             logger.warning(
                 "OK-NTE ErrorLog 去掉过宽容词后为空，已回退为内置默认失败关键词"
             )
@@ -485,14 +484,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         # 当前账号配置
 
-        self.task_index = (
-            2 if self.plan_active else int(self.cur_user_config.Task.TaskIndex)
-        )
         self.exit_on_finish = bool(self.cur_user_config.Task.ExitOnFinish)
 
         extra_args = split_args(self.script_config.Script.Arguments)
 
-        self.oknte_args = ["-t", str(self.task_index)]
+        self.oknte_args = ["-t", self.task_cli_value]
         if self.exit_on_finish:
             self.oknte_args.append("-e")
         self.oknte_args.extend(extra_args)
@@ -505,7 +501,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             raise ValueError("ConfigPath未配置，请检查路径设置")
         self.script_config_path = script_config_path
 
-        self.run_book = False
+        self.run_complete = False
 
     def _oknte_legacy_mas_config_dir(self) -> Path:
         return (
@@ -710,7 +706,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         <安装根>\\Client\\... 反推 <安装根>\\NTELauncher\\<启动器>。都没有时
         回退 ok-nte 自己的 LauncherTask.json（其注册表回退由 ok-nte 维护）。
         """
-        game_path = self.script_config.Game.Path
+        game_path = client_launcher_path(self.script_config) or client_executable_path(
+            self.script_config
+        )
         if game_path is not None and game_path.is_file():
             if (
                 game_path.suffix.casefold() == ".exe"
@@ -741,7 +739,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
-            if is_process_running(_NTE_CLIENT_PROCESS):
+            if await has_process_window(_NTE_CLIENT_PROCESS):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
@@ -780,7 +778,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 )
                 logger.info(message)
                 await self._push_dispatch_log(message)
-                await self.game_manager.open_process(launcher_path)
+                point(self, "start_game")
+                await self.game_manager.open_process(
+                    launcher_path,
+                    breakaway=True,
+                    owned=False,
+                    retain_desktop_descendants=True,
+                )
                 window_ready = bool(
                     await async_start_game_via_launcher(
                         launcher_path, on_log=_push_launch_log
@@ -805,7 +809,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         raise RuntimeError("无法确认启动器已退出，请手动关闭后重试")
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
-                await self.game_manager.open_process(launcher_path, AUTOPLAY_ARG)
+                point(self, "start_game")
+                await self.game_manager.open_process(
+                    launcher_path,
+                    AUTOPLAY_ARG,
+                    breakaway=True,
+                    owned=False,
+                    retain_desktop_descendants=True,
+                )
                 if await async_wait_autoplay_game(
                     launcher_path, on_log=_push_launch_log
                 ):
@@ -813,11 +824,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                elif is_process_running(_NTE_CLIENT_PROCESS):
-                    # 窗口尚未被枚举到但客户端进程已存在：游戏其实已起，按成功处理；
-                    # 这条路径未确认窗口存在，故下面的收尾日志走「进程已在运行」表述
-                    logger.info(f"{AUTOPLAY_ARG} 未等到游戏窗口，但客户端进程已在运行")
-                    await self._push_dispatch_log("客户端进程已在运行，按已启动处理")
+                elif await has_process_window(_NTE_CLIENT_PROCESS):
+                    # 启动器等待结束后再次确认客户端窗口，覆盖刚起窗的情况。
+                    window_ready = True
+                    logger.info(f"{AUTOPLAY_ARG} 等待结束后检测到客户端窗口")
+                    await self._push_dispatch_log("已检测到客户端窗口，按已启动处理")
                 else:
                     # 静默启动只有 /autoplay 这一条路：超时（启动器没真正接管游戏，
                     # 例如待安装更新未被驱动）不回退去点「开始游戏」（那是「启动器
@@ -827,13 +838,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         f"{AUTOPLAY_ARG} 静默启动未出现游戏窗口（超时），"
                         "请人工确认启动器状态"
                     )
-            wait_time = int(self.script_config.Game.WaitTime)
+            wait_time = max(int(self.script_config.Game.WaitTime), 0)
             await self._push_dispatch_log(
-                f"游戏窗口已出现，正在等待游戏完成启动（{wait_time}s）..."
+                f"游戏窗口已出现，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
                 if window_ready
-                else f"客户端进程已在运行，正在等待游戏完成启动（{wait_time}s）..."
+                else f"客户端进程已在运行，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
             )
-            await asyncio.sleep(wait_time)
+            # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
+            await wait_process_window_ready(
+                ProcessInfo(name=_NTE_CLIENT_PROCESS), wait_time
+            )
             await self._push_dispatch_log("游戏启动完成")
             return
 
@@ -845,18 +859,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 raise RuntimeError("请设置异环游戏 URL")
             if not game_process_name:
                 raise RuntimeError("请设置异环游戏进程名称")
-            if is_process_running(game_process_name):
+            if await has_process_window(game_process_name):
                 logger.info(
                     f"检测到异环客户端进程已在运行，跳过启动: {game_process_name}"
                 )
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
                 return
+            point(self, "start_game")
             await self.game_manager.open_protocol(
                 game_url,
                 ProcessInfo(name=game_process_name),
             )
-            await asyncio.sleep(2)
+            await wait_process_window_ready(
+                ProcessInfo(name=game_process_name),
+                max(int(self.script_config.Game.WaitTime), 0),
+            )
             await self._push_dispatch_log("游戏启动指令已发送")
             return
 
@@ -928,6 +946,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def main_task(self):
         await self.prepare()
         await self._reset_daily_proxy_count()
+        detect_in_desktop = None
+        if (desktop := desktop_process_target.get()) is not None:
+            from app.task.desktop_session_worker import detect_desktop_maintenance
+
+            detect_in_desktop = partial(
+                detect_desktop_maintenance, desktop, "oknte_detect_maintenance", {}
+            )
 
         await self.cur_user_item.set_state(status="运行")
         # 任务前脚本每账号一次，先于全部重试；后置脚本由收尾阶段成对执行
@@ -935,8 +960,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         run_limit = int(self.script_config.Run.RunTimesLimit)
         for i in range(run_limit):
-            if self.run_book:
+            if self.run_complete:
                 break
+            begin_attempt(self, i + 1)
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
             )
@@ -992,7 +1018,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             # 游戏窗口已就绪时先做画面维护检测（公告通道覆盖启动前，这里兜底
             # 「公告未覆盖但维护弹窗已出现」的场景）：命中即跳过当前账号；
             # 维护不会在重试间隔内结束，不再消耗剩余尝试次数
-            if await self.skip_on_game_maintenance(detect_game_maintenance_text):
+            if await self.skip_on_game_maintenance(
+                detect_game_maintenance_text, detect_in_desktop=detect_in_desktop
+            ):
                 break
 
             # 游戏启动成功后、下发脚本配置前，按「运行前强制切换账号」开关切号。
@@ -1037,20 +1065,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
             await self.set_oknte()
             await self._push_dispatch_log(
-                f"启动 OK-NTE: -t {self.task_index}"
+                f"启动 OK-NTE: -t {self.oknte_args[1]}"
                 + (" -e" if self.exit_on_finish else "")
             )
             logger.info(
                 f"启动 OK-NTE 进程: {self.script_exe_path} {' '.join(self.oknte_args)}"
             )
 
-            await self.oknte_process_manager.open_oknte(
-                self.script_exe_path,
-                *self.oknte_args,
-            )
+            with operation(self, "start_script"):
+                await self.oknte_process_manager.open_oknte(
+                    self.script_exe_path,
+                    *self.oknte_args,
+                )
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
+            point(self, "run")
             await self.log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time
             )
@@ -1058,7 +1088,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.wait_event.clear()
             maintenance_watch = asyncio.create_task(
                 self.watch_game_maintenance(
-                    detect_game_maintenance_text, self.wait_event
+                    detect_game_maintenance_text,
+                    self.wait_event,
+                    detect_in_desktop=detect_in_desktop,
                 )
             )
             try:
@@ -1091,7 +1123,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 break
 
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
+                point(self, "run", state="succeeded", key=self._log_result_key)
                 # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
                 await self.clear_maintenance_hit()
                 await self.script_info.set_log(
@@ -1104,6 +1137,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 await asyncio.sleep(3)
                 break
 
+            point(self, "run", state="failed", key=self._log_result_key)
             logger.warning(
                 f"账号 {self.cur_user_item.name} - OK-NTE 代理异常: {self.cur_user_log.status}"
             )
@@ -1168,17 +1202,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         log_status = "OK-NTE 正常运行中"
         user_item_status: str | None = None
 
-        for needle, msg in _OKNTE_BUILTIN_FATAL:
-            if needle in log:
-                log_status = msg
+        hit = match_log_signs(log, self.log_signs)
+        key = hit.key if hit else ""
+        if hit:
+            if key in _OKNTE_BUILTIN_FATAL:
+                log_status = _OKNTE_BUILTIN_FATAL[key][1]
                 user_item_status = "异常"
-                break
-        else:
-            error_sign = self.error_log.search(log)
-            if error_sign is not None:
-                log_status = f"OK-NTE：{error_sign}"
+            elif key == "failure":
+                log_status = f"OK-NTE：{hit.text}"
                 user_item_status = "异常"
-            elif _oknte_log_indicates_success(log, self.success_log):
+            else:
                 daily_task_error = (
                     _oknte_daily_task_success_error(
                         log,
@@ -1188,20 +1221,22 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     else None
                 )
                 if daily_task_error:
+                    key = "daily_result_failed"
                     log_status = daily_task_error
                     user_item_status = "异常"
                 else:
                     log_status = "Success!"
                     user_item_status = "完成"
-            elif not await self.oknte_process_manager.is_running():
-                log_status = "OK-NTE 在完成任务前退出"
-                user_item_status = "异常"
-            elif self.is_log_stalled(
-                latest_time, minutes=self.script_config.Run.RunTimeLimit
-            ):
-                log_status = "OK-NTE 运行超时"
-                user_item_status = "异常"
+        elif not await self.oknte_process_manager.is_running():
+            log_status, key = "OK-NTE 在完成任务前退出", "process_exit"
+            user_item_status = "异常"
+        elif self.is_log_stalled(
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
+        ):
+            log_status, key = "OK-NTE 运行超时", "log_timeout"
+            user_item_status = "异常"
 
+        self._log_result_key = key
         await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None:
             await self.cur_user_item.set_state(status=user_item_status)
@@ -1216,7 +1251,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.user_state(self.cur_user_item).maintenance_skipped
             and not self.stopped_manually,
         )
@@ -1224,12 +1259,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         # 结束时先清理进程与监控
         with suppress(Exception):
             await self.log_monitor.stop()
-        if self.run_book and not self._mas_should_close_game_after_success():
+        if self.run_complete and not self._mas_should_close_game_after_success():
             await self._kill_oknte_process()
         else:
             kill_game = (
                 self._mas_should_close_game_after_success()
-                if self.run_book
+                if self.run_complete
                 else self._mas_should_close_game_on_retry()
             )
             await self.kill_managed_process(kill_game=kill_game)
@@ -1309,12 +1344,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             statistics["user_result"] = (
-                "OK-NTE 任务全部完成" if self.run_book else self.cur_user_item.result
+                "OK-NTE 任务全部完成"
+                if self.run_complete
+                else self.cur_user_item.result
             )
             # 维护跳过不是失败，统计标题用中性符号而非失败标记
             success_symbol = (
                 "√"
-                if self.run_book
+                if self.run_complete
                 else "-"
                 if self.user_state(self.cur_user_item).maintenance_skipped
                 else "X"
@@ -1347,7 +1384,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         self.cur_user_config.Data.LastTaskIndex = getattr(self, "task_index", 0)
         await self.cur_user_config.commit()
-        if self.run_book:
+        if self.run_complete:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -1419,6 +1456,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
     async def _kill_oknte_process(self) -> None:
         try:
+            point(self, "stop_script")
             await self.oknte_process_manager.kill()
         except Exception as e:
             logger.opt(exception=True).warning(
@@ -1453,6 +1491,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         game_type = self.script_config.Game.Type
         if isinstance(self.game_manager, ProcessManager):
             try:
+                point(self, "stop_game")
                 await self.game_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
@@ -1460,14 +1499,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             if game_type == "Client":
                 # 明确关闭游戏时也清理启动器，包括由本体启动且未开启托管的情况。
                 await self._kill_launcher_process(use_script_fallback=True)
-                # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
-                # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
-                # 全进程扫描放到线程里，不阻塞事件循环
-                failed = await kill_pids_by_name(_NTE_CLIENT_PROCESS)
-                if failed:
-                    message = f"有 {failed} 个异环游戏进程未能结束，请人工确认关闭"
-                    logger.warning(message)
-                    await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
@@ -1492,7 +1523,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         # _mas_should_close_game_on_retry 结束游戏，也要纳入等待
         kill_game = (
             self._mas_should_close_game_after_success()
-            if self.run_book
+            if self.run_complete
             else self._mas_should_close_game_on_retry()
         )
         if not (getattr(self, "exit_on_finish", False) or kill_game):
@@ -1576,6 +1607,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     return pipeline.finish()
 
                 entries = await asyncio.to_thread(read)
+                for key in pipeline.matched_keys:
+                    point(self, "special", state="matched", key=key)
                 for entry in entries:
                     await self.user_state(user).append_push_log(
                         (entry.log_type, entry.text, entry.timestamp)

@@ -19,7 +19,7 @@ from pydantic import TypeAdapter
 from app.config import ConfigEntry, ConfigNode, config_manager
 from app.core import Config, Publisher
 from app.core.ws import protocol
-from app.models.config import CLASS_BOOK
+from app.models.config import ScriptEntry, UserEntry
 from app.models.schema import (
     TaskRequirements,
     TaskRuntimeSnapshot,
@@ -40,6 +40,8 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
+from app.utils.common.process.session import desktop_process_target
+from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
@@ -50,6 +52,14 @@ if TYPE_CHECKING:
     from app.task.user_expander import UserExpander
 
 type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander | None]
+
+
+class UnsupportedDesktopTask(ValueError):
+    """所选任务包含尚不能在桌面分身执行的操作。"""
+
+
+def script_config_name(entry: ScriptConfigType) -> str:
+    return entry.info.name if isinstance(entry, ScriptEntry) else entry.Info.Name
 
 
 class _TaskManager:
@@ -70,6 +80,7 @@ class _TaskManager:
         self._running: dict[UUID, ScriptExpander] = {}
         self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._stopping_all = False
+        self._restart_pending = False
         self._creating = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -114,12 +125,25 @@ class _TaskManager:
         """创建前检查停止全部、电源倒计时，并确认宿主已提供执行能力。"""
         from app.core import Power
 
+        if self._restart_pending:
+            raise RuntimeError("后端正在准备重启，暂不接受新任务")
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
         if Power.power_task is not None:
             raise RuntimeError("电源任务已进入倒计时，本次任务不再创建")
         if not self._factories_bound and self.plugin_expander is None:
             raise RuntimeError("宿主尚未绑定专项执行工厂")
+
+    def prepare_restart(self) -> bool:
+        """只在所有任务及受理流程结束后封闭新任务入口，不中断已有业务。"""
+        if not self.idle:
+            return False
+        self._restart_pending = True
+        return True
+
+    def cancel_restart(self) -> None:
+        """后端重启未执行时恢复任务受理，原停止全部状态保持不变。"""
+        self._restart_pending = False
 
     async def start(
         self,
@@ -170,6 +194,7 @@ class _TaskManager:
             raise ValueError("一次任务必须且只能指定一个顶层入口")
         node = _selection.validate_python(raw)[0]
         info = run.task_info
+        desktop = desktop_process_target.get() is not None
         queue: QueueConfig | None = None
 
         def select(
@@ -208,6 +233,12 @@ class _TaskManager:
                 queue = Config.QueueConfig.get(queue_id) if queue_id else None
                 if queue_id and queue is None:
                     raise ValueError(f"队列不存在：{queue_id}")
+                if (
+                    desktop
+                    and queue is not None
+                    and queue.Info.AfterAccomplish != PowerSignal.NO_ACTION
+                ):
+                    raise UnsupportedDesktopTask("桌面分身不支持队列的电源操作")
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
                 selections = (
@@ -224,12 +255,20 @@ class _TaskManager:
                         else Config.ScriptConfig.keys(),
                     )
                 )
+                script_classes = Config.script_classes
                 for selected in selections:
                     item = queue.QueueItem[UUID(selected.uid)] if queue else None
                     script_id = item.Info.ScriptId if item else str(UUID(selected.uid))
                     entry = Config.ScriptConfig.get(script_id)
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
+                    if desktop:
+                        from app.core.desktop_session.lifecycle import supports_task
+
+                        if not supports_task(entry):
+                            raise UnsupportedDesktopTask(
+                                "此托管的启动方式暂不支持桌面分身"
+                            )
                     sid = info.scripts.add(
                         TaskScriptItem,
                         payload={
@@ -238,12 +277,12 @@ class _TaskManager:
                                 "script_type": next(
                                     (
                                         name
-                                        for name, cls in CLASS_BOOK.items()
+                                        for name, cls in script_classes.items()
                                         if type(entry) is cls
                                     ),
-                                    "unknown",
+                                    type(entry).__name__,
                                 ),
-                                "name": entry.Info.Name,
+                                "name": script_config_name(entry),
                                 "params": deepcopy(selected.params),
                             }
                         },
@@ -252,16 +291,21 @@ class _TaskManager:
                     script = info.scripts[sid]
                     script._config_ref = ref(entry)
                     script._run_days = tuple(item.Schedule.Days) if item else None
+                    user_configs = (
+                        entry.users
+                        if isinstance(entry, ScriptEntry)
+                        else entry.UserData
+                    )
                     users = (
                         selected.children.values()
                         if session
-                        else select(selected.children, entry.UserData.keys())
+                        else select(selected.children, user_configs.keys())
                     )
                     for user in users:
                         if user.children:
                             raise ValueError("用户节点不能包含子项")
                         shared = session and user.uid == "default"
-                        config = None if shared else entry.UserData.get(UUID(user.uid))
+                        config = None if shared else user_configs.get(UUID(user.uid))
                         if not shared and config is None:
                             raise ValueError(f"用户不属于托管：{user.uid}")
                         uid = script.users.add(
@@ -271,7 +315,11 @@ class _TaskManager:
                                     "user_id": "default"
                                     if shared
                                     else str(UUID(user.uid)),
-                                    "name": config.Info.Name
+                                    "name": (
+                                        config.info.name
+                                        if isinstance(config, UserEntry)
+                                        else config.Info.Name
+                                    )
                                     if config is not None
                                     else "共享配置",
                                     "params": deepcopy(user.params),
@@ -316,6 +364,10 @@ class _TaskManager:
                     if info.info.trigger == TaskTriggerReason.CYCLE:
                         queue.Cycle.LastRunAt = now
                     await queue.commit()
+            if queue is not None:
+                run.target_id = str(queue.uid)
+            elif len(info.scripts) == 1:
+                run.target_id = info.script_id
             self._running[info.uid] = run
             # 维护任务可按 ID 查询和停止，但不创建普通调度面板。
             if not run.maintenance:
@@ -327,6 +379,7 @@ class _TaskManager:
                         mode=info.info.mode,
                         trigger=info.info.trigger,
                         taskName=info.info.name,
+                        targetId=run.target_id,
                         scripts=[
                             WSTaskScriptIdentityData(
                                 scriptId=script.info.script_id,
@@ -471,6 +524,7 @@ class _TaskManager:
                         "mode": info.mode,
                         "trigger": info.info.trigger,
                         "scriptId": info.script_id,
+                        "targetId": run.target_id,
                         "userId": info.user_id,
                         "stopping": run.cancelled,
                         "scripts": [

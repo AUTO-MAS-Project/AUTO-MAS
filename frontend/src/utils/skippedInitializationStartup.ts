@@ -4,7 +4,7 @@ import { message } from 'ant-design-vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { navigateTo } from '@/router'
 import { enterApp } from '@/utils/appEntry'
-import { beginAnalyticsOperation } from '@/utils/analytics'
+import { beginInitializationAnalytics } from '@/utils/analytics'
 import { connectionState } from '@/services/websocket/connection'
 
 const logger = window.electronAPI.getLogger('跳过初始化启动')
@@ -18,7 +18,7 @@ export function startSkippedInitializationStartup(): Promise<void> {
 
   const { beginBootstrap, finishBootstrap, resetInitializationStatus } = useAppInitialization()
   beginBootstrap()
-  const operation = beginAnalyticsOperation('initialization_finished_v2')
+  const operation = beginInitializationAnalytics()
 
   startupPromise = (async () => {
     const api = window.electronAPI

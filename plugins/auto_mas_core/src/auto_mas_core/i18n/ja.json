@@ -1,0 +1,5 @@
+{
+  "plugins.auto_mas_core.display_name": "AUTO-MAS コア",
+  "plugins.auto_mas_core.description": "AUTO-MAS のコアシステムプラグインと開発者向け SDK",
+  "plugins.auto_mas_core.tags": "システム, SDK"
+}

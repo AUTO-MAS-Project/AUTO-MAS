@@ -1,3 +1,4 @@
+import { useGamesApi } from '@/composables/useGamesApi'
 import {
   computed,
   getCurrentInstance,
@@ -12,7 +13,8 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
@@ -106,7 +108,12 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     maafwRouteLocation(scriptType.value, 'script', { id: scriptId })
   )
   const scriptConfig = ref<MaaFWScriptConfig | null>(null)
-  const preferAdbController = ref(false)
+  const games = useGamesApi()
+  const preferAdbController = computed(
+    () =>
+      games.rows.value.find(game => game.uid === scriptConfig.value?.game.game_id)?.type.kind ===
+      'emulator'
+  )
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
   // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 与脚本列表同一个口径取项目图标，
@@ -254,9 +261,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const loadedScriptConfig = script.config as MaaFWScriptConfig
       scriptConfig.value = loadedScriptConfig
       scriptPath.value = loadedScriptConfig.Info?.Path || ''
-      preferAdbController.value = Boolean(
-        loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
-      )
       // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
       await Promise.all([reloadInterface(false), prepareMaaFWFlavorPage(flavor.value, 'userPage')])
 
@@ -366,15 +370,12 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   // 存完；只有存失败、或有校验不过的草稿时才弹确认，选「继续编辑」就留在本页。
   // 转圈、连点只算一次、放行后不再拦见 createMaaFWLeaveGuard。
   const confirmLeave = () =>
-    new Promise<boolean>(resolve => {
-      Modal.confirm({
-        title: t('core.edit.youHaveUnsavedChanges'),
-        content: t('core.edit.leaveWithoutSavingUnsaved'),
-        okText: t('core.edit.leave'),
-        cancelText: t('core.edit.keepEditing'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    openConfirm({
+      tone: 'warning',
+      title: t('core.edit.youHaveUnsavedChanges'),
+      description: t('core.edit.leaveWithoutSavingUnsaved'),
+      okText: t('core.edit.leave'),
+      cancelText: t('core.edit.keepEditing'),
     })
 
   const prepareLeave = async () => {

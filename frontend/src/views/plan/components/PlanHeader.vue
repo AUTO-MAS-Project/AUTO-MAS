@@ -9,7 +9,7 @@
         <a-dropdown :trigger="['click']">
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
-              <a-menu-item v-for="planType in PLAN_TYPE_DESCRIPTORS" :key="planType.configType">
+              <a-menu-item v-for="planType in availablePlanTypes" :key="planType.configType">
                 {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
               </a-menu-item>
             </a-menu>
@@ -20,20 +20,20 @@
           </a-button>
         </a-dropdown>
 
-        <a-popconfirm
+        <ConfirmActionButton
           v-if="planList.length > 0"
+          risk="low"
+          tone="danger"
+          size="large"
           :title="t('core.plan.deleteConfirm')"
-          :ok-text="t('core.common.confirm')"
-          :cancel-text="t('core.common.cancel')"
-          @confirm="$emit('remove-plan', activePlanId)"
+          :disabled="!activePlanId || creating"
+          :confirm="() => removePlan(activePlanId)"
         >
-          <a-button danger size="large" :disabled="!activePlanId">
-            <template #icon>
-              <DeleteOutlined />
-            </template>
-            {{ t('core.plan.deleteCurrent') }}
-          </a-button>
-        </a-popconfirm>
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.plan.deleteCurrent') }}
+        </ConfirmActionButton>
       </a-space>
     </div>
   </div>
@@ -46,7 +46,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
 import UniversalPlanCreateDialog from './UniversalPlanCreateDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
@@ -55,10 +56,18 @@ import {
   PLAN_TYPE_DESCRIPTORS,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { ConfirmActionButton } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
+const capabilities = useScriptCapabilities(ref(true))
+const availablePlanTypes = computed(() =>
+  PLAN_TYPE_DESCRIPTORS.filter(
+    descriptor =>
+      descriptor.configType !== PLAN_CONFIG_TYPES.MAA || capabilities.types.value.includes('MAA')
+  )
+)
 
 interface Plan {
   id: string
@@ -70,12 +79,12 @@ interface Props {
   planList: Plan[]
   activePlanId: string
   creating?: boolean
+  removePlan: (planId: string) => void | Promise<unknown>
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
   'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
-  'remove-plan': [planId: string]
 }>()
 
 const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)

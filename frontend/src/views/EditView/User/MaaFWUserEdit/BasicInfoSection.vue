@@ -31,11 +31,11 @@
             <span v-else class="form-label">{{ t('core.edit.account') }}</span>
           </template>
           <a-input
-            v-model:value="formData.Info.Account"
+            v-model:value="formData.Info.Id"
             size="large"
             autocomplete="off"
             :placeholder="accountPlaceholder || t('core.edit.localNoteOnly')"
-            @blur="emitSave('Info.Account', formData.Info.Account)"
+            @blur="emitSave('Info.Id', formData.Info.Id)"
           />
         </a-form-item>
       </a-col>

@@ -3,8 +3,9 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
+import { parse } from 'yaml'
 import { cleanupRealRun } from './real-cleanup.ts'
-import { acquireRealRunLock, seedBrowserHistory, seedRealProfile } from './run.mjs'
+import { acquireRealRunLock, seedBrowserProfile, seedRealProfile } from './run.mjs'
 
 test('真实任务响应缺失时先找回并终止任务，空闲未确认时不关闭模拟器', async () => {
   const calls = []
@@ -46,15 +47,37 @@ test('真实任务响应缺失时先找回并终止任务，空闲未确认时�
   assert.deepEqual(calls, [])
 })
 
-test('历史种子只写普通隔离根，真实与就地模式保持原数据', async () => {
+test('插件与历史种子只写普通隔离根，真实与就地模式保持原数据', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-history-check-'))
   try {
-    await seedBrowserHistory(root, { real: true, inPlace: false })
-    await seedBrowserHistory(root, { real: false, inPlace: true })
+    await seedBrowserProfile(root, { real: true, inPlace: false })
+    await seedBrowserProfile(root, { real: false, inPlace: true })
     assert.deepEqual(await readdir(root), [])
-    await seedBrowserHistory(root, { real: false, inPlace: false })
+    await seedBrowserProfile(root, { real: false, inPlace: false })
     assert.ok((await readFile(path.join(root, 'data', 'history.db'))).length > 0)
     assert.ok((await readdir(path.join(root, 'history'))).length > 0)
+    const pluginRegistry = parse(
+      await readFile(path.join(root, 'config', 'plugin_registry.yaml'), 'utf8')
+    )
+    const enabledPlugins = Object.values(pluginRegistry.data)
+      .map(({ info }) => info)
+      .filter(({ enabled }) => enabled)
+    assert.ok(enabledPlugins.some(({ plugin_name }) => plugin_name === 'maa_adapter'))
+    if (process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS) {
+      for (const name of [
+        'mumu_adapter',
+        'ldplayer_adapter',
+        'mod_avd_adapter',
+        'general_emulator_adapter',
+        'win_process_adapter',
+      ]) {
+        assert.ok(
+          enabledPlugins.some(
+            ({ plugin_name, source }) => plugin_name === name && source === 'local'
+          )
+        )
+      }
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }

@@ -349,13 +349,13 @@ class ZzzOdRecovery:
         )
         await user_cfg.update(
             type(user_cfg).model_validate(
-                {"Game": {"Account": str(account.get("account") or "")}}
+                {"Info": {"Id": str(account.get("account") or "")}}
             ),
             check_visibility=False,
         )
         await user_cfg.update(
             type(user_cfg).model_validate(
-                {"Game": {"Password": str(account.get("password") or "")}}
+                {"Info": {"Password": str(account.get("password") or "")}}
             ),
             check_visibility=False,
         )
@@ -468,7 +468,7 @@ class ZzzOdRecovery:
             "GameRegion": "game_region",
             "GamePath": "game_path",
             "GameLanguage": "game_language",
-            "Account": "account",
+            "Id": "account",
             "Password": "password",
             "BilibiliAccountName": "bilibili_account_name",
             "Platform": "platform",
@@ -480,7 +480,13 @@ class ZzzOdRecovery:
             if not value:
                 continue
             await user_cfg.update(
-                type(user_cfg).model_validate({"Game": {user_key: value}}),
+                type(user_cfg).model_validate(
+                    {
+                        ("Info" if user_key in ("Id", "Password") else "Game"): {
+                            user_key: value
+                        }
+                    }
+                ),
                 check_visibility=False,
             )
             imported_accounts += 1

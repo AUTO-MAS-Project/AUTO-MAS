@@ -195,8 +195,8 @@ class MaaFWRunRecorder:
                 item.ok = ok
                 return
 
-    def apply(self, data: Any) -> None:
-        """将 worker 阶段、任务起止事件归入专项运行记录；忽略未知事件。"""
+    def apply(self, data: Any) -> MaaFWTaskStartEvent | MaaFWTaskEndEvent | None:
+        """收录 worker 事件，返回已入账的任务起止，供宿主展示同一结果。"""
 
         record = self.current
         event = parse_run_record_event(data)
@@ -218,7 +218,7 @@ class MaaFWRunRecorder:
             task.outcome = event.outcome
             task.category = event.category
             task.counted = event.counted
-        return None
+        return event
 
     @staticmethod
     def _task(record: MaaFWAttemptRecord, index: int, name: str) -> MaaFWTaskRecord:

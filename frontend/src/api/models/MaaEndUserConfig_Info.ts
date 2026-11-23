@@ -44,13 +44,17 @@ export type MaaEndUserConfig_Info = {
      */
     Resource?: (string | null);
     /**
-     * 理智任务策略：指定任务、原生策略或库存目标
+     * 协议空间策略：库存保持、指定任务或原生配置
      */
     SanityStrategy?: ('MAS' | 'Native' | 'Inventory' | null);
     /**
      * 理智任务配置模式
      */
     SanityMode?: (string | null);
+    /**
+     * 基质刷取配置模式
+     */
+    AutoEssenceMode?: (string | null);
     /**
      * 任务后脚本路径
      */

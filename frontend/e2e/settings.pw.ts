@@ -597,7 +597,16 @@ test.describe('@settings user preferences', () => {
       })
 
       const olderSaved = settingsResponse(page, 'update')
-      const olderRead = settingsResponse(page, 'get')
+      const waitForCdk = (value: string) =>
+        page.waitForResponse(async response => {
+          if (
+            !response.url().endsWith('/api/setting/get') ||
+            response.request().method() !== 'POST'
+          )
+            return false
+          return (await response.json()).data.Update.MirrorChyanCDK === value
+        })
+      const olderRead = waitForCdk(olderDraft)
       await cdk.fill(olderDraft)
       await cdk.blur()
       await olderSaving
@@ -619,7 +628,7 @@ test.describe('@settings user preferences', () => {
       await app.evidence('settings-update-draft-retained', ['.cdk-input input'])
 
       const retried = settingsResponse(page, 'update')
-      const retryRead = settingsResponse(page, 'get')
+      const retryRead = waitForCdk(newerDraft)
       await cdk.focus()
       await cdk.blur()
       expect((await (await retried).json()).code).toBe(200)

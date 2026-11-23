@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 
+import { AppModal } from '@/components/ui'
 import type { MyAppearanceItem } from '@/composables/useShareApi'
 import type { MyAppearanceStore } from '../useMyAppearances'
 
@@ -53,17 +54,12 @@ watch(
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="open"
-    :width="520"
-    :z-index="90"
+    size="sm"
     :title="t('core.themeStore.mine.editDescription')"
-    :closable="!saving"
-    :keyboard="!saving"
-    :mask-closable="!saving"
-    :confirm-loading="saving"
-    :ok-text="t('core.common.confirm')"
-    :cancel-text="t('core.common.cancel')"
+    :submitting="saving"
+    @update:open="emit('update:open', $event)"
     @ok="save"
     @cancel="close"
   >
@@ -75,7 +71,7 @@ watch(
       :auto-size="{ minRows: 4, maxRows: 10 }"
       :disabled="saving"
     />
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

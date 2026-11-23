@@ -4,24 +4,20 @@
 /* eslint-disable */
 export type MaaFWUserConfig_Data = {
     /**
-     * 是否通过检查
+     * 上次代理状态
      */
-    IfPassCheck?: (boolean | null);
+    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | '运行中' | null);
     /**
      * 上次代理日期
      */
     LastProxyDate?: (string | null);
     /**
-     * 上次运行状态
+     * 代理次数
      */
-    LastProxyStatus?: (string | null);
+    ProxyTimes?: (number | null);
     /**
      * MaaFW 周期任务完成记录，结构为 weekly/monthly -> task name -> period key
      */
     PeriodTaskRecords?: (string | null);
-    /**
-     * 代理次数
-     */
-    ProxyTimes?: (number | null);
 };
 

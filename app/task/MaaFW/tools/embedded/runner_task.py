@@ -43,9 +43,12 @@ from app.models.schema import (
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import execute_script_task
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.emulator_core import close_emulator, resolve_host_adb
+from app.task.game import game_device_id, game_is_emulator, game_target_id
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
+    MaaFWWin32Window,
     controller_has_window_rules,
 )
 from app.task.MaaFW.tools.core.interface.models import (
@@ -84,12 +87,15 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_PRETASK_FAILED,
     CATEGORY_RESOURCE_FAILURE,
     CATEGORY_RUN_TIMEOUT,
+    CATEGORY_SCRIPT_STOPPED,
     CATEGORY_SIGNAL,
     CATEGORY_USER_STOPPED,
     RUN_RECORD_EVENT_TYPE,
     STAGE_CLIENT,
     STAGE_ENVIRONMENT,
     STAGE_PRETASK,
+    MaaFWTaskEndEvent,
+    MaaFWTaskStartEvent,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     ALL_TASKS_SKIPPED_MESSAGE,
@@ -120,15 +126,28 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     forwards_to_ui,
     strip_ansi,
 )
-from app.utils import IS_WINDOWS, UTC4, ProcessInfo, ProcessManager, get_logger, power
+from app.task.run_flow import (
+    PointState,
+    begin_attempt,
+    game_update_result,
+    operation,
+    point,
+)
+from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
 from app.utils import display as _utils_display
 from app.utils import game_apk as _utils_game_apk
 from app.utils import io as _utils_io
+from app.utils.common.process.operations import (
+    iter_processes,
+    managed_process,
+    terminate_process,
+)
 from app.utils.common.process.runner import create_subprocess, observe_process_exit
 from app.utils.common.process.scope import (
     current_process_scope,
     detached_process_context,
 )
+from app.utils.common.process.session import desktop_process_target
 
 from .embedded_project import resolve_maafw_project_root
 from .flavor import (
@@ -578,7 +597,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._display_hold: Any = None
         self.opened_emulator = False
         self.opened_game = False
-        self.game_process_manager = ProcessManager()
+        self.game_process_manager = ClientProcess()
         # 启动游戏前临时改写的 Unity 注册表分辨率，游戏关闭后恢复；None 表示没改
         self.game_resolution_override: UnityGameResolutionOverride | None = None
         # 本轮游戏刚启动的单调时钟时刻，据此算首个任务的最早下发时刻。只在游戏是刚
@@ -718,8 +737,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return MAINTENANCE_SKIP_MESSAGE
 
             if self.run_plan.controllerType == "Adb":
-                emulator_id = self.script_config.Emulator.Id
-                emulator_index = self.script_config.Emulator.Index
+                emulator_id = game_target_id(self.script_config)
+                emulator_index = game_device_id(self.script_config)
                 if emulator_id == "-" or emulator_index in ("", "-"):
                     await self.cur_user_item.set_state(status="异常")
                     return (
@@ -860,6 +879,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             index += 1
             if index >= self._attempt_limit() or self.run_complete:
                 break
+            begin_attempt(self, index + 1)
 
             # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
             # 建的那份，开头有更新检查与运行总览；之后每次另起。
@@ -999,8 +1019,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if result.signal is not None:
                 # 项目声明的信号节点命中：停服维护 = 本次跳过，需要更新客户端 = 失败；
                 # 两种都是重试多少次都一样，不重启游戏 / 模拟器，直接收尾。
+                point(
+                    self,
+                    "run",
+                    state="skipped"
+                    if result.signal == SERVER_MAINTENANCE
+                    else "failed",
+                )
                 await self._finish_on_signal(index + 1, result)
                 break
+            point(self, "run", state="succeeded" if result.success else "failed")
             if result.success:
                 self.run_complete = True
                 if self.cur_user_log is not None:
@@ -1239,14 +1267,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _resolve_game_launch_path(self) -> Path | None:
         """游戏 exe：DirectExe 下 MAS 启动它，URL / AttachOnly 下只用来认出游戏。"""
 
-        raw = str(self.script_config.Game.LaunchPath or "").strip()
+        raw = str(client_executable_path(self.script_config) or "").strip()
         return Path(raw) if raw else None
 
     def _resolve_launcher_path(self) -> Path | None:
         """AttachOnly 下可选的启动器 exe，MAS 兜底关闭时一并关它。"""
 
-        raw = str(self.script_config.Game.LauncherPath or "").strip()
-        return Path(raw) if raw else None
+        return client_launcher_path(self.script_config)
 
     def _describe_game_launch_config_error(self) -> str | None:
         """MAS 负责启动游戏时缺了什么配置；不缺返回 None。会读盘，调用方放在工作线程里。"""
@@ -1272,6 +1299,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         run_plan = self._filter_period_once_tasks(base_run_plan)
 
         game_path_error: str | None = None
+        if (
+            desktop_process_target.get() is not None
+            and run_plan.controllerType != "Win32"
+        ):
+            raise ValueError("MaaFW 桌面分身仅支持 Win32 控制器")
         if (
             run_plan.tasks
             and run_plan.controllerType == "Win32"
@@ -1466,7 +1498,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return resolve_run_selection(
             interface_model,
             configured_controller=str(self.script_config.Info.Controller or ""),
-            emulator_selected=self.script_config.Emulator.Id != "-",
+            emulator_selected=game_is_emulator(self.script_config),
             configured_resource=str(self.script_config.Info.Resource or ""),
         )
 
@@ -1589,7 +1621,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if self.emulator_manager is None:
             raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器")
 
-        emulator_index = self.script_config.Emulator.Index
+        emulator_index = game_device_id(self.script_config)
         if emulator_index in ("", "-"):
             raise RuntimeError("当前 controller 需要 ADB，请在托管管理页选择模拟器实例")
 
@@ -1604,6 +1636,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 从后台切回 resumed）、没给包名、拉起失败都不等；旧式模拟器管理器不回报拉应用
         # 结果，同样不等
         if getattr(device_info, "app_launch", "") == "launched":
+            point(self, "start_game", state="succeeded", key="launched")
             self.game_started_at = time.monotonic()
             self.game_start_disk_quiet = True
             self._append_log(f"已随模拟器启动游戏: {package_name}")
@@ -1725,6 +1758,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(text)
 
         self._append_log("正在检查游戏客户端更新")
+        point(self, "game_update")
         try:
             # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 ``modavd adb``（ModAVD 的私有 server），
             # 不落到 5037；其余模拟器不接管
@@ -1738,11 +1772,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if_auto_install=mode == "AutoInstall",
                     progress=report,
                 )
+        except asyncio.CancelledError:
+            point(self, "game_update", state="cancelled")
+            raise
         except Exception as exc:
+            point(self, "game_update", state="failed")
             logger.opt(exception=True).warning(f"游戏更新检查异常: {exc}")
             self._append_log(f"游戏更新检查出错，本次照常运行: {exc}")
             return
 
+        game_update_result(self, result)
         self._append_log(result.message)
         if result.status == "NeedManualUpdate":
             raise _MaaFWGameUpdateRequired(result.message)
@@ -1793,39 +1832,22 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._login_checked = True
 
     async def _derive_adb_path_from_emulator_config(self) -> Path | None:
-        emulator_id = self.script_config.Emulator.Id
-        if emulator_id == "-":
+        if self.emulator_manager is None:
             return None
-
-        # 一条配置可以纳管多个模拟器安装, 那种情况下持久化的 Info.Path 是空的,
-        # 得先问管理器这个设备号落在哪条安装上。
-        emulator_index = self.script_config.Emulator.Index
-        with suppress(Exception):
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            if resolve_device is not None and emulator_index not in ("", "-"):
-                device_ref = resolve_device(emulator_index)
-                if device_ref is not None and device_ref.emulator_type == "avd":
-                    # ModAVD 的 adb 问 modavd（``modavd list`` 的 adb_exe），不在主程序旁边
-                    adb_info = await self.emulator_manager.avd_adb_info(emulator_index)
-                    return Path(adb_info.adb_exe)
-                if device_ref is not None and device_ref.manager_path:
-                    return Path(device_ref.manager_path).parent / "adb.exe"
-
-        with suppress(Exception):
-            emulator_config = Config.EmulatorConfig[emulator_id]
-            emulator_path = emulator_config.Info.Path
-            if emulator_path is None:
-                return None
-            return emulator_path.parent / "adb.exe"
-        return None
+        index = game_device_id(self.script_config)
+        ref = self.emulator_manager.resolve_device(index)
+        if ref.emulator_type == "avd":
+            info = await self.emulator_manager.avd_adb_info(index)
+            return Path(info.adb_exe)
+        return self.emulator_manager.get_adb_path()
 
     async def _build_adb_control_profile(self) -> MaaFWAdbControlProfile:
         """解析当前模拟器的 EmulatorExtras 能力，并构造 MuMu/雷电 controller extras 配置。"""
         if self._cached_adb_profile is not None:
             return self._cached_adb_profile
 
-        emulator_id = self.script_config.Emulator.Id
-        emulator_index = self.script_config.Emulator.Index
+        emulator_id = game_target_id(self.script_config)
+        emulator_index = game_device_id(self.script_config)
         if emulator_id == "-" or emulator_index in ("", "-"):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
@@ -1846,19 +1868,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 先问管理器这个设备号的真实归属。持久化的 Info.Type 在纳管多个安装时
             # 不等于设备的真实类型, 直接读它会让雷电专用截图被跳过——而雷电上普通
             # ADB 截图取不到游戏的 GPU 渲染层, 识别会全程无命中。
-            native_index = emulator_index
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            device_ref = resolve_device(emulator_index) if resolve_device else None
-            if device_ref is not None:
-                emulator_type = device_ref.emulator_type
-                emulator_path = Path(device_ref.manager_path)
-                native_index = device_ref.native_index
-            else:
-                emulator_config = Config.EmulatorConfig[emulator_id]
-                emulator_type = str(emulator_config.Info.Type or "")
-                emulator_path = emulator_config.Info.Path
-                if emulator_path is None:
-                    raise ValueError("Path未配置，请检查路径设置")
+            device_ref = self.emulator_manager.resolve_device(emulator_index)
+            emulator_type = device_ref.emulator_type
+            emulator_path = Path(device_ref.manager_path)
+            native_index = device_ref.native_index
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -1907,13 +1920,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self._cached_adb_profile
 
     def _mod_avd_open_kwargs(self) -> dict[str, Any]:
-        """Emulator 2.0 门面的 ``open`` 要知道调用方能不能用 ModAVD（MaaFW 脚本一律放行）；
-        旧式模拟器管理器不收这个参数。"""
-        from app.utils import emulator2 as _utils_emulator2
-
-        if isinstance(self.emulator_manager, _utils_emulator2.facade.Emulator2Manager):
-            return {"allow_mod_avd": True}
-        return {}
+        return {"allow_mod_avd": True}
 
     async def _build_avd_adb_profile(
         self, device_ref: Any, emulator_index: str
@@ -1923,8 +1930,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         adb 程序、私有 server 端口、控制台端口都问 modavd（``modavd list``；根目录可以设 ``portBase``
         换一段端口），截图共享内存按控制台端口命名。
         """
-        from app.utils import emulator2 as _utils_emulator2
-
         capability = build_adb_emulator_extra_capabilities().get("avd", {})
         if not capability.get("screencap"):
             raise RuntimeError(
@@ -1938,55 +1943,30 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not adb_path.is_file():
             raise RuntimeError(f"找不到 ModAVD 的 adb：{adb_path}")
         console = adb_info.ports.console
-        config = _utils_emulator2.avd.maafw_extras.build_maafw_avd_config(
-            adb_path, adb_info.adb_server_port, console
-        )
+        config = await self.emulator_manager.maafw_adb_extra(emulator_index)
         self._append_log(
             f"ModAVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
     async def _script_adb_env(self) -> dict[str, str]:
-        """ModAVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
-        ``ANDROID_ADB_SERVER_PORT=<script_adb_server_port>``（``modavd servers`` 报的，默认 20049）。
-        脚本用 SDK 的新版 adb，放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server；端口问不到时报错。
-        其余模拟器返回空字典。"""
-        emulator_index = self.script_config.Emulator.Index
-        if self.script_config.Emulator.Id == "-" or emulator_index in ("", "-"):
+        if self.emulator_manager is None:
             return {}
-        device_ref = None
-        with suppress(Exception):
-            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-            device_ref = resolve_device(emulator_index) if resolve_device else None
-        if device_ref is None or device_ref.emulator_type != "avd":
-            return {}
-        from app.utils import emulator2 as _utils_emulator2
-
-        root = _utils_emulator2.avd.components.root_from_manager_exe(
-            device_ref.manager_path
+        env = await self.emulator_manager.process_env(
+            game_device_id(self.script_config)
         )
-        # 先由 modavd 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
-        try:
-            await _utils_emulator2.avd.host.ensure_script_adb_server(root)
-        except _utils_emulator2.avd.host.ScriptAdbPortConflict:
-            raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
-        except Exception as exc:  # noqa: BLE001 - 见下
-            # 这次没问成 modavd：之前问到过端口就接着用（server 交给 worker 的 adb 起），没问到过就把原因报出去
-            if not _utils_emulator2.avd.host.script_adb_port_known(root):
-                raise
-            logger.warning(
-                f"modavd servers 这次失败，沿用之前报的脚本专用 adb 端口: {exc}"
-            )
-        return _utils_emulator2.avd.host.script_adb_env(root)
+        return (
+            {"ANDROID_ADB_SERVER_PORT": env["ANDROID_ADB_SERVER_PORT"]}
+            if env is not None
+            else {}
+        )
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """ModAVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
         if profile is None or profile.emulator_type != "avd":
             return
-        from app.utils import emulator2 as _utils_emulator2
-
-        supported = _utils_emulator2.avd.maafw_extras.avd_extras_supported(
+        supported = self.emulator_manager.supports_maafw_adb_extra_version(
             maafw_version
         )
         if supported is False:
@@ -2151,10 +2131,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         configured_hwnd = self.script_config.Device.HWnd
         parsed_hwnd = _optional_int(configured_hwnd)
         if parsed_hwnd:
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.task.desktop_session_worker import request_desktop_action
+
+                _, exists = await request_desktop_action(
+                    desktop, "maafw_windows", {"hwnd": str(parsed_hwnd)}
+                )
+                if not exists:
+                    raise RuntimeError("配置的窗口句柄不在桌面分身内")
             return parsed_hwnd
         if not controller_has_window_rules(controller):
             raise RuntimeError(_WIN32_NO_WINDOW_RULES_MESSAGE)
-        matches = await asyncio.to_thread(_match_controller_windows, controller)
+        matches = await _match_windows_in_session(controller)
         if not matches:
             raise RuntimeError("未找到匹配 MaaFW Win32 controller 的窗口")
         if len(matches) > 1:
@@ -2376,19 +2364,44 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 不进项目视图），见 runner._inject_agent_pip_constraint。
                 AGENT_PIP_CONSTRAINT_DIR_ENV: str(_maafw_agent_constraints_dir()),
             }
-            process = await create_subprocess(
-                str(runner_environment.python_executable),
-                "-m",
-                "app.task.MaaFW.tools.core.runner.worker",
-                cwd=str(Path.cwd()),
-                env=worker_env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
-                # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
-                limit=_WORKER_STREAM_LINE_LIMIT,
-            )
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.utils.windows.desktop_session.process_runner import (
+                    launch_desktop_process,
+                )
+
+                scope = current_process_scope.get()
+                if scope is not None:
+                    scope.ensure_can_start()
+                with operation(self, "start_script"):
+                    process = await launch_desktop_process(
+                        desktop,
+                        argv=[
+                            str(runner_environment.python_executable),
+                            "-m",
+                            "app.task.MaaFW.tools.core.runner.worker",
+                        ],
+                        cwd=Path.cwd(),
+                        env=worker_env,
+                        stdin=job_bytes,
+                        stream_limit=_WORKER_STREAM_LINE_LIMIT,
+                    )
+                if scope is not None:
+                    scope.retain_desktop_process(process.stop)
+            else:
+                with operation(self, "start_script"):
+                    process = await create_subprocess(
+                        str(runner_environment.python_executable),
+                        "-m",
+                        "app.task.MaaFW.tools.core.runner.worker",
+                        cwd=str(Path.cwd()),
+                        env=worker_env,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
+                        # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
+                        limit=_WORKER_STREAM_LINE_LIMIT,
+                    )
             worker_id = service.register_worker(process)
         except BaseException:
             if event_server is not None:
@@ -2398,6 +2411,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             service.unregister_worker(worker_id)
             raise
         self.runner_process = process
+        point(self, "run")
         result_payload: dict[str, Any] | None = None
         result_received = asyncio.Event()
         stderr_lines: list[str] = []
@@ -2694,6 +2708,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._startup_task = None
             return result
         message = f"MaaFW runner worker exited without result: {returncode}"
+        point(self, "run", state="failed")
         detail = "\n".join(stderr_lines[-5:]).strip()
         if detail and _should_forward_framework_log(detail):
             message += f": {_framework_ui_message(detail)}"
@@ -2763,7 +2778,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     ) -> int | None:
         """等 worker 退出；结果已经回传的话只再等有限时间。"""
 
-        exit_task = asyncio.ensure_future(process.wait())
+        async def wait_exit():
+            if desktop_process_target.get() is not None:
+                code, _, _ = await process.wait()
+                return code
+            return await process.wait()
+
+        exit_task = asyncio.ensure_future(wait_exit())
         result_task = asyncio.ensure_future(result_received.wait())
         try:
             await asyncio.wait(
@@ -2815,7 +2836,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         if not controller_has_window_rules(controller):
             return False
-        if await asyncio.to_thread(_match_controller_windows, controller):
+        if await _match_windows_in_session(controller):
             return False
         self._append_log("未找到游戏窗口，重新应用运行前设置")
         return True
@@ -2861,15 +2882,35 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 )
             self._append_log(f"开始应用运行前设置: {display_name}")
             started_at = loop.time()
-            process = await create_subprocess(
-                pretask.executable,
-                *pretask.args,
-                cwd=self.run_plan.path,
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                creationflags=creationflags,
-            )
+            if (desktop := desktop_process_target.get()) is not None:
+                from app.utils.windows.desktop_session.process_runner import (
+                    launch_desktop_process,
+                )
+
+                scope = current_process_scope.get()
+                if scope is not None:
+                    scope.ensure_can_start()
+                process = await launch_desktop_process(
+                    desktop,
+                    argv=[str(pretask.executable), *pretask.args],
+                    cwd=Path(self.run_plan.path),
+                    env=env,
+                    merge=True,
+                    retain=scope is not None,
+                    stream_limit=_WORKER_STREAM_LINE_LIMIT,
+                )
+                if scope is not None:
+                    scope.retain_desktop_process(process.stop)
+            else:
+                process = await create_subprocess(
+                    pretask.executable,
+                    *pretask.args,
+                    cwd=self.run_plan.path,
+                    env=env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    creationflags=creationflags,
+                )
             self.pretask_process = process
             # 输出按行实时进运行日志（以前 communicate() 要等进程结束才一次性写出）；末尾
             # 若干行另留一份，失败时从里面摘原因。
@@ -2986,11 +3027,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if process is None or process.returncode is not None:
             return
 
+        if desktop_process_target.get() is not None:
+            with operation(self, "stop_script"):
+                await process.stop()
+            return
+
         # 必须在 terminate 之前把后代记下来：Windows 的 TerminateProcess 是立即
         # 且不可捕获的，worker 的 shutdown() 没机会跑；而父进程一死，子进程就
         # 被重新挂到别处，事后再按父子关系已经查不到它们。
         descendants = await asyncio.to_thread(_snapshot_descendants, process.pid)
 
+        point(self, "stop_script")
         try:
             process.terminate()
             await asyncio.wait_for(process.wait(), timeout=5)
@@ -3004,6 +3051,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if descendants:
             await asyncio.to_thread(_terminate_snapshot, descendants)
+        point(
+            self,
+            "stop_script",
+            state="succeeded" if process.returncode is not None else "failed",
+        )
 
     def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
         daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
@@ -3258,7 +3310,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.interface_model,
                 self.run_plan.controllerName,
             )
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -3286,7 +3338,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
 
         if self._game_launch_mode() == "URL":
-            await self._launch_game_by_url(game_path)
+            with operation(self, "start_game"):
+                await self._launch_game_by_url(game_path)
             await self._activate_desktop_game_window(game_path)
             return
 
@@ -3297,16 +3350,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 注册表必须在进程起来之前改好：Unity 播放器只在启动时读一次这些值
         await self._apply_game_resolution_override(game_path)
         try:
-            await self.game_process_manager.open_process(
-                game_path,
-                *game_arguments,
-                cwd=game_path.parent,
-                breakaway=True,
-            )
-            # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
-            # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
-            self.opened_game = True
-            await self._wait_for_desktop_game_ready(game_path)
+            with operation(self, "start_game"):
+                await self.game_process_manager.open_process(
+                    game_path,
+                    *game_arguments,
+                    cwd=game_path.parent,
+                    breakaway=True,
+                )
+                # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
+                # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
+                self.opened_game = True
+                await self._wait_for_desktop_game_ready(game_path)
             self.game_started_at = time.monotonic()
         except Exception:
             self.opened_game = False
@@ -3460,11 +3514,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             f"正在等待游戏客户端窗口就绪，最大等待时间 {wait_time}s: {game_path.name}"
         )
 
-        waited = 0.0
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + wait_time
+
+        async def match_before_deadline():
+            if desktop_process_target.get() is None:
+                return await _match_windows_in_session(controller)
+            try:
+                async with asyncio.timeout_at(deadline):
+                    return await _match_windows_in_session(controller)
+            except TimeoutError as exc:
+                raise RuntimeError(
+                    f"游戏窗口在 {wait_time}s 内未就绪: {game_path.name}"
+                ) from exc
+
+        waited = False
         process_detected = False
-        while waited < wait_time:
+        while loop.time() < deadline:
             if not explicit_hwnd:
-                matches = await asyncio.to_thread(_match_controller_windows, controller)
+                matches = await match_before_deadline()
                 if matches:
                     selected = matches[0]
                     self._append_log(
@@ -3472,7 +3540,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"hWnd={selected.hWnd}, class={selected.className}, "
                         f"title={selected.windowName}"
                     )
-                    return waited > 0
+                    return waited
 
             if await asyncio.to_thread(_is_process_path_running, game_path):
                 if not process_detected:
@@ -3483,9 +3551,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self._append_log(
                         f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}"
                     )
-                    return waited > 0
+                    return waited
 
-                matches = await asyncio.to_thread(_match_controller_windows, controller)
+                matches = await match_before_deadline()
                 if matches:
                     selected = matches[0]
                     self._append_log(
@@ -3493,14 +3561,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         f"hWnd={selected.hWnd}, class={selected.className}, "
                         f"title={selected.windowName}"
                     )
-                    return waited > 0
+                    return waited
 
-            sleep_seconds = min(poll_interval, wait_time - waited)
-            await asyncio.sleep(sleep_seconds)
-            waited += sleep_seconds
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            await asyncio.sleep(min(poll_interval, remaining))
+            waited = True
+
+        if desktop_process_target.get() is not None:
+            raise RuntimeError(f"游戏窗口在 {wait_time}s 内未就绪: {game_path.name}")
 
         if not explicit_hwnd:
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -3515,7 +3588,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(f"已配置窗口句柄，跳过窗口正则等待: {explicit_hwnd}")
                 return True
 
-            matches = await asyncio.to_thread(_match_controller_windows, controller)
+            matches = await _match_windows_in_session(controller)
             if matches:
                 selected = matches[0]
                 self._append_log(
@@ -3779,7 +3852,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _on_run_record_event(self, data: Any) -> None:
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
-        self._run_record_call(lambda: self._run_record.apply(data))
+        event = self._run_record_call(lambda: self._run_record.apply(data))
+        if isinstance(event, MaaFWTaskStartEvent):
+            point(self, "special", key=event.name)
+        elif isinstance(event, MaaFWTaskEndEvent):
+            state: PointState = "failed"
+            if event.outcome in ("succeeded", "skipped"):
+                state = event.outcome
+            elif event.outcome == "stopped":
+                if event.category == CATEGORY_USER_STOPPED:
+                    state = "cancelled"
+                elif event.category != CATEGORY_SCRIPT_STOPPED or not event.counted:
+                    state = "stopped"
+            point(self, "special", key=event.name, state=state)
         record = self._run_record.current
         if record is not None and any(
             task.outcome == "succeeded" for task in record.tasks
@@ -3823,6 +3908,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         signal = str(result.signal)
         self.run_signal = signal
+        point(self, "special", state="matched", key=signal)
         message = SIGNAL_USER_MESSAGES.get(signal, str(result.errorMessage or signal))
         # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
         # 这里只记后端日志，不在界面上再复述一遍。
@@ -3927,6 +4013,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         launched_at = self.game_launched_at
         closed = True
+        point(self, "stop_game")
         try:
             try:
                 await self.game_process_manager.kill()
@@ -3947,6 +4034,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 except Exception as exc:
                     logger.warning(f"MaaFW 清理时关闭链接拉起的游戏失败: {exc}")
                     closed = False
+            point(self, "stop_game", state="succeeded" if closed else "failed")
             return closed
         finally:
             self.opened_game = False
@@ -4006,7 +4094,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if since is None or not self._attached_game_close_wanted(failed=failed):
             return
         try:
-            pids = await asyncio.to_thread(self._attached_game_window_pids)
+            if (
+                desktop_process_target.get() is not None
+                and self.interface_model is not None
+            ):
+                controller = _find_controller(
+                    self.interface_model, self.run_plan.controllerName
+                )
+                pids = {
+                    int(row[3])
+                    for row in await _list_desktop_window_matches(controller)
+                }
+            else:
+                pids = await asyncio.to_thread(self._attached_game_window_pids)
             exes = [
                 path
                 for path in (
@@ -4110,7 +4210,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if process is not None:
                     # pretask 的 stdout 可能由游戏继承，不能用 process.wait()
                     # 等其管道 EOF；只检查真正的进程退出状态。
-                    await observe_process_exit(process)
+                    if desktop_process_target.get() is not None:
+                        await process.wait_exit()
+                    else:
+                        await observe_process_exit(process)
                 if pending is not None:
                     try:
                         await asyncio.shield(pending)
@@ -4181,7 +4284,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ):
             return
         try:
-            reason = await asyncio.to_thread(_utils_display.input_desktop_unavailable)
+            if (desktop := desktop_process_target.get()) is None:
+                reason = await asyncio.to_thread(
+                    _utils_display.input_desktop_unavailable
+                )
+            else:
+                from app.utils.windows.desktop_session.process_runner import (
+                    run_desktop_action,
+                )
+
+                _, output, _ = await run_desktop_action(
+                    desktop, "input_desktop_unavailable", {}
+                )
+                reason = output.decode("utf-8") if output else None
         except Exception as error:
             # 查不出来不拦：这一步是给出明确原因的改善项，不该把本来能跑的任务打掉
             logger.opt(exception=True).warning(f"检查锁屏状态失败，照常运行：{error}")
@@ -4611,7 +4726,7 @@ def _match_controller_windows(controller: MaaFWController) -> list[Any]:
 
 def _is_process_path_running(executable_path: Path) -> bool:
     target_path = executable_path.resolve()
-    for proc in psutil.process_iter(["exe"]):
+    for proc in iter_processes(["exe"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             raw_exe = proc.info.get("exe") or proc.exe()
             if raw_exe and Path(raw_exe).resolve() == target_path:
@@ -4619,8 +4734,36 @@ def _is_process_path_running(executable_path: Path) -> bool:
     return False
 
 
+async def _list_desktop_window_matches(controller: MaaFWController):
+    from app.task.desktop_session_worker import request_desktop_action
+
+    desktop = desktop_process_target.get()
+    if desktop is None:
+        raise RuntimeError("桌面分身会话未配置")
+    _, matches = await request_desktop_action(
+        desktop,
+        "maafw_windows",
+        {"controller": controller.model_dump_json(by_alias=True)},
+    )
+    return matches
+
+
+async def _match_windows_in_session(controller: MaaFWController):
+    if desktop_process_target.get() is None:
+        return await asyncio.to_thread(_match_controller_windows, controller)
+    return [
+        MaaFWWin32Window(*item[:3])
+        for item in await _list_desktop_window_matches(controller)
+    ]
+
+
 async def _open_launch_url(url: str) -> None:
     """用系统默认处理程序打开启动链接（Windows 上是 ShellExecute）。"""
+    if (desktop := desktop_process_target.get()) is not None:
+        from app.utils.windows.desktop_session.process_runner import open_in_desktop
+
+        await open_in_desktop(desktop, url)
+        return
 
     from app.utils import process_platform
 
@@ -4647,7 +4790,7 @@ def _normalized_exe(path: str | Path) -> str:
 
 def _snapshot_processes() -> list[_ProcessSnapshot]:
     snapshots: list[_ProcessSnapshot] = []
-    for proc in psutil.process_iter(["pid", "exe", "create_time"]):
+    for proc in iter_processes(["pid", "exe", "create_time"]):
         info = proc.info
         snapshots.append(
             _ProcessSnapshot(
@@ -4719,14 +4862,19 @@ def _end_processes(
     failed: list[_ProcessSnapshot] = []
     for target in targets:
         try:
-            proc = psutil.Process(target.pid)
-            if (
-                target.create_time is not None
-                and abs(proc.create_time() - target.create_time) > 1
-            ):
+            proc = managed_process(target.pid, expected_create_time=target.create_time)
+            if proc is None:
                 continue
-            proc.terminate()
+            if not terminate_process(proc):
+                if proc.is_running():
+                    logger.warning(f"MaaFW 未能结束进程: {target.label}")
+                    failed.append(target)
+                continue
         except psutil.NoSuchProcess:
+            continue
+        except ProcessLookupError:
+            logger.warning(f"MaaFW 结束进程时无法确认目标归属: {target.label}")
+            failed.append(target)
             continue
         except (psutil.AccessDenied, OSError) as exc:
             logger.warning(f"MaaFW 结束进程失败 {target.label}: {exc}")
@@ -4738,7 +4886,7 @@ def _end_processes(
     _, alive = psutil.wait_procs(list(started), timeout=grace_seconds)
     for proc in alive:
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            proc.kill()
+            terminate_process(proc, force=True)
     if alive:
         _, alive = psutil.wait_procs(alive, timeout=grace_seconds)
     for proc in alive:
@@ -4965,9 +5113,15 @@ async def _kill_pretask_process(
     # 不用 process.wait()：它要等输出管道关闭才返回，继承了管道的游戏不退它就不返回。
     try:
         if process.returncode is None:
-            process.terminate()
+            if desktop_process_target.get() is None:
+                process.terminate()
+            elif target := managed_process(process.pid):
+                terminate_process(target)
         if not await _wait_pretask_exit(process, 5):
-            process.kill()
+            if desktop_process_target.get() is None:
+                process.kill()
+            else:
+                await process.stop()
             if not await _wait_pretask_exit(process, 5):
                 logger.warning(
                     f"MaaFW 运行前设置进程（pid {process.pid}）强制结束后 5 秒仍未退出"

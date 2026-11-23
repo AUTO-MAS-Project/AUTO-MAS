@@ -3,9 +3,14 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { BAAHUserConfig_Data } from './BAAHUserConfig_Data';
+import type { BAAHUserConfig_game } from './BAAHUserConfig_game';
 import type { BAAHUserConfig_Info } from './BAAHUserConfig_Info';
 import type { BAAHUserConfig_Notify } from './BAAHUserConfig_Notify';
 export type BAAHUserConfig = {
+    /**
+     * 游戏与设备
+     */
+    game?: (BAAHUserConfig_game | null);
     Data?: (BAAHUserConfig_Data | null);
     Info?: (BAAHUserConfig_Info | null);
     Notify?: (BAAHUserConfig_Notify | null);

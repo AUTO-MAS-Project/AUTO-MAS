@@ -235,6 +235,20 @@ def get_window_rect(hwnd: int) -> tuple[int, int, int, int]:
     return win32gui.GetWindowRect(hwnd)
 
 
+def get_client_size(hwnd: int) -> tuple[int, int] | None:
+    """窗口客户区尺寸；句柄已失效或查询失败时返回 None。
+
+    客户区是真正能被截图/渲染的区域：游戏窗口刚创建、引擎还在初始化时，
+    窗口已经可见但客户区仍是 0×0，此时截图拿到的是空图。
+    """
+
+    try:
+        _, _, width, height = win32gui.GetClientRect(hwnd)
+    except Exception:
+        return None
+    return width, height
+
+
 def is_minimized(hwnd: int) -> bool:
     return win32gui.GetWindowPlacement(hwnd)[1] == win32con.SW_SHOWMINIMIZED
 
