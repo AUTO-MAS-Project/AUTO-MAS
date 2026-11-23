@@ -260,7 +260,7 @@ const saveGames = async (keys: string[]) => {
       <StateView
         v-if="isActivityTab"
         :loading="loading && !allEvents.length"
-        :empty="!items.length"
+        :empty="!loading && !items.length"
         :empty-description="emptyText"
         :min-height="240"
       >

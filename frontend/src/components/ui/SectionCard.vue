@@ -161,6 +161,21 @@ html:not(.dark):not(.appearance-custom) .ui-section-card--card {
   margin-bottom: 16px;
 }
 
+.ui-section-card--plain.ui-section-card--compact .section-header {
+  margin-bottom: 12px;
+  border-bottom-width: 1px;
+}
+
+.ui-section-card--plain.ui-section-card--compact .section-header h3 {
+  gap: 10px;
+  font-size: 18px;
+}
+
+.ui-section-card--plain.ui-section-card--compact .section-header h3::before {
+  height: 20px;
+  background: var(--ant-color-primary);
+}
+
 .ui-section-card--plain.ui-section-card--collapsed .section-header {
   margin-bottom: 0;
 }

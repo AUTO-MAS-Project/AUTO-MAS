@@ -1,6 +1,6 @@
 <template>
   <!-- 主要内容 -->
-  <AppPage layout="fill">
+  <AppPage layout="fill" class="scheduler-main">
     <!-- 页面头部 -->
     <PageHeader :title="t('core.scheduler.title')">
       <template #actions>

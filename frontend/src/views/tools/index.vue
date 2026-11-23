@@ -49,7 +49,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <AppPage layout="scroll">
+  <AppPage layout="scroll" class="tools-page">
     <PageHeader :title="t('core.tools.title')" />
     <PageSurface padding="none" :scrollable="false">
       <a-tabs active-key="mcp" type="card" class="tools-tabs">
