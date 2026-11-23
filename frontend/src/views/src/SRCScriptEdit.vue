@@ -1,230 +1,232 @@
 <template>
-  <ScriptEditHeader script-type="SRC" :title="t('core.edit.editScript')" @cancel="handleCancel" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="SRC"
+        :title="t('core.edit.editScript')"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="t('core.edit.srcScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="blue" class="type-tag"> SRC </a-tag>
-      </template>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-card
+        :title="t('core.edit.srcScriptConfiguration')"
+        :loading="pageLoading"
+        class="config-card"
+      >
+        <template #extra>
+          <a-tag color="blue" class="type-tag"> SRC </a-tag>
+        </template>
 
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.giveScriptNameYou')"
-                    variant="form"
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <!-- 基本信息 -->
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item name="name">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.scriptName')"
+                      :hint="t('core.edit.giveScriptNameYou')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="formData.name"
+                    :placeholder="t('core.edit.enterScriptName')"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleChange('Info', 'Name', formData.name)"
                   />
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  :placeholder="t('core.edit.enterScriptName')"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.srcPath')"
-                    :hint="t('core.edit.pickFolderHoldingSrc2')"
-                    variant="form"
+                </a-form-item>
+              </a-col>
+              <a-col :span="16">
+                <a-form-item name="path" :rules="rules.path">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.srcPath')"
+                      :hint="t('core.edit.pickFolderHoldingSrc2')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="formData.path"
+                    mode="folder"
+                    :placeholder="t('core.edit.pickFolderHoldingSrc')"
+                    :pick-label="t('core.edit.pickFolder')"
+                    @pick="selectSRCPath"
                   />
-                </template>
-                <PathPickerField
-                  v-model="formData.path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickFolderHoldingSrc')"
-                  :pick-label="t('core.edit.pickFolder')"
-                  @pick="selectSRCPath"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
 
-        <!-- 模拟器管理 -->
-        <div class="form-section">
-          <a-form-item>
-            <template #label>
-              <FieldLabelWithHint
-                :text="t('core.edit.updateTakeoverSwitch')"
-                :hint="t('core.edit.srcProgramUpdateHint')"
-                variant="form"
+          <!-- 模拟器管理 -->
+          <div class="form-section">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.updateTakeoverSwitch')"
+                  :hint="t('core.edit.srcProgramUpdateHint')"
+                  variant="form"
+                />
+              </template>
+              <a-switch
+                v-model:checked="srcConfig.Update.TakeoverEnabled"
+                :disabled="isInitializing"
+                @change="(value: boolean) => handleChange('Update', 'TakeoverEnabled', value)"
               />
-            </template>
-            <a-switch
-              v-model:checked="srcConfig.Update.TakeoverEnabled"
-              :disabled="isInitializing"
-              @change="(value: boolean) => handleChange('Update', 'TakeoverEnabled', value)"
+            </a-form-item>
+          </div>
+
+          <SectionCard variant="plain" :title="t('core.edit.emulators')">
+            <a-row :gutter="24"> </a-row>
+          </SectionCard>
+
+          <!-- 运行配置 -->
+          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
+            <ScriptHardTimeoutField
+              v-model:value="srcConfig.Run.HardTimeLimit"
+              @save="handleChange('Run', 'HardTimeLimit', srcConfig.Run.HardTimeLimit)"
             />
-          </a-form-item>
-        </div>
-
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.emulators') }}</h3>
-          </div>
-          <a-row :gutter="24"> </a-row>
-        </div>
-
-        <!-- 运行配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptHardTimeoutField
-            v-model:value="srcConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', srcConfig.Run.HardTimeLimit)"
-          />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.accountSwitchingMethod')"
-                    :hint="t('core.edit.whatDoWhenSwitching')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="srcConfig.Run.TaskTransitionMethod"
-                  size="large"
-                  @change="handleChange('Run', 'TaskTransitionMethod', $event)"
-                >
-                  <a-select-option value="ExitEmulator">{{
-                    t('core.edit.restartEmulator')
-                  }}</a-select-option>
-                  <a-select-option value="ExitGame">{{
-                    t('core.edit.restartGame')
-                  }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="srcConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDayThis')"
-                :hint="t('core.edit.skipRunOnceThis')"
-                enhanced
-                @save="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="srcConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit')"
-                :hint="t('core.edit.ifRunStillUnfinished')"
-                enhanced
-                @save="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-          </a-row>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="srcConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes2')"
-                :hint="t('core.edit.treatRunAsTimed2')"
-                enhanced
-                @save="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
-        </div>
-
-        <!-- 游戏更新 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.gameUpdate') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.checkGameUpdateBefore')"
-                    :hint="t('core.edit.checkGameUpdateBeforeLogin')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.installGamePackageAutomatically')"
-                    :hint="t('core.edit.whenClientDetectedAs')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
-                  size="large"
-                  style="width: 100%"
-                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
-                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.gameUpdateTimeoutMinutes')"
-                    :hint="t('core.edit.timeoutDownloadingInstallingGame')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="srcConfig.Run.GameUpdateTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  class="modern-number-input"
-                  style="width: 100%"
-                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
-                  @blur="
-                    handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
-                  "
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.accountSwitchingMethod')"
+                      :hint="t('core.edit.whatDoWhenSwitching')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="srcConfig.Run.TaskTransitionMethod"
+                    size="large"
+                    @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                  >
+                    <a-select-option value="ExitEmulator">{{
+                      t('core.edit.restartEmulator')
+                    }}</a-select-option>
+                    <a-select-option value="ExitGame">{{
+                      t('core.edit.restartGame')
+                    }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="srcConfig.Run.ProxyTimesLimit"
+                  kind="daily"
+                  :label="t('core.edit.runsPerDayThis')"
+                  :hint="t('core.edit.skipRunOnceThis')"
+                  enhanced
+                  @save="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
                 />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+              </a-col>
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="srcConfig.Run.RunTimesLimit"
+                  kind="retry"
+                  :label="t('core.edit.retryLimit')"
+                  :hint="t('core.edit.ifRunStillUnfinished')"
+                  enhanced
+                  @save="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
+                />
+              </a-col>
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="srcConfig.Run.RunTimeLimit"
+                  kind="timeout"
+                  :label="t('core.edit.runTimeoutMinutes2')"
+                  :hint="t('core.edit.treatRunAsTimed2')"
+                  enhanced
+                  @save="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
+                />
+              </a-col>
+            </a-row>
+          </SectionCard>
+
+          <!-- 游戏更新 -->
+          <SectionCard variant="plain" :title="t('core.edit.gameUpdate')">
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.checkGameUpdateBefore')"
+                      :hint="t('core.edit.checkGameUpdateBeforeLogin')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                    size="large"
+                    style="width: 100%"
+                    @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.installGamePackageAutomatically')"
+                      :hint="t('core.edit.whenClientDetectedAs')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                    size="large"
+                    style="width: 100%"
+                    :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                    @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.gameUpdateTimeoutMinutes')"
+                      :hint="t('core.edit.timeoutDownloadingInstallingGame')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="srcConfig.Run.GameUpdateTimeLimit"
+                    :min="1"
+                    :max="9999"
+                    size="large"
+                    class="modern-number-input"
+                    style="width: 100%"
+                    :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                    @blur="
+                      handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
@@ -235,6 +237,7 @@ import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHar
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
