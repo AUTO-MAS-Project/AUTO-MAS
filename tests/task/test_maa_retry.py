@@ -155,6 +155,8 @@ async def test_task_failure_retry_scope(
     completed_rounds = []
 
     async def install_round_update(pending):
+        if annihilation and proxy.mode == "Annihilation":
+            assert pending == ("v6.1.0", "ready.zip")
         completed_rounds.append(proxy.mode)
 
     proxy = AutoProxyTask(
@@ -182,8 +184,19 @@ async def test_task_failure_retry_scope(
         assert completed_rounds == [mode for mode, _ in attempts]
         attempts.append((proxy.mode, deepcopy(queue)))
 
+    async def process_exit():
+        if annihilation and proxy.mode == "Annihilation":
+            # MAA 退出时才把已下载包的登记保存到原生配置。
+            from app.task.MAA.tools.software_package import write_pending_update
+
+            (root / "ready.zip").touch()
+            (root / "config").mkdir(exist_ok=True)
+            (root / "config/gui.new.json").write_text("{}", encoding="utf-8")
+            write_pending_update(root, version="v6.1.0", package="ready.zip")
+
     process = SimpleNamespace(
         open_process=open_process,
+        process=SimpleNamespace(wait=process_exit),
         kill=AsyncMock(),
         is_running=AsyncMock(return_value=True),
         main_pid=1,

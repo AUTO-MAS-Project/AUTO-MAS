@@ -89,6 +89,7 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
     cur_user_log: LogRecord
     # 账号级前/后脚本成对标记：前置跑过才收尾后置，且每账号只收尾一次。
     _user_scripts_started: bool = False
+    _run_timeout: asyncio.Timeout | None = None
     # 运行期维护弹窗监视的命中结论（含原文），未命中为 None；由
     # watch_game_maintenance 写入、main_task 出等待循环后消费。
     _maintenance_reason: str | None = None
@@ -269,7 +270,11 @@ class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecu
         timeout = asyncio.timeout(self.run_timeout_seconds)
         try:
             async with timeout:
-                await self.main_task()
+                self._run_timeout = timeout
+                try:
+                    await self.main_task()
+                finally:
+                    self._run_timeout = None
         except TimeoutError:
             # 脚本内部的 TimeoutError 仍交给原异常流程处理。
             if not timeout.expired():

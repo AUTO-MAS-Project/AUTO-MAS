@@ -1,6 +1,7 @@
 """安装阶段在首个账号配置注入前中断，也能恢复临时配置并保护用户修改。"""
 
 import asyncio
+import zipfile
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -54,11 +55,11 @@ def installation(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("pre_run", [False, True])
 async def test_round_installs_deferred_package_and_preserves_other_registrations(
-    installation, monkeypatch
+    installation, monkeypatch, pre_run
 ):
     from app.task.MAA.tools.software_package import (
-        clear_applied_update_registrations,
         read_pending_update,
     )
 
@@ -70,7 +71,8 @@ async def test_round_installs_deferred_package_and_preserves_other_registrations
     io_utils.write_file(config, runtime)
     version = "v6.0.0"
     scheduler._updater_running = False
-    scheduler._applied_round_updates = set()
+    with zipfile.ZipFile(root / "pending.zip", "w") as archive:
+        archive.writestr("file", b"data")
     scheduler.script_config = SimpleNamespace(
         Update=SimpleNamespace(TakeoverEnabled=False)
     )
@@ -91,11 +93,15 @@ async def test_round_installs_deferred_package_and_preserves_other_registrations
     monkeypatch.setattr(installer.ProcessRunner, "run_process", launch)
     await scheduler._install_round_update(None)
     launch.assert_not_awaited()
-    await scheduler._install_round_update(pending)
+    if pre_run:
+        io_utils.write_file(config, original)
+        await scheduler._install_pending_software_update(target=pending[0])
+    else:
+        await scheduler._install_round_update(pending)
     await scheduler._install_round_update(pending)
     launch.assert_awaited_once()
     assert version == "v6.1.0"
-    assert io_utils.read_dict_file(config) == runtime
+    assert io_utils.read_dict_file(config) == (original if pre_run else runtime)
 
     # 托管随后还原原生快照。保留同一安装中的其他待装包。
     io_utils.write_file(config, original)
@@ -104,7 +110,11 @@ async def test_round_installs_deferred_package_and_preserves_other_registrations
         "Global": {"VersionUpdate.name": "v6.2.0", "VersionUpdate.package": "next.zip"}
     }
     io_utils.write_file(old_config, other)
-    clear_applied_update_registrations(config.parent, scheduler._applied_round_updates)
+    recovered = object.__new__(manager.MaaManager)
+    recovered.maa_set_path = config.parent
+    recovered.temp_path = scheduler.temp_path
+    recovered._pending_update = None
+    await recovered._restore_pending_update()
     assert io_utils.read_dict_file(config)["Update"]["UpdatePackage"] == ""
     assert io_utils.read_dict_file(old_config) == other
 
@@ -301,3 +311,32 @@ def test_switch_install_root_archives_previous_recovery_journal(installation, tm
     scheduler._recover_previous_run()
     assert io_utils.read_file(config_b / "gui.new.json") == original_b
     assert archived.read_bytes() == saved
+
+
+@pytest.mark.asyncio
+async def test_round_install_has_its_own_time_budget_and_respects_stop(monkeypatch):
+    from app.task.MAA.AutoProxy import AutoProxyTask
+
+    proxy = object.__new__(AutoProxyTask)
+    proxy._stopped_manually = False
+    proxy.execution = SimpleNamespace(cancelled=False)
+    proxy.pending_update = ("v6.1.0", "ready.zip")
+    installed = []
+
+    async def install(pending):
+        await asyncio.sleep(0.05)
+        installed.append(pending)
+
+    proxy.install_round_update = install
+
+    async def finish_round():
+        proxy._round_needs_update = True
+        await proxy._complete_round_update()
+
+    proxy.main_task = finish_round
+    monkeypatch.setattr(AutoProxyTask, "run_timeout_seconds", 0.02)
+    await proxy._run_main_task()
+    assert installed == [proxy.pending_update]
+    proxy._stopped_manually = True
+    await proxy._run_main_task()
+    assert installed == [proxy.pending_update]

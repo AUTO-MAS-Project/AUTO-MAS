@@ -15,6 +15,7 @@
 #   Contact: DLmaster_361@163.com
 import time
 import uuid
+import zipfile
 from contextlib import ExitStack, suppress
 from datetime import datetime
 from pathlib import Path
@@ -88,6 +89,7 @@ from .tools.software_package import (
     clear_applied_update_registrations,
     clear_deferred_update,
     has_delegated_update_failure,
+    install_attempts_path,
     load_deferred_update,
     read_pending_update,
     save_deferred_update,
@@ -157,7 +159,6 @@ class MaaManager(ScriptManagerBase):
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
         self._updater_running: bool = False
-        self._applied_round_updates: set[tuple[str, str]] = set()
         # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
         self._maa_update_checked = False
 
@@ -204,10 +205,6 @@ class MaaManager(ScriptManagerBase):
                                 and not self._keep_script_config_changes()
                             ):
                                 _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
-                            if self._applied_round_updates:
-                                clear_applied_update_registrations(
-                                    self.maa_set_path, self._applied_round_updates
-                                )
                             await self._restore_pending_update()
                             _utils_io.clear_native_config_snapshot(self.temp_path)
                 finally:
@@ -233,8 +230,23 @@ class MaaManager(ScriptManagerBase):
 
     async def _restore_pending_update(self) -> None:
         """恢复仍有包文件的登记；成功安装后已删除的包不重新登记。"""
+        root = self.maa_set_path.parent
+        attempts_path = install_attempts_path(root, self.temp_path)
+        if attempts_path.is_file() and not has_delegated_update_failure(root):
+            attempts = _utils_io.read_dict_file(attempts_path)
+            release = read_installed_release(root)
+            current = parse_version(release[0]) if release else None
+            if current:
+                applied = {
+                    (version, package)
+                    for package, version in attempts.items()
+                    if (target := parse_version(version))
+                    and compare_versions(current, target) >= 0
+                }
+                clear_applied_update_registrations(self.maa_set_path, applied)
+                attempts_path.unlink()
         try:
-            saved = load_deferred_update(self.maa_set_path.parent)
+            saved = load_deferred_update(root)
             if saved is not None:
                 self._pending_update = saved
             if (
@@ -638,10 +650,10 @@ class MaaManager(ScriptManagerBase):
                 self.script_info.user_list[self.script_info.current_index], task
             )
             if isinstance(task, AutoProxyTask):
-                if isinstance(
-                    task.execution.error, (MaaUpdaterRunningError, MaaUpdateUnsafeError)
-                ):
-                    raise task.execution.error
+                if task.install_error is not None:
+                    if isinstance(task.install_error, MaaUpdaterRunningError):
+                        self._updater_running = True
+                    raise task.install_error
                 self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
@@ -877,6 +889,9 @@ class MaaManager(ScriptManagerBase):
         version, package = pending
         if not (root / package).is_file():
             return
+        if not await _run_write_thread(zipfile.is_zipfile, root / package):
+            logger.warning("MAA 本轮待装包不完整，跳过安装")
+            return
         release = read_installed_release(root)
         current = parse_version(release[0]) if release else None
         target = parse_version(version)
@@ -891,7 +906,6 @@ class MaaManager(ScriptManagerBase):
             target=version,
             pending=pending,
         )
-        self._applied_round_updates.add(pending)
 
     async def _install_pending_software_update(
         self, *, target: str | None = None, pending: tuple[str, str] | None = None
@@ -899,6 +913,13 @@ class MaaManager(ScriptManagerBase):
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
         await self.script_info.set_log("正在等待 MAA 官方更新器处理本地更新包")
         try:
+            root = self.maa_set_path.parent
+            candidate = pending or read_pending_update(root)
+            if all(candidate) and (root / candidate[1]).is_file():
+                path = install_attempts_path(root, self.temp_path)
+                attempts = _utils_io.read_dict_file(path)
+                attempts[str((root / candidate[1]).resolve())] = candidate[0]
+                _utils_io.write_file(path, attempts)
             await update_maa(
                 self.maa_set_path.parent,
                 snapshot_path=self.temp_path,

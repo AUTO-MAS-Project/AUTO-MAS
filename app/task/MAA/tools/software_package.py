@@ -332,6 +332,12 @@ def register_pending_update(
         return False
 
 
+def install_attempts_path(maa_root: Path, snapshot_path: Path) -> Path:
+    """快照恢复前记录交给官方的包，以便重启后核对版本。"""
+    key = _utils_config_archive.config_root_key(maa_root)
+    return snapshot_path.with_name(f"{snapshot_path.name}.{key}.maa-packages.json")
+
+
 def clear_applied_update_registrations(
     config_dir: Path, applied: set[tuple[str, str]]
 ) -> None:
@@ -343,9 +349,17 @@ def clear_applied_update_registrations(
         path = config_dir / name
         data = _utils_io.read_dict_file(path)
         values = data.get(section)
+        if not isinstance(values, dict):
+            continue
+        package = values.get(package_key)
         if (
-            isinstance(values, dict)
-            and (values.get(version_key), values.get(package_key)) in applied
+            isinstance(package, str)
+            and package
+            and (
+                str(values.get(version_key)),
+                str((config_dir.parent / package).resolve()),
+            )
+            in applied
         ):
             values[package_key] = ""
             _utils_io.write_file(path, data)

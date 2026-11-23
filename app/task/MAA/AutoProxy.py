@@ -139,6 +139,7 @@ from .tools.task_templates import (
     MAA_GREEN_TICKET_STORE_TASK,
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
+from .tools.update_errors import MaaUpdateUnsafeError
 from .tools.UpdateMAA import MaaUpdaterRunningError
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -1253,6 +1254,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     _event_depot_completed: bool = False
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
     _stock_depot_completed: bool = False
+    _round_needs_update: bool = False
+    install_error: MaaUpdaterRunningError | MaaUpdateUnsafeError | None = None
 
     def __init__(
         self,
@@ -1545,6 +1548,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 await self.maa_process_manager.open_process(
                     self.maa_exe_path, env=await self._maa_process_env()
                 )
+                self._round_needs_update = True
                 logger.info(
                     f"MAA 进程已创建: {self.maa_exe_path} - "
                     f"PID: {self.maa_process_manager.main_pid}"
@@ -1578,6 +1582,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     for task in failed_sanity:
                         self.task_dict[task] = False
 
+                # 队列结束日志早于退出动作，等 MAA 写回配置后再读待装登记。
+                if self.cur_user_log.status in ("Success!", "MAA 部分任务执行失败"):
+                    maa_process = self.maa_process_manager.process
+                    assert maa_process is not None
+                    try:
+                        await asyncio.wait_for(maa_process.wait(), timeout=10)
+                    except TimeoutError:
+                        if not await process.kill_process(self.maa_exe_path):
+                            raise MaaUpdaterRunningError(
+                                "无法确认 MAA 已停写，已停止后续代理"
+                            )
+
                 if self.cur_user_log.status == "Success!":
                     # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
                     self.run_book[self.mode] = not self._failed_sanity_tasks
@@ -1605,7 +1621,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
                     await close_emulator(self)
-                    await process.kill_process(self.maa_exe_path)
+                    if not await process.kill_process(self.maa_exe_path):
+                        raise MaaUpdaterRunningError(
+                            "无法确认 MAA 已停写，已停止后续代理"
+                        )
 
                     # 绿票商店每月顺手买一次，失败不重试也不惊动用户，月份没写回下次调度自会再来
                     if self.mode == "GreenTicketStore":
@@ -1624,8 +1643,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     self._collect_cultivate_archive(maa_log, finalizing=True)
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
-                if not self.stopped_manually:
-                    await self.install_round_update(self.pending_update)
+                await self._complete_round_update()
 
                 if not _should_retry_maa(
                     self.cur_user_log.status,
@@ -1698,6 +1716,26 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             "请检查 MAA 数据目录的写入权限"
         )
 
+    async def _complete_round_update(self) -> None:
+        """一次真实启动只检查一次登记；官方安装单独计时。"""
+        if not self._round_needs_update:
+            return
+        self._round_needs_update = False
+        if self.stopped_manually:
+            return
+        timeout = self._run_timeout
+        deadline = timeout.when() if timeout else None
+        started = asyncio.get_running_loop().time()
+        if timeout is not None and deadline is not None:
+            timeout.reschedule(None)
+        try:
+            await self.install_round_update(self.pending_update)
+        finally:
+            if timeout is not None and deadline is not None:
+                timeout.reschedule(
+                    deadline + asyncio.get_running_loop().time() - started
+                )
+
     async def _finalize_task(self) -> None:
         """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。
 
@@ -1708,12 +1746,12 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         """
 
         # 官方安装器仍可能写盘；由 manager 保留原生备份，下次启动再还原库存。
-        if isinstance(self.execution.error, MaaUpdaterRunningError):
-            return
         try:
             await super()._finalize_task()
         finally:
-            if self.maa_root_path is not None:
+            if self.maa_root_path is not None and not isinstance(
+                self.install_error, MaaUpdaterRunningError
+            ):
                 restore_depot_cache(
                     self.maa_root_path,
                     depot_cache_snapshot_dir(self.script_info.script_id),
@@ -3251,24 +3289,34 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        logger.info("MAA 收尾: 停止 MAA 进程")
-        # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
-        # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
-        await self.maa_process_manager.kill()
-        await process.kill_process(self.maa_exe_path)
-        self._remember_pending_update()
-        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+        maa_idle = not isinstance(self.install_error, MaaUpdaterRunningError)
+        if maa_idle:
+            logger.info("MAA 收尾: 停止 MAA 进程")
+            # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
+            # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
+            await self.maa_process_manager.kill()
+            stopped = await process.kill_process(self.maa_exe_path)
+            try:
+                if self._round_needs_update and not stopped:
+                    raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理")
+                self._remember_pending_update()
+                await self._complete_round_update()
+            except (MaaUpdateUnsafeError, MaaUpdaterRunningError) as error:
+                await self.on_crash(error)
+            maa_idle = not isinstance(self.install_error, MaaUpdaterRunningError)
+        if maa_idle:
+            logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
-        # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
-        current_log = self.cur_user_item.log_record.get(self.log_start_time)
-        if current_log is not None and self.cur_user_config.Info.IfQuickConfig:
-            self._collect_cultivate_archive(
-                "".join(current_log.content), finalizing=True
-            )
-        await self._finish_cultivate_round()
+            # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
+            current_log = self.cur_user_item.log_record.get(self.log_start_time)
+            if current_log is not None and self.cur_user_config.Info.IfQuickConfig:
+                self._collect_cultivate_archive(
+                    "".join(current_log.content), finalizing=True
+                )
+            await self._finish_cultivate_round()
 
-        logger.info("MAA 收尾: 回写 MAA 配置")
-        await agree_bilibili(self.maa_tasks_path, False)
+            logger.info("MAA 收尾: 回写 MAA 配置")
+            await agree_bilibili(self.maa_tasks_path, False)
 
         # 是否成功提前判定：ExitEmulator 模式随后就关闭模拟器，失败画面的
         # 补截必须赶在关模拟器之前
@@ -3286,7 +3334,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         await self.run_user_scripts_after()
 
-        if self.maa_root_path is not None:
+        if maa_idle and self.maa_root_path is not None:
             await asyncio.to_thread(
                 restore_depot_cache,
                 self.maa_root_path,
@@ -3516,6 +3564,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
+        if isinstance(e, (MaaUpdateUnsafeError, MaaUpdaterRunningError)):
+            self.install_error = e
         await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Publisher.send(
