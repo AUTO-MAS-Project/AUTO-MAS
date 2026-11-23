@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core.desktop_session.lifecycle import (
     CONTROL_HEADER,
@@ -57,6 +57,25 @@ class ScopeUpdateOut(BaseModel):
 
 class SessionStateOut(BaseModel):
     idle: bool
+    admitted: int = 0
+
+
+class CloseSessionIn(BaseModel):
+    sessionId: int = Field(gt=0, le=0xFFFFFFFE)
+    mode: Literal["inspect", "idle", "confirmed", "release"]
+    attemptId: UUID | None = None
+
+    @model_validator(mode="after")
+    def validate_attempt(self):
+        if self.mode != "inspect" and self.attemptId is None:
+            raise ValueError("关闭请求缺少操作标识")
+        return self
+
+
+class CloseSessionOut(BaseModel):
+    activeTasks: bool
+    unmanagedPrograms: bool | None
+    reserved: bool
 
 
 router = APIRouter(prefix="/internal/desktop-session", include_in_schema=False)
@@ -123,7 +142,19 @@ async def queues(
 @router.post("/state", response_model=SessionStateOut)
 async def state(request: Request) -> SessionStateOut:
     authorize(request)
-    return SessionStateOut(idle=await DesktopSessionLifecycle.idle())
+    idle, admitted = await DesktopSessionLifecycle.execution_state()
+    return SessionStateOut(idle=idle, admitted=admitted)
+
+
+@router.post("/close-status", response_model=CloseSessionOut)
+async def close_status(request: Request, selection: CloseSessionIn) -> CloseSessionOut:
+    authorize(request)
+    active, unmanaged, reserved = await DesktopSessionLifecycle.close_status(
+        selection.sessionId, selection.mode, attempt_id=selection.attemptId
+    )
+    return CloseSessionOut(
+        activeTasks=active, unmanagedPrograms=unmanaged, reserved=reserved
+    )
 
 
 @router.post("/stop", response_model=SessionStateOut)

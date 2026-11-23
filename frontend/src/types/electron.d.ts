@@ -2,7 +2,11 @@ import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type {
+  DesktopSessionPendingRequest,
+  DesktopSessionPrompt,
+  DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -551,10 +555,15 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionCancelTaskConnect?: () => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
+  desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
+  onDesktopSessionPrompt?: (callback: () => void) => () => void
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
-  desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
+  desktopSessionPending?: () => Promise<DesktopSessionPendingRequest | null>
   desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
   desktopSessionWindow?: (action: 'show' | 'hide') => void

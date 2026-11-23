@@ -960,6 +960,7 @@ function createWindow() {
     typeof beginMainFeature<'renderer_responsiveness_changed'>
   > | null = null
   win.on('unresponsive', () => {
+    desktopSession?.setRendererResponsive(win, false)
     if (!responseIncident) {
       responseIncident = beginMainFeature('renderer_responsiveness_changed')
       beginMainFeature('renderer_responsiveness_changed').finish({
@@ -972,6 +973,7 @@ function createWindow() {
   })
 
   win.on('responsive', () => {
+    desktopSession?.setRendererResponsive(win, true)
     responseIncident?.finish({ state: 'responsive', outcome: 'success' })
     responseIncident = null
     logger.info('渲染进程已恢复响应')

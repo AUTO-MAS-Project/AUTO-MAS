@@ -19,5 +19,9 @@ export type TaskCreateOut = {
      * 新创建的任务ID
      */
     taskId: string;
+    /**
+     * 启动未受理时可由客户端处理的原因
+     */
+    reason?: (string | null);
 };
 

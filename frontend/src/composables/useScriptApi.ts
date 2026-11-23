@@ -1,6 +1,7 @@
 import type { ConfigSnapshot } from '@/services/configUiSync'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
+import { queryRequest } from '@/utils/queryRequest'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -57,6 +58,22 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
 
 const resolveScriptType = (configType: string): ScriptType => {
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
+}
+
+export async function fetchScriptExecutionSession(scriptId: string, signal: AbortSignal) {
+  const [response, environmentSupported] = await Promise.all([
+    queryRequest(signal, () => GetService.getScriptApiScriptsGetPost({ scriptId })),
+    window.electronAPI.desktopSessionSupported?.(),
+  ])
+  if (response.code !== 200) throw new Error(response.message)
+  const run = response.data[scriptId]?.Run
+  const configurable = run != null && 'ExecutionSession' in run
+  return {
+    configurable,
+    supported: environmentSupported === true && response.index[0]?.desktopSessionSupported === true,
+    value: configurable ? (run.ExecutionSession ?? 'main') : 'main',
+    uiSources: response.uiSources,
+  }
 }
 
 export function useScriptApi() {

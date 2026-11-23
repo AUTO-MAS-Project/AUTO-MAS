@@ -18,6 +18,7 @@ from pathlib import Path
 from queue import Empty, Queue
 from tempfile import TemporaryFile
 
+import psutil
 import win32api
 import win32con
 import win32pipe
@@ -26,11 +27,19 @@ from pywintypes import error as Win32Error
 from .launcher import connect_executor_pipe, receive, send
 from .native import handle_scope, process_session
 
+WINDOW_ACTIONS = {
+    "activate_process_window": "activate_window",
+    "minimize_process_window": "minimize_window",
+    "show_process_window": "show_window",
+    "hide_process_window": "hide_window",
+    "close_process_window": "close_window",
+}
+
 
 def run(pipe) -> None:
     launch = receive(pipe)
     action = launch.get("action")
-    if action in {"activate_process_window", "minimize_process_window"}:
+    if action in WINDOW_ACTIONS:
         send(pipe, {"pid": os.getpid()})
         code = run_window_action(action, launch["arguments"])
         send(pipe, {"returnCode": code})
@@ -99,24 +108,23 @@ def run_window_action(action: str, arguments: dict) -> int:
     from app.utils.common.process.operations import managed_process
 
     pid = int(arguments["pid"])
-    if process_session(pid) != process_session(os.getpid()):
+    created = float(arguments["createTime"])
+    process = managed_process(pid, expected_create_time=created)
+    if process is None or process.create_time() != created:
         return 1
-    process = managed_process(pid)
-    hwnd = (
-        get_main_window_handle(
-            process.pid,
-            arguments.get("title") or None,
-            arguments.get("class") or None,
-        )
-        if process is not None
-        else None
+    own_session = process_session(os.getpid())
+    try:
+        if process_session(pid) != own_session:
+            return 1
+    except OSError:
+        if not process.is_running():
+            return 1
+        raise
+    hwnd = get_main_window_handle(
+        pid, arguments.get("title") or None, arguments.get("class") or None
     )
-    operation = (
-        window.activate_window
-        if action == "activate_process_window"
-        else window.minimize_window
-    )
-    return int(not (hwnd and operation(hwnd)))
+    operation = getattr(window, WINDOW_ACTIONS[action])
+    return int(not (hwnd and process.is_running() and operation(hwnd)))
 
 
 def run_process(pipe, launch: dict, stdout, stderr) -> None:
@@ -138,6 +146,7 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
             creationflags=job.creation_flags | subprocess.CREATE_NO_WINDOW,
         )
         try:
+            created = psutil.Process(process.pid).create_time()
             job.assign(process.pid, suspended=True, breakaway=False)
         except BaseException:
             process.kill()
@@ -167,11 +176,26 @@ def run_process(pipe, launch: dict, stdout, stderr) -> None:
                     process.pid,
                 )
             ) as root:
-                send(pipe, {"pid": process.pid, "rootHandle": int(root)})
+                send(
+                    pipe,
+                    {
+                        "pid": process.pid,
+                        "rootHandle": int(root),
+                        "jobHandle": job.inherited_handle(),
+                        "createTime": created,
+                    },
+                )
                 if receive(pipe) != {"rootHandleReceived": True}:
                     raise RuntimeError("主端未确认分身进程句柄")
         else:
-            send(pipe, {"pid": process.pid})
+            send(
+                pipe,
+                {
+                    "pid": process.pid,
+                    "jobHandle": job.inherited_handle(),
+                    "createTime": created,
+                },
+            )
         if process.stdin is not None and launch.get("stdin") is not None:
             threading.Thread(
                 target=write_input,

@@ -297,7 +297,7 @@ type OkNteFormConfig = {
   Info: FormSection<OkNteConfig_Info>
   Script: FormSection<OkNteConfig_Script>
   Game: FormSection<OkNteConfig_Game>
-  Run: FormSection<OkNteConfig_Run>
+  Run: FormSection<Omit<OkNteConfig_Run, 'ExecutionSession'>>
 }
 
 const oknteConfig = reactive<OkNteFormConfig>({

@@ -1,5 +1,6 @@
 <template>
   <SectionCard variant="plain" :title="t('core.edit.runConfiguration')" class="run-config-section">
+    <ScriptExecutionSessionField />
     <div class="run-config-grid">
       <ScriptHardTimeoutField
         v-model:value="run.HardTimeLimit"
@@ -79,6 +80,7 @@ import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { SectionCard } from '@/components/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import type { MaaEndScriptConfig } from '@/types/script'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import MaaEndErrorLogBundleField from './MaaEndErrorLogBundleField.vue'

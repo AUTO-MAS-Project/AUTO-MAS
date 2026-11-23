@@ -758,6 +758,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("show_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -773,6 +775,8 @@ class ProcessManager:
         Returns:
             bool: 操作是否成功
         """
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("hide_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -819,25 +823,36 @@ class ProcessManager:
             return False
 
     async def _operate_desktop_window(self, action: str) -> bool:
-        if (
-            desktop := desktop_process_target.get()
-        ) is not None and self.main_pid is not None:
-            from app.utils.windows.desktop_session.process_runner import (
-                run_desktop_action,
-            )
+        desktop = desktop_process_target.get()
+        pid = self.main_pid
+        if desktop is None or pid is None:
+            return False
+        try:
+            if self.target_process is not None:
+                created = self.target_process.create_time()
+            elif self._desktop_process is not None:
+                created = self._desktop_process.create_time
+            else:
+                return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+        if created is None:
+            return False
 
-            code, _, _ = await run_desktop_action(
-                desktop,
-                action,
-                {
-                    "pid": str(self.main_pid),
-                    "title": self.window_title,
-                    "class": self.window_class_name,
-                },
-                worker_module="app.utils.windows.desktop_session.process_worker",
-            )
-            return code == 0
-        return False
+        from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+        code, _, _ = await run_desktop_action(
+            desktop,
+            action,
+            {
+                "pid": str(pid),
+                "createTime": created,
+                "title": self.window_title,
+                "class": self.window_class_name,
+            },
+            worker_module="app.utils.windows.desktop_session.process_worker",
+        )
+        return code == 0
 
     async def close(self) -> None:
         """请被管理进程自行退出，等它走完退出时的配置保存
@@ -847,7 +862,11 @@ class ProcessManager:
         """
 
         while await self.is_running():
-            hwnd = self.main_hwnd
-            if hwnd is None or not window.close_window(hwnd):
+            if desktop_process_target.get() is not None:
+                accepted = await self._operate_desktop_window("close_process_window")
+            else:
+                hwnd = self.main_hwnd
+                accepted = hwnd is not None and window.close_window(hwnd)
+            if not accepted:
                 return
             await asyncio.sleep(0.2)
