@@ -26,7 +26,7 @@
     </PageHeader>
 
     <!-- 调度台标签页 -->
-    <PageSurface padding="none" :scrollable="false" class="scheduler-tabs app-page-surface--tabs">
+    <PageSurface :scrollable="false" class="scheduler-tabs">
       <a-tabs
         v-model:active-key="activeSchedulerTab"
         type="editable-card"
