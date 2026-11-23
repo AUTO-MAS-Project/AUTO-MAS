@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
+import { SectionCard } from '@/components/ui'
 import PluginDeclarativeField, { type DeclarativeHint } from './PluginDeclarativeField.vue'
 
 const props = defineProps<{
@@ -48,16 +49,15 @@ const emit = defineEmits<{
 
 <template>
   <section class="plugin-form" :aria-label="$t('core.plugins.settingsForm')">
-    <section v-for="group in groups" :key="group.name" class="plugin-form-group">
-      <div class="section-header">
-        <h3>
-          {{
-            te(`${namespace}.${group.name}.label`)
-              ? t(`${namespace}.${group.name}.label`)
-              : group.name
-          }}
-        </h3>
-      </div>
+    <SectionCard
+      v-for="group in groups"
+      :key="group.name"
+      variant="plain"
+      :title="
+        te(`${namespace}.${group.name}.label`) ? t(`${namespace}.${group.name}.label`) : group.name
+      "
+      class="plugin-form-group"
+    >
       <div class="form-grid-24">
         <PluginDeclarativeField
           v-for="hint in group.hints"
@@ -84,7 +84,7 @@ const emit = defineEmits<{
           @retry="stateFor(group.name, hint)?.execute()"
         />
       </div>
-    </section>
+    </SectionCard>
   </section>
 </template>
 

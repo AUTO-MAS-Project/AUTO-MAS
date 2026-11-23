@@ -1,9 +1,9 @@
 <template>
-  <div class="form-section">
-    <div v-if="!hideSectionHeader" class="section-header">
-      <h3>{{ t('core.edit.notificationSettings') }}</h3>
-    </div>
-
+  <SectionCard
+    variant="plain"
+    :title="hideSectionHeader ? undefined : t('core.edit.notificationSettings')"
+    :class="{ 'notify-section--bare': hideSectionHeader }"
+  >
     <div class="notify-channel-list">
       <div v-if="showInventory" class="notify-channel-item">
         <div class="notify-channel-header">
@@ -160,13 +160,14 @@
       :script-id="scriptId"
       :user-id="userId"
     />
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import WebhookManager from '@/components/WebhookManager.vue'
+import { SectionCard } from '@/components/ui'
 
 type UserNotifyConfigData = {
   Enabled?: boolean | null
@@ -226,6 +227,10 @@ const emitSave = (key: string, value: unknown) => emit('save', key, value)
 </script>
 
 <style scoped>
+.notify-section--bare {
+  margin-bottom: 0;
+}
+
 .notify-channel-list {
   padding: 4px 16px;
   border: 1px solid var(--ant-color-border-secondary);
