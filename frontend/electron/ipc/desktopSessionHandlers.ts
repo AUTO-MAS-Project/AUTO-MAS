@@ -154,6 +154,15 @@ export function registerDesktopSession(
     return fromPreview(event) ? preview : null
   }
 
+  function setRendererResponsive(window: BrowserWindow, responsive: boolean) {
+    if (!responsive) {
+      unresponsive.add(window)
+      return
+    }
+    unresponsive.delete(window)
+    if (hasRenderer(window)) window.webContents.send('desktop-session:prompt')
+  }
+
   function showPrompt(
     window: BrowserWindow | null,
     content: DesktopSessionPromptContent
@@ -399,11 +408,8 @@ export function registerDesktopSession(
         finishAutoConnect('cancelled')
       }
     })
-    window.on('unresponsive', () => unresponsive.add(window))
-    window.on('responsive', () => {
-      unresponsive.delete(window)
-      if (hasRenderer(window)) window.webContents.send('desktop-session:prompt')
-    })
+    window.on('unresponsive', () => setRendererResponsive(window, false))
+    window.on('responsive', () => setRendererResponsive(window, true))
     window.on('move', updateBounds)
     window.on('resize', updateBounds)
     window.on('minimize', updateWindowState)
@@ -593,5 +599,6 @@ export function registerDesktopSession(
       return preview !== null || service.active
     },
     closeForAppQuit: async () => (await confirmClose('app')) === 'closed',
+    setRendererResponsive,
   }
 }

@@ -133,10 +133,13 @@ async function start(secret?: string) {
     })
     if (!response) return
     results.value = response.queues
-    if (response.code && DESKTOP_SESSION_CREDENTIAL_ERRORS.has(response.code))
+    if (response.code && DESKTOP_SESSION_CREDENTIAL_ERRORS.has(response.code)) {
       passwordDialog.value = true
-    else if (!response.code) pending.value = null
-    else if (snapshot.value) snapshot.value = { ...snapshot.value, code: response.code }
+    } else {
+      if (!response.code || (request?.forTask && response.code !== 'busy')) pending.value = null
+      if (response.code && snapshot.value)
+        snapshot.value = { ...snapshot.value, code: response.code }
+    }
   } catch {
     message.error(t('bootstrap.desktopSession.startFailed'))
   } finally {

@@ -197,3 +197,24 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64').each([
   await expect(pending).resolves.toBe(outcome)
   expect(mocks.close).not.toHaveBeenCalled()
 })
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '主窗口已经无响应时，从托盘退出改用原生确认',
+  async () => {
+    const main = new TestWindow() as unknown as BrowserWindow
+    const bridge = registerDesktopSession(
+      () => main,
+      '',
+      () => 'en-US'
+    )
+    bridge.setRendererResponsive(main, false)
+    mocks.messageBox.mockResolvedValueOnce({ response: 1 })
+
+    await expect(bridge.closeForAppQuit()).resolves.toBe(false)
+    expect(mocks.messageBox).toHaveBeenCalledWith(
+      main,
+      expect.objectContaining({ defaultId: 1, cancelId: 1 })
+    )
+    expect(mocks.close).not.toHaveBeenCalled()
+  }
+)
