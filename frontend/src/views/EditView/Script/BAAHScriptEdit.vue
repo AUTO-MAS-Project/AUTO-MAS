@@ -1,167 +1,163 @@
 <template>
-  <ScriptEditHeader script-type="BAAH" :title="t('core.edit.editScript')" @cancel="handleCancel" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="BAAH"
+        :title="t('core.edit.editScript')"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="t('core.edit.baahScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="magenta" class="type-tag">BAAH</a-tag>
-      </template>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-card
+        :title="t('core.edit.baahScriptConfiguration')"
+        :loading="pageLoading"
+        class="config-card"
+      >
+        <template #extra>
+          <a-tag color="magenta" class="type-tag">BAAH</a-tag>
+        </template>
 
-      <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="24">
-              <a-form-item name="name">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.baahScriptNameHint')"
-                    variant="form"
+        <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
+          <!-- 基本信息 -->
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <a-form-item name="name">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.scriptName')"
+                      :hint="t('core.edit.baahScriptNameHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="formData.name"
+                    :placeholder="t('core.edit.enterScriptName')"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleChange('Info', 'Name', formData.name)"
                   />
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  :placeholder="t('core.edit.enterScriptName')"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
 
-        <BAAHProgramUpdateSettings
-          v-model:update="baahConfig.Update"
-          :ready="!pageLoading && !isSaving"
-          @save="(key, value) => handleChange('Update', key, value)"
-        />
-
-        <!-- 脚本配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.scriptConfiguration') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.mainProgramPath')"
-                    :hint="t('core.edit.baahScriptPathHint')"
-                    variant="form"
-                  />
-                </template>
-                <PathPickerField
-                  v-model="formData.baahPath"
-                  mode="file"
-                  :placeholder="t('core.edit.pickScriptSMain')"
-                  :pick-label="t('core.edit.pickFile')"
-                  :disabled="isSaving"
-                  @pick="selectBaahPath"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahManageConfig')"
-                    :hint="t('core.edit.baahManageConfigHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="baahConfig.Script.IfManageConfig"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Script', 'IfManageConfig', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahPushLogEnabled')"
-                    :hint="t('core.edit.baahPushLogEnabledHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="baahConfig.Script.PushLogEnabled"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Script', 'PushLogEnabled', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <!-- 关闭托管时 BAAH 会用它自己的设置启动模拟器，两边抢同一台设备 -->
-          <a-alert
-            type="warning"
-            show-icon
-            :message="t('core.edit.baahAutoStartNotice')"
-            style="margin-top: 16px"
+          <BAAHProgramUpdateSettings
+            v-model:update="baahConfig.Update"
+            :ready="!pageLoading && !isSaving"
+            @save="(key, value) => handleChange('Update', key, value)"
           />
-        </div>
 
-        <!-- 模拟器管理 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.emulators') }}</h3>
-          </div>
-          <a-row :gutter="24"> </a-row>
-        </div>
+          <!-- 脚本配置 -->
+          <SectionCard variant="plain" :title="t('core.edit.scriptConfiguration')">
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.mainProgramPath')"
+                      :hint="t('core.edit.baahScriptPathHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="formData.baahPath"
+                    mode="file"
+                    :placeholder="t('core.edit.pickScriptSMain')"
+                    :pick-label="t('core.edit.pickFile')"
+                    :disabled="isSaving"
+                    @pick="selectBaahPath"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.baahManageConfig')"
+                      :hint="t('core.edit.baahManageConfigHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="baahConfig.Script.IfManageConfig"
+                    size="large"
+                    style="width: 100%"
+                    @change="handleChange('Script', 'IfManageConfig', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.baahPushLogEnabled')"
+                      :hint="t('core.edit.baahPushLogEnabledHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="baahConfig.Script.PushLogEnabled"
+                    size="large"
+                    style="width: 100%"
+                    @change="handleChange('Script', 'PushLogEnabled', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
 
-        <!-- 运行配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptHardTimeoutField
-            v-model:value="baahConfig.Run.HardTimeLimit"
-            @save="handleChange('Run', 'HardTimeLimit', baahConfig.Run.HardTimeLimit)"
-          />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="baahConfig.Run.RunTimesLimit"
-                kind="retry"
-                :label="t('core.edit.retryLimit2')"
-                :hint="t('core.edit.baahRunTimesLimitHint')"
-                @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
-              />
-            </a-col>
-            <a-col :span="8">
-              <ScriptRunLimitField
-                v-model="baahConfig.Run.RunTimeLimit"
-                kind="timeout"
-                :label="t('core.edit.runTimeoutMinutes')"
-                :hint="t('core.edit.baahRunTimeLimitHint')"
-                @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
-              />
-            </a-col>
-          </a-row>
-        </div>
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+            <!-- 关闭托管时 BAAH 会用它自己的设置启动模拟器，两边抢同一台设备 -->
+            <a-alert
+              type="warning"
+              show-icon
+              :message="t('core.edit.baahAutoStartNotice')"
+              style="margin-top: 16px"
+            />
+          </SectionCard>
+
+          <!-- 模拟器管理 -->
+          <SectionCard variant="plain" :title="t('core.edit.emulators')">
+            <a-row :gutter="24"> </a-row>
+          </SectionCard>
+
+          <!-- 运行配置 -->
+          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
+            <ScriptHardTimeoutField
+              v-model:value="baahConfig.Run.HardTimeLimit"
+              @save="handleChange('Run', 'HardTimeLimit', baahConfig.Run.HardTimeLimit)"
+            />
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="baahConfig.Run.RunTimesLimit"
+                  kind="retry"
+                  :label="t('core.edit.retryLimit2')"
+                  :hint="t('core.edit.baahRunTimesLimitHint')"
+                  @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
+                />
+              </a-col>
+              <a-col :span="8">
+                <ScriptRunLimitField
+                  v-model="baahConfig.Run.RunTimeLimit"
+                  kind="timeout"
+                  :label="t('core.edit.runTimeoutMinutes')"
+                  :hint="t('core.edit.baahRunTimeLimitHint')"
+                  @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
+                />
+              </a-col>
+            </a-row>
+          </SectionCard>
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
@@ -173,6 +169,7 @@ import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
