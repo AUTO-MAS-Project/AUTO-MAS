@@ -35,6 +35,7 @@ BGI 日志已由 LogMonitor 按相/按轮捕获进 ``log_record``（执行层一
 from contextlib import suppress
 from datetime import datetime
 
+from app.task.run_flow import PointState
 from app.utils import LOG_TYPE_NORMAL
 
 # 步骤 start 只有 HH:MM(:SS) 形态的本地时刻（Serilog 头行时间戳，无日期），
@@ -55,6 +56,12 @@ def _step_ts(step: dict) -> float:
         ).time()
         return datetime.combine(datetime.now().date(), parsed).timestamp()
     return datetime.now().timestamp()
+
+
+def step_state(step: dict) -> PointState:
+    if not step.get("ok"):
+        return "failed"
+    return "skipped" if step.get("skipped") else "succeeded"
 
 
 def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
@@ -79,9 +86,10 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
     entries: list[tuple[str, str, float]] = []
     for step in steps:
         task = str(step.get("task") or "未知任务")
-        if not step.get("ok"):
+        state = step_state(step)
+        if state == "failed":
             text = f"❌ 失败: {task}"
-        elif step.get("skipped"):
+        elif state == "skipped":
             text = f"⏭ 跳过: {task}"
             if step.get("skip_text"):
                 text += f"（{step['skip_text']}）"
@@ -90,7 +98,7 @@ def steps_to_push_log(steps: list[dict]) -> list[tuple[str, str, float]]:
         else:
             text = f"✅ 成功: {task}"
         entries.append((LOG_TYPE_NORMAL, text, _step_ts(step)))
-        if not step.get("ok") and (reason := str(step.get("issue_text") or "").strip()):
+        if state == "failed" and (reason := str(step.get("issue_text") or "").strip()):
             entries.append(
                 (
                     LOG_TYPE_NORMAL,

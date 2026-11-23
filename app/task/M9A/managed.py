@@ -18,7 +18,7 @@
 
 """M9A 受管任务：「启动游戏」「切换账号」「关闭游戏」由 MAS 全权控制，不在账号队列里。
 
-运行期由特调按固定顺序补（启动 → 切号 → …… → 关闭），账号取用户的 ``Info.Account``。
+运行期由特调按固定顺序补（启动 → 切号 → …… → 关闭），账号取用户的 ``Info.Id``。
 队列里残留的这三类任务（beta.1 迁移留下的、#1012 补回的、预设带进来的、手加的、通用 MaaFW
 脚本换成 M9A 带过来的）一律按同一套规则整理，规则只写在这里，四个入口共用：
 
@@ -33,9 +33,9 @@
 1. 启动游戏、关闭游戏：移除。
 2. 切换账号：只数「勾选且账号非空」的（有效切号）。
 
-   - 恰好 1 个：账号进 ``Info.Account``，从队列移除。``Info.Account`` 原来非空且不同时以
+   - 恰好 1 个：账号进 ``Info.Id``，从队列移除。``Info.Id`` 原来非空且不同时以
      队列里的为准（旧版与之前的运行实际切的都是它），原值记进备注。
-   - 0 个（未勾选或账号为空）：直接移除，不动 ``Info.Account``。
+   - 0 个（未勾选或账号为空）：直接移除，不动 ``Info.Id``。
    - 2 个及以上、脚本资源支持切号：队列原样保留（切号连同选项一个不动），备注与通知里写明要拆成
      几个账号；运行期拒绝运行该账号。M9A 一个账号对应一个账号，这种队列 MAS 没法替用户拆。
    - 2 个及以上、资源不支持切号：切号任务从来没跑过，直接移除。
@@ -115,7 +115,7 @@ class Settlement:
     changed: bool = False
     #: 移除的任务实例 id（队列顺序）。
     removed: list[str] = field(default_factory=list)
-    #: 恰好一个有效切号时要进 ``Info.Account`` 的账号；否则为空。
+    #: 恰好一个有效切号时要进 ``Info.Id`` 的账号；否则为空。
     account: str = ""
     #: 有效切号 ≥ 2 且保留在队列里时，各自的账号（队列顺序）。
     split_accounts: list[str] = field(default_factory=list)
@@ -230,7 +230,7 @@ class InfoChange:
     def updates(self) -> dict[str, str]:
         result: dict[str, str] = {}
         if self.account is not None:
-            result["Account"] = self.account
+            result["Id"] = self.account
         if self.notes is not None:
             result["Notes"] = self.notes
         return result
@@ -243,7 +243,7 @@ def settle_user_info(
     notes: str,
     note_split: bool,
 ) -> InfoChange:
-    """整理结果对 ``Info.Account`` / ``Info.Notes`` 的改动；``note_split`` 为假时不写拆分提示。"""
+    """整理结果对 ``Info.Id`` / ``Info.Notes`` 的改动；``note_split`` 为假时不写拆分提示。"""
 
     change = InfoChange()
     current_account = str(account or "").strip()

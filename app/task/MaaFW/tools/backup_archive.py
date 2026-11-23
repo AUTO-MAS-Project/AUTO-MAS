@@ -52,7 +52,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     DUPLICATE_TASK_SUFFIX_SEPARATOR,
     PRETASK_TASK_PREFIX,
 )
-from app.utils import BASE_SOURCE_LABELS, get_logger
+from app.utils import get_logger
 from app.utils.common.config import archive as _utils_config_archive
 
 OVERLAY_SIDECAR_NAME = _utils_config_archive.OVERLAY_SIDECAR_NAME
@@ -62,8 +62,8 @@ logger = get_logger("MaaFW 配置备份")
 
 # ══════════════════ MAS 账号字段侧车（纯侧车，无目录） ══════════════════
 
-_OVERLAY_INFO_KEYS = ("Base", "IfQuickConfig", "Account", "Controller", "Resource")
-"""MAS 账号元信息与运行选项；Base / IfQuickConfig 仅为兼容保留，MFW 运行不消费"""
+_OVERLAY_INFO_KEYS = ("Id", "Notes")
+"""MAS 账号元信息；账号已加密，侧车写入的是解密后的明文，仅供人读的备份说明"""
 
 _OVERLAY_TASK_KEYS = ("SelectedPreset", "TaskSnapshot")
 """任务快照（UserData.Task：当前 preset 名 + taskOrder/taskChecked/taskOptions JSON）"""
@@ -87,15 +87,9 @@ _OVERLAY_KEY_GROUP = {
     key: group for group, keys in _OVERLAY_KEY_GROUPS.items() for key in keys
 }
 
-_OVERLAY_PREVIEW_ONLY_KEYS = {"Base"}
-"""历史 Base 仅供预览、不回填；MFW 运行不消费 Base / IfQuickConfig"""
-
 _OVERLAY_FIELD_LABELS = {
-    "Base": "历史配置来源（不参与运行）",
-    "IfQuickConfig": "历史覆写开关（不参与运行）",
-    "Account": "账号",
-    "Controller": "Controller",
-    "Resource": "Resource",
+    "Id": "账号",
+    "Notes": "备注",
     "SelectedPreset": "当前方案",
     "TaskSnapshot": "任务快照",
     "AdbAddress": "ADB 地址",
@@ -123,13 +117,11 @@ def read_overlay_values(config) -> dict:
 def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 MaaFWUserConfig 用）。
 
-    保留既有兼容规则：Base 仅预览不回填，IfQuickConfig 随侧车回填；二者均不参与 MFW 运行。
+    未登记的键按 Task 归组，兼容旧侧车留下的字段。
     """
 
     grouped: dict[str, dict] = {}
     for key, value in overlay.items():
-        if key in _OVERLAY_PREVIEW_ONLY_KEYS:
-            continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
     return grouped
 
@@ -324,10 +316,6 @@ def _summary_text(value) -> str:
     return text
 
 
-def _format_bool(value) -> str:
-    return "开启" if bool(value) else "关闭"
-
-
 def _parse_json_dict(raw) -> dict:
     """解析 JSON 对象字符串字段（TaskSnapshot），非法返回空 dict。"""
 
@@ -364,19 +352,6 @@ def build_overlay_preview(
 
     sections: list[dict] = []
 
-    mas_rows: list[dict] = []
-    for key in ("Base", "IfQuickConfig"):
-        if key in overlay:
-            raw = overlay[key]
-            value = (
-                _format_bool(raw)
-                if isinstance(raw, bool)
-                else BASE_SOURCE_LABELS.get(str(raw), _summary_text(raw))
-            )
-            mas_rows.append({"key": _OVERLAY_FIELD_LABELS[key], "value": value})
-    if mas_rows:
-        sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
-
     task_rows: list[dict] = []
     if "SelectedPreset" in overlay:
         task_rows.append(
@@ -394,21 +369,13 @@ def build_overlay_preview(
         task_rows.append(
             {"key": "已启用任务", "value": "、".join(names) if names else "无"}
         )
-    if "Account" in overlay:
+    if "Id" in overlay:
         task_rows.append(
             {
                 "key": "账号",
-                "value": _utils_config_archive.mask_account(overlay["Account"]),
+                "value": _utils_config_archive.mask_account(overlay["Id"]),
             }
         )
-    for key in ("Controller", "Resource"):
-        if key in overlay:
-            task_rows.append(
-                {
-                    "key": _OVERLAY_FIELD_LABELS[key],
-                    "value": _summary_text(overlay[key]),
-                }
-            )
     if task_rows:
         sections.append({"name": "maafw", "label": "MaaFW 配置", "rows": task_rows})
 

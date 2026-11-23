@@ -73,6 +73,7 @@ class BetterGIUpdateTask(TaskExecuteBase):
         await ensure_game_updated(
             self.script_config,
             user_config,
+            owner=self,
             on_log=self._push_dispatch_log,
             manual=True,
         )

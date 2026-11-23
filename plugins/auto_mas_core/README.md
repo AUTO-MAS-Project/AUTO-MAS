@@ -71,6 +71,24 @@ class PLUGIN(BasePlugin):
 
 任务展开使用 `UserExpander` 与真实模式的 `ModeWorker` 子类：`AutoProxyWorker`、`ScriptConfigWorker`、`ScriptViewWorker`。插件提供实际执行、结果判定以及 `finish()` 所需的保存与恢复，不依赖未实现的历史写入协议。
 
+**自动代理进度。** 不需要为专项绘制流程图或迁移用户配置。`auto_mas_core.adapters.script`
+提供运行内的观察接口；宿主识别自动代理的执行、收尾及任务结果，未报告的步骤保持未知。
+有细节的专项直接在已有动作、判定和规则的来源上报告：
+
+```python
+from auto_mas_core.adapters.script import begin_attempt, operation, point
+
+begin_attempt(self, attempt_number)  # 从 1 起，只在真正开始下一次尝试时产生 retry
+with operation(self, "start_script"):  # 只包住失败时抛异常的调用
+    await launcher.start()
+point(self, "special", state="matched", key="daily_reward")  # 在现有检测命中处
+```
+
+脚本更新和游戏更新分别用 `script_update`、`game_update`，只在注册的更新动作真正进入时报告。
+主动中止不是运行失败，后续收尾仍可成功；子任务完成不等于整轮成功。`observe_run(callback)` 在当前
+执行上下文接收 `(执行器, RunPoint)`，不新增公共任务树字段、WebSocket 消息或磁盘格式。
+只有收尾时才读取的规则在收尾交付，不伪装成实时监听。更新或关闭动作未由 MAS 接管时，不补报成功。
+
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
 ## LogFlow 日志节点

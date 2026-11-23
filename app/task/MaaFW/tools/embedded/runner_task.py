@@ -87,12 +87,15 @@ from app.task.MaaFW.tools.core.runner.run_events import (
     CATEGORY_PRETASK_FAILED,
     CATEGORY_RESOURCE_FAILURE,
     CATEGORY_RUN_TIMEOUT,
+    CATEGORY_SCRIPT_STOPPED,
     CATEGORY_SIGNAL,
     CATEGORY_USER_STOPPED,
     RUN_RECORD_EVENT_TYPE,
     STAGE_CLIENT,
     STAGE_ENVIRONMENT,
     STAGE_PRETASK,
+    MaaFWTaskEndEvent,
+    MaaFWTaskStartEvent,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     ALL_TASKS_SKIPPED_MESSAGE,
@@ -122,6 +125,13 @@ from app.task.MaaFW.tools.core.worker_protocol import (
     event_channel_supported,
     forwards_to_ui,
     strip_ansi,
+)
+from app.task.run_flow import (
+    PointState,
+    begin_attempt,
+    game_update_result,
+    operation,
+    point,
 )
 from app.utils import IS_WINDOWS, UTC4, ProcessInfo, get_logger, power
 from app.utils import display as _utils_display
@@ -869,6 +879,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             index += 1
             if index >= self._attempt_limit() or self.run_complete:
                 break
+            begin_attempt(self, index + 1)
 
             # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
             # 建的那份，开头有更新检查与运行总览；之后每次另起。
@@ -1008,8 +1019,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if result.signal is not None:
                 # 项目声明的信号节点命中：停服维护 = 本次跳过，需要更新客户端 = 失败；
                 # 两种都是重试多少次都一样，不重启游戏 / 模拟器，直接收尾。
+                point(
+                    self,
+                    "run",
+                    state="skipped"
+                    if result.signal == SERVER_MAINTENANCE
+                    else "failed",
+                )
                 await self._finish_on_signal(index + 1, result)
                 break
+            point(self, "run", state="succeeded" if result.success else "failed")
             if result.success:
                 self.run_complete = True
                 if self.cur_user_log is not None:
@@ -1617,6 +1636,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 从后台切回 resumed）、没给包名、拉起失败都不等；旧式模拟器管理器不回报拉应用
         # 结果，同样不等
         if getattr(device_info, "app_launch", "") == "launched":
+            point(self, "start_game", state="succeeded", key="launched")
             self.game_started_at = time.monotonic()
             self.game_start_disk_quiet = True
             self._append_log(f"已随模拟器启动游戏: {package_name}")
@@ -1738,6 +1758,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._append_log(text)
 
         self._append_log("正在检查游戏客户端更新")
+        point(self, "game_update")
         try:
             # ModAVD 实例：钩子在宿主进程里调 adb（game_apk），改走 ``modavd adb``（ModAVD 的私有 server），
             # 不落到 5037；其余模拟器不接管
@@ -1751,11 +1772,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if_auto_install=mode == "AutoInstall",
                     progress=report,
                 )
+        except asyncio.CancelledError:
+            point(self, "game_update", state="cancelled")
+            raise
         except Exception as exc:
+            point(self, "game_update", state="failed")
             logger.opt(exception=True).warning(f"游戏更新检查异常: {exc}")
             self._append_log(f"游戏更新检查出错，本次照常运行: {exc}")
             return
 
+        game_update_result(self, result)
         self._append_log(result.message)
         if result.status == "NeedManualUpdate":
             raise _MaaFWGameUpdateRequired(result.message)
@@ -2346,34 +2372,36 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 scope = current_process_scope.get()
                 if scope is not None:
                     scope.ensure_can_start()
-                process = await launch_desktop_process(
-                    desktop,
-                    argv=[
-                        str(runner_environment.python_executable),
-                        "-m",
-                        "app.task.MaaFW.tools.core.runner.worker",
-                    ],
-                    cwd=Path.cwd(),
-                    env=worker_env,
-                    stdin=job_bytes,
-                    stream_limit=_WORKER_STREAM_LINE_LIMIT,
-                )
+                with operation(self, "start_script"):
+                    process = await launch_desktop_process(
+                        desktop,
+                        argv=[
+                            str(runner_environment.python_executable),
+                            "-m",
+                            "app.task.MaaFW.tools.core.runner.worker",
+                        ],
+                        cwd=Path.cwd(),
+                        env=worker_env,
+                        stdin=job_bytes,
+                        stream_limit=_WORKER_STREAM_LINE_LIMIT,
+                    )
                 if scope is not None:
                     scope.retain_desktop_process(process.stop)
             else:
-                process = await create_subprocess(
-                    str(runner_environment.python_executable),
-                    "-m",
-                    "app.task.MaaFW.tools.core.runner.worker",
-                    cwd=str(Path.cwd()),
-                    env=worker_env,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
-                    # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
-                    limit=_WORKER_STREAM_LINE_LIMIT,
-                )
+                with operation(self, "start_script"):
+                    process = await create_subprocess(
+                        str(runner_environment.python_executable),
+                        "-m",
+                        "app.task.MaaFW.tools.core.runner.worker",
+                        cwd=str(Path.cwd()),
+                        env=worker_env,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        # 默认 64 KiB：agent 原样转发的输出、原生 ERROR 日志里整份 pipeline JSON
+                        # 都可能更长，超了 readline 就抛错、读取任务退出，worker 写满管道后挂到硬超时
+                        limit=_WORKER_STREAM_LINE_LIMIT,
+                    )
             worker_id = service.register_worker(process)
         except BaseException:
             if event_server is not None:
@@ -2383,6 +2411,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             service.unregister_worker(worker_id)
             raise
         self.runner_process = process
+        point(self, "run")
         result_payload: dict[str, Any] | None = None
         result_received = asyncio.Event()
         stderr_lines: list[str] = []
@@ -2679,6 +2708,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._startup_task = None
             return result
         message = f"MaaFW runner worker exited without result: {returncode}"
+        point(self, "run", state="failed")
         detail = "\n".join(stderr_lines[-5:]).strip()
         if detail and _should_forward_framework_log(detail):
             message += f": {_framework_ui_message(detail)}"
@@ -2998,7 +3028,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
 
         if desktop_process_target.get() is not None:
-            await process.stop()
+            with operation(self, "stop_script"):
+                await process.stop()
             return
 
         # 必须在 terminate 之前把后代记下来：Windows 的 TerminateProcess 是立即
@@ -3006,6 +3037,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 被重新挂到别处，事后再按父子关系已经查不到它们。
         descendants = await asyncio.to_thread(_snapshot_descendants, process.pid)
 
+        point(self, "stop_script")
         try:
             process.terminate()
             await asyncio.wait_for(process.wait(), timeout=5)
@@ -3019,6 +3051,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         if descendants:
             await asyncio.to_thread(_terminate_snapshot, descendants)
+        point(
+            self,
+            "stop_script",
+            state="succeeded" if process.returncode is not None else "failed",
+        )
 
     def _filter_period_once_tasks(self, plan: MaaFWRunPlan) -> MaaFWRunPlan:
         daily_tasks = set(_load_json_list(self.script_config.Run.DailyOnceTasks))
@@ -3301,7 +3338,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
 
         if self._game_launch_mode() == "URL":
-            await self._launch_game_by_url(game_path)
+            with operation(self, "start_game"):
+                await self._launch_game_by_url(game_path)
             await self._activate_desktop_game_window(game_path)
             return
 
@@ -3312,16 +3350,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 注册表必须在进程起来之前改好：Unity 播放器只在启动时读一次这些值
         await self._apply_game_resolution_override(game_path)
         try:
-            await self.game_process_manager.open_process(
-                game_path,
-                *game_arguments,
-                cwd=game_path.parent,
-                breakaway=True,
-            )
-            # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
-            # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
-            self.opened_game = True
-            await self._wait_for_desktop_game_ready(game_path)
+            with operation(self, "start_game"):
+                await self.game_process_manager.open_process(
+                    game_path,
+                    *game_arguments,
+                    cwd=game_path.parent,
+                    breakaway=True,
+                )
+                # 进程一起来就算 MAS 开的：等窗口时被停止（CancelledError 不是 Exception，
+                # 下面接不住），收尾的 _close_game 要看到它才会关游戏。
+                self.opened_game = True
+                await self._wait_for_desktop_game_ready(game_path)
             self.game_started_at = time.monotonic()
         except Exception:
             self.opened_game = False
@@ -3813,7 +3852,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _on_run_record_event(self, data: Any) -> None:
         """将 worker 推来的阶段、任务起止事件归入本次尝试的专项记录。"""
 
-        self._run_record_call(lambda: self._run_record.apply(data))
+        event = self._run_record_call(lambda: self._run_record.apply(data))
+        if isinstance(event, MaaFWTaskStartEvent):
+            point(self, "special", key=event.name)
+        elif isinstance(event, MaaFWTaskEndEvent):
+            state: PointState = "failed"
+            if event.outcome in ("succeeded", "skipped"):
+                state = event.outcome
+            elif event.outcome == "stopped":
+                if event.category == CATEGORY_USER_STOPPED:
+                    state = "cancelled"
+                elif event.category != CATEGORY_SCRIPT_STOPPED or not event.counted:
+                    state = "stopped"
+            point(self, "special", key=event.name, state=state)
         record = self._run_record.current
         if record is not None and any(
             task.outcome == "succeeded" for task in record.tasks
@@ -3857,6 +3908,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         signal = str(result.signal)
         self.run_signal = signal
+        point(self, "special", state="matched", key=signal)
         message = SIGNAL_USER_MESSAGES.get(signal, str(result.errorMessage or signal))
         # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
         # 这里只记后端日志，不在界面上再复述一遍。
@@ -3961,6 +4013,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         launched_at = self.game_launched_at
         closed = True
+        point(self, "stop_game")
         try:
             try:
                 await self.game_process_manager.kill()
@@ -3981,6 +4034,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 except Exception as exc:
                     logger.warning(f"MaaFW 清理时关闭链接拉起的游戏失败: {exc}")
                     closed = False
+            point(self, "stop_game", state="succeeded" if closed else "failed")
             return closed
         finally:
             self.opened_game = False

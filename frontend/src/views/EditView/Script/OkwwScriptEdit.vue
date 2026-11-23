@@ -364,7 +364,6 @@ interface OkwwInfoForm {
 
 interface OkwwGameForm {
   Enabled: boolean
-  AccountSwitch: boolean
   AccountSwitchMethod: 'NONE' | 'MAS' | 'OKWW_SINGLE' | 'OKWW'
   Type: 'Launcher' | 'Client'
   Path: string
@@ -401,7 +400,6 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Game: {
     Enabled: false,
-    AccountSwitch: false,
     AccountSwitchMethod: 'MAS',
     Type: 'Client',
     Path: '.',

@@ -43,6 +43,7 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
     split_args,
 )
+from app.task.run_flow import begin_attempt, operation, point
 from app.utils import (
     LOG_TYPE_NORMAL,
     LogMonitor,
@@ -56,7 +57,15 @@ from app.utils import (
 from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 from app.utils.common.log import sources as log_source
-from app.utils.common.process.manager import has_process_window
+from app.utils.common.log.patterns import (
+    LogSignMatcher,
+    compile_log_signs,
+    match_log_signs,
+)
+from app.utils.common.process.manager import (
+    has_process_window,
+    wait_process_window_ready,
+)
 from app.utils.common.process.session import (
     DesktopProcessTarget,
     desktop_process_target,
@@ -109,8 +118,6 @@ _GAME_EXIT_WAIT_SECONDS = 90
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
 # 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
-_OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
-_OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_ERROR_LOG = re.compile(
     r"\b(?:(?P<task>\w+):)?info_set 错误(?=[ \t\r\n]|$)"
     r"[ \t]*(?P<detail>[^\r\n]*)"
@@ -130,10 +137,15 @@ _OKWW_TASK_FAILED_MSG = "OK-WW 任务执行失败，请查看脚本日志"
 # 2. 旧版 ok-ww 完成文案为硬编码英文（v3.7.4 源码核实，其框架 ok-script
 #    2.0.8 已有第 1 条退出语），保留既有判据兜底，覆盖更早无法核实的版本。
 # 窗口关闭日志（Window closed exit_event.is_set）在任何退出路径都会出现，不能作为完成依据。
-_OKWW_SUCCESS_LOG: tuple[str, ...] = (
-    "Successfully Executed Task, Exiting Game and App!",
-    "Daily Task Completed",
-)
+_OKWW_LOG_SIGNS = {
+    "game_updated": compile_log_signs("游戏更新成功, 游戏即将重启"),
+    "success": compile_log_signs("Successfully Executed Task, Exiting Game and App!"),
+    "daily_success": compile_log_signs("Daily Task Completed"),
+}
+# 原生多账号和自定义任务只认框架退出语，不认中间某个日常已完成。
+_OKWW_BATCH_LOG_SIGNS = {
+    key: rule for key, rule in _OKWW_LOG_SIGNS.items() if key != "daily_success"
+}
 
 # ok-ww 项目结构固定相对路径（从 RootPath 派生，不依赖用户存储值）
 # ⚠️ 与前端 OkwwScriptEdit.vue 的 OKWW_EXE_NAME 保持同步，改这里时需同步改前端
@@ -253,7 +265,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self._log_close_task: asyncio.Task[None] | None = None
         self.script_config_path: Path | None = None
         # prepare() 失败时收尾仍会读取该属性，必须在任何可失败步骤前初始化
-        self.run_book = False
+        self.run_complete = False
         self.task_name = "DailyTask"
         self.native_switch_unsupported = False
 
@@ -616,7 +628,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
         return str(self.script_config.Game.Type or "Client")
 
-    async def _ensure_wuthering_waves_updated(self) -> None:
+    async def _prepare_game_update(self) -> None:
         """复用官方启动器完成更新，不以已冻结的旧版本接口判断是否最新。"""
         if not self.script_config.Game.IfAutoUpdate:
             return
@@ -642,12 +654,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             if self._game_launch_type() == "Client"
             else []
         )
-        self._updated_game_quality = await update_game_via_launcher(
-            self.launcher_path,
-            client_path=self.game_process_path,
-            quality=quality_arguments[-1] if quality_arguments else None,
-            on_progress=self._push_dispatch_log,
-        )
+        with operation(self, "game_update"):
+            self._updated_game_quality = await update_game_via_launcher(
+                self.launcher_path,
+                client_path=self.game_process_path,
+                quality=quality_arguments[-1] if quality_arguments else None,
+                on_progress=self._push_dispatch_log,
+            )
 
     async def _mas_launch_game_before_task(self) -> None:
         """检查并触发官方更新，然后按启动方式拉起鸣潮客户端。
@@ -688,15 +701,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     await self._note_launch_arguments_skipped()
                     return
 
-            await self._ensure_wuthering_waves_updated()
+            await self._prepare_game_update()
+            point(self, "start_game")
             if self._game_launch_type() == "Client":
                 await self._launch_game_direct()
             else:
                 await self._launch_game_via_launcher()
             wait_time = max(int(self.script_config.Game.WaitTime), 0)
-            if wait_time:
-                await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
-                await asyncio.sleep(wait_time)
+            await self._push_dispatch_log(
+                f"等待游戏窗口就绪（最多 {wait_time or 60} 秒）..."
+            )
+            await wait_process_window_ready(
+                ProcessInfo(name=_WUWA_CLIENT_PROCESS), wait_time
+            )
 
     async def _launch_game_via_launcher(self) -> None:
         """经官方启动器拉起游戏：开启动器并等待 OCR 点击「进入游戏」。"""
@@ -834,8 +851,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         attempt = 0
         game_update_extended = False
         # while 而非 for：游戏更新成功时 run_limit 会在轮次内延长（至少再跑一轮）
-        while attempt < run_limit and not self.run_book:
+        while attempt < run_limit and not self.run_complete:
             attempt += 1
+            begin_attempt(self, attempt)
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
@@ -946,7 +964,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             await self.set_okww()
             try:
-                await self._start_okww_with_current_arguments()
+                with operation(self, "start_script"):
+                    await self._start_okww_with_current_arguments()
             except NativeSwitchUnsupportedError:
                 self.native_switch_unsupported = True
                 await self.cur_user_log.set_state(
@@ -981,6 +1000,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
+            point(self, "run")
             await self.log_monitor.start_monitor_file(
                 self._resolve_log_file_path, self.log_start_time
             )
@@ -1003,6 +1023,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             await self.log_monitor.stop()
 
             if self.native_switch_unsupported:
+                point(self, "run", state="failed", key="native_switch_unsupported")
                 break
 
             # 运行期间命中维护弹窗：按维护跳过收尾，不再重试；结论与内容
@@ -1026,7 +1047,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 break
 
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
+                point(self, "run", state="succeeded", key=self._log_result_key)
                 # 成功结论晚于维护命中时优先成功，清除标记避免误报维护跳过
                 await self.clear_maintenance_hit()
                 await self.script_info.set_log(
@@ -1037,6 +1059,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 await asyncio.sleep(3)
                 break
 
+            point(self, "run", state="failed", key=self._log_result_key)
             logger.warning(
                 f"账号 {self.cur_user_item.name} - OK-WW 代理异常: {self.cur_user_log.status}"
             )
@@ -1066,10 +1089,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                     f"\n将在稍后重试 ({attempt}/{run_limit})"
                 )
                 await asyncio.sleep(10)
-            elif (
-                self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG
-                and not game_update_extended
-            ):
+            elif self._log_result_key == "game_updated" and not game_update_extended:
                 # 「游戏更新成功」是环境变更而非脚本错误：次数用尽也至少再跑
                 # 一轮，否则鸣潮客户端自更新后任务直接以失败收尾。
                 # 每个任务只延长一次：再命中说明更新根本没应用成功，属持久性
@@ -1083,6 +1103,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
     def _game_management_enabled(self) -> bool:
         return bool(self.script_config.Game.Enabled)
+
+    @property
+    def log_signs(self) -> dict[str, LogSignMatcher]:
+        if (
+            self.task_name == "MultiAccountConfigTask"
+            or self.cur_user_config.Task.IfCustomArguments
+        ):
+            return _OKWW_BATCH_LOG_SIGNS
+        return _OKWW_LOG_SIGNS
 
     async def check_log(
         self,
@@ -1099,32 +1128,28 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
 
-        if _OKWW_GAME_UPDATED_LOG in log:
-            log_status = _OKWW_GAME_UPDATED_MSG
-            user_item_status = "异常"
+        hit = match_log_signs(log, self.log_signs)
+        key = hit.key if hit else ""
+        if key == "game_updated":
+            log_status, user_item_status = "游戏更新成功，即将重启任务", "异常"
         elif (failure_line := find_task_failure(log_content)) is not None:
+            key = "script_error"
             log_status = _okww_error_status(failure_line) or _OKWW_TASK_FAILED_MSG
             user_item_status = "异常"
-        else:
-            # 多账号任务的单次日常完成不代表整批完成，只认框架退出语。
-            success_logs = (
-                _OKWW_SUCCESS_LOG[:1]
-                if self.task_name == "MultiAccountConfigTask"
-                or self.cur_user_config.Task.IfCustomArguments
-                else _OKWW_SUCCESS_LOG
+        elif key in ("success", "daily_success"):
+            log_status, user_item_status = "Success!", "完成"
+        elif not await self.okww_process_manager.is_running():
+            log_status, user_item_status, key = (
+                "OK-WW 在完成任务前退出",
+                "异常",
+                "process_exit",
             )
-            if any(needle in log for needle in success_logs):
-                log_status = "Success!"
-                user_item_status = "完成"
-            elif not await self.okww_process_manager.is_running():
-                log_status = "OK-WW 在完成任务前退出"
-                user_item_status = "异常"
-            elif self.is_log_stalled(
-                latest_time, minutes=self.script_config.Run.RunTimeLimit
-            ):
-                log_status = "OK-WW 运行超时"
-                user_item_status = "异常"
+        elif self.is_log_stalled(
+            latest_time, minutes=self.script_config.Run.RunTimeLimit
+        ):
+            log_status, user_item_status, key = "OK-WW 运行超时", "异常", "log_timeout"
 
+        self._log_result_key = key
         await self.cur_user_log.set_state(status=log_status)
         if user_item_status is not None:
             await self.cur_user_item.set_state(status=user_item_status)
@@ -1140,7 +1165,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.user_state(self.cur_user_item).maintenance_skipped
             and not self.stopped_manually,
         )
@@ -1219,12 +1244,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 statistics["start_time"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
                 statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 statistics["user_result"] = (
-                    "代理任务全部完成" if self.run_book else self.cur_user_item.result
+                    "代理任务全部完成"
+                    if self.run_complete
+                    else self.cur_user_item.result
                 )
                 # 维护跳过不是失败，统计标题用中性符号而非失败标记
                 success_symbol = (
                     "√"
-                    if self.run_book
+                    if self.run_complete
                     else "-"
                     if self.user_state(self.cur_user_item).maintenance_skipped
                     else "X"
@@ -1249,7 +1276,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.cur_user_config.Data.LastTaskName = self.task_name
         self.cur_user_config.Data.LastTaskIndex = getattr(self, "task_index", 0)
         await self.cur_user_config.commit()
-        if self.run_book:
+        if self.run_complete:
             if (
                 self.cur_user_config.Data.ProxyTimes == 0
                 and self.cur_user_config.Info.RemainedDay != -1
@@ -1333,6 +1360,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
     async def _kill_okww_process(self) -> bool:
         if self.okww_process_manager is not None:
             try:
+                point(self, "stop_script")
                 await self.okww_process_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(
@@ -1384,6 +1412,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 except RuntimeError:
                     logger.debug("未找到待关闭的鸣潮客户端进程")
             try:
+                point(self, "stop_game")
                 await self.game_manager.kill()
             except Exception as e:
                 logger.opt(exception=True).warning(

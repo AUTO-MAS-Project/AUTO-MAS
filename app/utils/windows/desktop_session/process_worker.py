@@ -1,6 +1,7 @@
 """在已核验的子会话内启动和监督一次桌面进程。"""
 
 import argparse
+import asyncio
 import base64
 import logging
 import os
@@ -34,14 +35,34 @@ def run(pipe) -> None:
         code = run_window_action(action, launch["arguments"])
         send(pipe, {"returnCode": code})
         return
-    if action == "has_process_window":
-        from app.utils.common.process.manager import is_process_running
+    if action in {"has_process_window", "wait_process_window_ready"}:
+        from app.utils.common.process.manager import (
+            ProcessInfo,
+            is_process_running,
+            wait_process_window_ready,
+        )
         from app.utils.common.process.session import configure_parent_scope
 
         session_id = process_session(os.getpid())
         configure_parent_scope(lambda: session_id)
         send(pipe, {"pid": os.getpid()})
-        code = int(not is_process_running(launch["arguments"]["name"]))
+        arguments = launch["arguments"]
+        if action == "has_process_window":
+            code = int(not is_process_running(arguments["name"]))
+        else:
+            # 子会话里没有桌面分身作用域, 这里的等待走本会话的进程扫描
+            code = int(
+                not asyncio.run(
+                    wait_process_window_ready(
+                        ProcessInfo(
+                            pid=arguments.get("pid"),
+                            name=arguments.get("name"),
+                            exe=arguments.get("exe"),
+                        ),
+                        float(arguments["timeout"]),
+                    )
+                )
+            )
         send(pipe, {"returnCode": code})
         return
     if action == "input_desktop_unavailable":

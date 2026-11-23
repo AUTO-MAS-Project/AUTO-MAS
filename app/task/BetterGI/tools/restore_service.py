@@ -27,7 +27,7 @@
 
 mas 池 = 「MAS 为该账号维护的全部配置」：per-user 副本目录（OneDragon /
 ScriptGroup / GlobalDomain，前端端点直接读写）+ 页面字段侧车（OneDragon
-段 + Task.OneDragonConfigName + Switch.Resource + Info.Base 仅预览）。池
+段 + Task.OneDragonConfigName + Switch.Resource）。池
 恒按账号分桶（per-user 副本与来源无关、原生来源同样编辑落盘），恢复目标就是
 per-user 副本目录，无 owner 解耦（对齐 General）。
 

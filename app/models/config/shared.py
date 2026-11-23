@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from pydantic import BeforeValidator, Field, TypeAdapter
 
-from app.config import ConfigGroup
+from app.config import ConfigGroup, Virtual, encrypted, tz, ui
+from app.config.types import FilePath, WindowsNameString
 
 if TYPE_CHECKING:
     from .script import UserConfigType
@@ -54,6 +55,108 @@ def none_as(value: str | int | float) -> BeforeValidator:
         return value if input_value is None else input_value
 
     return BeforeValidator(normalize)
+
+
+ProxyStatus = Literal["未知", "成功", "失败", "维护中", "运行中"]
+"""账号上次运行结果：全部专项共用一套取值，写入方与展示方按此对齐。"""
+
+
+class AccountNameFields(ConfigGroup):
+    """账号名称与启用状态、剩余天数、备注、标签。全部专项都有。"""
+
+    Name: WindowsNameString = Field(
+        default_factory=lambda: "新账号", description="账号名称"
+    )
+
+    Notes: str = Field(default_factory=lambda: "无", description="备注")
+
+    RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
+        default_factory=lambda: -1, description="剩余天数"
+    )
+
+    Status: bool = Field(default_factory=lambda: True, description="是否启用")
+
+    Tag: Virtual[str] = Field(default_factory=lambda: None, description="账号标签信息")
+
+
+class AccountCredentialFields(ConfigGroup):
+    """账号 / 密码。没有账号概念的专项（General、BAAH、Whimbox）不继承。"""
+
+    Id: Annotated[str, encrypted()] = Field(
+        default_factory=lambda: "", description="账号"
+    )
+
+    Password: Annotated[str, encrypted()] = Field(
+        default_factory=lambda: "", description="密码"
+    )
+
+
+class AccountScriptHookFields(ConfigGroup):
+    """任务前后执行脚本。BAAH 无此项。"""
+
+    IfScriptAfterTask: bool = Field(
+        default_factory=lambda: False, description="是否在任务后执行脚本"
+    )
+
+    IfScriptBeforeTask: bool = Field(
+        default_factory=lambda: False, description="是否在任务前执行脚本"
+    )
+
+    ScriptAfterTask: FilePath = Field(
+        default_factory=lambda: None, description="任务后脚本路径"
+    )
+
+    ScriptBeforeTask: FilePath = Field(
+        default_factory=lambda: None, description="任务前脚本路径"
+    )
+
+
+class AccountRunFields(ConfigGroup):
+    """上次代理日期与代理次数。全部专项都有。"""
+
+    LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        description="上次代理日期",
+    )
+
+    ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
+        default_factory=lambda: 0, description="代理次数"
+    )
+
+
+class AccountRunStatusFields(ConfigGroup):
+    """上次运行结果。没有「上次状态」概念的专项（General、BAAH、HSR、Src）不继承。"""
+
+    LastProxyStatus: ProxyStatus = Field(
+        default_factory=lambda: "未知", description="上次代理状态"
+    )
+
+
+AccountFields = (AccountNameFields, AccountCredentialFields, AccountScriptHookFields)
+"""账号 Info 的常用切片组合，供各类按需多继承。"""
+
+AccountDataFields = (AccountRunFields, AccountRunStatusFields)
+"""账号 Data 的切片组合。"""
+
+
+class AccountNotifyFields(ConfigGroup):
+    """账号通知：全部专项都有，服务端推送与邮件收件人。"""
+
+    Enabled: bool = Field(default_factory=lambda: False, description="是否启用通知")
+
+    IfSendMail: bool = Field(default_factory=lambda: False, description="是否发送邮件")
+
+    IfSendStatistic: bool = Field(
+        default_factory=lambda: False, description="是否发送统计信息"
+    )
+
+    IfServerChan: bool = Field(
+        default_factory=lambda: False, description="是否启用 Server 酱"
+    )
+
+    ServerChanKey: str = Field(default_factory=lambda: "", description="Server 酱密钥")
+
+    ToAddress: str = Field(default_factory=lambda: "", description="收件地址")
 
 
 def local_timezone(_model: object = None) -> timezone:

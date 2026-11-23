@@ -143,6 +143,9 @@ if TYPE_CHECKING:
     from .common.process.manager import ProcessManager as ProcessManager
     from .common.process.manager import is_process_alive as is_process_alive
     from .common.process.manager import is_process_running as is_process_running
+    from .common.process.manager import (
+        wait_process_window_ready as wait_process_window_ready,
+    )
     from .common.process.runner import ProcessResult as ProcessResult
     from .common.process.runner import ProcessRunner as ProcessRunner
     from .common.security import dpapi_decrypt as dpapi_decrypt
@@ -198,6 +201,10 @@ _LAZY_EXPORTS = {
     "ProcessResult": (".common.process.runner", "ProcessResult"),
     "is_process_running": (".common.process.manager", "is_process_running"),
     "is_process_alive": (".common.process.manager", "is_process_alive"),
+    "wait_process_window_ready": (
+        ".common.process.manager",
+        "wait_process_window_ready",
+    ),
     "RegexMatcher": (".common.log.patterns", "RegexMatcher"),
     "MultiLineAggregator": (".common.log.patterns", "MultiLineAggregator"),
     "compile_regex": (".common.log.patterns", "compile_regex"),
@@ -428,6 +435,7 @@ __all__ = [
     "ProcessResult",
     "is_process_running",
     "is_process_alive",
+    "wait_process_window_ready",
     "RegexMatcher",
     "MultiLineAggregator",
     "compile_regex",

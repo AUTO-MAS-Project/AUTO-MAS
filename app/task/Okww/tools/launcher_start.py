@@ -67,6 +67,7 @@ from app.tools import error_screenshot as _tool_error_screenshot
 from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
+from app.utils.common import game_window as _game_window
 from app.utils.common.process.operations import iter_processes
 
 from .maintenance import find_game_maintenance_text
@@ -75,8 +76,6 @@ if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
     # IS_WINDOWS 检查一并惰性导入
     import pyautogui
-    import win32api
-    import win32con
     import win32gui
     import win32process
     import win32ui
@@ -124,7 +123,7 @@ def _describe_window(hwnd: int) -> str:
     """诊断旁路：描述窗口归属进程与标题，排查是否错抓同名/子进程窗口。"""
     try:
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        exe = _process_exe(pid) or _process_name(pid) or "?"
+        exe = _game_window.process_exe(pid) or _game_window.process_name(pid) or "?"
         title = win32gui.GetWindowText(hwnd)
         return f"pid={pid} exe={exe} title={title!r}"
     except Exception:
@@ -143,8 +142,11 @@ _GAME_WINDOW_CLASS = "UnrealWindow"
 _LAUNCHER_PROCESS_NAMES = frozenset({"launcher.exe", "launcher_main.exe"})
 
 # 截图基准分辨率（16:9），OCR 与点击均在此坐标空间计算后再映射回真实窗口
-_FRAME_WIDTH = 1920
-_FRAME_HEIGHT = 1080
+_FRAME_WIDTH = _game_window.FRAME_WIDTH
+_FRAME_HEIGHT = _game_window.FRAME_HEIGHT
+
+# 异常与日志里的窗口称呼
+_WINDOW_LABEL = "鸣潮启动器窗口"
 
 # 右下角动作区（相对 1080p 帧）：启动器按钮与下载进度都在此区域，左侧用户
 # 信息卡/活动公告/新闻列表含大量富文本，不参与判定与点击，避免干扰误触
@@ -199,57 +201,11 @@ _SELECTION_READ_RETRY_SECONDS = 6.0
 # ── 窗口 / 进程定位 ─────────────────────────────────────────────────────
 
 
-def _process_name(pid: int) -> str | None:
-    """按 pid 读取进程名；提权进程可能被拒，返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).name()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _process_exe(pid: int) -> str | None:
-    """按 pid 读取进程 exe 完整路径；被拒时返回 None 而非抛错。"""
-    try:
-        return psutil.Process(pid).exe()
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-        return None
-
-
-def _window_area(hwnd: int) -> int:
-    try:
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        return (right - left) * (bottom - top)
-    except Exception:
-        return 0
-
-
 def _find_hwnd(
     process_name: str, window_class: str | None = None, *, pids: set[int] | None = None
 ) -> int | None:
-    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。
-
-    ``pids`` 给定时只认这些进程的窗口：``Client-Win64-Shipping.exe`` 是虚幻
-    通用进程名，同机可能有其它同名游戏，单按名取最大窗口会认错对象。
-    """
-    candidates: list[int] = []
-
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-            if window_class is not None and win32gui.GetClassName(hwnd) != window_class:
-                return True
-        except Exception:
-            return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pids is not None and pid not in pids:
-            return True
-        if pid and _process_name(pid) == process_name:
-            candidates.append(hwnd)
-        return True
-
-    win32gui.EnumWindows(_enum, 0)
-    return max(candidates, key=_window_area) if candidates else None
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
+    return _game_window.find_window(process_name, window_class, pids=pids)
 
 
 def _is_launcher_process(pid: int, root_prefix: str) -> bool:
@@ -257,10 +213,10 @@ def _is_launcher_process(pid: int, root_prefix: str) -> bool:
 
     exe 路径不可读时无法确认安装归属，跳过同名窗口，避免在其它启动器上操作。
     """
-    name = _process_name(pid)
+    name = _game_window.process_name(pid)
     if name is None or name.casefold() not in _LAUNCHER_PROCESS_NAMES:
         return False
-    exe = _process_exe(pid)
+    exe = _game_window.process_exe(pid)
     if exe is None:
         logger.debug(
             f"无法读取同名启动器进程路径（进程已退出或权限不足），跳过窗口: pid={pid}"
@@ -272,21 +228,9 @@ def _is_launcher_process(pid: int, root_prefix: str) -> bool:
 def _find_launcher_hwnd(launcher_path: Path) -> int | None:
     """在启动器安装根目录树内按进程家族找最大可见窗口；不存在返回 None。"""
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
-    candidates: list[int] = []
-
-    def _enum(hwnd: int, _lparam: int) -> bool:
-        try:
-            if not win32gui.IsWindowVisible(hwnd):
-                return True
-        except Exception:
-            return True
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        if pid and _is_launcher_process(pid, root_prefix):
-            candidates.append(hwnd)
-        return True
-
-    win32gui.EnumWindows(_enum, 0)
-    return max(candidates, key=_window_area) if candidates else None
+    return _game_window.find_window(
+        owner=lambda pid: _is_launcher_process(pid, root_prefix)
+    )
 
 
 def find_launcher_pids(launcher_path: Path) -> list[int]:
@@ -412,74 +356,25 @@ def _wait_launcher_hwnd(
 
 
 def _activate_window(hwnd: int, *, stop_event: Event | None = None) -> None:
-    _pause(0, stop_event)
-    if not win32gui.IsWindow(hwnd):
-        raise RuntimeError("鸣潮启动器窗口已失效")
-    show_command = (
-        win32con.SW_RESTORE
-        if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW
-        if not win32gui.IsWindowVisible(hwnd)
-        else None
+    _game_window.activate_window(
+        hwnd,
+        label=_WINDOW_LABEL,
+        pause=lambda seconds: _pause(seconds, stop_event),
     )
-    if show_command is not None:
-        win32gui.ShowWindow(hwnd, show_command)
-        _pause(0.15, stop_event)
-    try:
-        if win32gui.GetForegroundWindow() != hwnd:
-            # Windows 前台锁：后台进程不能直接抢占前台。先附着当前前台窗口线程
-            # 的输入队列，再置前，绕过系统限制（与账号切换同理）。
-            foreground = win32gui.GetForegroundWindow()
-            fg_thread = win32process.GetWindowThreadProcessId(foreground)[0]
-            win32process.AttachThreadInput(
-                win32api.GetCurrentThreadId(), fg_thread, True
-            )
-            try:
-                win32gui.BringWindowToTop(hwnd)
-                win32gui.SetForegroundWindow(hwnd)
-            finally:
-                win32process.AttachThreadInput(
-                    win32api.GetCurrentThreadId(), fg_thread, False
-                )
-        else:
-            win32gui.BringWindowToTop(hwnd)
-            win32gui.SetForegroundWindow(hwnd)
-    except win32gui.error:
-        logger.debug("鸣潮启动器窗口焦点请求被系统忽略，继续按前置窗口处理")
-    _pause(0.1, stop_event)
 
 
 def _client_size(hwnd: int) -> tuple[int, int]:
-    _, _, width, height = win32gui.GetClientRect(hwnd)
-    if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮启动器窗口已失效或尺寸异常，可能启动器已关闭")
-    return width, height
+    return _game_window.client_size(hwnd, label=_WINDOW_LABEL)
 
 
 def _capture_window_image(hwnd: int, *, activate: bool = True) -> Image.Image:
-    with _utils_display.per_monitor_dpi():
-        if activate:
-            _activate_window(hwnd)
-        width, height = _client_size(hwnd)
-        left, top = win32gui.ClientToScreen(hwnd, (0, 0))
-        virtual_left = win32api.GetSystemMetrics(win32con.SM_XVIRTUALSCREEN)
-        virtual_top = win32api.GetSystemMetrics(win32con.SM_YVIRTUALSCREEN)
-        return pyautogui.screenshot(allScreens=True).crop(
-            (
-                left - virtual_left,
-                top - virtual_top,
-                left - virtual_left + width,
-                top - virtual_top + height,
-            )
-        )
+    return _game_window.capture_window_image(
+        hwnd, label=_WINDOW_LABEL, activate=activate
+    )
 
 
 def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
-    screenshot = _capture_window_image(hwnd, activate=activate)
-    screenshot = screenshot.resize(
-        (_FRAME_WIDTH, _FRAME_HEIGHT), Image.Resampling.LANCZOS
-    )
-    return cv2.cvtColor(np.asarray(screenshot), cv2.COLOR_RGB2BGR)
+    return _game_window.capture_window(hwnd, label=_WINDOW_LABEL, activate=activate)
 
 
 def _read_texts(hwnd: int) -> list[_tool_ocr.OCRItem]:

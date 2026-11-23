@@ -5,7 +5,7 @@ from typing import Any
 
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
-from app.task.game import current_game_session
+from app.task.game import current_game_session, selected_game_session
 from app.utils import ProcessManager
 
 
@@ -23,7 +23,7 @@ def client_launcher_path(owner: GameBindingOwner) -> Path | None:
 def _bound_client(owner: GameBindingOwner) -> ClientControl | None:
     from app.core import Config
 
-    session = current_game_session.get()
+    session = selected_game_session()
     if session is not None:
         return session.control if isinstance(session.control, ClientControl) else None
     uid = owner.game.game_id
@@ -69,6 +69,9 @@ class ClientProcess(ProcessManager):
                 session = current_game_session.get()
                 if session is None:
                     raise RuntimeError("客户端操作不在托管执行会话内")
+                if not session.selected:
+                    # 未选定时只读查询会按配置回落；操作必须持票，不能退成裸进程管理。
+                    raise RuntimeError("游戏会话尚未选定，不能操作游戏进程")
                 if session.control is None:
                     # URL/云端由既有上游入口启动，没有可伪造的本地游戏可执行文件。
                     return await getattr(super(ClientProcess, self), name)(

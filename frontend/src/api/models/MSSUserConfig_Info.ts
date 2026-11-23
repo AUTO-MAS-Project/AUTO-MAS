@@ -4,22 +4,6 @@
 /* eslint-disable */
 export type MSSUserConfig_Info = {
     /**
-     * 账号信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
-     */
-    Account?: (string | null);
-    /**
-     * 兼容字段；MFW 运行不按 base 三态切换配置，任务来源为账号任务队列
-     */
-    Base?: ('shared' | 'independent' | 'native' | null);
-    /**
-     * MaaFW controller 名称，留空时按 interface 和设备配置自动选择
-     */
-    Controller?: (string | null);
-    /**
-     * 兼容字段；MFW 运行不消费此开关，始终使用账号任务队列
-     */
-    IfQuickConfig?: (boolean | null);
-    /**
      * 是否在任务后执行脚本
      */
     IfScriptAfterTask?: (boolean | null);
@@ -27,26 +11,6 @@ export type MSSUserConfig_Info = {
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);
-    /**
-     * 账号名称
-     */
-    Name?: (string | null);
-    /**
-     * 备注
-     */
-    Notes?: (string | null);
-    /**
-     * 密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
-     */
-    Password?: (string | null);
-    /**
-     * 剩余天数
-     */
-    RemainedDay?: (number | null);
-    /**
-     * MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource
-     */
-    Resource?: (string | null);
     /**
      * 任务后脚本路径
      */
@@ -56,6 +20,18 @@ export type MSSUserConfig_Info = {
      */
     ScriptBeforeTask?: (string | null);
     /**
+     * 账号名称
+     */
+    Name?: (string | null);
+    /**
+     * 备注
+     */
+    Notes?: (string | null);
+    /**
+     * 剩余天数
+     */
+    RemainedDay?: (number | null);
+    /**
      * 是否启用
      */
     Status?: (boolean | null);
@@ -63,6 +39,14 @@ export type MSSUserConfig_Info = {
      * 账号标签信息
      */
     readonly Tag?: (string | null);
+    /**
+     * 账号信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
+     */
+    Id?: (string | null);
+    /**
+     * 密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务
+     */
+    Password?: (string | null);
     /**
      * 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前
      */

@@ -24,7 +24,7 @@
 账号填进它唯一的 input 选项；关闭放队尾。用户排的顺序不影响这三项。队列里有多个有效切号的用户拒绝运行。
 
 ``Run.LoginMode`` 为 ``Mas`` 时（B 服登录由 MAS 完成，见 ``login.py``）：不再补「切换账号」，
-``Info.Account`` 是 MAS 登录要选中的哔哩哔哩昵称；启动 / 关闭照常补，登录完成后 ``StartUp``
+``Info.Id`` 是 MAS 登录要选中的哔哩哔哩昵称；启动 / 关闭照常补，登录完成后 ``StartUp``
 负责从标题页进游戏，随后跑用户任务。
 
 按 entry 而不是按任务名找：任务名会随 M9A 的版本与语言变，entry 是它的 pipeline 入口，稳定。
@@ -250,7 +250,7 @@ class M9AFlavor:
         account = (
             queued_accounts[0]
             if len(queued_accounts) == 1
-            else str(config_value(context.user_config, "Info", "Account") or "").strip()
+            else str(config_value(context.user_config, "Info", "Id") or "").strip()
         )
         if account and supported:
             switch = task_name_for_entry(interface_model, SWITCH_ACCOUNT_ENTRY)
@@ -271,12 +271,12 @@ class M9AFlavor:
         elif account:
             if login_mode == LOGIN_MODE_MAS:
                 log(
-                    "[M9A] 已开启 MAS 登录：Info.Account 是 MAS 登录要选中的账号昵称，"
+                    "[M9A] 已开启 MAS 登录：Info.Id 是 MAS 登录要选中的账号昵称，"
                     "不再加入切换账号"
                 )
             else:
                 log(
-                    f"[M9A] 资源不是{OFFICIAL_RESOURCE_NAME}，Info.Account 只作备注，不自动切换账号"
+                    f"[M9A] 资源不是{OFFICIAL_RESOURCE_NAME}，Info.Id 只作备注，不自动切换账号"
                 )
 
         close = task_name_for_entry(interface_model, CLOSE_ENTRY)
@@ -317,7 +317,7 @@ class M9AFlavor:
         )
         change = settle_user_info(
             settlement,
-            account=str(user_info.get("Account") or ""),
+            account=str(user_info.get("Id") or ""),
             notes=str(user_info.get("Notes") or ""),
             note_split=False,
         )

@@ -277,7 +277,7 @@ const handleShellImported = (snapshot: Record<string, unknown>, info: Record<str
   })
   // 队列被换掉了，原来选的预设不再对得上（后端那次写入也清了它）
   formData.Task.SelectedPreset = ''
-  if (typeof info.Account === 'string') formData.Info.Account = info.Account
+  if (typeof info.Id === 'string') formData.Info.Id = info.Id
   if (typeof info.Notes === 'string') formData.Info.Notes = info.Notes
 }
 </script>
