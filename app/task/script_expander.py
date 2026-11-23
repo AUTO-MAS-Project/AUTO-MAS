@@ -359,10 +359,38 @@ class ScriptExpander(TaskBase):
             await self.spawn(plugin)
         finally:
             try:
-                await scope.force_close()
+                try:
+                    await scope.force_close()
+                finally:
+                    # 作用域由本层建立，结束标记也由本层置位（同旧专项根的
+                    # _stop_after_checks）：等它的预约释放、安装锁、进程退出
+                    # 观察者都只认 finished，正常、停止、异常三条路都不能漏。
+                    self._finish_plugin_scope(scope)
+                    await scope.close_desktop_processes()
             finally:
                 current_process_scope.reset(token)
                 self._plugin_process_scope = None
+
+    @staticmethod
+    def _finish_plugin_scope(scope) -> None:
+        """强制清理后收束作用域：停止时取消残留的作用域内异步工作，再置结束标记。"""
+        from app.utils.common.process.scope import current_process_scope
+
+        try:
+            if scope.requested:
+                keep = {
+                    asyncio.current_task(),
+                    *scope.pending_creations,
+                    *scope.retained_workers,
+                }
+                for task in asyncio.all_tasks():
+                    if (
+                        task not in keep
+                        and task.get_context().get(current_process_scope) is scope
+                    ):
+                        task.cancel()
+        finally:
+            scope.finished.set()
 
     async def _release_script_lock(self) -> None:
         if self._script_ticket is not None:
