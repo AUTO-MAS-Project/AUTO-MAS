@@ -218,6 +218,17 @@ async def test_installation_restores_overrides_after_updater_exit(
 
 
 @pytest.mark.asyncio
+async def test_cancelled_exit_confirmation_keeps_native_update_journal(installation):
+    root, snapshot, _, scheduler = installation
+    scheduler.script_info.set_log = AsyncMock()
+    installer._wait_for_updater.side_effect = asyncio.CancelledError
+    with pytest.raises(installer.MaaUpdaterRunningError):
+        await scheduler._install_pending_software_update(target="v6.1.0")
+    assert scheduler._updater_running
+    assert snapshot.with_name("Temp.maa-update.json").is_file()
+
+
+@pytest.mark.asyncio
 async def test_running_updater_preserves_journal_until_next_recovery(installation):
     root, snapshot, original, scheduler = installation
     installer._wait_for_updater.side_effect = installer.MaaUpdaterRunningError(

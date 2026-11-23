@@ -109,7 +109,7 @@ from .tools.update_credentials import (
     use_maa_github_update,
 )
 from .tools.update_errors import MaaUpdateUnsafeError
-from .tools.UpdateMAA import MaaUpdaterRunningError
+from .tools.UpdateMAA import MaaUpdaterRunningError, stop_maa_gui
 
 logger = get_logger("MAA 调度器")
 
@@ -396,8 +396,7 @@ class MaaManager(ScriptManagerBase):
                     raise MaaUpdaterRunningError(
                         "MAA 官方更新器仍在运行，请等待更新结束后重试"
                     )
-                if not await process.kill_process(install / "MAA.exe"):
-                    raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
+                await stop_maa_gui(install / "MAA.exe")
                 self.config_locks[script_config.uid] = await self.lock_script_config(
                     script_config
                 )

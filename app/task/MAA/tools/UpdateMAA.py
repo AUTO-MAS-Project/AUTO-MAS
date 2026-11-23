@@ -167,11 +167,9 @@ async def update_maa(
             cleanup.result()
             raise
         finally:
-            if (
-                cleanup.done()
-                and not cleanup.cancelled()
-                and cleanup.exception() is None
-            ):
+            if cleanup.cancelled():
+                raise MaaUpdaterRunningError("更新器停写确认被中止，已保留配置恢复记录")
+            if cleanup.done() and cleanup.exception() is None:
                 restore_maa_update_config(
                     maa_path, snapshot_path=snapshot_path, script_id=script_id
                 )
