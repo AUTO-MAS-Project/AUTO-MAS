@@ -1576,8 +1576,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         self.task_dict[task] = False
 
                 if self.cur_user_log.status == "Success!":
-                    # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
+                    # GUI 退出期间可以手动停止，先保留已经确认的代理结果。
                     self.run_book[self.mode] = not self._failed_sanity_tasks
+
+                if self.cur_user_log.status in ("Success!", "MAA 部分任务执行失败"):
+                    # 队列结束日志先于 GUI 保存更新登记，等待进程正常退出落盘。
+                    proc = self.maa_process_manager.process
+                    if proc is not None:
+                        try:
+                            await asyncio.wait_for(proc.wait(), timeout=10)
+                        except TimeoutError:
+                            await self.maa_process_manager.kill()
+
+                if self.cur_user_log.status == "Success!":
                     logger.info(f"账号: {self.cur_user_uid} - MAA进程完成代理任务")
                     await self.script_info.set_log(
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
@@ -2857,6 +2868,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         update_settings = gui_new_set.setdefault("Update", {})
         update_settings.update(
             {
+                "CheckOnStartup": not self.script_config.Update.TakeoverEnabled,
                 "CheckOnSchedule": False,
                 "AutoDownloadUpdatePackage": True,
                 "AutoInstallUpdatePackage": False,
@@ -2865,7 +2877,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 接管开启即暂停原生更新，不因本轮更新失败而重新启用。
         # GitHub 资源源仅支持手动下载，临时选择随快照恢复，不改变 CDK。
         if self.script_config.Update.TakeoverEnabled:
-            update_settings["CheckOnStartup"] = False
             update_settings["AutoDownloadUpdatePackage"] = False
             update_settings["UpdateSource"] = "GitHub"
         if Config.setting.Function.IfSilence:

@@ -171,6 +171,7 @@ async def test_task_failure_retry_scope(
 
     process = SimpleNamespace(
         open_process=open_process,
+        process=SimpleNamespace(wait=AsyncMock()),
         kill=AsyncMock(),
         is_running=AsyncMock(return_value=True),
         main_pid=1,

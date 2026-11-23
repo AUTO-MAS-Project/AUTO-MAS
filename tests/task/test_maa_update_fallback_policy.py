@@ -116,6 +116,7 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
 ):
     import json
     import shutil
+    import zipfile
 
     from app.task.MAA import AutoProxy as auto_proxy
     from app.task.MAA.base_preset import get_maa_base_preset
@@ -138,8 +139,9 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
         UpdateSource="MirrorChyan",
     )
     io_utils.write_file(root / "config/gui.new.json", original)
-    package = root / "pending.zip"
-    package.write_bytes(b"opaque pending package")
+    package = root / "MAAComponent-OTA-v6.0.0_v6.1.0-win-x64.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("changes.json", "{}")
     write_pending_update(root, version="v6.1.0", package=str(package))
     original = io_utils.read_file(root / "config/gui.new.json")
     snapshot = tmp_path / "data/script-test/Temp"

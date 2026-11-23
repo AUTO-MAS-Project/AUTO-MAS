@@ -46,6 +46,7 @@ import os
 import re
 import shutil
 import zipfile
+from io import BufferedIOBase
 from pathlib import Path
 
 from app.utils import get_logger
@@ -67,6 +68,70 @@ _FAILURE_FLAG_FILE = "pending-update-failure.txt"
 # 完整包安装峰值占用 ≈ 包 + 解压临时目录 + .old 备份（MaaUpdater 换血语义）
 _FREE_SPACE_SCALE = 3
 _ILLEGAL_NAME_RE = re.compile(r'[\\/:*?"<>|]')
+
+
+_PE_MACHINE_BOOK = {0x8664: "x64", 0xAA64: "arm64"}
+_FULL_ASSET = re.compile(r"MAA-(.+)-win-(x64|arm64)\.zip", re.IGNORECASE)
+
+
+def read_pe_architecture(stream: BufferedIOBase) -> str | None:
+    """读取安装文件或包内程序集的 PE 架构。"""
+    dos = stream.read(64)
+    if len(dos) < 64 or dos[:2] != b"MZ":
+        return None
+    stream.seek(int.from_bytes(dos[60:64], "little"))
+    pe = stream.read(6)
+    if len(pe) < 6 or pe[:4] != b"PE\x00\x00":
+        return None
+    return _PE_MACHINE_BOOK.get(int.from_bytes(pe[4:6], "little"))
+
+
+def ota_asset_name(current: str, target: str, arch: str) -> str:
+    return f"MAAComponent-OTA-v{current.removeprefix('v')}_v{target.removeprefix('v')}-win-{arch}.zip"
+
+
+def round_package_ready(
+    root: Path,
+    pending: tuple[str, str],
+    release: tuple[str, str] | None,
+) -> bool | None:
+    """就绪返回 True，明确不兼容返回 False，未能确认就绪返回 None。"""
+    target, package = pending
+    path = (root / package).resolve()
+    if release is None:
+        return None
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = {
+                Path(entry.filename.replace("\\", "/")).as_posix().casefold(): entry
+                for entry in archive.infolist()
+                if not entry.is_dir()
+            }
+            if not entries.keys() & _OTA_MANIFEST_ENTRIES:
+                if (asset := _FULL_ASSET.fullmatch(path.name)) and (
+                    asset[1].casefold().removeprefix("v")
+                    != target.casefold().removeprefix("v")
+                    or asset[2].casefold() != release[1]
+                ):
+                    return False
+                for name, entry in entries.items():
+                    dll = Path(name)
+                    if (
+                        dll.name == "maa.dll"
+                        and len(dll.parts) <= 2
+                        and (dll.with_name("maa.exe").as_posix() in entries)
+                    ):
+                        with archive.open(entry) as stream:
+                            return read_pe_architecture(stream) == release[1]
+                return None
+        if path.name.casefold().startswith("maacomponent-ota-"):
+            return (
+                path.name.casefold()
+                == ota_asset_name(release[0], target, release[1]).casefold()
+            )
+        return True
+    except (FileNotFoundError, zipfile.BadZipFile):
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -174,6 +239,12 @@ def has_delegated_update_failure(maa_root: Path) -> bool:
     return (maa_root / _FAILURE_FLAG_FILE).is_file()
 
 
+_PENDING_FIELDS = (
+    ("gui.new.json", "Update", "Name", "UpdatePackage"),
+    ("gui.json", "Global", "VersionUpdate.name", "VersionUpdate.package"),
+)
+
+
 def read_pending_update(maa_root: Path) -> tuple[str, str]:
     """读已登记的待更新包，返回 (版本名, 包路径)。
 
@@ -181,19 +252,45 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置损坏或读取
     失败上抛，由登记入口告警并停止，不把无法读取伪装成无登记。
     """
-    new_set = _utils_io.read_dict_file(maa_root / "config" / "gui.new.json")
-    update = new_set.get("Update")
-    if isinstance(update, dict):
-        package = str(update.get("UpdatePackage") or "")
-        if package:
-            return str(update.get("Name") or ""), package
-    old_set = _utils_io.read_dict_file(maa_root / "config" / "gui.json")
-    global_set = old_set.get("Global")
-    if isinstance(global_set, dict):
-        package = str(global_set.get("VersionUpdate.package") or "")
-        if package:
-            return str(global_set.get("VersionUpdate.name") or ""), package
+    for name, group, version_key, package_key in _PENDING_FIELDS:
+        values = _utils_io.read_dict_file(maa_root / "config" / name).get(group)
+        if isinstance(values, dict) and (package := values.get(package_key)):
+            return str(values.get(version_key) or ""), str(package)
     return "", ""
+
+
+def has_pending_update_for_view(maa_root: Path) -> bool:
+    """只读预览前检查主配置及 .bak，任一含现存待装包即拦截。"""
+    for name, group, _, package_key in _PENDING_FIELDS:
+        for candidate in (name, f"{name}.bak"):
+            values = _utils_io.read_dict_file(
+                maa_root / "config" / candidate, format=".json"
+            ).get(group)
+            if (
+                isinstance(values, dict)
+                and isinstance(package := values.get(package_key), str)
+                and package
+                and (maa_root / package).is_file()
+            ):
+                return True
+    return False
+
+
+def clear_matching_package(root: Path, pending: tuple[str, str]) -> None:
+    """只撤下对应版本和路径的登记，保留 ZIP 及其他待装包。"""
+    for name, group, version_key, package_key in _PENDING_FIELDS:
+        path = root / "config" / name
+        data = _utils_io.read_dict_file(path)
+        values = data.get(group)
+        if (
+            isinstance(values, dict)
+            and str(values.get(version_key) or "") == pending[0]
+            and isinstance(package := values.get(package_key), str)
+            and package
+        ):
+            if (root / package).resolve() == (root / pending[1]).resolve():
+                values[package_key] = ""
+                _utils_io.write_file(path, data)
 
 
 def _deferred_update_path(maa_root: Path) -> Path:
@@ -202,6 +299,11 @@ def _deferred_update_path(maa_root: Path) -> Path:
         / "data/maa_update/pending"
         / f"{_utils_config_archive.config_root_key(maa_root)}.json"
     )
+
+
+def round_resource_record(maa_root: Path) -> Path:
+    """完整包会替换安装目录，资源恢复目标与待装登记一起存放在 MAS 目录。"""
+    return _deferred_update_path(maa_root).with_suffix(".resources.json")
 
 
 def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:

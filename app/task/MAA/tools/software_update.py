@@ -95,6 +95,7 @@ from .resource_update import _path_key, _run_write_thread, _sp_id
 from .software_package import (
     cache_zip_matches,
     load_cache_manifest,
+    read_pe_architecture,
     read_pending_update,
     register_pending_update,
     software_cache_dir,
@@ -119,7 +120,6 @@ _PRECHECK_GRACE = 60  # 秒，登记前等待其他安装释放共享缓存的�
 # 通道映射对齐上游 GetUpdateChannel：Stable/Beta/Nightly → stable/beta/alpha
 _CHANNEL_BOOK = {"beta": "beta", "alpha": "alpha", "nightly": "alpha"}
 # PE 头 Machine 域 → 官方包命名中的架构段（MAA-vX-win-{arch}.zip）
-_PE_MACHINE_BOOK = {0x8664: "x64", 0xAA64: "arm64"}
 
 # 宽松 SemVer：可选 v 前缀、三段核心、可选连字符预发布与 + 构建（构建不参与比较）
 _VERSION_RE = re.compile(
@@ -233,14 +233,7 @@ def _read_pe_machine(path: Path) -> str | None:
     用 MAS 进程的 platform.machine() 会误判，必须看目标文件本身。"""
     try:
         with path.open("rb") as fh:
-            dos = fh.read(64)
-            if len(dos) < 64 or dos[:2] != b"MZ":
-                return None
-            fh.seek(int.from_bytes(dos[60:64], "little"))
-            pe = fh.read(6)
-        if len(pe) < 6 or pe[:4] != b"PE\x00\x00":
-            return None
-        return _PE_MACHINE_BOOK.get(int.from_bytes(pe[4:6], "little"))
+            return read_pe_architecture(fh)
     except OSError:
         return None
 
