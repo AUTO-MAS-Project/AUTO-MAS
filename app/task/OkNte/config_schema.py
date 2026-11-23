@@ -131,7 +131,7 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
     if cached is not None and cached[0] == snapshot:
         return cached[1]
 
-    labels: dict[str, str] = {}
+    labels: dict[str, str] = dict(_FALLBACK_LABELS)
     found = False
 
     for path in gettext_candidates:
@@ -168,6 +168,11 @@ _FALLBACK_LABELS: dict[str, str] = {
     "Routine Items": "日常任务流程",
     "daily_anomaly": "异象界域",
     "daily_anomaly_hunter": "异象追猎",
+    "anomaly_pilgrimage": "异象巡礼",
+    "Dress Sleeves of Vanity": "永不谢幕的阿拉克涅",
+    "Eternal Memory": "讨债人",
+    "Good Boy Stamp": "墨菲克斯",
+    "Hollowflower Seeds": "贵腐巢母",
     "coffee": "一咖舍",
     "daily_claim": "日常领取",
     "cinema_date": "影院约会",
@@ -183,7 +188,19 @@ DAILY_ROUTINE_TASK_FILE = "DailyRoutineTask.json"
 DAILY_ROUTINE_CONFIGS_FILE = "DailyRoutineTaskConfigs.json"
 LEGACY_DAILY_TASK_FILE = "DailyTask.json"
 
+PILGRIMAGE_DESCRIPTIONS = {
+    "目标": "按清单顺序循环，末项后回到首项；重复选择表示重复挑战同一目标。",
+    "每周开始运行日": "仅在所选星期至周日运行，本周更早的日期会跳过。计划表显式选择周本时会覆写此设置；继承时沿用账号设置。",
+    "轮换起始日期": "可选，格式 YYYY-MM-DD；每满 7 天按清单推进 3 项，本周已领取次数也计入进度。留空则每次从清单首项开始循环。",
+}
+
 DAILY_ROUTINE_ITEMS: list[dict[str, Any]] = [
+    {
+        "id": "anomaly_pilgrimage",
+        "label": "异象巡礼",
+        "enabled": False,
+        "exclusiveGroup": None,
+    },
     {
         "id": "daily_anomaly",
         "label": "异象界域",
@@ -228,6 +245,11 @@ DEFAULT_CONFIG_DATA: dict[str, dict[str, Any]] = {
         "Exit After Task": True,
     },
     DAILY_ROUTINE_CONFIGS_FILE: {
+        "anomaly_pilgrimage": {
+            "目标": [],
+            "每周开始运行日": "周五",
+            "轮换起始日期": "",
+        },
         "daily_anomaly": {
             "目标消耗体力": 180,
             "任务类型": "经验与甲硬币",
@@ -312,20 +334,32 @@ def _normalize_daily_routine_items(raw_items: Any) -> list[dict[str, Any]]:
             if not isinstance(raw_item, dict):
                 continue
             task_id = raw_item.get("id")
-            if task_id not in entries or task_id in seen:
+            if not isinstance(task_id, str) or not task_id or task_id in seen:
                 continue
             normalized.append(
                 {"id": task_id, "enabled": bool(raw_item.get("enabled", False))}
+                if task_id in entries
+                else deepcopy(raw_item)
             )
             seen.add(task_id)
 
+    insert_at = 0
     for item in DAILY_ROUTINE_ITEMS:
-        if item["id"] not in seen:
-            normalized.append({"id": item["id"], "enabled": bool(item["enabled"])})
+        if item["id"] in seen:
+            insert_at = next(
+                index + 1
+                for index, current in enumerate(normalized)
+                if current["id"] == item["id"]
+            )
+            continue
+        normalized.insert(
+            insert_at, {"id": item["id"], "enabled": bool(item["enabled"])}
+        )
+        insert_at += 1
 
     enabled_groups: set[str] = set()
     for item in normalized:
-        exclusive_group = entries[item["id"]].get("exclusiveGroup")
+        exclusive_group = entries.get(item["id"], {}).get("exclusiveGroup")
         if not exclusive_group or not item["enabled"]:
             continue
         if exclusive_group in enabled_groups:
@@ -513,6 +547,13 @@ def ensure_oknte_daily_routine_configs(config_dir: Path) -> None:
 SELECT_OPTIONS: dict[str, dict[str, list[str]]] = {
     # ── 任务配置 ──
     DAILY_ROUTINE_CONFIGS_FILE: {
+        "每周开始运行日": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+        "目标": [
+            "Dress Sleeves of Vanity",
+            "Eternal Memory",
+            "Good Boy Stamp",
+            "Hollowflower Seeds",
+        ],
         "任务类型": ["经验与甲硬币", "异能升级材料", "弧盘突破材料", "空幕"],
         "具体奖励目标": ["角色经验", "弧盘经验", "甲硬币"],
         "循环模式": ["停用", "自动循环序号/目标", "自定义循环"],
@@ -756,6 +797,11 @@ def build_fields_for_config(
         seen.add(name)
         real_filename, _sep, _nested_group = filename.partition("::")
         opts = _get_select_options(real_filename, name)
+        description = (
+            PILGRIMAGE_DESCRIPTIONS.get(name, "")
+            if filename == f"{DAILY_ROUTINE_CONFIGS_FILE}::anomaly_pilgrimage"
+            else ""
+        )
 
         if real_filename == DAILY_ROUTINE_TASK_FILE and name == "Routine Items":
             value = _normalize_daily_routine_items(raw_value)
@@ -773,7 +819,6 @@ def build_fields_for_config(
                             "label": _translate(item["id"], option_labels),
                         }
                     )
-                    value.append(item)
                     known_ids.add(item["id"])
             return {
                 "name": name,
@@ -796,7 +841,7 @@ def build_fields_for_config(
                 "name": name,
                 "type": field_type,
                 "label": _translate(name, option_labels),
-                "description": "",
+                "description": description,
                 "value": raw_value,
                 "options": opts,
                 "children": None,
@@ -812,7 +857,7 @@ def build_fields_for_config(
             "name": name,
             "type": field_type,
             "label": _translate(name, option_labels),
-            "description": "",
+            "description": description,
             "value": raw_value,
             "options": None,
             "children": build_fields_for_config(

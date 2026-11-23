@@ -29,6 +29,11 @@
                 v-for="row in rows"
                 :key="row.id"
                 :field="row.field"
+                :override-default="
+                  row.path.includes('anomaly_pilgrimage') && row.field.name === '轮换起始日期'
+                    ? ''
+                    : row.field.value
+                "
                 :value="read(row)"
                 :overridden="read(row) !== undefined"
                 :disabled="loading"
@@ -51,6 +56,7 @@ import { saveOkNtePlan } from '@/composables/useOkNtePlanApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import OkNteConfigNavigation from '@/views/EditView/User/OkNteUserEdit/OkNteConfigNavigation.vue'
 import OkNteOverrideField from './OkNteOverrideField.vue'
+import { hasExplicitWeekly, withWeeklyDefaults } from '../oknteWeekly'
 import type { OverrideField, OverrideRow, OverrideConfigs } from '../oknteOverrideTypes'
 type FileInfo = OkNtePlanFile
 const props = defineProps<{ planId: string; day: string }>()
@@ -131,8 +137,11 @@ function change(row: OverrideRow, value: unknown) {
     else delete parent[key]
   } else if (value === undefined) delete parent[key]
   else parent[key] = value
-  configs.value = next
-  queueSave(next)
+  configs.value =
+    !hasExplicitWeekly(configs.value) && hasExplicitWeekly(next)
+      ? withWeeklyDefaults(next, props.day)
+      : next
+  queueSave(configs.value)
 }
 function queueSave(next: OverrideConfigs) {
   const planId = props.planId,

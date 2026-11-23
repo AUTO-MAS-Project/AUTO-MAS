@@ -26,6 +26,9 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+UTC3 = timezone(timedelta(hours=3))
+"""东3区时区对象，用于北京时间凌晨五点切日。"""
+
 UTC4 = timezone(timedelta(hours=4))
 """东4区时区对象"""
 

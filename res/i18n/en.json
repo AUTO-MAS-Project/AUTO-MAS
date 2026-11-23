@@ -4913,5 +4913,21 @@
   "core.edit.okwwLoginAccountPlaceholder": "Full phone number or account shown in the login list",
   "core.edit.okwwDailyArgumentsExample": "Daily task launch argument example",
   "core.edit.okwwArgumentsExampleHint": "Native switching uses -t MultiAccountConfigTask -e, according to the managed script account switching method.",
-  "core.plan.oknte.basedOnDetail": "Based on detailed configuration"
+  "core.plan.oknte.basedOnDetail": "Based on detailed configuration",
+  "core.plan.oknte.weeklyTitle": "Weekly bosses",
+  "core.plan.oknte.weeklyOff": "Disable",
+  "core.plan.oknte.weeklyInherit": "Inherit configuration",
+  "core.plan.oknte.weeklyConfirm": "Confirm",
+  "core.plan.oknte.weeklyUseAccount": "Use the account weekly boss configuration",
+  "core.plan.oknte.weeklyDisabled": "Do not run weekly bosses on this day",
+  "core.plan.oknte.weeklyAddHint": "Click a boss on the left to add it",
+  "core.plan.oknte.weeklyUp": "Move up",
+  "core.plan.oknte.weeklyDown": "Move down",
+  "core.plan.oknte.weeklyRemove": "Remove target {index}",
+  "core.plan.oknte.weeklySaveFailed": "Failed to save the weekly boss plan",
+  "core.plan.oknte.weeklyArachne": "The Never-Ending Arachne",
+  "core.plan.oknte.weeklyDebtCollector": "Debt Collector",
+  "core.plan.oknte.weeklyMorphix": "Morphix",
+  "core.plan.oknte.weeklyBroodmother": "Amber Broodmother",
+  "core.plan.oknte.fieldHelp": "Help for {field}"
 }
