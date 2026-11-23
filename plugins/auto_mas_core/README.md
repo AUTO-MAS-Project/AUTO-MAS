@@ -148,6 +148,15 @@ point(self, "special", state="matched", key="daily_reward")  # 在现有检测�
 
 **托管级检查与良性跳过。** `UserExpander.check()` 返回字符串时整个托管记「异常」；返回 `ScriptSkip(reason)`（从 `auto_mas_core` 或 `auto_mas_core.adapters.script` 导入）表示这次不是故障、只是暂时不能跑（例如项目正在更新或被占用）：托管和尚未开始的账号记「跳过」，任务收到一条 warning 提示，不派发任何账号。返回 `None` 照常运行。
 
+**停止通知。** 用户停止任务时，L2 在送出取消之前同步调用当前托管 L3 的 `UserExpander.on_stop_requested()`（默认什么都不做）。`finish()` 等收尾受保护、收不到取消，收尾里有要提前结束的长动作（运行后更新、环境确认）时覆盖它置停止标记。它在事件循环里同步执行，只做轻量动作、不要抛出，可能被调用不止一次。整轮交给旧专项管理器的外壳可以这样转给管理器：
+
+```python
+def on_stop_requested(self) -> None:
+    if self._manager is not None:
+        self._manager.stopped_manually = True
+        self._manager._on_finalize_cancel_requested()
+```
+
 展开类可以继承 `UserExpander[MyScriptEntry]`，使 `script_config` 保留专项配置类型。仓库的 `pyrightconfig.json` 已声明 SDK 源码路径；包内其他模块使用相对导入，独立插件工程则在自己的开发环境安装 SDK。
 
 ## 托管配置的加载状态

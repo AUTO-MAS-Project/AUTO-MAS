@@ -20,6 +20,7 @@ from app.task.game import GameSession, current_game_session
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
 from app.task.script_update import ScriptRecoverySession
+from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.contracts.power import PowerSignal
 
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
     from app.models.config import ScriptConfigType
     from app.models.task import TaskExecuteBase
     from app.task.user_expander import UserExpander
+
+logger = get_logger("任务调度")
 
 
 class ScriptExpander(TaskBase):
@@ -62,7 +65,18 @@ class ScriptExpander(TaskBase):
     async def stop(self) -> None:
         """先确认插件更新停写及原生配置保存，再取消任务并等待级联收尾。"""
         self.history.cancelled = True
+        if self.running:
+            # 插件路径先确认停写再送取消；通知到了的插件可能在确认期间就收尾完，
+            # 先记下停止，L2 照停止处理、不再往下派发（同旧专项执行桥）。
+            self.cancelled = True
         await self.task_info.set_state(status="cancelled")
+        if self._plugin is not None:
+            # 同旧专项的 stopped_manually / _on_finalize_cancel_requested：受保护的收尾
+            # 收不到取消，插件靠这条同步通知提前结束运行后更新、环境确认等。
+            try:
+                self._plugin.on_stop_requested()
+            except Exception:
+                logger.opt(exception=True).warning("插件停止通知失败，继续停止")
         if self._plugin_process_scope is not None:
             if self._plugin_stop_checks is None:
                 self._plugin_stop_checks = asyncio.create_task(
@@ -259,6 +273,8 @@ class ScriptExpander(TaskBase):
                     plugin.history = self.history
                     self._plugin = plugin
                     await self._run_plugin(plugin)
+                    if self.cancelled:
+                        raise asyncio.CancelledError
                 else:
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")

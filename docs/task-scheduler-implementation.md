@@ -246,7 +246,7 @@ L4 接收已锁用户配置，只做模式校验、进度、check/prepare/main_l
 
 `spawn(child)` 是直接 `await child.run()`，不为每层另开 asyncio Task；旧适配的 spawn 也委托同一契约。取消从顶层 await 链传下去。子层通常没有自己的 `_task` 句柄，单独对其 TaskBase.stop 没有顶层停止的含义。
 
-`ScriptExpander.stop()` 同时设置任务回放取消标记；当前旧 manager 标记 stopped_manually 并执行取消钩子。实际关闭脚本进程、设备、日志读取器、临时文件和恢复配置由各专项 final_task 负责。Python 协程取消不是强制杀所有系统进程；不可取消的线程调用也不会因 cancel 自动结束。
+`ScriptExpander.stop()` 同时设置任务回放取消标记；当前旧 manager 标记 stopped_manually 并执行取消钩子，插件路径同步调用 L3 的 `on_stop_requested()`（早于停写确认与取消）。实际关闭脚本进程、设备、日志读取器、临时文件和恢复配置由各专项 final_task 负责。Python 协程取消不是强制杀所有系统进程；不可取消的线程调用也不会因 cancel 自动结束。
 
 托管／用户业务中的附加脚本继续复用 execute_script_task：执行库等待进程清理后抛出 CancelledError，由所属执行链继续收尾。L2 不再编排队列附加脚本。
 

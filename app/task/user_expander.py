@@ -85,6 +85,13 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
             entry.Info.Status and entry.Info.RemainedDay != 0
         )
 
+    def on_stop_requested(self) -> None:
+        """用户停止本次任务时由 L2 同步调用，早于取消送达本层；默认什么都不做。
+
+        受保护的收尾（``finish()`` 等）收不到取消，需要提前结束的（运行后更新、
+        环境确认）在这里置停止标记。只做同步的轻量动作，不得抛出；可能被调用多次。
+        """
+
     async def record_user_state(
         self, user: TaskUserItem, *, status: str, reason: str
     ) -> None:
