@@ -140,7 +140,7 @@ from .tools.task_templates import (
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
 from .tools.update_errors import MaaUpdateUnsafeError
-from .tools.UpdateMAA import MaaUpdaterRunningError
+from .tools.UpdateMAA import MaaUpdaterRunningError, stop_maa_gui
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -1582,11 +1582,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     for task in failed_sanity:
                         self.task_dict[task] = False
 
-                await self._stop_round_process(
-                    wait_for_exit=self.cur_user_log.status
-                    in ("Success!", "MAA 部分任务执行失败")
-                )
-
                 if self.cur_user_log.status == "Success!":
                     # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
                     self.run_book[self.mode] = not self._failed_sanity_tasks
@@ -1609,6 +1604,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                         f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
+                await self._stop_round_process(
+                    wait_for_exit=self.cur_user_log.status
+                    in ("Success!", "MAA 部分任务执行失败")
+                )
+                if self.cur_user_log.status != "Success!":
                     # 关模拟器之前把现场画面留下来：模拟器一关 adb 就补不到了。
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
@@ -1704,6 +1704,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             "请检查 MAA 数据目录的写入权限"
         )
 
+    @property
+    def stop_unconfirmed(self) -> bool:
+        """强制中止也可能打断收尾；只有轮次停写确认后才允许还原原生目录。"""
+        return self._round_needs_update or isinstance(
+            self.install_error, MaaUpdaterRunningError
+        )
+
     async def _stop_round_process(self, *, wait_for_exit: bool) -> None:
         """队列完成日志早于退出动作，优先等 MAA 自行写回登记，再确认停写。"""
         try:
@@ -1718,15 +1725,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     if await process.is_process_stopped(self.maa_exe_path):
                         return
             await self.maa_process_manager.kill()
-            if await process.kill_process(
-                self.maa_exe_path
-            ) and await process.is_process_stopped(self.maa_exe_path):
-                return
         except Exception as error:
             raise MaaUpdaterRunningError(
                 "无法确认 MAA 已停写，已停止后续代理"
             ) from error
-        raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理")
+        await stop_maa_gui(self.maa_exe_path)
 
     async def _complete_round_update(self) -> None:
         """一次真实启动只检查一次登记；官方安装单独计时。"""
@@ -1761,9 +1764,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         try:
             await super()._finalize_task()
         finally:
-            if self.maa_root_path is not None and not isinstance(
-                self.install_error, MaaUpdaterRunningError
-            ):
+            if self.maa_root_path is not None and not self.stop_unconfirmed:
                 restore_depot_cache(
                     self.maa_root_path,
                     depot_cache_snapshot_dir(self.script_info.script_id),

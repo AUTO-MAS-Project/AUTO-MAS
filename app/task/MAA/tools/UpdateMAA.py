@@ -40,6 +40,16 @@ class MaaUpdaterRunningError(RuntimeError):
     """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
+async def stop_maa_gui(exe: Path) -> None:
+    """确认当前安装的 GUI 已停写后，才允许写入或还原配置。"""
+    try:
+        if await process.kill_process(exe) and await process.is_process_stopped(exe):
+            return
+    except Exception as error:
+        raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理") from error
+    raise MaaUpdaterRunningError("无法确认 MAA 已停写，已停止后续代理")
+
+
 def _pending_package(maa_path: Path) -> str:
 
     # NEW: Update.UpdatePackage 优先生效
@@ -75,10 +85,7 @@ async def update_maa(
     if not maa_update_package or not (maa_path / maa_update_package).is_file():
         return
 
-    if not await process.kill_process(maa_path / "MAA.exe"):
-        raise MaaUpdaterRunningError(
-            "无法关闭 MAA 窗口，暂不安装更新；请退出 MAA 后重试"
-        )
+    await stop_maa_gui(maa_path / "MAA.exe")
 
     maa_new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
     active_scheme = maa_scheme_name(maa_new_set)
@@ -173,12 +180,9 @@ async def update_maa(
 async def _wait_for_updater(maa_path: Path) -> None:
     try:
         async with asyncio.timeout(_UPDATER_TIMEOUT):
-            while await process.is_process_running(maa_path / "MAA.Updater.exe"):
+            while not await process.is_process_stopped(maa_path / "MAA.Updater.exe"):
                 await asyncio.sleep(0.2)
-        if not await process.kill_process(maa_path / "MAA.exe"):
-            raise MaaUpdaterRunningError(
-                "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
-            )
+        await stop_maa_gui(maa_path / "MAA.exe")
     except TimeoutError as error:
         raise MaaUpdaterRunningError(
             "MAA 官方更新器等待超时，请等待更新结束并退出 MAA 后，从原生配置备份恢复"

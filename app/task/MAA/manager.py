@@ -392,7 +392,7 @@ class MaaManager(ScriptManagerBase):
                 if script_config.Info.Path != install:
                     self._resource_access.close()
                     continue
-                if await process.is_process_running(install / "MAA.Updater.exe"):
+                if not await process.is_process_stopped(install / "MAA.Updater.exe"):
                     raise MaaUpdaterRunningError(
                         "MAA 官方更新器仍在运行，请等待更新结束后重试"
                     )
@@ -652,9 +652,7 @@ class MaaManager(ScriptManagerBase):
                 )
             finally:
                 # 用户停止也会经过账号收尾；未确认停写时，父层不能还原原生配置。
-                if isinstance(task, AutoProxyTask) and isinstance(
-                    task.install_error, MaaUpdaterRunningError
-                ):
+                if isinstance(task, AutoProxyTask) and task.stop_unconfirmed:
                     self._updater_running = True
             if isinstance(task, AutoProxyTask):
                 if task.install_error is not None:
@@ -710,7 +708,7 @@ class MaaManager(ScriptManagerBase):
     async def _check_software_update_safety(self) -> None:
         """后续账号只检查本地安装是否安全，避免重复更新请求。"""
         root = self.maa_set_path.parent
-        if self._updater_running or await process.is_process_running(
+        if self._updater_running or not await process.is_process_stopped(
             root / "MAA.Updater.exe"
         ):
             self._updater_running = True
@@ -753,7 +751,7 @@ class MaaManager(ScriptManagerBase):
         except Exception as error:
             # 用户主动取消由 CancelledError 向上传播，不当作普通更新失败。
             root = self.maa_set_path.parent
-            if self._updater_running or await process.is_process_running(
+            if self._updater_running or not await process.is_process_stopped(
                 root / "MAA.Updater.exe"
             ):
                 self._updater_running = True

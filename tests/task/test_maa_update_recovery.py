@@ -45,6 +45,9 @@ def installation(tmp_path, monkeypatch):
     snapshot = tmp_path / "Temp"
     io_utils.commit_native_config_snapshot(snapshot, config, script_id="test-script")
     monkeypatch.setattr(installer.process, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        installer.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
     monkeypatch.setattr(installer.ProcessRunner, "run_process", AsyncMock())
     monkeypatch.setattr(installer, "_wait_for_updater", AsyncMock())
     scheduler = object.__new__(manager.MaaManager)
@@ -78,7 +81,7 @@ async def test_round_installs_deferred_package_and_preserves_other_registrations
     )
     scheduler.script_info.set_log = AsyncMock()
     monkeypatch.setattr(
-        manager.process, "is_process_running", AsyncMock(return_value=False)
+        manager.process, "is_process_stopped", AsyncMock(return_value=True)
     )
     monkeypatch.setattr(manager, "read_installed_release", lambda _: (version, "x64"))
 
@@ -266,8 +269,8 @@ async def test_unknown_updater_process_state_does_not_restore_config(
     monkeypatch.setattr(installer, "_wait_for_updater", _wait_for_updater)
     monkeypatch.setattr(
         installer.process,
-        "is_process_running",
-        AsyncMock(side_effect=OSError("process query failed")),
+        "is_process_stopped",
+        AsyncMock(side_effect=[True, OSError("process query failed")]),
     )
     with pytest.raises(installer.MaaUpdaterRunningError):
         await installer.update_maa(

@@ -29,7 +29,7 @@ def managed_run(tmp_path, monkeypatch):
         instance, "_prepare_software_update_strict", AsyncMock(return_value=True)
     )
     monkeypatch.setattr(
-        manager.process, "is_process_running", AsyncMock(return_value=False)
+        manager.process, "is_process_stopped", AsyncMock(return_value=True)
     )
     monkeypatch.setattr(
         manager, "read_installed_release", lambda root: ("v6.0.0", "x64")
@@ -90,7 +90,7 @@ async def test_fallback_requires_an_identifiable_installation(
 @pytest.mark.asyncio
 async def test_fallback_never_starts_while_official_updater_is_running(managed_run):
     managed_run._prepare_software_update_strict.side_effect = TimeoutError()
-    manager.process.is_process_running.return_value = True
+    manager.process.is_process_stopped.return_value = False
     with pytest.raises(manager.MaaUpdaterRunningError):
         await managed_run._prepare_software_update(object())
     assert managed_run._updater_running is True
@@ -227,7 +227,7 @@ async def test_failed_update_injects_runtime_config_and_restores_pending_package
 @pytest.mark.asyncio
 async def test_batch_following_account_blocks_active_updater(managed_run):
     managed_run._maa_update_checked = True
-    manager.process.is_process_running.return_value = True
+    manager.process.is_process_stopped.return_value = False
     task = SimpleNamespace(update_config_dir=managed_run.maa_set_path)
 
     with pytest.raises(manager.MaaUpdaterRunningError):
