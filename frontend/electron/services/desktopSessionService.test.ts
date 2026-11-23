@@ -124,6 +124,27 @@ it('repairs only through the approved repair operation', async () => {
   }
 })
 
+it('waits for the matching native park reply before showing a prompt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-prompt-'))
+  vi.stubGlobal('fetch', async (url: string) =>
+    new URL(url).pathname.endsWith('/describe')
+      ? Response.json({ python: 'python', root, source: root })
+      : Response.json({ updated: true })
+  )
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  try {
+    await service.check()
+    const first = service.parkForPrompt(1)
+    const next = service.parkForPrompt(2)
+    host.report({ event: 'prompt_parked', promptId: 1 })
+    host.report({ event: 'command_error', action: 'park_for_prompt', promptId: 2 })
+    await expect(Promise.all([first, next])).resolves.toEqual([true, false])
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it.each([
   { idle: true, hostExited: false },
   { idle: false, hostExited: false },
@@ -351,7 +372,7 @@ it.each([
   }
 )
 
-it('checks again before automatically signing out after a desktop task finishes', async () => {
+it('checks again before automatically disconnecting after a desktop task finishes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mas-desktop-idle-close-'))
   let idle = false
   let admitted = 1
@@ -395,7 +416,7 @@ it('checks again before automatically signing out after a desktop task finishes'
     }
   })
   const closeOnIdle = vi.fn(async () => {
-    const outcome = await service.close({ logoff: true, onlyIfIdle: true })
+    const outcome = await service.close({ logoff: false, onlyIfIdle: true })
     return outcome !== 'unverified'
   })
   const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn(), closeOnIdle)
@@ -418,7 +439,7 @@ it('checks again before automatically signing out after a desktop task finishes'
     expect(host.close).not.toHaveBeenCalled()
     await vi.waitFor(() => expect(service.snapshot.state).toBe('idle'), { timeout: 5500 })
     expect(checks).toBe(3)
-    expect(host.close).toHaveBeenCalledExactlyOnceWith(true)
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(false)
   } finally {
     await service.close()
     rmSync(root, { recursive: true, force: true })

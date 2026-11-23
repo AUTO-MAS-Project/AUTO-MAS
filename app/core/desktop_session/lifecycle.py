@@ -56,6 +56,7 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
 
         return check_maaend
     if isinstance(config, MaaFWConfig):
+        from app.task.game import game_is_emulator
         from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
         from app.task.MaaFW.tools.core.runner.run_plan import (
             _select_controller,
@@ -67,7 +68,7 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
 
         root = resolve_maafw_project_root(str(config.uid), config)
         controller = str(config.Info.Controller)
-        emulator_selected = config.Emulator.Id != "-"
+        emulator_selected = game_is_emulator(config)
         resource = str(config.Info.Resource)
 
         def check_maafw() -> bool:

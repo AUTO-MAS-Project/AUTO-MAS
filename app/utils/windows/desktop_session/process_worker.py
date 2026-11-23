@@ -112,13 +112,14 @@ def run_window_action(action: str, arguments: dict) -> int:
     process = managed_process(pid, expected_create_time=created)
     if process is None or process.create_time() != created:
         return 1
+    own_session = process_session(os.getpid())
     try:
-        if process_session(pid) != process_session(os.getpid()):
+        if process_session(pid) != own_session:
             return 1
-    except OSError as error:
-        if error.winerror not in {87, 1168}:
-            raise
-        return 1
+    except OSError:
+        if not process.is_running():
+            return 1
+        raise
     hwnd = get_main_window_handle(
         pid, arguments.get("title") or None, arguments.get("class") or None
     )

@@ -1,5 +1,6 @@
 """分身连接取消或写入失败时恢复已更改的 Windows 设置。"""
 
+import io
 import os
 import subprocess
 import sys
@@ -157,17 +158,16 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
 
 
 @pytest.mark.parametrize(
-    "registered_session,adopted,logoff_requested,keeps_session",
+    "registered_session,logoff_requested,keeps_session",
     [
-        (None, False, None, True),
-        (42, False, None, False),
-        (42, True, None, True),
-        (42, True, False, True),
-        (42, True, True, False),
+        (None, True, True),
+        (42, None, True),
+        (42, False, True),
+        (42, True, False),
     ],
 )
 def test_close_after_disconnect_logs_off_only_registered_session(
-    tmp_path, monkeypatch, registered_session, adopted, logoff_requested, keeps_session
+    tmp_path, monkeypatch, registered_session, logoff_requested, keeps_session
 ):
     from app.core.desktop_session import host
 
@@ -188,7 +188,6 @@ def test_close_after_disconnect_logs_off_only_registered_session(
     instance = host.Host(tmp_path)
     instance.report = lambda event, **fields: reports.append((event, fields))
     instance.session_id = registered_session
-    instance.adopted = adopted
     instance.viewer = SimpleNamespace(close=close_viewer)
     monkeypatch.setattr(host, "child_session", current_session)
     monkeypatch.setattr(host, "logoff_child", logoff)
@@ -198,6 +197,27 @@ def test_close_after_disconnect_logs_off_only_registered_session(
 
     assert session == (42 if keeps_session else None)
     assert reports[-1] == ("state", {"state": "idle"})
+
+
+def test_host_stdin_eof_disconnects_without_logging_off(tmp_path, monkeypatch):
+    from app.core.desktop_session import host
+
+    instance = host.Host(tmp_path)
+    instance.report = lambda *_args, **_fields: None
+    instance.session_id = 42
+    disconnected = []
+    instance.viewer = SimpleNamespace(
+        close=lambda: disconnected.append(True), pump_until=lambda _: None
+    )
+    monkeypatch.setattr(host.sys, "stdin", SimpleNamespace(buffer=io.BytesIO()))
+    monkeypatch.setattr(host, "bind", lambda *_: lambda _: None)
+    monkeypatch.setattr(
+        host, "logoff_child", lambda _: pytest.fail("EOF should preserve the session")
+    )
+
+    instance.run()
+
+    assert disconnected == [True]
 
 
 def test_connect_with_existing_child_leaves_it_running(tmp_path, monkeypatch):

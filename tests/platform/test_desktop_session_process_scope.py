@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
@@ -26,6 +27,40 @@ def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
     assert lifecycle.supports_task(general)
     assert not lifecycle.supports_task(WhimboxConfig.build())
+
+
+@pytest.mark.parametrize(
+    ("controller", "supported"), [("桌面端", True), ("安卓端", False)]
+)
+def test_desktop_session_judges_mfw_project_by_its_controller(
+    monkeypatch, tmp_path, controller, supported
+):
+    import json
+
+    from app.models.config import MaaFWConfig
+    from app.task.MaaFW.tools.embedded import embedded_project
+
+    (tmp_path / "interface.json").write_text(
+        json.dumps(
+            {
+                "interface_version": 2,
+                "name": "Audit",
+                "controller": [
+                    {"name": "安卓端", "type": "Adb"},
+                    {"name": "桌面端", "type": "Win32", "win32": {}},
+                ],
+                "resource": [{"name": "Default", "path": ["resource"]}],
+                "task": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        embedded_project, "resolve_maafw_project_root", lambda *_: tmp_path
+    )
+    config = MaaFWConfig.model_validate({"Info": {"Controller": controller}})
+
+    assert lifecycle.supports_task(config) is supported
 
 
 @pytest.mark.asyncio
@@ -498,6 +533,23 @@ async def test_desktop_worker_exit_stops_only_the_owned_root(monkeypatch, tmp_pa
 
 
 @pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
+def test_window_operation_after_target_exit_returns_false():
+    from app.utils.windows.desktop_session import process_worker
+
+    with subprocess.Popen([sys.executable, "-I", "-c", "pass"]) as child:
+        pid = child.pid
+        assert child.wait(timeout=10) == 0
+    del child
+
+    assert (
+        process_worker.run_window_action(
+            "hide_process_window", {"pid": pid, "createTime": 0.0}
+        )
+        == 1
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身进程执行器")
 @pytest.mark.asyncio
 async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_path):
     from app.utils.common.process.manager import ProcessManager
@@ -506,6 +558,7 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
     process = Mock(spec=psutil.Process, pid=101)
     process.create_time.return_value = 123.0
     process.is_running.return_value = True
+    process.create_time.return_value = 123.0
     manager = ProcessManager()
     manager.target_process = process
     target = session.DesktopProcessTarget(7, tmp_path, tmp_path)
@@ -755,10 +808,13 @@ def test_desktop_window_operation_skips_gone_or_reused_process(monkeypatch, crea
     target = None if created is None else Mock(spec=psutil.Process, pid=101)
     if target is not None:
         target.create_time.return_value = created
+        target.is_running.return_value = False
     monkeypatch.setattr(operations, "managed_process", lambda pid, **_: target)
 
-    def exited(_pid):
-        raise OSError(0, "ProcessIdToSessionId", None, 87)
+    def exited(pid):
+        if pid == 101:
+            raise OSError(0, "ProcessIdToSessionId", None, 87)
+        return 7
 
     session_lookup = Mock(side_effect=exited)
     monkeypatch.setattr(process_worker, "process_session", session_lookup)
@@ -768,7 +824,8 @@ def test_desktop_window_operation_skips_gone_or_reused_process(monkeypatch, crea
         )
         == 1
     )
-    assert session_lookup.call_count == int(created == 123.0)
+    looked_up_target = any(args == (101,) for args, _ in session_lookup.call_args_list)
+    assert looked_up_target is (created == 123.0)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="需要 Windows 分身宿主")

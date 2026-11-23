@@ -1,127 +1,199 @@
-import { expect, it, vi } from 'vite-plus/test'
+import { EventEmitter } from 'node:events'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import type { BrowserWindow } from 'electron'
+import { beforeEach, expect, it, vi } from 'vite-plus/test'
 import { registerDesktopSession } from './desktopSessionHandlers'
 
-const ipc = vi.hoisted(() => ({
-  calls: new Map<string, (...args: unknown[]) => unknown>(),
-  events: new Map<string, (...args: unknown[]) => unknown>(),
-  windows: [] as unknown[],
-}))
-const session = vi.hoisted(() => ({
-  snapshot: { state: 'connecting', busy: true, executing: false },
-  active: true,
-  position: vi.fn(),
-  close: vi.fn(),
-  changeWindow: vi.fn(),
-  closeRisk: vi.fn(),
+const mocks = vi.hoisted(() => ({
+  handle: vi.fn(),
+  on: vi.fn(),
   start: vi.fn(),
+  close: vi.fn(async () => {}),
+  changeWindow: vi.fn(),
+  park: vi.fn(async () => true),
+  messageBox: vi.fn(),
 }))
 
-vi.mock('electron', async () => {
-  const { EventEmitter } = await import('node:events')
-  class Window extends EventEmitter {
-    webContents = Object.assign(new EventEmitter(), {
-      send: vi.fn(),
-      setWindowOpenHandler: vi.fn(),
-    })
-    isDestroyed = () => false
-    isVisible = () => true
-    isMinimized = () => false
-    focus = vi.fn()
-    show = vi.fn()
-    loadURL = vi.fn()
-    getContentBounds = () => ({ x: 0, y: 0, width: 600, height: 400 })
-    getNativeWindowHandle = () => Buffer.alloc(8)
-    constructor() {
-      super()
-      ipc.windows.push(this)
-    }
+class TestWindow extends EventEmitter {
+  crashed = false
+  destroyed = false
+  minimized = false
+  webContents = Object.assign(new EventEmitter(), {
+    mainFrame: { url: pathToFileURL(resolve('test-app/dist/index.html')).href },
+    isDestroyed: () => this.destroyed,
+    isCrashed: () => this.crashed,
+    setWindowOpenHandler: vi.fn(),
+    send: vi.fn(),
+  })
+
+  isDestroyed = () => this.destroyed
+  isMinimized = () => this.minimized
+  isVisible = () => true
+  show = vi.fn()
+  focus = vi.fn()
+  destroy = () => {
+    this.destroyed = true
+    this.emit('closed')
   }
-  return {
-    BrowserWindow: Window,
-    app: {},
-    dialog: {},
-    shell: {},
-    screen: { getDisplayMatching: () => ({ scaleFactor: 1 }) },
-    ipcMain: {
-      handle: (channel: string, handler: (...args: unknown[]) => unknown) =>
-        ipc.calls.set(channel, handler),
-      on: (channel: string, handler: (...args: unknown[]) => unknown) =>
-        ipc.events.set(channel, handler),
-    },
+  restore = () => {
+    this.minimized = false
+    this.emit('restore')
   }
-})
-vi.mock('./analyticsHandlers', () => ({
-  isApplicationWindowSender: (event: { owner: unknown }, owner: unknown) => owner === event.owner,
+  getContentBounds = () => ({ x: 0, y: 0, width: 600, height: 400 })
+  getNativeWindowHandle = () => Buffer.alloc(8)
+  loadFile = async () => {
+    this.webContents.mainFrame.url += '#/desktop-session'
+  }
+}
+
+let preview: TestWindow | undefined
+const snapshot = { state: 'connecting' }
+
+vi.mock('electron', () => ({
+  app: { getAppPath: () => resolve('test-app') },
+  BrowserWindow: function () {
+    const window = new TestWindow()
+    preview = window
+    return window
+  },
+  dialog: { showMessageBox: mocks.messageBox },
+  screen: { getDisplayMatching: () => ({ scaleFactor: 1 }) },
+  ipcMain: { handle: mocks.handle, on: mocks.on },
 }))
-vi.mock('../services/featureAnalytics', () => ({ beginMainFeature: vi.fn() }))
-vi.mock('../services/instanceConfig', () => ({
-  getBackendOwnership: () => 'owned',
-  getDevelopmentServerUrl: () => 'http://127.0.0.1:5173',
-  getRendererEnvironmentArguments: () => [],
-}))
+vi.mock('../services/analyticsService', () => ({ analyticsService: {} }))
+vi.mock('../services/startupHardware/monitor', () => ({}))
+vi.mock('../services/featureAnalytics', () => ({}))
 vi.mock('../services/desktopSessionService', () => ({
   DesktopSessionService: class {
-    constructor() {
-      return session
-    }
+    active = true
+    adopted = true
+    snapshot = snapshot
+    closeRisk = async () => ({ activeTasks: false, unmanagedPrograms: false })
+    position = vi.fn()
+    start = mocks.start
+    waitForStart = async () => {}
+    close = mocks.close
+    changeWindow = mocks.changeWindow
+    parkForPrompt = mocks.park
   },
 }))
 
-it.skipIf(process.platform !== 'win32' || process.arch !== 'x64').each([
-  ['connected', 'connected'],
-  ['disconnected', 'failed'],
-])(
-  'settles the task when exit is cancelled and the desktop has become %s',
-  async (finalState, outcome) => {
-    ipc.calls.clear()
-    ipc.events.clear()
-    ipc.windows.length = 0
-    session.snapshot.state = 'connecting'
-    session.close.mockClear()
-    const { BrowserWindow } = await import('electron')
-    const main = new BrowserWindow()
-    const lifecycle = registerDesktopSession(
-      () => main,
-      '',
-      () => 'en-US'
+beforeEach(() => {
+  vi.clearAllMocks()
+  preview = undefined
+  snapshot.state = 'connecting'
+})
+
+function invoke(window: TestWindow, channel: string, ...args: unknown[]) {
+  const [, handler] = mocks.handle.mock.calls.find(
+    ([name]) => name === `desktop-session:${channel}`
+  )!
+  return handler({ sender: window.webContents, senderFrame: window.webContents.mainFrame }, ...args)
+}
+
+function openPreview() {
+  const main = new TestWindow()
+  const bridge = registerDesktopSession(
+    () => main as unknown as BrowserWindow,
+    '',
+    () => 'en-US'
+  )
+  invoke(main, 'open', { queueIds: [], resolution: 'primary', mode: 'native' })
+  return { bridge, window: preview! }
+}
+
+function closePreview(bridge: ReturnType<typeof registerDesktopSession>, window: TestWindow) {
+  window.emit('close', { preventDefault() {} })
+  return bridge.closeForAppQuit()
+}
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '恢复预览窗口时，注销确认仍可操作，取消后才恢复原生画面',
+  async () => {
+    const { bridge, window } = openPreview()
+    const closing = closePreview(bridge, window)
+    await vi.waitFor(() =>
+      expect(invoke(window, 'prompt:get')).toMatchObject({ kind: 'close-adopted' })
     )
-    const mainEvent = { owner: main }
-    const start = Promise.withResolvers<{ queues: [] }>()
-    session.start.mockReturnValue(start.promise)
-    session.closeRisk.mockResolvedValue({ activeTasks: false, unmanagedPrograms: null })
+    const { id } = invoke(window, 'prompt:get')
+    window.minimized = true
+    window.emit('minimize')
+    window.restore()
+    invoke(window, 'prompt:respond', id, 'cancel')
 
-    const connected = ipc.calls.get('desktop-session:connect-for-task')!(
-      mainEvent
-    ) as Promise<string>
-    const delivered = vi.fn()
-    void connected.then(delivered)
-    const previewEvent = {
-      owner: ipc.windows[1],
-      senderFrame: { url: 'http://127.0.0.1:5173/#/desktop-session' },
-    }
-    ipc.events.get('desktop-session:bounds')!(previewEvent, { x: 0, y: 0, width: 500, height: 300 })
-    const request = { queueIds: [], mode: 'proxy', resolution: '1080p' }
-    const connecting = ipc.calls.get('desktop-session:start')!(previewEvent, request)
-
-    const quitting = lifecycle.closeForAppQuit()
-    const getPrompt = () =>
-      ipc.calls.get('desktop-session:prompt:get')!(mainEvent) as { id: number; kind: string } | null
-    await vi.waitFor(() => expect(getPrompt()?.kind).toBe('quit'))
-    session.snapshot.state = 'connected'
-    start.resolve({ queues: [] })
-    await connecting
-    expect(delivered).not.toHaveBeenCalled()
-
-    session.snapshot.state = finalState
-    ipc.calls.get('desktop-session:prompt:respond')!(mainEvent, getPrompt()!.id, 'cancel')
-    expect(await quitting).toBe(false)
-    expect(await connected).toBe(outcome)
-    expect(session.close).not.toHaveBeenCalled()
-    if (finalState === 'disconnected') {
-      const retry = ipc.calls.get('desktop-session:connect-for-task')!(mainEvent)
-      expect(retry).not.toBe(connected)
-      ipc.calls.get('desktop-session:cancel-task-connect')!(previewEvent)
-      expect(await retry).toBe('cancelled')
-    }
+    await expect(closing).resolves.toBe(false)
+    expect(mocks.changeWindow.mock.calls.slice(0, -1).flat()).not.toContain('visible')
+    expect(mocks.changeWindow).toHaveBeenLastCalledWith('visible')
+    expect(mocks.close).not.toHaveBeenCalled()
   }
 )
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '画面移出失败或预览失去响应时，改用原生确认且可取消',
+  async () => {
+    const { bridge, window } = openPreview()
+    mocks.messageBox.mockResolvedValue({ response: 2 })
+    mocks.park.mockResolvedValueOnce(false)
+    await expect(closePreview(bridge, window)).resolves.toBe(false)
+    expect(invoke(window, 'prompt:get')).toBeNull()
+
+    const closing = closePreview(bridge, window)
+    await vi.waitFor(() =>
+      expect(invoke(window, 'prompt:get')).toMatchObject({ kind: 'close-adopted' })
+    )
+    window.emit('unresponsive')
+    await expect(closing).resolves.toBe(false)
+    await expect(closePreview(bridge, window)).resolves.toBe(false)
+    expect(mocks.messageBox).toHaveBeenCalledTimes(3)
+    expect(mocks.close).not.toHaveBeenCalled()
+  }
+)
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '预览渲染进程崩溃后，取消原生确认保留会话，再次选择仅断开也不会注销',
+  async () => {
+    const { bridge, window } = openPreview()
+    window.crashed = true
+    mocks.messageBox.mockResolvedValueOnce({ response: 2 }).mockResolvedValueOnce({ response: 0 })
+
+    await expect(closePreview(bridge, window)).resolves.toBe(false)
+    expect(window.destroyed).toBe(false)
+    expect(mocks.close).not.toHaveBeenCalled()
+    await expect(closePreview(bridge, window)).resolves.toBe(true)
+    expect(window.destroyed).toBe(true)
+    expect(mocks.close).toHaveBeenCalledExactlyOnceWith({ logoff: false, onlyIfIdle: false })
+  }
+)
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64').each([
+  ['connected', 'connected'],
+  ['disconnected', 'failed'],
+])('settles the pending task after cancelling app quit (%s)', async (state, outcome) => {
+  const main = new TestWindow()
+  const bridge = registerDesktopSession(
+    () => main as unknown as BrowserWindow,
+    '',
+    () => 'en-US'
+  )
+  const pending = invoke(main, 'connect-for-task') as Promise<string>
+  const window = preview!
+  const [, bounds] = mocks.on.mock.calls.find(([name]) => name === 'desktop-session:bounds')!
+  bounds(
+    { sender: window.webContents, senderFrame: window.webContents.mainFrame },
+    { x: 0, y: 0, width: 500, height: 300 }
+  )
+  const start = Promise.withResolvers<{ queues: [] }>()
+  mocks.start.mockReturnValue(start.promise)
+  const connecting = invoke(window, 'start', { queueIds: [], mode: 'proxy', resolution: '1080p' })
+  const quitting = bridge.closeForAppQuit()
+  await vi.waitFor(() => expect(invoke(main, 'prompt:get')).toMatchObject({ kind: 'quit' }))
+  snapshot.state = 'connected'
+  start.resolve({ queues: [] })
+  await connecting
+  snapshot.state = state
+  invoke(main, 'prompt:respond', invoke(main, 'prompt:get').id, 'cancel')
+  await expect(quitting).resolves.toBe(false)
+  await expect(pending).resolves.toBe(outcome)
+  expect(mocks.close).not.toHaveBeenCalled()
+})
