@@ -161,6 +161,8 @@ class TaskUserItem(RuntimeEntry):
     info: Info = Field(default_factory=Info)
     logs: ConfigCollection[LogRecord] = collection(LogRecord)
     _config_ref: ReferenceType | None = PrivateAttr(default=None)
+    # [兼容旧专项] 仅在完成摘要中展示格式化后的 LogBox 节点。
+    _completion_details: tuple[str, ...] = PrivateAttr(default=())
 
     def __init__(self, user_id=None, name=None, status=None, **values):
         """[兼容旧专项] 旧平铺用户构造及 Default 归一；新代码使用 info 载荷和 default。"""
@@ -294,10 +296,18 @@ class TaskScriptItem(RuntimeEntry):
     def compute_result(self) -> str:
         if not self.users:
             return "用户未加载"
-        return "\n".join(
-            f"{user.info.name or uid}: {user.info.result}"
-            for uid, user in self.users.items()
+        task = self.root
+        show_details = isinstance(task, TaskItem) and task.info.status in (
+            "success",
+            "error",
+            "cancelled",
         )
+        rows: list[str] = []
+        for uid, user in self.users.items():
+            rows.append(f"{user.info.name or uid}: {user.info.result}")
+            if show_details:
+                rows.extend(user._completion_details)
+        return "\n".join(rows)
 
     @property
     def script_id(self) -> str:

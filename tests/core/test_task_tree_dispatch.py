@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import nullcontext
 from copy import deepcopy
+from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -1110,3 +1111,60 @@ async def test_stop_all_blocks_new_requests_and_waits_for_inflight_creation(sche
         await asyncio.wait_for(creating, 3)
         await asyncio.wait_for(stopping, 3)
     assert not manager.task_handler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "failed", "expected"),
+    [
+        ("逐条", False, "12:16 - ✅ 成功: 领取奖励\n    12:16 - ✅ 成功: 消耗体力"),
+        ("汇总", False, "✅ 成功: 领取奖励, 消耗体力"),
+        ("关闭", False, None),
+        ("汇总", True, "❌ 失败: 连接超时"),
+    ],
+)
+async def test_legacy_logbox_nodes_reach_completed_task_result(
+    scheduler, monkeypatch, mode, failed, expected
+):
+    from app.core import Publisher
+    from app.core.ws import protocol
+    from app.utils.common.log_box.results import LogEntry
+
+    manager, _, _, sid = scheduler
+    timestamp = datetime.now().astimezone().replace(hour=12, minute=16).timestamp()
+
+    class WithLogBoxNodes(Builtin):
+        async def main_task(self):
+            await super().main_task()
+            first = self.script_info.user_list[0]
+            await first.set_state(status="异常" if failed else "完成")
+            state = self.user_state(first)
+            state.push_log_mode = mode
+            for item in (
+                ("普通", "✅ 成功: 领取奖励", timestamp),
+                LogEntry("普通", "✅ 成功: 消耗体力", timestamp),
+                ("失败", "❌ 失败: 连接超时", timestamp),
+            ):
+                self.callbacks.submit(state.append_push_log(item))
+
+    monkeypatch.setattr(manager, "manager_factories", {GeneralConfig: WithLogBoxNodes})
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    completed = next(
+        call.kwargs["data"]
+        for call in Publisher.send.call_args_list
+        if call.kwargs["id"] == str(uid)
+        and call.kwargs["type"] == protocol.TASK_COMPLETED
+    )
+
+    assert completed.outcome == ("error" if failed else "success")
+    assert ("领取奖励" in completed.result) == (mode != "关闭")
+    assert ("连接超时" in completed.result) == failed
+    if expected:
+        assert expected in completed.result
+        assert completed.result.index("first:") < completed.result.index(expected)
+        assert completed.result.index(expected) < completed.result.index("second:")
+    assert manager.get_task_status(str(uid)).detail == completed.result
