@@ -602,6 +602,7 @@ async def test_single_queue_dispatches_items_in_order(scheduler, monkeypatch):
     uid = await manager.start(
         TaskMode.AUTO_PROXY, {0: {"uid": str(qid), "children": children}}
     )
+    assert manager.get_runtime_snapshot().tasks[0].targetId == str(qid)
     run = manager.task_handler[uid]
     await asyncio.wait_for(run.accomplish.wait(), 4)
     assert calls == [0, 1, 2]
