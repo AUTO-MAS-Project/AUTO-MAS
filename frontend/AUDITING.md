@@ -33,4 +33,4 @@ yarn audit:duplicates
 
 ## 治理后验证
 
-修改代码后在 `frontend/` 按需运行 `yarn lint`、`yarn typecheck`、`yarn format:check`、`yarn test` 与相关 `yarn e2e`；一次性探针规则同 [TESTING.md](TESTING.md)。
+常规前端静态检查（`yarn lint`、`yarn typecheck`、`yarn format:check`、`audit:i18n` 与 Vue 行数基线）可在仓库根目录统一运行 `uv run --no-sync python scripts/pr_check.py`；行为测试按需在 `frontend/` 运行 `yarn test` 与相关 `yarn e2e`，一次性探针规则同 [TESTING.md](TESTING.md)。

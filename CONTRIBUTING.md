@@ -1,30 +1,64 @@
-# 开发指引 / Developer Guidelines
+# 开发起步 / Quick Start
 
-欢迎参与 AUTO-MAS 项目开发！参与开发前，请阅读 **AUTO-MAS 开发文档**。
+参与开发前建议先浏览 **[AUTO-MAS 开发文档](https://doc.auto-mas.top/developer/)**；日常提 PR 只需走下面 4 步：
 
-- [AUTO-MAS 开发文档](https://doc.auto-mas.top/developer/)。
+1. **从最新 `origin/dev` 拉出开发分支**（不要在旧本地 `dev` 上直接改）：
 
-Welcome to contribute to the AUTO-MAS project! Before participating in development, please read the **AUTO-MAS Developer Documentation**.
+   ```powershell
+   git fetch origin dev
+   git switch --no-track -c feat/<你的功能名> origin/dev
+   ```
 
-- [AUTO-MAS Developer Documentation](https://doc.auto-mas.top/developer/).
+2. **安装锁定依赖并启动**（需已安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 与 Node 24 / Yarn 4）：
 
-# 开发环境 / Development Environment
+   ```powershell
+   # 仓库根目录：准备后端环境
+   uv sync --locked --group dev
+   uv run --no-sync python main.py
 
-后端依赖由 `pyproject.toml` + `uv.lock` 管理：
+   # 另一终端（frontend/ 目录）：准备并预览前端
+   Set-Location frontend
+   yarn install --immutable
+   yarn web
+   ```
 
-1. 安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)。
-2. 在仓库根目录执行 `uv sync`，会按 `uv.lock` 在 `.venv` 中创建与锁定版本一致的环境。
-3. 执行 `uv run main.py` 启动。
+   > `requirements.txt` 与 `pyproject.toml` 并存，改依赖时同步更新两者并执行 `uv lock` 提交 `uv.lock`。桌面端完整调试见 [frontend/README.md](frontend/README.md)。
 
-`requirements.txt` 目前与 `pyproject.toml` 并存，修改依赖时请同步更新两者。**修改 `pyproject.toml` 后必须重新执行 `uv lock`，并将更新后的 `uv.lock` 一并提交**，否则 CI 的锁文件检查会失败。`dev` 及各开发分支负责更新 `uv.lock`；发布分支只消费锁文件，不在其上重新解析依赖。
+3. **参考代码样例**：
 
-Backend dependencies are managed via `pyproject.toml` + `uv.lock`:
+   | 改动范围 | 参考文件 | 关键约束 |
+   | --- | --- | --- |
+   | 后端 HTTP 接口 | `app/api/setting.py`、`app/api/queue.py` | 路由保持薄适配；破坏性接口须加 `tags=["Delete"]`；改完 schema 跑 `cd frontend && yarn openapi`，禁手改 `frontend/src/api/` |
+   | 后端配置模型 | `app/models/config/setting.py` | `ConfigEntry`/`ConfigGroup` 单点声明，经 `app/config/wire.py` 派生 API 契约 |
+   | WebSocket 通信 | [docs/websocket-architecture.md](docs/websocket-architecture.md) | 前后端共用唯一主连接 `/api/core/ws`，统一 `WSEnvelope` 信封 |
+   | 前端页面 / 弹窗 | `frontend/src/views/setting/`、`frontend/src/components/ui/` | 单个 `.vue` ≤ 500 行；三语词表（`zh-CN`/`en-US`/`ja-JP`）同步更新；暗色只用 `--ant-*` / `html.dark` |
+   | 回归测试 | `tests/scripts/test_pr_check.py`、`frontend/src/composables/useSaveQueue.test.ts` | 后端 `uv run --no-sync python -m pytest <路径> -q`；前端 Node-only（无 `jsdom`） |
 
-1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
-2. Run `uv sync` in the repository root; it creates a `.venv` matching the locked versions in `uv.lock`.
-3. Start the app with `uv run main.py`.
+4. **提 PR 前跑 1 条本地一键预检**（自动按改动路径运行对应 CI 门禁，失败会直接给出修复命令）：
 
-`requirements.txt` currently coexists with `pyproject.toml` — update both when changing dependencies. **After editing `pyproject.toml`, you must re-run `uv lock` and commit the updated `uv.lock`**, or the CI lockfile check will fail. `dev` and other development branches keep `uv.lock` up to date; release branches only consume the lockfile and never re-resolve it.
+   ```powershell
+   # 用户可见改动先加 1 条更新日志碎片（不超过 50 字）：
+   uv run --no-sync python scripts/changelog.py add <fix|feat|change> <项目键> "<一句话说明>"
+
+   # 一键跑完本地全部相关 CI 门禁（纯文档/测试/CI 改动加 --skip-changelog）：
+   uv run --no-sync python scripts/pr_check.py
+   ```
+
+   可选开启本地 `pre-push` 温和提示钩子（默认只提醒不阻断推送，并兼容已有的 `.git/hooks/`）：
+
+   ```powershell
+   git config core.hooksPath .githooks
+   ```
+
+   全绿后推送分支并向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR（纯文档/测试/CI PR 加上 `skip-changelog` 标签）。
+
+---
+
+Welcome to contribute to AUTO-MAS! Please read the **[Developer Documentation](https://doc.auto-mas.top/developer/)** first. Quick start:
+
+1. Branch off latest `origin/dev`: `git fetch origin dev && git switch --no-track -c feat/<name> origin/dev`
+2. Sync locked deps: `uv sync --locked --group dev` (backend) and `cd frontend && yarn install --immutable` (frontend). Keep `requirements.txt` and `uv.lock` (`uv lock`) in sync whenever changing `pyproject.toml`.
+3. Add a changelog fragment for user-visible changes (`uv run --no-sync python scripts/changelog.py add <type> <project> "<summary>"`), then run `uv run --no-sync python scripts/pr_check.py` (pass `--skip-changelog` for docs/tests/CI-only PRs) before opening a PR to `dev`.
 
 # 重要事项 / Important Terms
 

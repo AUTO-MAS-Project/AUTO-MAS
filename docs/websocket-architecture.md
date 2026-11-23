@@ -71,8 +71,10 @@ await Publisher.send(
 ```python
 from app.core.ws import Dispatcher, protocol
 
+
 def handle(envelope):  # 同步或异步均可
     ...
+
 
 unregister = Dispatcher.register(protocol.ID_MAIN, "some.type", handle)
 ```

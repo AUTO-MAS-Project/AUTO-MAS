@@ -16,6 +16,7 @@ Load this hub first, then load **only the minimum sub-skills** needed for the ta
 5. **Changelog**: User-visible changes MUST add one fragment via `python scripts/changelog.py add <type> <project> "<sentence>"` (rules in `AGENTS.md` / `changelog.d/README.md`).
 6. **Telemetry**: Any new or changed user-visible workflow, page, lifecycle, or adapter flow MUST load `mas-telemetry` (reuse existing boundary or add collection; prose/style/read-only tasks do not add collection).
 7. **Testing & Failure Integrity**: Load `mas-testing` before choosing verification or adding/editing/reviewing tests. NEVER silently swallow errors (`except Exception: pass`), overwrite corrupted config with defaults, or turn failures into success.
+8. **Local Preflight**: Before committing or opening a PR, run `uv run --no-sync python scripts/pr_check.py` (pass `--skip-changelog` for docs/tests/CI-only changes) to run matching CI gates locally.
 
 ## Sub-Skill Routing Table
 

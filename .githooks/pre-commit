@@ -1,0 +1,12 @@
+#!/bin/sh
+# AUTO-MAS opt-in pre-commit passthrough（通过 git config core.hooksPath .githooks 启用）
+# 本仓库默认不在 commit 阶段拦人；仅在检测到本机 .git/hooks/pre-commit 时透传执行，避免顶掉本机 guard。
+set -u
+
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")
+local_hook="$common_dir/hooks/pre-commit"
+if [ -f "$local_hook" ] && [ -x "$local_hook" ]; then
+  exec "$local_hook" "$@"
+fi
+
+exit 0
