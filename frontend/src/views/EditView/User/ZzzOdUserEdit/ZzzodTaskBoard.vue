@@ -10,6 +10,7 @@ import {
   HistoryOutlined,
 } from '@ant-design/icons-vue'
 import { useZzzOdTaskBoard } from '@/composables/useZzzOdTaskBoard'
+import { AppModal } from '@/components/ui'
 import ZzzOdPlanListEditor from '@/components/ZzzOdPlanListEditor.vue'
 import type { useZzzodTaskConfig } from './useZzzodTaskConfig'
 import type { TaskCard } from './zzzodTypes'
@@ -194,13 +195,12 @@ const jumpFromTaskCard = (appId: string) => {
       </div>
     </template>
   </draggable>
-  <a-modal
+  <AppModal
     v-model:open="planModal.open"
+    size="lg"
     :title="planModal.title"
-    :width="760"
-    :confirm-loading="planModal.saving"
+    :submitting="planModal.saving"
     :mask-closable="false"
-    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
     @ok="savePlanModal"
   >
     <a-spin :spinning="planModal.loading">
@@ -235,7 +235,7 @@ const jumpFromTaskCard = (appId: string) => {
         </div>
       </div>
     </a-spin>
-  </a-modal>
+  </AppModal>
 </template>
 <style scoped>
 @import './zzzodSectionHeader.css';

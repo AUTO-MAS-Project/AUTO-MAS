@@ -1,11 +1,14 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :title="t('core.edit.mfwHotkey')"
     :width="560"
+    :ok-text="t('core.edit.mfwHotkeySave')"
+    :cancel-text="t('core.common.cancel')"
+    :ok-disabled="invalidCount > 0"
     :keyboard="!recording"
     :mask-closable="!recording"
-    destroy-on-close
+    @ok="handleSave"
     @cancel="emit('update:open', false)"
   >
     <div class="hotkey-modal">
@@ -65,54 +68,46 @@
         </template>
       </div>
     </div>
-    <template #footer>
-      <div class="hotkey-footer">
-        <div class="hotkey-footer-left">
-          <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
-            {{ t('core.edit.mfwHotkeyRestoreAll') }}
+    <template #footer-left>
+      <div class="hotkey-footer-left">
+        <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
+          {{ t('core.edit.mfwHotkeyRestoreAll') }}
+        </a-button>
+        <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
+             来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
+        <a-dropdown :trigger="['click']">
+          <a-button type="link" class="hotkey-reset-all">
+            {{ t('core.edit.mfwHotkeyImport') }}
+            <DownOutlined />
           </a-button>
-          <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
-               来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
-          <a-dropdown :trigger="['click']">
-            <a-button type="link" class="hotkey-reset-all">
-              {{ t('core.edit.mfwHotkeyImport') }}
-              <DownOutlined />
-            </a-button>
-            <template #overlay>
-              <a-menu>
-                <a-menu-item-group
-                  v-if="shownCandidates.length > 0"
-                  :title="t('core.edit.mfwHotkeyImportFrom', { dir: shownDir })"
+          <template #overlay>
+            <a-menu>
+              <a-menu-item-group
+                v-if="shownCandidates.length > 0"
+                :title="t('core.edit.mfwHotkeyImportFrom', { dir: shownDir })"
+              >
+                <a-menu-item
+                  v-for="candidate in shownCandidates"
+                  :key="candidate.id"
+                  @click="applyImport(candidate)"
                 >
-                  <a-menu-item
-                    v-for="candidate in shownCandidates"
-                    :key="candidate.id"
-                    @click="applyImport(candidate)"
-                  >
-                    {{ candidate.source }} · {{ candidate.name }}
-                    <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
-                      {{ t('core.edit.mfwHotkeyImportLastUsed') }}
-                    </a-tag>
-                  </a-menu-item>
-                </a-menu-item-group>
-                <a-menu-divider v-if="shownCandidates.length > 0" />
-                <a-menu-item key="__pick-dir" @click="pickImportDirectory">
-                  <FolderOpenOutlined />
-                  {{ t('core.edit.mfwHotkeyImportPickDir') }}
+                  {{ candidate.source }} · {{ candidate.name }}
+                  <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
+                    {{ t('core.edit.mfwHotkeyImportLastUsed') }}
+                  </a-tag>
                 </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-        </div>
-        <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('core.common.cancel') }}</a-button>
-          <a-button type="primary" :disabled="invalidCount > 0" @click="handleSave">
-            {{ t('core.edit.mfwHotkeySave') }}
-          </a-button>
-        </a-space>
+              </a-menu-item-group>
+              <a-menu-divider v-if="shownCandidates.length > 0" />
+              <a-menu-item key="__pick-dir" @click="pickImportDirectory">
+                <FolderOpenOutlined />
+                {{ t('core.edit.mfwHotkeyImportPickDir') }}
+              </a-menu-item>
+            </a-menu>
+          </template>
+        </a-dropdown>
       </div>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -120,6 +115,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import type { MaaFWOptionInfo } from '@/types/script'
 import {

@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import type { GlobalConfig, FluxdownRecord } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import { AppModal } from '@/components/ui'
 
 const props = defineProps<{ settings: GlobalConfig }>()
 const { t } = useI18n()
@@ -93,12 +94,11 @@ const showUpdateHistory = ref(false)
     </a-button>
   </SettingRow>
 
-  <a-modal
+  <AppModal
     v-model:open="showUpdateHistory"
     :title="t('core.setting.others.lastUpdateHistory')"
     :width="700"
-    :footer="null"
-    :destroy-on-close="true"
+    footer="none"
     class="update-history-modal"
   >
     <a-spin :spinning="historyLoading" class="history-loading">
@@ -138,7 +138,7 @@ const showUpdateHistory = ref(false)
       </a-timeline>
       <NoData v-else :description="t('core.setting.others.noHistory')" />
     </a-spin>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

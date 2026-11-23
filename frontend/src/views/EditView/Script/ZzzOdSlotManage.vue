@@ -140,13 +140,11 @@
     </a-collapse>
 
     <!-- 恢复落到某个用户的绑定槽：只物化到裸槽号的恢复没有出口，MAS 不会认领它 -->
-    <a-modal
+    <AppModal
       v-model:open="restoreTarget.open"
+      size="sm"
       :title="t('core.edit.zzzodRecycleRestore')"
-      :confirm-loading="restoring"
-      :closable="!restoring"
-      :mask-closable="!restoring"
-      :keyboard="!restoring"
+      :submitting="restoring"
       :ok-text="t('core.edit.zzzodRecycleRestore')"
       @ok="submitRestore"
     >
@@ -186,13 +184,14 @@
           })
         }}
       </a-typography-text>
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ClearOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import { useZzzOdSlotManage } from '@/composables/useZzzOdSlotManage'
 
 const props = defineProps<{

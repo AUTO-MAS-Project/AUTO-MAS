@@ -61,10 +61,11 @@
       @created="uid => (activeKey = uid)"
       @close="editorOpen = false"
     />
-    <a-modal
+    <AppModal
       :open="foundOpen"
+      size="md"
       :title="t('core.games.discoveryResults')"
-      :footer="null"
+      footer="none"
       @cancel="foundOpen = false"
     >
       <a-list :data-source="found">
@@ -78,7 +79,7 @@
         </template>
         <template #emptyText><a-empty :description="t('core.games.noDiscovery')" /></template>
       </a-list>
-    </a-modal>
+    </AppModal>
     <a-alert
       v-for="item in activeOperations"
       :key="item.taskId"
@@ -101,6 +102,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import type { ActiveTriggerField } from '@/api'
 import { gameDevices } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
