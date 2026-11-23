@@ -10,7 +10,9 @@ from app.config import ConfigCollection, config_manager
 from app.models.config import EmulatorConfig, MaaConfig
 from app.models.task import TaskItem, TaskMode
 from app.services import script_install
+from app.task.history_core import TaskHistorySession
 from app.task.MAA import manager
+from app.task.MAA.registration import build_config_handler
 from app.task.MAA.tools import install_recovery as recovery
 from app.task.MAA.tools.update_config import write_maa_update_config
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
@@ -157,7 +159,15 @@ async def test_maa_manager_resource_recovery_goes_through_common_entry(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "pending", ["resource-recovery", "registered-package", "snapshot", "journal"]
+    "pending",
+    [
+        "resource-recovery",
+        "registered-package",
+        "snapshot",
+        "journal",
+        "relocated",
+        "relocated-late",
+    ],
 )
 async def test_view_with_pending_update_keeps_installation_intact(
     maa_root, monkeypatch, pending
@@ -197,6 +207,7 @@ async def test_view_with_pending_update_keeps_installation_intact(
     root = TaskItem(info={"mode": TaskMode.SCRIPT_VIEW})
     script = await add_script(root, str(config.uid))
     instance = manager.MaaManager(script, device_provider=AsyncMock())
+    instance.history = TaskHistorySession(root)
     snapshot = workspace / f"data/{script.script_id}/Temp"
     if pending in ("snapshot", "journal"):
         io_utils.write_file(config_file, {"Update": original_update})
@@ -216,13 +227,41 @@ async def test_view_with_pending_update_keeps_installation_intact(
                 script_id=script.script_id,
             )
     monkeypatch.setattr(manager.Config, "ScriptConfig", {config.uid: config})
-    monkeypatch.setattr(
-        manager, "acquire_resource_access_lock", AsyncMock(return_value=None)
-    )
+    access = AsyncMock(return_value=None)
+    kill = AsyncMock(return_value=True)
+    if pending in ("relocated", "relocated-late"):
+        destination = maa_root.with_name("another-maa")
+        name = "gui.new.json" if pending == "relocated-late" else "gui.new.json.bak"
+        destination_config = destination / "config" / name
+        io_utils.write_file(
+            destination_config, {"Update": original_update}, format=".json"
+        )
+        (destination / "MAA.exe").touch()
+        (destination / package.name).write_bytes(package.read_bytes())
+        monkeypatch.setitem(
+            manager.Config._script_config_handlers, MaaConfig, build_config_handler()
+        )
+
+        async def change_install_while_waiting(install, **_):
+            if install == maa_root:
+                refusal = await manager.Config.update_script_settings(
+                    script.script_id, {"Info": {"Path": str(destination)}}
+                )
+                assert refusal is None
+
+        if pending == "relocated":
+            access.side_effect = change_install_while_waiting
+        else:
+
+            async def relocate_during_stop(exe):
+                await change_install_while_waiting(exe.parent)
+                return True
+
+            kill.side_effect = relocate_during_stop
+    monkeypatch.setattr(manager, "acquire_resource_access_lock", access)
     monkeypatch.setattr(
         manager.process, "is_process_stopped", AsyncMock(return_value=True)
     )
-    kill = AsyncMock(return_value=True)
     monkeypatch.setattr(manager.process, "kill_process", kill)
     monkeypatch.setattr(manager, "read_resource_clock", lambda root: resource_clock)
 
@@ -240,8 +279,16 @@ async def test_view_with_pending_update_keeps_installation_intact(
         launch.assert_not_awaited()
         assert config_file.read_bytes() == original_config
         assert not (maa_root / ".automas-resource-update.json").exists()
-        if pending != "registered-package":
+        if pending in ("resource-recovery", "snapshot", "journal"):
             kill.assert_not_awaited()
+        if pending in ("relocated", "relocated-late"):
+            assert config.Info.Path == destination
+            assert io_utils.read_dict_file(destination_config, format=".json") == {
+                "Update": original_update
+            }
+            assert (destination / package.name).is_file()
+            if pending == "relocated":
+                assert not destination_config.with_suffix("").exists()
         if pending == "resource-recovery":
             assert record.read_bytes() == original_record
         else:
@@ -252,6 +299,7 @@ async def test_view_with_pending_update_keeps_installation_intact(
             assert snapshot.with_name("Temp.maa-update.json").is_file()
     finally:
         await instance._finalize_task()
+        await instance.history.close()
 
 
 @pytest.mark.asyncio

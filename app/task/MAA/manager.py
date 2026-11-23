@@ -439,6 +439,12 @@ class MaaManager(ScriptManagerBase):
         if root_path is None:
             raise ValueError("Path未配置，请检查路径设置")
         self.maa_set_path = root_path / "config"
+        if self.task_info.view_only and (
+            root_path != install or not (self.maa_set_path / "gui.new.json").is_file()
+        ):
+            raise MaaUpdateUnsafeError(
+                "MAA 安装目录已变更或主配置不存在，请检查后再查看历史备份"
+            )
         self.temp_path = snapshot_path
 
         # 初始化模拟器管理器
