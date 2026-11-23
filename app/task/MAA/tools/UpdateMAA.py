@@ -168,9 +168,11 @@ async def update_maa(
 async def _wait_for_updater(maa_path: Path) -> None:
     try:
         async with asyncio.timeout(_UPDATER_TIMEOUT):
-            while await process.is_process_running(maa_path / "MAA.Updater.exe"):
+            while not await process.is_process_stopped(maa_path / "MAA.Updater.exe"):
                 await asyncio.sleep(0.2)
-        if not await process.kill_process(maa_path / "MAA.exe"):
+        if not await process.kill_process(
+            maa_path / "MAA.exe"
+        ) or not await process.is_process_stopped(maa_path / "MAA.exe"):
             raise MaaUpdaterRunningError(
                 "无法关闭更新后的 MAA 窗口，请退出 MAA 后从原生配置备份恢复"
             )

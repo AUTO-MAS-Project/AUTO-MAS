@@ -47,6 +47,7 @@ import re
 import shutil
 import zipfile
 from dataclasses import dataclass
+from io import BufferedIOBase
 from pathlib import Path
 
 from app.utils import get_logger
@@ -68,6 +69,22 @@ _FAILURE_FLAG_FILE = "pending-update-failure.txt"
 # 完整包安装峰值占用 ≈ 包 + 解压临时目录 + .old 备份（MaaUpdater 换血语义）
 _FREE_SPACE_SCALE = 3
 _ILLEGAL_NAME_RE = re.compile(r'[\\/:*?"<>|]')
+
+
+_PE_MACHINE_BOOK = {0x8664: "x64", 0xAA64: "arm64"}
+_FULL_ASSET = re.compile(r"MAA-(.+)-win-(x64|arm64)\.zip", re.IGNORECASE)
+
+
+def read_pe_architecture(stream: BufferedIOBase) -> str | None:
+    """读取安装文件或包内程序集的 PE 架构。"""
+    dos = stream.read(64)
+    if len(dos) < 64 or dos[:2] != b"MZ":
+        return None
+    stream.seek(int.from_bytes(dos[60:64], "little"))
+    pe = stream.read(6)
+    if len(pe) < 6 or pe[:4] != b"PE\x00\x00":
+        return None
+    return _PE_MACHINE_BOOK.get(int.from_bytes(pe[4:6], "little"))
 
 
 def ota_asset_name(current: str, target: str, arch: str) -> str:
@@ -98,53 +115,85 @@ class NativeRoundDownloads:
             return None
 
 
+def _native_package_path(root: Path, target: str, path: Path) -> bool:
+    return (
+        path.parent == root.resolve()
+        and path.name.casefold() == f"MirrorChyanApp{target}.zip".casefold()
+    )
+
+
+def _native_identity(release: tuple[str, str], stat: os.stat_result) -> list[str | int]:
+    return [*release, stat.st_ino, stat.st_size, stat.st_mtime_ns]
+
+
+def _new_native_identity(
+    root: Path, pending: tuple[str, str], path: Path, native: NativeRoundDownloads
+) -> list[str | int] | None:
+    live = _utils_io.read_dict_file(root / "config/gui.new.json").get("Update")
+    if (
+        not isinstance(live, dict)
+        or (live.get("Name"), live.get("UpdatePackage")) != pending
+    ):
+        return None
+    old, new = native.files.get(path), path.stat()
+    identity = _native_identity(native.release, new)
+    if old is None or _native_identity(native.release, old) != identity:
+        return identity
+    return None
+
+
 def round_package_ready(
     root: Path,
     pending: tuple[str, str],
     release: tuple[str, str] | None,
     native: NativeRoundDownloads | None,
 ) -> bool | None:
-    """就绪返回 True，不兼容的差分包返回 False，未完整落盘返回 None。"""
+    """就绪返回 True，明确不兼容返回 False，未能确认就绪返回 None。"""
     target, package = pending
     path = (root / package).resolve()
+    if release is None:
+        return None
     try:
         with zipfile.ZipFile(path) as archive:
-            names = {
-                Path(name.replace("\\", "/")).as_posix().casefold()
-                for name in archive.namelist()
+            entries = {
+                Path(entry.filename.replace("\\", "/")).as_posix().casefold(): entry
+                for entry in archive.infolist()
+                if not entry.is_dir()
             }
-        if not names.intersection(_OTA_MANIFEST_ENTRIES):
-            binaries = {
-                name.rsplit("/", 1)[-1] for name in names if name.count("/") <= 1
-            }
-            return True if _ESSENTIAL_ENTRIES <= binaries else None
-        if release is None:
-            return False
+            if not entries.keys() & _OTA_MANIFEST_ENTRIES:
+                if (asset := _FULL_ASSET.fullmatch(path.name)) and (
+                    asset[1].casefold().removeprefix("v")
+                    != target.casefold().removeprefix("v")
+                    or asset[2].casefold() != release[1]
+                ):
+                    return False
+                for name, entry in entries.items():
+                    dll = Path(name)
+                    if (
+                        dll.name == "maa.dll"
+                        and len(dll.parts) <= 2
+                        and (dll.with_name("maa.exe").as_posix() in entries)
+                    ):
+                        with archive.open(entry) as stream:
+                            return read_pe_architecture(stream) == release[1]
+                return None
         if (
             path.name.casefold()
             == ota_asset_name(release[0], target, release[1]).casefold()
         ):
             return True
-        if (
-            not native
-            or native.release != release
-            or path.parent != root.resolve()
-            or path.name.casefold() != f"MirrorChyanApp{target}.zip".casefold()
-        ):
+        if not _native_package_path(root, target, path):
             return False
-        # 运行前会清空新配置的包登记。同名旧 ZIP 也可能在下载失败后留下。
-        live = _utils_io.read_dict_file(root / "config/gui.new.json").get("Update", {})
+        identity = _read_deferred_native_identity(root, pending)
+        if identity == _native_identity(release, path.stat()):
+            return True
         if (
-            not isinstance(live, dict)
-            or (live.get("Name"), live.get("UpdatePackage")) != pending
+            native is not None
+            and native.release == release
+            and _new_native_identity(root, pending, path, native) is not None
         ):
-            return False
-        old, new = native.files.get(path), path.stat()
-        return old is None or (old.st_ino, old.st_size, old.st_mtime_ns) != (
-            new.st_ino,
-            new.st_size,
-            new.st_mtime_ns,
-        )
+            return True
+        return False if identity is not None or native is not None else None
     except (FileNotFoundError, zipfile.BadZipFile):
         return None
 
@@ -282,7 +331,7 @@ def clear_matching_package(root: Path, pending: tuple[str, str]) -> None:
         values = data.get(group)
         if (
             isinstance(values, dict)
-            and values.get(version_key) == pending[0]
+            and str(values.get(version_key) or "") == pending[0]
             and isinstance(package := values.get(package_key), str)
             and package
         ):
@@ -304,16 +353,43 @@ def round_resource_record(maa_root: Path) -> Path:
     return _deferred_update_path(maa_root).with_suffix(".resources.json")
 
 
-def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
-    """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
-    _utils_io.write_file(
-        _deferred_update_path(maa_root),
-        {
-            "install": _utils_config_archive.config_root_key(maa_root),
-            "version": version,
-            "package": package,
-        },
-    )
+def _read_deferred_native_identity(
+    root: Path, pending: tuple[str, str]
+) -> list[str | int] | None:
+    data = _utils_io.read_dict_file(_deferred_update_path(root))
+    if (
+        data.get("install") == _utils_config_archive.config_root_key(root)
+        and (data.get("version"), data.get("package")) == pending
+        and isinstance(identity := data.get("native"), list)
+    ):
+        return identity
+    return None
+
+
+def save_deferred_update(
+    maa_root: Path,
+    *,
+    version: str,
+    package: str,
+    native: NativeRoundDownloads | None = None,
+) -> None:
+    """按安装归属保存待装登记，并保留同一原生下载的基线和文件身份。"""
+    pending = (version, package)
+    path = (maa_root / package).resolve()
+    data: dict[str, object] = {
+        "install": _utils_config_archive.config_root_key(maa_root),
+        "version": version,
+        "package": package,
+    }
+    if _native_package_path(maa_root, version, path):
+        identity = (
+            _new_native_identity(maa_root, pending, path, native) if native else None
+        )
+        if identity is None:
+            identity = _read_deferred_native_identity(maa_root, pending)
+        if identity is not None:
+            data["native"] = identity
+    _utils_io.write_file(_deferred_update_path(maa_root), data)
 
 
 def clear_deferred_update(maa_root: Path) -> None:

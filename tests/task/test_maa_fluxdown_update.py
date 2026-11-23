@@ -296,6 +296,18 @@ async def test_prefetched_maa_package_is_consumed_once_when_release_advances(
     monkeypatch.chdir(root.parent)
     config = script_config()
     installed = "v6.0.0"
+
+    async def download(url, path, **kwargs):
+        dll = bytearray(70)
+        dll[:2] = b"MZ"
+        dll[60:64] = (64).to_bytes(4, "little")
+        dll[64:] = b"PE\x00\x00\x64\x86"
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("MAA.exe", b"exe")
+            archive.writestr("MAA.dll", dll)
+        return path.stat().st_size
+
+    downloader.side_effect = download
     monkeypatch.setattr(update, "read_installed_release", lambda _: (installed, "x64"))
     monkeypatch.setattr(manager, "read_installed_release", lambda _: (installed, "x64"))
     candidate = await update.prepare_maa_fluxdown_update(

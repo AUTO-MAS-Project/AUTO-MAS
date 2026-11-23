@@ -1598,6 +1598,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     for task in failed_sanity:
                         self.task_dict[task] = False
 
+                if self.cur_user_log.status == "Success!":
+                    # GUI 退出期间可以手动停止，先保留已经确认的代理结果。
+                    self.run_book[self.mode] = not self._failed_sanity_tasks
+
                 if self.cur_user_log.status in ("Success!", "MAA 部分任务执行失败"):
                     # 队列结束日志先于 GUI 保存更新登记。给退出动作单独的时间。
                     with self.pause_run_timeout():
@@ -1609,8 +1613,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                             await self.maa_process_manager.kill()
 
                 if self.cur_user_log.status == "Success!":
-                    # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
-                    self.run_book[self.mode] = not self._failed_sanity_tasks
                     logger.info(f"账号: {self.cur_user_uid} - MAA进程完成代理任务")
                     await self.script_info.set_log(
                         "检测到 MAA 完成代理任务\n正在等待相关程序结束"
@@ -2991,7 +2993,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             self.pending_update = pending
             # 保存失败必须向上传播，不能清空唯一登记后继续启动下一阶段。
             save_deferred_update(
-                self.maa_root_path, version=pending[0], package=pending[1]
+                self.maa_root_path,
+                version=pending[0],
+                package=pending[1],
+                native=self._native_downloads if self._round_started else None,
             )
 
     async def _sync_maa_config_updates(self) -> None:

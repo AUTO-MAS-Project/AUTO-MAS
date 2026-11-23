@@ -1,6 +1,5 @@
 """MAA 官方本体失败与资源半更新：统一自动恢复且保持 fail-closed。"""
 
-import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -11,6 +10,7 @@ from app.services import script_install
 from app.task.MAA import manager
 from app.task.MAA.tools import install_recovery as recovery
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+from app.utils import io as io_utils
 
 
 @pytest.fixture
@@ -146,6 +146,44 @@ async def test_maa_manager_resource_recovery_goes_through_common_entry(
     common.assert_awaited_once()
     assert instance._maa_update_checked
     instance.script_info.set_log.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_mid_round_resource_recovery_preserves_first_software_check(
+    maa_root, monkeypatch
+):
+    monkeypatch.chdir(maa_root.parent)
+    clock = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    record = manager.round_resource_record(maa_root)
+    io_utils.write_file(record, {"target": clock.isoformat()})
+    resource = maa_root / ".automas-resource-update.json"
+    resource.write_text('{"target":"2026-10-01T00:00:00+00:00"}')
+    instance = object.__new__(manager.MaaManager)
+    instance.maa_set_path = maa_root / "config"
+    instance.script_info = SimpleNamespace(script_id="test-script", set_log=AsyncMock())
+    instance.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=True)
+    )
+    instance._maa_update_checked = False
+    instance._updater_running = False
+    monkeypatch.setattr(
+        manager, "read_installed_release", lambda root: ("v6.1.0", "x64")
+    )
+    monkeypatch.setattr(manager, "read_resource_clock", lambda root: clock)
+
+    async def repair(*args, **kwargs):
+        resource.unlink()
+        return "reinstalled"
+
+    monkeypatch.setattr(manager, "auto_recover_script_install", repair)
+    await instance._recover_unconfirmed_update()
+    assert not record.exists()
+    prepare = AsyncMock()
+    monkeypatch.setattr(instance, "_prepare_software_update", prepare)
+    await instance._prepare_software_update_once(
+        SimpleNamespace(update_config_dir=instance.maa_set_path)
+    )
+    prepare.assert_awaited_once()
 
 
 @pytest.mark.asyncio
