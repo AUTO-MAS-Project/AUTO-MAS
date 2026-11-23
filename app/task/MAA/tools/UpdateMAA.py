@@ -40,8 +40,7 @@ class MaaUpdaterRunningError(RuntimeError):
     """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
-async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
-    """更新 MAA 主程序"""
+def _pending_package(maa_path: Path) -> str:
 
     # NEW: Update.UpdatePackage 优先生效
     try:
@@ -59,7 +58,21 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
         except json.JSONDecodeError:
             maa_update_package = ""
 
-    if not maa_update_package or not (maa_path / maa_update_package).exists():
+    return maa_update_package
+
+
+async def update_maa(
+    maa_path: Path,
+    *,
+    snapshot_path: Path,
+    script_id: str,
+    pending: tuple[str, str] | None = None,
+):
+    """通过 MAA 安装本地包；代理阶段暂存的登记仅在官方安装会话生效。"""
+    maa_update_package = (
+        pending[1] if pending is not None else _pending_package(maa_path)
+    )
+    if not maa_update_package or not (maa_path / maa_update_package).is_file():
         return
 
     if not await process.kill_process(maa_path / "MAA.exe"):
@@ -103,6 +116,8 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
 
     # 更新配置
     update_set = maa_new_set.setdefault("Update", {})
+    if pending is not None:
+        update_set["Name"] = pending[0]
     update_set["UpdatePackage"] = maa_update_package
     update_set["CheckOnStartup"] = False
     update_set["CheckOnSchedule"] = False

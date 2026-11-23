@@ -63,7 +63,6 @@ from .AutoProxy import (
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
 from .tools import update_maa
-from .tools.managed_recovery import MAAInstallAdapter
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -75,6 +74,7 @@ from .tools.fluxdown_update import (
     query_latest_maa_version,
 )
 from .tools.game_update import ensure_game_updated
+from .tools.managed_recovery import MAAInstallAdapter
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -85,6 +85,7 @@ from .tools.resource_update import (
     read_resource_clock,
 )
 from .tools.software_package import (
+    clear_applied_update_registrations,
     clear_deferred_update,
     has_delegated_update_failure,
     load_deferred_update,
@@ -156,6 +157,7 @@ class MaaManager(ScriptManagerBase):
         self._pending_update: tuple[str, str] | None = None
         self._active_proxy_task: AutoProxyTask | None = None
         self._updater_running: bool = False
+        self._applied_round_updates: set[tuple[str, str]] = set()
         # 每批任务最多尝试一次更新；新 MaaManager 实例会重新检查。
         self._maa_update_checked = False
 
@@ -202,6 +204,10 @@ class MaaManager(ScriptManagerBase):
                                 and not self._keep_script_config_changes()
                             ):
                                 _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
+                            if self._applied_round_updates:
+                                clear_applied_update_registrations(
+                                    self.maa_set_path, self._applied_round_updates
+                                )
                             await self._restore_pending_update()
                             _utils_io.clear_native_config_snapshot(self.temp_path)
                 finally:
@@ -623,6 +629,7 @@ class MaaManager(ScriptManagerBase):
             else:
                 kwargs["game_update_result"] = update_result
                 kwargs["capture_adb"] = capture_adb
+                kwargs["install_round_update"] = self._install_round_update
             task = METHOD_BOOK[self.execution_mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
@@ -631,6 +638,10 @@ class MaaManager(ScriptManagerBase):
                 self.script_info.user_list[self.script_info.current_index], task
             )
             if isinstance(task, AutoProxyTask):
+                if isinstance(
+                    task.execution.error, (MaaUpdaterRunningError, MaaUpdateUnsafeError)
+                ):
+                    raise task.execution.error
                 self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
@@ -858,8 +869,32 @@ class MaaManager(ScriptManagerBase):
         )
         return True
 
+    async def _install_round_update(self, pending: tuple[str, str] | None) -> None:
+        """每次代理退出后，仅将本地已就绪的原生登记交给官方安装器。"""
+        if pending is None:
+            return
+        root = self.maa_set_path.parent
+        version, package = pending
+        if not (root / package).is_file():
+            return
+        release = read_installed_release(root)
+        current = parse_version(release[0]) if release else None
+        target = parse_version(version)
+        if current is None or target is None:
+            raise MaaUpdateUnsafeError("无法核实 MAA 待装包版本，已停止后续代理")
+        if compare_versions(current, target) >= 0:
+            return
+        await self._check_software_update_safety()
+        await run_script_update(
+            ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+            self._install_pending_software_update,
+            target=version,
+            pending=pending,
+        )
+        self._applied_round_updates.add(pending)
+
     async def _install_pending_software_update(
-        self, *, target: str | None = None
+        self, *, target: str | None = None, pending: tuple[str, str] | None = None
     ) -> None:
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
         await self.script_info.set_log("正在等待 MAA 官方更新器处理本地更新包")
@@ -868,6 +903,7 @@ class MaaManager(ScriptManagerBase):
                 self.maa_set_path.parent,
                 snapshot_path=self.temp_path,
                 script_id=self.script_info.script_id,
+                pending=pending,
             )
         except MaaUpdaterRunningError:
             self._updater_running = True
@@ -952,6 +988,10 @@ class MaaManager(ScriptManagerBase):
                         ),
                     )
 
+            if isinstance(
+                self.execution.error, (MaaUpdaterRunningError, MaaUpdateUnsafeError)
+            ):
+                return  # on_crash 已将托管标为异常
             await self.script_info.set_state(
                 status="跳过" if self.all_users_maintenance_skipped else "完成"
             )

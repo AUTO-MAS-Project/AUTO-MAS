@@ -152,7 +152,19 @@ async def test_task_failure_retry_scope(
         open=AsyncMock(return_value=DeviceInfo("test", DeviceStatus.ONLINE, "")),
         close=AsyncMock(return_value=True),
     )
-    proxy = AutoProxyTask(script, config, users, emulator, capture_adb=AsyncMock())
+    completed_rounds = []
+
+    async def install_round_update(pending):
+        completed_rounds.append(proxy.mode)
+
+    proxy = AutoProxyTask(
+        script,
+        config,
+        users,
+        emulator,
+        capture_adb=AsyncMock(),
+        install_round_update=install_round_update,
+    )
     from app.task.history_core import TaskHistorySession
 
     proxy.history = TaskHistorySession(task_info)
@@ -167,6 +179,7 @@ async def test_task_failure_retry_scope(
         queue = gui["Configurations"]["Default"]["TaskQueue"]
 
     async def open_process(*args, **kwargs):
+        assert completed_rounds == [mode for mode, _ in attempts]
         attempts.append((proxy.mode, deepcopy(queue)))
 
     process = SimpleNamespace(
@@ -290,6 +303,7 @@ async def test_task_failure_retry_scope(
         script_task_retrying.reset(retry_token)
         await proxy.callbacks.close()
 
+    assert completed_rounds == expected_modes
     assert [mode for mode, _ in attempts] == expected_modes
     # 只有同一模式重新启动 MAA 才通知 L2；切到下一个模式不应重置成功信号。
     assert retried_modes == [

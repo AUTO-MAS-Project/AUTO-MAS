@@ -20,7 +20,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -139,6 +139,7 @@ from .tools.task_templates import (
     MAA_GREEN_TICKET_STORE_TASK,
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
+from .tools.UpdateMAA import MaaUpdaterRunningError
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -1261,6 +1262,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         emulator_manager: DeviceBase,
         *,
         capture_adb: AdbCapture,
+        install_round_update: Callable[[tuple[str, str] | None], Awaitable[None]],
         game_update_result: _utils_game_update.GameUpdateResult | None = None,
     ):
         super().__init__()
@@ -1274,6 +1276,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.user_config = user_config
         self.emulator_manager = emulator_manager
         self.capture_adb = capture_adb
+        self.install_round_update = install_round_update
         self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
@@ -1621,6 +1624,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     self._collect_cultivate_archive(maa_log, finalizing=True)
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
+                if not self.stopped_manually:
+                    await self.install_round_update(self.pending_update)
 
                 if not _should_retry_maa(
                     self.cur_user_log.status,
@@ -1702,6 +1707,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         此处幂等兜底仅覆盖提前异常退出。
         """
 
+        # 官方安装器仍可能写盘；由 manager 保留原生备份，下次启动再还原库存。
+        if isinstance(self.execution.error, MaaUpdaterRunningError):
+            return
         try:
             await super()._finalize_task()
         finally:
@@ -2857,6 +2865,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         update_settings = gui_new_set.setdefault("Update", {})
         update_settings.update(
             {
+                "CheckOnStartup": not self.script_config.Update.TakeoverEnabled,
                 "CheckOnSchedule": False,
                 "AutoDownloadUpdatePackage": True,
                 "AutoInstallUpdatePackage": False,
@@ -2865,7 +2874,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 接管开启即暂停原生更新，不因本轮更新失败而重新启用。
         # GitHub 资源源仅支持手动下载，临时选择随快照恢复，不改变 CDK。
         if self.script_config.Update.TakeoverEnabled:
-            update_settings["CheckOnStartup"] = False
             update_settings["AutoDownloadUpdatePackage"] = False
             update_settings["UpdateSource"] = "GitHub"
         if Config.setting.Function.IfSilence:

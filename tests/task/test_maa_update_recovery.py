@@ -54,6 +54,62 @@ def installation(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_round_installs_deferred_package_and_preserves_other_registrations(
+    installation, monkeypatch
+):
+    from app.task.MAA.tools.software_package import (
+        clear_applied_update_registrations,
+        read_pending_update,
+    )
+
+    root, _, original, scheduler = installation
+    pending = read_pending_update(root)
+    runtime = deepcopy(original)
+    runtime["Update"]["UpdatePackage"] = ""
+    config = root / "config/gui.new.json"
+    io_utils.write_file(config, runtime)
+    version = "v6.0.0"
+    scheduler._updater_running = False
+    scheduler._applied_round_updates = set()
+    scheduler.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
+    scheduler.script_info.set_log = AsyncMock()
+    monkeypatch.setattr(
+        manager.process, "is_process_running", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: (version, "x64"))
+
+    async def apply(exe, *, timeout):
+        nonlocal version
+        assert exe == root / "MAA.exe"
+        assert read_pending_update(root) == pending
+        assert io_utils.read_dict_file(config)["Update"]["AutoInstallUpdatePackage"]
+        version = pending[0]
+
+    launch = AsyncMock(side_effect=apply)
+    monkeypatch.setattr(installer.ProcessRunner, "run_process", launch)
+    await scheduler._install_round_update(None)
+    launch.assert_not_awaited()
+    await scheduler._install_round_update(pending)
+    await scheduler._install_round_update(pending)
+    launch.assert_awaited_once()
+    assert version == "v6.1.0"
+    assert io_utils.read_dict_file(config) == runtime
+
+    # 托管随后还原原生快照。保留同一安装中的其他待装包。
+    io_utils.write_file(config, original)
+    old_config = root / "config/gui.json"
+    other = {
+        "Global": {"VersionUpdate.name": "v6.2.0", "VersionUpdate.package": "next.zip"}
+    }
+    io_utils.write_file(old_config, other)
+    clear_applied_update_registrations(config.parent, scheduler._applied_round_updates)
+    assert io_utils.read_dict_file(config)["Update"]["UpdatePackage"] == ""
+    assert io_utils.read_dict_file(old_config) == other
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("manual_edit", [False, True])
 async def test_installation_crash_before_account_injection_restores_owned_fields(
     installation, monkeypatch, manual_edit

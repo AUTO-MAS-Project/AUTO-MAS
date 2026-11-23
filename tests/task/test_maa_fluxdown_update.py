@@ -581,13 +581,14 @@ async def test_no_update_never_requests_paid_mirror_url(installation, monkeypatc
     paid.assert_not_called()
 
 
-def test_runtime_disables_update_download_and_restores_source(
-    installation, monkeypatch
+@pytest.mark.parametrize("takeover", [False, True])
+def test_runtime_update_settings_and_source_restoration(
+    installation, monkeypatch, takeover
 ):
     root, _, _ = installation
     instance = object.__new__(AutoProxyTask)
     instance.script_config = SimpleNamespace(
-        Update=SimpleNamespace(TakeoverEnabled=True),
+        Update=SimpleNamespace(TakeoverEnabled=takeover),
         Run=SimpleNamespace(TaskTransitionMethod="ExitEmulator"),
         Emulator=SimpleNamespace(Index=""),
     )
@@ -602,7 +603,6 @@ def test_runtime_disables_update_download_and_restores_source(
     update.Config.setting.Function = SimpleNamespace(IfSilence=False)
     instance.mode = "Routine"
     instance.maa_set_path = root / "config"
-    # No emulator is bound; the runtime configuration still must suppress both update paths.
     gui = {
         "Current": "Default",
         "Configurations": {
@@ -616,7 +616,7 @@ def test_runtime_disables_update_download_and_restores_source(
         },
         "Update": {
             "UpdateSource": "MirrorChyan",
-            "CheckOnStartup": True,
+            "CheckOnStartup": takeover,
             "AutoDownloadUpdatePackage": True,
         },
     }
@@ -625,11 +625,11 @@ def test_runtime_disables_update_download_and_restores_source(
         gui_new_set=gui,
         emulator_info=SimpleNamespace(adb_address="127.0.0.1:5555"),
     )
-    assert gui["Update"]["CheckOnStartup"] is False
+    assert gui["Update"]["CheckOnStartup"] is (not takeover)
     assert gui["Update"]["CheckOnSchedule"] is False
-    assert gui["Update"]["AutoDownloadUpdatePackage"] is False
+    assert gui["Update"]["AutoDownloadUpdatePackage"] is (not takeover)
     assert gui["Update"]["AutoInstallUpdatePackage"] is False
-    assert gui["Update"]["UpdateSource"] == "GitHub"
+    assert gui["Update"]["UpdateSource"] == ("GitHub" if takeover else "MirrorChyan")
     restored = _without_maa_update_changes(gui, baseline, "gui.new.json")
     assert restored["Update"] == baseline["Update"]
 

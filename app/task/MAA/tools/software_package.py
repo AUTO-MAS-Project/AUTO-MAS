@@ -332,6 +332,25 @@ def register_pending_update(
         return False
 
 
+def clear_applied_update_registrations(
+    config_dir: Path, applied: set[tuple[str, str]]
+) -> None:
+    """还原原生快照后，只撤销本批已安装的包登记，保留版本信息及其他待装包。"""
+    for name, section, version_key, package_key in (
+        ("gui.new.json", "Update", "Name", "UpdatePackage"),
+        ("gui.json", "Global", "VersionUpdate.name", "VersionUpdate.package"),
+    ):
+        path = config_dir / name
+        data = _utils_io.read_dict_file(path)
+        values = data.get(section)
+        if (
+            isinstance(values, dict)
+            and (values.get(version_key), values.get(package_key)) in applied
+        ):
+            values[package_key] = ""
+            _utils_io.write_file(path, data)
+
+
 def write_pending_update(maa_root: Path, *, version: str, package: str) -> None:
     """透传上游待安装登记，供缓存包登记和跨账号保留原生下载结果复用。"""
     new_config = maa_root / "config" / "gui.new.json"
