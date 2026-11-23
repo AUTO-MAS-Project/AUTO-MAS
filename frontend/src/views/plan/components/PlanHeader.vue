@@ -26,8 +26,8 @@
           tone="danger"
           size="large"
           :title="t('core.plan.deleteConfirm')"
-          :disabled="!activePlanId"
-          :confirm="() => emit('remove-plan', activePlanId)"
+          :disabled="!activePlanId || creating"
+          :confirm="() => removePlan(activePlanId)"
         >
           <template #icon>
             <DeleteOutlined />
@@ -79,12 +79,12 @@ interface Props {
   planList: Plan[]
   activePlanId: string
   creating?: boolean
+  removePlan: (planId: string) => void | Promise<unknown>
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
   'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
-  'remove-plan': [planId: string]
 }>()
 
 const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)

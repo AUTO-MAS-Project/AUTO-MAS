@@ -32,6 +32,7 @@
         :ok-text="t('core.edit.ok')"
         :cancel-text="t('core.edit.cancel')"
         :disabled="disabled"
+        :loading="deleting"
         :confirm="() => emit('deleteSelectedTask')"
       >
         <template #icon>
@@ -89,6 +90,7 @@
         :ok-text="t('core.edit.ok')"
         :cancel-text="t('core.edit.cancel')"
         :disabled="disabled"
+        :loading="deleting"
         :confirm="() => emit('deleteSelectedTask')"
       >
         <template #icon>
@@ -145,6 +147,7 @@ const props = defineProps<{
   effectiveResourceName: string
   managedTaskEntries?: ReadonlySet<string>
   disabled: boolean
+  deleting?: boolean
 }>()
 
 const emit = defineEmits<{

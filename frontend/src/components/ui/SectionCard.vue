@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
+import { useId, type Component } from 'vue'
 import { DownOutlined, RightOutlined } from '@ant-design/icons-vue'
 
 /**
@@ -31,6 +31,8 @@ const props = withDefaults(
 )
 
 const collapsed = defineModel<boolean>('collapsed', { default: false })
+const titleId = useId()
+const bodyId = useId()
 
 const toggleCollapsed = () => {
   if (!props.collapsible) return
@@ -55,22 +57,26 @@ const toggleCollapsed = () => {
           type="button"
           class="ui-section-card-toggle"
           :aria-expanded="!collapsed"
+          :aria-controls="bodyId"
+          :aria-labelledby="titleId"
           @click="toggleCollapsed"
         >
-          <RightOutlined v-if="collapsed" />
-          <DownOutlined v-else />
+          <RightOutlined v-if="collapsed" aria-hidden="true" />
+          <DownOutlined v-else aria-hidden="true" />
         </button>
         <span v-if="icon" class="ui-section-card-icon" aria-hidden="true">
           <component :is="icon" />
         </span>
-        <slot name="title">{{ title }}</slot>
+        <span :id="titleId" class="ui-section-card-title">
+          <slot name="title">{{ title }}</slot>
+        </span>
       </h3>
       <p v-if="subtitle" class="ui-section-card-subtitle">{{ subtitle }}</p>
       <div v-if="$slots.actions" class="ui-section-card-actions">
         <slot name="actions" />
       </div>
     </div>
-    <div v-show="!collapsible || !collapsed" class="ui-section-card-body">
+    <div :id="bodyId" v-show="!collapsible || !collapsed" class="ui-section-card-body">
       <slot />
     </div>
     <footer v-if="$slots.footer && (!collapsible || !collapsed)" class="ui-section-card-footer">
@@ -184,6 +190,13 @@ html:not(.dark):not(.appearance-custom) .ui-section-card--card {
 
 .ui-section-card--sub .ui-section-card-body {
   padding: 12px;
+}
+
+.ui-section-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
 }
 
 .ui-section-card-toggle {

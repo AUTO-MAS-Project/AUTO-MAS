@@ -25,9 +25,9 @@ const containerStyle = computed(() => {
 </script>
 
 <template>
-  <main class="app-page" :class="`app-page--${layout}`" :style="containerStyle">
+  <div class="app-page" :class="`app-page--${layout}`" :style="containerStyle">
     <slot />
-  </main>
+  </div>
 </template>
 
 <style scoped>

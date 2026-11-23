@@ -19,7 +19,8 @@
     </div>
     <ConfirmActionButton
       risk="low"
-      tone="warning"
+      tone="danger"
+      :danger="false"
       type="text"
       size="small"
       :title="t('core.edit.deleteThisTask2')"

@@ -48,7 +48,8 @@ const [modal, ModalContextHolder] = Modal.useModal()
 const { confirm: openConfirmModal } = useConfirm(modal)
 const running = ref(false)
 
-const isDanger = computed(() => props.danger ?? props.tone === 'danger')
+const isConfirmDanger = computed(() => props.tone === 'danger')
+const isButtonDanger = computed(() => props.danger ?? isConfirmDanger.value)
 const isBusy = computed(() => props.loading || running.value)
 const resolvedOkText = computed(() => props.okText ?? t('core.common.confirm'))
 const resolvedCancelText = computed(() => props.cancelText ?? t('core.common.cancel'))
@@ -84,7 +85,7 @@ const handleHighRiskClick = async () => {
     :description="description"
     :ok-text="resolvedOkText"
     :cancel-text="resolvedCancelText"
-    :ok-type="isDanger ? 'danger' : 'primary'"
+    :ok-type="isConfirmDanger ? 'danger' : 'primary'"
     :overlay-style="overlayStyle"
     :disabled="disabled || isBusy"
     @confirm="executeConfirm"
@@ -93,7 +94,7 @@ const handleHighRiskClick = async () => {
       v-bind="$attrs"
       :type="type"
       :size="size"
-      :danger="isDanger"
+      :danger="isButtonDanger"
       :disabled="disabled"
       :loading="isBusy"
     >
@@ -107,7 +108,7 @@ const handleHighRiskClick = async () => {
     v-bind="$attrs"
     :type="type"
     :size="size"
-    :danger="isDanger"
+    :danger="isButtonDanger"
     :disabled="disabled"
     :loading="isBusy"
     @click="handleHighRiskClick"
