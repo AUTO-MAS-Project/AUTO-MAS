@@ -35,7 +35,13 @@
                 variant="form"
               />
             </template>
-            <a-input :value="startupArguments" size="large" readonly />
+            <a-input
+              :value="startupArguments"
+              :placeholder="previewError"
+              :title="previewError"
+              size="large"
+              readonly
+            />
           </a-form-item>
         </a-col>
       </a-row>
@@ -43,15 +49,53 @@
   </a-card>
 </template>
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { OkNteSetupService } from '@/composables/useAdapterSetupApi'
+
 const taskIndex = defineModel<number>('taskIndex', { required: true })
-defineProps<{
+const props = defineProps<{
   options: { value: number; label: string }[]
-  startupArguments: string
+  scriptId: string
+  exitOnFinish: boolean
   disabled: boolean
   loading: boolean
 }>()
 const emit = defineEmits<{ change: [value: number] }>()
 const { t } = useI18n()
+const effectiveTaskIndex = computed(() => (props.disabled ? 2 : taskIndex.value))
+const argument = ref('')
+const previewError = ref('')
+const startupArguments = computed(() =>
+  argument.value ? `-t ${argument.value}${props.exitOnFinish ? ' -e' : ''}` : ''
+)
+
+watch(
+  [() => props.scriptId, effectiveTaskIndex, () => props.loading],
+  async ([scriptId, index, loading], _, onCleanup) => {
+    argument.value = ''
+    previewError.value = ''
+    if (loading) return
+
+    const request = OkNteSetupService.getOknteTaskArgumentApiScriptsOknteTaskArgumentGet(
+      scriptId,
+      index
+    )
+    let stale = false
+    onCleanup(() => {
+      stale = true
+      request.cancel()
+    })
+    try {
+      const response = await request
+      if (stale) return
+      if (response.code === 200 && response.data) argument.value = response.data
+      else previewError.value = response.message || t('core.edit.launchArgumentPreviewUnavailable')
+    } catch {
+      if (!stale) previewError.value = t('core.edit.launchArgumentPreviewUnavailable')
+    }
+  },
+  { immediate: true }
+)
 </script>
