@@ -3,6 +3,7 @@ import { computed, useSlots, type Component } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { useConfirm } from '@/composables/useConfirm'
+import { useModalCloseGuard } from './useModalCloseGuard'
 
 /**
  * 统一弹窗基座。
@@ -121,19 +122,25 @@ const resolvedWrapClassName = computed(() =>
     .join(' ')
 )
 
-const handleCancel = async () => {
-  if (!canClose.value) return
-  if (props.dirty) {
-    const confirmed = await confirm({
+const { requestClose } = useModalCloseGuard({
+  open,
+  dirty: () => props.dirty,
+  submitting: () => props.submitting,
+  confirmDiscard: () =>
+    confirm({
       tone: 'warning',
       title: props.dirtyTitle ?? t('core.edit.youHaveUnsavedChanges'),
       description: props.dirtyDescription ?? t('core.edit.leaveWithoutSavingUnsaved'),
       zIndex: resolvedZIndex.value + 50,
-    })
-    if (!confirmed) return
-  }
-  open.value = false
-  emit('cancel')
+    }),
+  onClose: () => {
+    open.value = false
+    emit('cancel')
+  },
+})
+
+const handleCancel = () => {
+  void requestClose()
 }
 
 const handleOk = () => {
