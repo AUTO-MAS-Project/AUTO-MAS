@@ -174,7 +174,8 @@
       <OkNteTaskConfigSection
         v-model:task-index="formData.Task.TaskIndex"
         :options="oknteTaskOptions"
-        :startup-arguments="currentStartupArguments"
+        :script-id="scriptId"
+        :exit-on-finish="formData.Task.ExitOnFinish"
         :disabled="formData.Info.PlanMode !== 'Fixed'"
         :loading="pageLoading"
         @change="handleTaskIndexChange"
@@ -254,7 +255,7 @@ import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -401,10 +402,6 @@ const formData = reactive<OkNteUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(
-  () => `-t ${formData.Info.PlanMode !== 'Fixed' ? 2 : formData.Task.TaskIndex || 2} -e`
-)
-
 const handleCancel = () => {
   void stopSession()
   router.push('/scripts')
@@ -464,24 +461,9 @@ const saveField = async (key: string, value: unknown) => {
   }, key)
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId) return
-  formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      ExitOnFinish: true,
-    },
-  })
-}
-
 const handleTaskIndexChange = async (value: number) => {
   formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
+  await saveField('Task.TaskIndex', value)
 }
 
 const handleOkNteConfig = async () => {
@@ -528,7 +510,6 @@ const loadUser = async () => {
       Notify: { ...getDefaultUserData().Notify, ...(data.Notify || {}) },
       Data: { ...getDefaultUserData().Data, ...(data.Data || {}) },
     })
-    formData.Task.ExitOnFinish = true
     const taskIndex = Number(formData.Task.TaskIndex)
     if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKNTE_MAX_TASK_INDEX) {
       formData.Task.TaskIndex = 2
