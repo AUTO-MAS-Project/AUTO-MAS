@@ -40,9 +40,7 @@ class MaaUpdaterRunningError(RuntimeError):
     """更新相关进程未能退出，不能恢复配置或启动新的托管任务。"""
 
 
-async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
-    """更新 MAA 主程序"""
-
+def _pending_package(maa_path: Path) -> str:
     # NEW: Update.UpdatePackage 优先生效
     try:
         new_set = _utils_io.read_file(maa_path / "config/gui.new.json")
@@ -59,7 +57,19 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
         except json.JSONDecodeError:
             maa_update_package = ""
 
-    if not maa_update_package or not (maa_path / maa_update_package).exists():
+    return maa_update_package
+
+
+async def update_maa(
+    maa_path: Path,
+    *,
+    snapshot_path: Path,
+    script_id: str,
+    pending: tuple[str, str] | None = None,
+):
+    """通过官方安装入口消费已就绪的包。"""
+    maa_update_package = pending[1] if pending else _pending_package(maa_path)
+    if not maa_update_package or not (maa_path / maa_update_package).is_file():
         return
 
     if not await process.kill_process(maa_path / "MAA.exe"):
@@ -103,6 +113,8 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
 
     # 更新配置
     update_set = maa_new_set.setdefault("Update", {})
+    if pending is not None:
+        update_set["Name"] = pending[0]
     update_set["UpdatePackage"] = maa_update_package
     update_set["CheckOnStartup"] = False
     update_set["CheckOnSchedule"] = False
@@ -145,11 +157,9 @@ async def update_maa(maa_path: Path, *, snapshot_path: Path, script_id: str):
             cleanup.result()
             raise
         finally:
-            if (
-                cleanup.done()
-                and not cleanup.cancelled()
-                and cleanup.exception() is None
-            ):
+            if cleanup.cancelled() or not cleanup.done():
+                raise MaaUpdaterRunningError("更新器停写确认被中止，已保留原生配置")
+            if cleanup.exception() is None:
                 restore_maa_update_config(
                     maa_path, snapshot_path=snapshot_path, script_id=script_id
                 )

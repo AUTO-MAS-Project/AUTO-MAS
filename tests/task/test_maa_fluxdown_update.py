@@ -632,6 +632,22 @@ def test_runtime_disables_update_download_and_restores_source(
     assert gui["Update"]["UpdateSource"] == "GitHub"
     restored = _without_maa_update_changes(gui, baseline, "gui.new.json")
     assert restored["Update"] == baseline["Update"]
+    instance.script_config.Update.TakeoverEnabled = False
+    gui["Update"].update(
+        CheckOnStartup=False, UpdateSource="MirrorChyan", MirrorChyanCdk="native"
+    )
+    instance._configure_maa_runtime(
+        gui_new_set=gui, emulator_info=SimpleNamespace(adb_address="127.0.0.1:5555")
+    )
+    assert gui["Update"] == {
+        **baseline["Update"],
+        "CheckOnStartup": True,
+        "CheckOnSchedule": False,
+        "AutoDownloadUpdatePackage": True,
+        "AutoInstallUpdatePackage": False,
+        "UpdateSource": "MirrorChyan",
+        "MirrorChyanCdk": "native",
+    }
 
 
 @pytest.mark.parametrize("prefix", ["resource/", "MaaResource-main/resource/"])

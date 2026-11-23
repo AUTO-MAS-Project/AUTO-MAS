@@ -1,7 +1,9 @@
 """安装阶段在首个账号配置注入前中断，也能恢复临时配置并保护用户修改。"""
 
 import asyncio
+import zipfile
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,6 +12,12 @@ import pytest
 from app.task.MAA import manager
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.tools import UpdateMAA as installer
+from app.task.MAA.tools.software_package import (
+    NativeRoundDownloads,
+    round_package_ready,
+    round_resource_record,
+    save_deferred_update,
+)
 from app.task.MAA.tools.update_config import restore_maa_update_config
 from app.utils import io as io_utils
 
@@ -51,6 +59,103 @@ def installation(tmp_path, monkeypatch):
     scheduler.temp_path = snapshot
     scheduler.script_info = SimpleNamespace(script_id="test-script")
     return root, snapshot, original, scheduler
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("takeover", [False, True])
+async def test_round_installs_ready_package_before_return(
+    installation, monkeypatch, takeover
+):
+    root, _, original, scheduler = installation
+    original["Update"]["UpdatePackage"] = ""
+    config = root / "config/gui.new.json"
+    io_utils.write_file(config, original)
+    package = root / "pending.zip"
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("MAA.exe", b"exe")
+        archive.writestr("MAA.dll", b"dll")
+    version = "v6.0.0"
+    scheduler.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=takeover)
+    )
+    scheduler.script_info.set_log = AsyncMock()
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: (version, "x64"))
+    monkeypatch.setattr(
+        manager.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
+    clock = datetime.now(timezone.utc)
+    monkeypatch.setattr(manager, "read_resource_clock", lambda _: clock)
+
+    async def launch(exe, **kwargs):
+        nonlocal version
+        assert exe == root / "MAA.exe"
+        assert round_resource_record(root).exists() == takeover
+        update = io_utils.read_dict_file(config)["Update"]
+        assert (
+            update["UpdatePackage"] == package.name
+            and update["AutoInstallUpdatePackage"]
+        )
+        version = update["Name"]
+
+    launcher = AsyncMock(side_effect=launch)
+    monkeypatch.setattr(installer.ProcessRunner, "run_process", launcher)
+    await scheduler._install_round_update(None, None)
+    launcher.assert_not_awaited()
+    pending = ("v6.1.0", package.name)
+    await scheduler._install_round_update(pending, None)
+    assert version == pending[0] and io_utils.read_dict_file(config) == original
+    assert not round_resource_record(root).exists()
+    await scheduler._install_round_update(pending, None)
+    launcher.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rejected_ota_is_not_installed_or_registered_again(
+    installation, monkeypatch
+):
+    root, _, original, scheduler = installation
+    name = "MAAComponent-OTA-v6.0.0_v6.2.0-win-x64.zip"
+    pending = ("v6.2.0", name)
+    with zipfile.ZipFile(root / name, "w") as archive:
+        archive.writestr("changes.json", "{}")
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: ("v6.1.0", "x64"))
+    scheduler.script_info.set_log = AsyncMock()
+    scheduler._pending_update = pending
+    config = root / "config/gui.new.json"
+    original["Update"].update(Name=pending[0], UpdatePackage=name)
+    io_utils.write_file(config, original)
+    await scheduler._install_pending_software_update(target=pending[0])
+    installer.ProcessRunner.run_process.assert_not_awaited()
+    io_utils.write_file(config, original)
+    save_deferred_update(root, version=pending[0], package=name)
+    await scheduler._restore_pending_update()
+    assert not io_utils.read_dict_file(config)["Update"]["UpdatePackage"]
+    assert (root / name).is_file()
+
+
+def test_round_ota_matches_baseline_or_fresh_native_download(tmp_path):
+    release, target = ("v6.0.0+build1", "x64"), "v6.2.0"
+    path = tmp_path / f"MirrorChyanApp{target}.zip"
+    pending = (target, path.name)
+    io_utils.write_file(
+        tmp_path / "config/gui.new.json",
+        {"Update": {"Name": target, "UpdatePackage": path.name}},
+    )
+    before = NativeRoundDownloads.capture(tmp_path, release)
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("changes.json", "{}")
+    assert round_package_ready(tmp_path, pending, release, before)
+    assert not round_package_ready(
+        tmp_path, pending, release, NativeRoundDownloads.capture(tmp_path, release)
+    )
+    ota = path.rename(tmp_path / "MAAComponent-OTA-v6.0.0+build1_v6.2.0-win-x64.zip")
+    assert round_package_ready(tmp_path, (target, ota.name), release, None)
+    assert not round_package_ready(
+        tmp_path, (target, ota.name), ("v6.0.0+build2", "x64"), None
+    )
+    assert not round_package_ready(
+        tmp_path, (target, ota.name), (release[0], "arm64"), None
+    )
 
 
 @pytest.mark.asyncio

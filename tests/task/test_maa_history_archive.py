@@ -66,6 +66,8 @@ async def test_maa_finalizer_archives_original_without_system_temp(
 
     task = SimpleNamespace(
         check_result="Pass",
+        round_update_error=None,
+        _finish_round_update=AsyncMock(),
         history=SimpleNamespace(
             begin_user_history_capture=Mock(),
             save_user_history=save,

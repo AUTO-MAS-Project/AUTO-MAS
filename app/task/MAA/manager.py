@@ -13,6 +13,7 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 #   Contact: DLmaster_361@163.com
+import asyncio
 import time
 import uuid
 from contextlib import ExitStack, suppress
@@ -63,7 +64,6 @@ from .AutoProxy import (
 from .constants import ARKNIGHTS_PACKAGE_NAME
 from .ScriptConfig import ScriptConfigTask
 from .tools import update_maa
-from .tools.managed_recovery import MAAInstallAdapter
 from .tools.backup_archive import (
     archive_native_backup,
     collect_native_files,
@@ -75,6 +75,7 @@ from .tools.fluxdown_update import (
     query_latest_maa_version,
 )
 from .tools.game_update import ensure_game_updated
+from .tools.managed_recovery import MAAInstallAdapter
 from .tools.resource_update import (
     _run_write_thread,
     acquire_resource_access_lock,
@@ -85,10 +86,14 @@ from .tools.resource_update import (
     read_resource_clock,
 )
 from .tools.software_package import (
+    NativeRoundDownloads,
     clear_deferred_update,
+    clear_matching_package,
     has_delegated_update_failure,
     load_deferred_update,
     read_pending_update,
+    round_package_ready,
+    round_resource_record,
     save_deferred_update,
     write_pending_update,
 )
@@ -231,16 +236,33 @@ class MaaManager(ScriptManagerBase):
             saved = load_deferred_update(self.maa_set_path.parent)
             if saved is not None:
                 self._pending_update = saved
-            if (
-                self._pending_update is None
-                or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
-            ):
+            if self._pending_update is None:
                 return
             release = read_installed_release(self.maa_set_path.parent)
             current = parse_version(release[0]) if release else None
             target = parse_version(self._pending_update[0])
+            root = self.maa_set_path.parent
             if current and target and compare_versions(target, current) <= 0:
+                clear_matching_package(root, self._pending_update)
                 clear_deferred_update(self.maa_set_path.parent)
+                self._pending_update = None
+                return
+            if not (root / self._pending_update[1]).is_file():
+                return
+            if (
+                await asyncio.to_thread(
+                    round_package_ready, root, self._pending_update, release, None
+                )
+                is False
+            ):
+                # 来源不明的旧包不重新注入；可明确判定错配的官方 OTA 也不挂回快照。
+                if (
+                    Path(self._pending_update[1])
+                    .name.casefold()
+                    .startswith("maacomponent-ota-")
+                ):
+                    clear_matching_package(root, self._pending_update)
+                clear_deferred_update(root)
                 self._pending_update = None
                 return
             _, current_package = read_pending_update(self.maa_set_path.parent)
@@ -524,6 +546,20 @@ class MaaManager(ScriptManagerBase):
         root = self.maa_set_path.parent
         software_flag = root / "pending-update-failure.txt"
         resource_flag = root / ".automas-resource-update.json"
+        record = round_resource_record(root)
+        minimum = None
+        if record.is_file():
+            minimum = datetime.fromisoformat(_utils_io.read_dict_file(record)["target"])
+            installed = read_resource_clock(root)
+            if installed is not None and installed >= minimum:
+                record.unlink()
+                minimum = None
+            elif not self.script_config.Update.TakeoverEnabled:
+                raise MaaUpdateUnsafeError(
+                    "MAA 资源低于安装前版本，请恢复资源或开启更新接管后重试"
+                )
+            elif not resource_flag.exists() and not resource_flag.is_symlink():
+                _utils_io.write_file(resource_flag, {"target": minimum.isoformat()})
         if not any(
             path.exists() or path.is_symlink()
             for path in (software_flag, resource_flag)
@@ -549,6 +585,13 @@ class MaaManager(ScriptManagerBase):
             acknowledge=adapter.acknowledge,
             reinstall=reinstall,
         )
+        if minimum is not None:
+            installed = read_resource_clock(root)
+            if installed is None or installed < minimum:
+                raise MaaUpdateUnsafeError(
+                    "MAA 资源未恢复到本体安装前的版本，已停止后续代理"
+                )
+            record.unlink()
         await self.script_info.set_log(f"MAA 官方安装/资源状态已自动恢复：{outcome}")
         # 避免刚恢复后同一轮又执行二次升级，异常留给任务结束统一报告。
         self._maa_update_checked = True
@@ -623,6 +666,7 @@ class MaaManager(ScriptManagerBase):
             else:
                 kwargs["game_update_result"] = update_result
                 kwargs["capture_adb"] = capture_adb
+                kwargs["install_round_update"] = self._install_round_update
             task = METHOD_BOOK[self.execution_mode](**kwargs)
             if isinstance(task, AutoProxyTask):
                 self._active_proxy_task = task
@@ -630,11 +674,13 @@ class MaaManager(ScriptManagerBase):
             await self.run_user_task(
                 self.script_info.user_list[self.script_info.current_index], task
             )
-            if isinstance(task, AutoProxyTask):
+            if isinstance(task, AutoProxyTask) and not self._updater_running:
                 self._remember_pending_update()
             # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
             if getattr(task, "report_image_pairs", None):
                 self._rollup_image_pairs.extend(task.report_image_pairs)
+            if isinstance(task, AutoProxyTask) and task.round_update_error is not None:
+                raise task.round_update_error
 
     async def prefetch_script_update(self) -> None:
         from .tools.fluxdown_update import PreparedUpdate
@@ -858,16 +904,100 @@ class MaaManager(ScriptManagerBase):
         )
         return True
 
+    async def _install_round_update(
+        self, pending: tuple[str, str] | None, native: NativeRoundDownloads | None
+    ) -> None:
+        if pending is None:
+            return
+        root = self.maa_set_path.parent
+        release = read_installed_release(root)
+        current = parse_version(release[0]) if release else None
+        target = parse_version(pending[0])
+        if (
+            not release
+            or not current
+            or not target
+            or compare_versions(current, target) >= 0
+        ):
+            return
+        try:
+            ready = await asyncio.to_thread(
+                round_package_ready, root, pending, release, native
+            )
+        except (OSError, ValueError) as error:
+            logger.warning(f"无法读取本轮 MAA 更新包，等待下次检查：{error}")
+            return
+        if not ready:
+            logger.info("本轮没有与当前安装匹配的就绪 MAA 更新包")
+            return
+        if not await process.is_process_stopped(
+            root / "MAA.exe"
+        ) or not await process.is_process_stopped(root / "MAA.Updater.exe"):
+            self._updater_running = True
+            raise MaaUpdaterRunningError(
+                "无法确认 MAA 更新相关进程已退出，已停止后续代理"
+            )
+        # 完整包可覆盖活动资源。复用已有资源修复标记，中止后也走原恢复入口。
+        marker = root / ".automas-resource-update.json"
+        try:
+            if (
+                marker.exists()
+                or marker.is_symlink()
+                or has_delegated_update_failure(root)
+            ):
+                raise MaaUpdateUnsafeError("MAA 安装尚待修复，已停止后续代理")
+            resource_clock = (
+                read_resource_clock(root)
+                if self.script_config.Update.TakeoverEnabled
+                else None
+            )
+            if self.script_config.Update.TakeoverEnabled and resource_clock is None:
+                raise MaaUpdateUnsafeError(
+                    "无法确认安装前的 MAA 资源版本，已停止后续代理"
+                )
+            if resource_clock is not None:
+                _utils_io.write_file(
+                    round_resource_record(root), {"target": resource_clock.isoformat()}
+                )
+            await run_script_update(
+                ScriptUpdateRequest(str(self.script_info.script_id), "MAA"),
+                self._install_pending_software_update,
+                target=pending[0],
+                pending=pending,
+            )
+            if resource_clock is not None:
+                await self._recover_unconfirmed_update()
+        except (MaaUpdaterRunningError, MaaUpdateUnsafeError):
+            raise
+        except Exception as error:
+            raise MaaUpdateUnsafeError(
+                "MAA 轮末更新未能确认完成，已停止后续代理"
+            ) from error
+
     async def _install_pending_software_update(
-        self, *, target: str | None = None
+        self, *, target: str | None = None, pending: tuple[str, str] | None = None
     ) -> None:
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
         await self.script_info.set_log("正在等待 MAA 官方更新器处理本地更新包")
         try:
+            if pending is None:
+                root = self.maa_set_path.parent
+                pending = read_pending_update(root)
+                release = read_installed_release(root)
+                if (
+                    all(pending)
+                    and await asyncio.to_thread(
+                        round_package_ready, root, pending, release, None
+                    )
+                    is False
+                ):
+                    clear_matching_package(root, pending)
+                    return
             await update_maa(
                 self.maa_set_path.parent,
                 snapshot_path=self.temp_path,
                 script_id=self.script_info.script_id,
+                pending=pending,
             )
         except MaaUpdaterRunningError:
             self._updater_running = True
@@ -952,6 +1082,10 @@ class MaaManager(ScriptManagerBase):
                         ),
                     )
 
+            if isinstance(
+                self.execution.error, (MaaUpdaterRunningError, MaaUpdateUnsafeError)
+            ):
+                return
             await self.script_info.set_state(
                 status="跳过" if self.all_users_maintenance_skipped else "完成"
             )

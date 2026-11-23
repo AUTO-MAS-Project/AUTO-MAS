@@ -46,6 +46,7 @@ import os
 import re
 import shutil
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.utils import get_logger
@@ -67,6 +68,85 @@ _FAILURE_FLAG_FILE = "pending-update-failure.txt"
 # 完整包安装峰值占用 ≈ 包 + 解压临时目录 + .old 备份（MaaUpdater 换血语义）
 _FREE_SPACE_SCALE = 3
 _ILLEGAL_NAME_RE = re.compile(r'[\\/:*?"<>|]')
+
+
+def ota_asset_name(current: str, target: str, arch: str) -> str:
+    return f"MAAComponent-OTA-v{current.removeprefix('v')}_v{target.removeprefix('v')}-win-{arch}.zip"
+
+
+@dataclass(frozen=True)
+class NativeRoundDownloads:
+    """原生 Mirror 酱差分包名不含基线，只采信本次 MAA 实际下载的包。"""
+
+    release: tuple[str, str]
+    files: dict[Path, os.stat_result]
+
+    @classmethod
+    def capture(
+        cls, root: Path, release: tuple[str, str]
+    ) -> NativeRoundDownloads | None:
+        try:
+            files = {
+                p: p.stat()
+                for p in root.resolve().iterdir()
+                if p.name.casefold().startswith("mirrorchyanapp")
+                and p.suffix.casefold() == ".zip"
+            }
+            return cls(release, files)
+        except OSError as error:
+            logger.warning(f"无法确认现有 Mirror 酱更新包：{error}")
+            return None
+
+
+def round_package_ready(
+    root: Path,
+    pending: tuple[str, str],
+    release: tuple[str, str] | None,
+    native: NativeRoundDownloads | None,
+) -> bool | None:
+    """就绪返回 True，不兼容的差分包返回 False，未完整落盘返回 None。"""
+    target, package = pending
+    path = (root / package).resolve()
+    try:
+        with zipfile.ZipFile(path) as archive:
+            names = {
+                Path(name.replace("\\", "/")).as_posix().casefold()
+                for name in archive.namelist()
+            }
+        if not names.intersection(_OTA_MANIFEST_ENTRIES):
+            binaries = {
+                name.rsplit("/", 1)[-1] for name in names if name.count("/") <= 1
+            }
+            return True if _ESSENTIAL_ENTRIES <= binaries else None
+        if release is None:
+            return False
+        if (
+            path.name.casefold()
+            == ota_asset_name(release[0], target, release[1]).casefold()
+        ):
+            return True
+        if (
+            not native
+            or native.release != release
+            or path.parent != root.resolve()
+            or path.name.casefold() != f"MirrorChyanApp{target}.zip".casefold()
+        ):
+            return False
+        # 运行前会清空新配置的包登记。同名旧 ZIP 也可能在下载失败后留下。
+        live = _utils_io.read_dict_file(root / "config/gui.new.json").get("Update", {})
+        if (
+            not isinstance(live, dict)
+            or (live.get("Name"), live.get("UpdatePackage")) != pending
+        ):
+            return False
+        old, new = native.files.get(path), path.stat()
+        return old is None or (old.st_ino, old.st_size, old.st_mtime_ns) != (
+            new.st_ino,
+            new.st_size,
+            new.st_mtime_ns,
+        )
+    except (FileNotFoundError, zipfile.BadZipFile):
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -174,6 +254,12 @@ def has_delegated_update_failure(maa_root: Path) -> bool:
     return (maa_root / _FAILURE_FLAG_FILE).is_file()
 
 
+_PENDING_FIELDS = (
+    ("gui.new.json", "Update", "Name", "UpdatePackage"),
+    ("gui.json", "Global", "VersionUpdate.name", "VersionUpdate.package"),
+)
+
+
 def read_pending_update(maa_root: Path) -> tuple[str, str]:
     """读已登记的待更新包，返回 (版本名, 包路径)。
 
@@ -181,19 +267,28 @@ def read_pending_update(maa_root: Path) -> tuple[str, str]:
     优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置损坏或读取
     失败上抛，由登记入口告警并停止，不把无法读取伪装成无登记。
     """
-    new_set = _utils_io.read_dict_file(maa_root / "config" / "gui.new.json")
-    update = new_set.get("Update")
-    if isinstance(update, dict):
-        package = str(update.get("UpdatePackage") or "")
-        if package:
-            return str(update.get("Name") or ""), package
-    old_set = _utils_io.read_dict_file(maa_root / "config" / "gui.json")
-    global_set = old_set.get("Global")
-    if isinstance(global_set, dict):
-        package = str(global_set.get("VersionUpdate.package") or "")
-        if package:
-            return str(global_set.get("VersionUpdate.name") or ""), package
+    for name, group, version_key, package_key in _PENDING_FIELDS:
+        values = _utils_io.read_dict_file(maa_root / "config" / name).get(group)
+        if isinstance(values, dict) and (package := values.get(package_key)):
+            return str(values.get(version_key) or ""), str(package)
     return "", ""
+
+
+def clear_matching_package(root: Path, pending: tuple[str, str]) -> None:
+    """只撤下对应版本和路径的登记，保留 ZIP 及其他待装包。"""
+    for name, group, version_key, package_key in _PENDING_FIELDS:
+        path = root / "config" / name
+        data = _utils_io.read_dict_file(path)
+        values = data.get(group)
+        if (
+            isinstance(values, dict)
+            and values.get(version_key) == pending[0]
+            and isinstance(package := values.get(package_key), str)
+            and package
+        ):
+            if (root / package).resolve() == (root / pending[1]).resolve():
+                values[package_key] = ""
+                _utils_io.write_file(path, data)
 
 
 def _deferred_update_path(maa_root: Path) -> Path:
@@ -202,6 +297,11 @@ def _deferred_update_path(maa_root: Path) -> Path:
         / "data/maa_update/pending"
         / f"{_utils_config_archive.config_root_key(maa_root)}.json"
     )
+
+
+def round_resource_record(maa_root: Path) -> Path:
+    """完整包会替换安装目录，资源恢复目标与待装登记一起存放在 MAS 目录。"""
+    return _deferred_update_path(maa_root).with_suffix(".resources.json")
 
 
 def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:

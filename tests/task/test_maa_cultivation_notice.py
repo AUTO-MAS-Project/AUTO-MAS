@@ -146,6 +146,8 @@ def finalizer(monkeypatch, tmp_path):
     monkeypatch.setattr(module.Notify, "send_notice", AsyncMock())
     return SimpleNamespace(
         check_result="Pass",
+        round_update_error=None,
+        _finish_round_update=AsyncMock(),
         user_start_time=now,
         log_start_time=now,
         cur_user_uid="user",

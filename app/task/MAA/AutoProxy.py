@@ -20,7 +20,7 @@ import re
 import shutil
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -128,7 +128,11 @@ from .tools.screenshot import (
     capture_current_image,
     collect_maa_failure_image,
 )
-from .tools.software_package import read_pending_update, save_deferred_update
+from .tools.software_package import (
+    NativeRoundDownloads,
+    read_pending_update,
+    save_deferred_update,
+)
 from .tools.software_update import (
     compare_versions,
     parse_version,
@@ -139,6 +143,8 @@ from .tools.task_templates import (
     MAA_GREEN_TICKET_STORE_TASK,
     MAA_TASK_TRANSITION_METHOD_BOOK,
 )
+from .tools.update_errors import MaaUpdateUnsafeError
+from .tools.UpdateMAA import MaaUpdaterRunningError
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -1252,6 +1258,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     _event_depot_completed: bool = False
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
     _stock_depot_completed: bool = False
+    round_update_error: MaaUpdaterRunningError | MaaUpdateUnsafeError | None = None
+    _round_started = False
+    _native_downloads: NativeRoundDownloads | None = None
 
     def __init__(
         self,
@@ -1261,6 +1270,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         emulator_manager: DeviceBase,
         *,
         capture_adb: AdbCapture,
+        install_round_update: Callable[
+            [tuple[str, str] | None, NativeRoundDownloads | None], Awaitable[None]
+        ],
         game_update_result: _utils_game_update.GameUpdateResult | None = None,
     ):
         super().__init__()
@@ -1274,6 +1286,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         self.user_config = user_config
         self.emulator_manager = emulator_manager
         self.capture_adb = capture_adb
+        self.install_round_update = install_round_update
         self._failure_capture = FailureCapture(stopped=lambda: self.stopped_manually)
         self.game_update_result = game_update_result
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
@@ -1539,9 +1552,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
+                self._native_downloads = None
+                if not self.script_config.Update.TakeoverEnabled:
+                    release = read_installed_release(self.maa_exe_path.parent)
+                    if release is not None:
+                        self._native_downloads = await asyncio.to_thread(
+                            NativeRoundDownloads.capture,
+                            self.maa_exe_path.parent,
+                            release,
+                        )
                 await self.maa_process_manager.open_process(
                     self.maa_exe_path, env=await self._maa_process_env()
                 )
+                self._round_started = True
                 logger.info(
                     f"MAA 进程已创建: {self.maa_exe_path} - "
                     f"PID: {self.maa_process_manager.main_pid}"
@@ -1574,6 +1597,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     self._failed_sanity_tasks.update(failed_sanity)
                     for task in failed_sanity:
                         self.task_dict[task] = False
+
+                if self.cur_user_log.status in ("Success!", "MAA 部分任务执行失败"):
+                    # 队列结束日志先于 GUI 保存更新登记。给退出动作单独的时间。
+                    with self.pause_run_timeout():
+                        proc = self.maa_process_manager.process
+                        assert proc is not None
+                        try:
+                            await asyncio.wait_for(proc.wait(), timeout=10)
+                        except TimeoutError:
+                            await self.maa_process_manager.kill()
 
                 if self.cur_user_log.status == "Success!":
                     # 剩余任务成功不覆盖此前明确失败且没有重试的体力任务。
@@ -1621,6 +1654,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     self._collect_cultivate_archive(maa_log, finalizing=True)
                     await self._finish_cultivate_round()
                 await self._sync_maa_config_updates()
+                await self._finish_round_update()
 
                 if not _should_retry_maa(
                     self.cur_user_log.status,
@@ -1634,6 +1668,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                             f"{MAA_RUN_MOOD_BOOK[self.mode]}没有可单独重试的非体力任务，停止重试"
                         )
                     break
+
+    async def _finish_round_update(self) -> None:
+        if self._round_started:
+            self._round_started = False
+            if not self.stopped_manually:
+                with self.pause_run_timeout():
+                    await self.install_round_update(
+                        self.pending_update, self._native_downloads
+                    )
 
     def _cultivate_archive_dir(self) -> Path:
         """当前账号的识别数据档案目录（方案决策 31：归属以写入时的
@@ -1705,7 +1748,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         try:
             await super()._finalize_task()
         finally:
-            if self.maa_root_path is not None:
+            if self.maa_root_path is not None and not isinstance(
+                self.round_update_error, MaaUpdaterRunningError
+            ):
                 restore_depot_cache(
                     self.maa_root_path,
                     depot_cache_snapshot_dir(self.script_info.script_id),
@@ -2857,6 +2902,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         update_settings = gui_new_set.setdefault("Update", {})
         update_settings.update(
             {
+                "CheckOnStartup": not self.script_config.Update.TakeoverEnabled,
                 "CheckOnSchedule": False,
                 "AutoDownloadUpdatePackage": True,
                 "AutoInstallUpdatePackage": False,
@@ -2865,7 +2911,6 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         # 接管开启即暂停原生更新，不因本轮更新失败而重新启用。
         # GitHub 资源源仅支持手动下载，临时选择随快照恢复，不改变 CDK。
         if self.script_config.Update.TakeoverEnabled:
-            update_settings["CheckOnStartup"] = False
             update_settings["AutoDownloadUpdatePackage"] = False
             update_settings["UpdateSource"] = "GitHub"
         if Config.setting.Function.IfSilence:
@@ -3243,13 +3288,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        logger.info("MAA 收尾: 停止 MAA 进程")
-        # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
-        # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
-        await self.maa_process_manager.kill()
-        await process.kill_process(self.maa_exe_path)
-        self._remember_pending_update()
-        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+        maa_idle = not isinstance(self.round_update_error, MaaUpdaterRunningError)
+        if maa_idle:
+            logger.info("MAA 收尾: 停止 MAA 进程")
+            await self.maa_process_manager.kill()
+            await process.kill_process(self.maa_exe_path)
+            self._remember_pending_update()
+            try:
+                await self._finish_round_update()
+            except (MaaUpdateUnsafeError, MaaUpdaterRunningError) as error:
+                await self.on_crash(error)
+            maa_idle = not isinstance(self.round_update_error, MaaUpdaterRunningError)
 
         # 中止可能绕过每轮结束后的刷新；正常已刷新时标记为空，不重复请求。
         current_log = self.cur_user_item.log_record.get(self.log_start_time)
@@ -3259,8 +3308,9 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
         await self._finish_cultivate_round()
 
-        logger.info("MAA 收尾: 回写 MAA 配置")
-        await agree_bilibili(self.maa_tasks_path, False)
+        if maa_idle:
+            logger.info("MAA 收尾: 回写 MAA 配置")
+            await agree_bilibili(self.maa_tasks_path, False)
 
         # 是否成功提前判定：ExitEmulator 模式随后就关闭模拟器，失败画面的
         # 补截必须赶在关模拟器之前
@@ -3278,7 +3328,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
 
         await self.run_user_scripts_after()
 
-        if self.maa_root_path is not None:
+        if maa_idle and self.maa_root_path is not None:
             await asyncio.to_thread(
                 restore_depot_cache,
                 self.maa_root_path,
@@ -3382,7 +3432,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                 self._cultivate_achievement_summary
             )
 
-        success_symbol = "√" if if_success else "X"
+        account_completed = if_success and self.round_update_error is None
+        success_symbol = "√" if account_completed else "X"
+        if self.round_update_error is not None:
+            statistics["maa_result"] += f"。{self.round_update_error}"
 
         # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计；
         # 失败轮取到现场画面时同样发送——登录失败这类开局即败的轮次，用户
@@ -3418,6 +3471,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             )
             await self.cur_user_config.commit()
 
+        if account_completed:
             await self.cur_user_item.set_state(status="完成")
             logger.success(f"账号 {self.cur_user_uid} 的自动代理任务已完成")
         else:
@@ -3442,7 +3496,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
             log_warning=logger.opt(exception=True).warning,
         )
 
-        if self.run_book["Annihilation"] and self.run_book["Routine"]:
+        if account_completed:
             await Notify.send_notice(
                 LocalNotice(
                     title="成功完成一个自动代理任务！",
@@ -3508,6 +3562,8 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         logger.info(f"MAA 任务收尾完成 - 用时: {time.monotonic() - started_at:.3f}秒")
 
     async def on_crash(self, e: Exception):
+        if isinstance(e, (MaaUpdaterRunningError, MaaUpdateUnsafeError)):
+            self.round_update_error = e
         await self.cur_user_item.set_state(status="异常")
         logger.opt(exception=True).warning(f"自动代理任务出现异常: {e}")
         await Publisher.send(
