@@ -1,8 +1,17 @@
-# 本地打包与 Runtime 验证
+# 脚本与本地验证工具
 
-本文说明如何在本地构建 AUTO-MAS 桌面验证包，以及如何联调本地源码编译的 Runtime。
+## 本地 PR 一键预检（`pr_check.py`）
 
-## 快速开始
+提 PR 前在仓库根目录执行，按当前改动路径自动运行对应的 CI 门禁（`git diff --check`、`ruff format --check`、`uv lock --check`、Vue 500 行门禁、前端 lint / typecheck / format / i18n、E2E 契约与 `changelog.py check`），失败时直接输出禁止绕过项与精确修复命令：
+
+```powershell
+uv run --no-sync python scripts/pr_check.py                   # 按 diff 自动选门禁
+uv run --no-sync python scripts/pr_check.py --skip-changelog  # 纯文档/测试/CI 改动
+uv run --no-sync python scripts/pr_check.py --all             # 运行全部本地门禁
+uv run --no-sync python scripts/pr_check.py --dry-run         # 仅查看将执行的门禁
+```
+
+## 本地打包与 Runtime 验证
 
 在仓库根目录使用 PowerShell 7 运行：
 
