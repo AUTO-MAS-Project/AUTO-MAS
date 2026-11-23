@@ -6,7 +6,7 @@ import asyncio
 from abc import abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import UUID
 
 from app.config import LockTicket
@@ -37,6 +37,9 @@ class ScriptSkip:
 
 class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
     history: TaskHistorySession
+    # 为真时 L2 不在派发本层之前选定托管级游戏会话，改由本层确认有可运行账号之后
+    # 调 ``select_game_session()``（同旧专项的 after_config_lock）；没有账号就不占游戏、不排队。
+    defer_game_session: ClassVar[bool] = False
 
     def __init__(self, script: TaskScriptItem, config: ScriptConfigT) -> None:
         """绑定托管运行节点及已锁脚本配置，建立 L3 参数上下文并初始化用户锁和准备阶段状态。"""
@@ -84,6 +87,23 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         return self.task_info.mode != TaskMode.AUTO_PROXY or (
             entry.Info.Status and entry.Info.RemainedDay != 0
         )
+
+    async def select_game_session(self, config: Any = None) -> None:
+        """选定 L2 交来的托管级游戏会话（游戏 / 模拟器），可能要等串行游戏或设备。
+
+        供声明了 ``defer_game_session`` 的插件在确认有可运行账号之后调用；``config``
+        不使用，只为能直接当旧专项管理器的 ``after_config_lock`` 回调。已选定时不重复订阅。
+        失败照原样抛出，由调用方按托管级检查失败处理（交回锁、账号记「异常」、说明原因）。
+        """
+        if self.game_session is not None:
+            await self.game_session.select()
+
+    def on_stop_requested(self) -> None:
+        """用户停止本次任务时由 L2 同步调用，早于取消送达本层；默认什么都不做。
+
+        受保护的收尾（``finish()`` 等）收不到取消，需要提前结束的（运行后更新、
+        环境确认）在这里置停止标记。只做同步的轻量动作，不得抛出；可能被调用多次。
+        """
 
     async def record_user_state(
         self, user: TaskUserItem, *, status: str, reason: str

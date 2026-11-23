@@ -212,3 +212,63 @@ async def test_plugin_run_scope_finishes_so_deferred_release_completes(
         for worker in handoffs:
             worker.cancel()
         await asyncio.gather(*handoffs, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_stop_during_plugin_finish_reaches_plugin_expander(
+    scheduler, monkeypatch
+):
+    """插件托管收尾（运行后更新、环境确认）中点停止：插件要收到通知提前结束收尾。
+
+    收尾受保护，外层取消到不了；L2 不同步通知插件的话，停止只能等收尾自己跑完。
+    """
+    from uuid import uuid4
+
+    from app.core import Plugin
+    from app.models.config import ScriptEntry, UserEntry
+    from app.plugin.base.script import ScriptTypeDecl
+    from app.task.user_expander import UserExpander
+
+    finishing, stop_requested = asyncio.Event(), asyncio.Event()
+
+    class Script(ScriptEntry):
+        pass
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            self._entered = True
+
+        async def finish(self):
+            finishing.set()
+            await stop_requested.wait()
+
+        def on_stop_requested(self):
+            stop_requested.set()
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager, scripts, _, _ = scheduler
+    scripts.add_type(Script)
+    await scripts.commit()
+    sid = scripts.add(Script, payload={"info": {"name": "plugin"}})
+    await scripts.commit()
+    monkeypatch.setattr(
+        manager, "plugin_expander", lambda script, config: Expander(script, config)
+    )
+    monkeypatch.setattr(
+        Plugin, "script_types", {uuid4(): ScriptTypeDecl(Script, UserEntry, Expander)}
+    )
+
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    try:
+        await asyncio.wait_for(finishing.wait(), 3)
+        await asyncio.wait_for(manager.stop_task(uid), 3)
+        assert run.task_info.status == "cancelled"
+        assert run.task_info.script_list[0].status == "已取消"
+    finally:
+        stop_requested.set()
+        await asyncio.wait_for(run.accomplish.wait(), 3)
