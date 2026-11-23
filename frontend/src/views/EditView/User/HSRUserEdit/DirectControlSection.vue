@@ -1,8 +1,10 @@
 <template>
-  <div class="direct-control-section">
-    <div class="section-header section-header--compact">
-      <h3>{{ t('core.edit.directControl') }}</h3>
-    </div>
+  <SectionCard
+    variant="plain"
+    density="compact"
+    :title="t('core.edit.directControl')"
+    class="direct-control-section"
+  >
     <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
     <NoData
       v-if="availableEngines.length === 0"
@@ -30,11 +32,12 @@
         </div>
       </div>
     </div>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { SectionCard } from '@/components/ui'
 import type { HSREngine } from '@/composables/useHSRPluginApi'
 import type { HSRUserConfigData } from './types'
 

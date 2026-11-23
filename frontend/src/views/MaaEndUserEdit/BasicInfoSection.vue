@@ -5,99 +5,98 @@
       :user-name="formData.userName"
       :options="{ ...heading, logoSrc: accountIcon }"
     />
-    <div class="section-header">
-      <h3>{{ t('core.edit.basicInfo') }}</h3>
-    </div>
-    <UserBasicInfoFields
-      v-model:user-name="formData.userName"
-      v-model:status="formData.Info.Status"
-      v-model:remained-day="formData.Info.RemainedDay"
-      v-model:notes="formData.Info.Notes"
-      :disabled="loading"
-      @save-name="emitSave('userName', formData.userName)"
-      @save-status="emitSave('Info.Status', formData.Info.Status)"
-      @save-days="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
-      @save-notes="emitSave('Info.Notes', formData.Info.Notes)"
-    />
+    <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+      <UserBasicInfoFields
+        v-model:user-name="formData.userName"
+        v-model:status="formData.Info.Status"
+        v-model:remained-day="formData.Info.RemainedDay"
+        v-model:notes="formData.Info.Notes"
+        :disabled="loading"
+        @save-name="emitSave('userName', formData.userName)"
+        @save-status="emitSave('Info.Status', formData.Info.Status)"
+        @save-days="emitSave('Info.RemainedDay', formData.Info.RemainedDay)"
+        @save-notes="emitSave('Info.Notes', formData.Info.Notes)"
+      />
 
-    <a-row :gutter="24">
-      <a-col :xs="24" :sm="12" :md="8">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.accountId')"
-              :hint="t('core.edit.usedSwitchAccountsCn2')"
-              variant="form"
+      <a-row :gutter="24">
+        <a-col :xs="24" :sm="12" :md="8">
+          <a-form-item>
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.accountId')"
+                :hint="t('core.edit.usedSwitchAccountsCn2')"
+                variant="form"
+              />
+            </template>
+            <a-input
+              v-model:value="formData.Info.Id"
+              :placeholder="t('core.edit.enterAccountId')"
+              :disabled="loading"
+              @blur="emitSave('Info.Id', formData.Info.Id)"
             />
-          </template>
-          <a-input
-            v-model:value="formData.Info.Id"
-            :placeholder="t('core.edit.enterAccountId')"
-            :disabled="loading"
-            @blur="emitSave('Info.Id', formData.Info.Id)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="24" :sm="12" :md="8">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.password')"
-              :hint="t('core.edit.userSPasswordStored')"
-              variant="form"
+          </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="12" :md="8">
+          <a-form-item>
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.password')"
+                :hint="t('core.edit.userSPasswordStored')"
+                variant="form"
+              />
+            </template>
+            <a-input-password
+              v-model:value="formData.Info.Password"
+              :placeholder="t('core.edit.passwordStoredOnlySo2')"
+              :disabled="loading"
+              @blur="emitSave('Info.Password', formData.Info.Password)"
             />
-          </template>
-          <a-input-password
-            v-model:value="formData.Info.Password"
-            :placeholder="t('core.edit.passwordStoredOnlySo2')"
-            :disabled="loading"
-            @blur="emitSave('Info.Password', formData.Info.Password)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :xs="24" :sm="24" :md="8">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('core.edit.collectNodeDetails') }}
-              <a-tooltip :mouse-enter-delay="0.5" :title="t('core.edit.collectsKeyMomentsFrom')">
-                <QuestionCircleOutlined class="help-icon" />
-              </a-tooltip>
-            </span>
-          </template>
-          <a-select
-            v-model:value="formData.Notify.PushLogMode"
-            :options="pushLogModeOptions"
-            :disabled="loading"
-            @change="emitSave('Notify.PushLogMode', formData.Notify.PushLogMode)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
+          </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="24" :md="8">
+          <a-form-item>
+            <template #label>
+              <span class="form-label">
+                {{ t('core.edit.collectNodeDetails') }}
+                <a-tooltip :mouse-enter-delay="0.5" :title="t('core.edit.collectsKeyMomentsFrom')">
+                  <QuestionCircleOutlined class="help-icon" />
+                </a-tooltip>
+              </span>
+            </template>
+            <a-select
+              v-model:value="formData.Notify.PushLogMode"
+              :options="pushLogModeOptions"
+              :disabled="loading"
+              @change="emitSave('Notify.PushLogMode', formData.Notify.PushLogMode)"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
 
-    <a-row v-if="showResource" :gutter="24">
-      <a-col :xs="24" :sm="12">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">
-              {{ t('core.edit.gameResource') }}
-            </span>
-          </template>
-          <a-select
-            :value="
-              formData.Info.Resource === '官服' &&
-              resourceOptions.some(option => option.value === 'CN')
-                ? 'CN'
-                : formData.Info.Resource
-            "
-            :placeholder="t('core.edit.pickResource')"
-            :disabled="loading"
-            :options="resourceOptions"
-            @change="handleResourceChange"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
+      <a-row v-if="showResource" :gutter="24">
+        <a-col :xs="24" :sm="12">
+          <a-form-item>
+            <template #label>
+              <span class="form-label">
+                {{ t('core.edit.gameResource') }}
+              </span>
+            </template>
+            <a-select
+              :value="
+                formData.Info.Resource === '官服' &&
+                resourceOptions.some(option => option.value === 'CN')
+                  ? 'CN'
+                  : formData.Info.Resource
+              "
+              :placeholder="t('core.edit.pickResource')"
+              :disabled="loading"
+              :options="resourceOptions"
+              @change="handleResourceChange"
+            />
+          </a-form-item>
+        </a-col>
+      </a-row>
+    </SectionCard>
   </div>
 </template>
 
@@ -107,6 +106,7 @@ import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import type { UserAccountHeadingOptions } from '@/types/userEditor'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 

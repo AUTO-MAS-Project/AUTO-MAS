@@ -189,6 +189,7 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Modal as AntModal, message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { GameCreateIn, type GameTypeItem, type GameUpdateIn } from '@/api'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
@@ -197,6 +198,7 @@ import { FolderOpenOutlined } from '@ant-design/icons-vue'
 const props = defineProps<{ open: boolean; row?: GameRow; types: GameTypeItem[] }>()
 const emit = defineEmits<{ close: []; created: [uid: string] }>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const api = useGamesApi()
 const selectedType = ref('')
 const saving = ref(false)
@@ -375,7 +377,7 @@ function close() {
     emit('close')
     return
   }
-  AntModal.confirm({ title: t('core.games.discard'), onOk: () => emit('close') })
+  void confirm({ tone: 'warning', title: t('core.games.discard'), onOk: () => emit('close') })
 }
 </script>
 

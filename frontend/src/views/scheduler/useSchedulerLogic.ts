@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { storeToRefs } from 'pinia'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openAlert, openConfirm } from '@/composables/useConfirm'
 import { translate as t } from '@/i18n'
 import { Service, PowerSignal } from '@/api'
 import { useSchedulerStore } from '@/stores/scheduler'
@@ -123,9 +124,10 @@ export function useSchedulerLogic() {
     const tab = schedulerTabs.value.find(tab => tab.key === key)
     if (!tab) return
     if (store.statusFor(tab) === '运行' || tab.starting) {
-      Modal.warning({
+      void openAlert({
+        tone: 'warning',
         title: t('core.scheduler.modal.cannotDeleteTitle'),
-        content: t('core.scheduler.modal.cannotDeleteContent', { title: store.titleFor(tab) }),
+        description: t('core.scheduler.modal.cannotDeleteContent', { title: store.titleFor(tab) }),
         okText: t('core.scheduler.modal.gotIt'),
       })
       return
@@ -134,13 +136,12 @@ export function useSchedulerLogic() {
       message.warning(t('core.scheduler.toast.mainTabUndeletable'))
       return
     }
-    Modal.confirm({
-      centered: true,
+    void openConfirm({
+      tone: 'danger',
       title: t('core.scheduler.modal.deleteTitle'),
-      content: t('core.scheduler.modal.deleteContent', { title: store.titleFor(tab) }),
+      description: t('core.scheduler.modal.deleteContent', { title: store.titleFor(tab) }),
       okText: t('core.scheduler.modal.deleteOk'),
       cancelText: t('core.common.cancel'),
-      okType: 'danger',
       onOk() {
         store.removeTab(key)
       },
@@ -154,13 +155,12 @@ export function useSchedulerLogic() {
       message.info(t('core.scheduler.toast.noIdleTabs'))
       return
     }
-    Modal.confirm({
-      centered: true,
+    void openConfirm({
+      tone: 'danger',
       title: t('core.scheduler.modal.batchDeleteTitle'),
-      content: t('core.scheduler.modal.batchDeleteContent', { count: idle.length }),
+      description: t('core.scheduler.modal.batchDeleteContent', { count: idle.length }),
       okText: t('core.scheduler.modal.deleteOk'),
       cancelText: t('core.common.cancel'),
-      okType: 'danger',
       onOk() {
         idle.forEach(tab => store.removeTab(tab.key))
         message.success(t('core.scheduler.toast.batchDeleted', { count: idle.length }))

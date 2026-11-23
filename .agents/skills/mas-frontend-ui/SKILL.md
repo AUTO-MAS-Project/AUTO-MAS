@@ -49,13 +49,13 @@ If Playwright cannot render or capture the concept, report the blocker and pause
 
 | Need         | Prefer                                                                                                                 |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| Layout       | `a-layout`, `a-menu`, `a-tabs`, `a-card`, `a-space`, `a-flex`, `a-row`, `a-col`                                        |
-| Form input   | `a-form`, `a-form-item`, `a-input`, `a-input-number`, `a-select`, `a-switch`, `a-checkbox`, `a-radio`, `a-date-picker` |
-| Data display | `a-table`, `a-tag`, `a-empty`, `a-statistic`, `a-typography`                                                           |
-| Feedback     | `a-modal`, `Modal.confirm`, `message`, `a-spin`, `a-progress`, `a-alert`                                               |
+| Layout       | `AppPage`, `PageHeader`, `PageSurface`, `SectionCard`, `ConfigEditShell` (`@/components/ui`); AntD `a-layout`, `a-menu`, `a-tabs`, `a-card`, `a-space`, `a-flex`, `a-row`, `a-col` |
+| Form input   | `SettingRow` (`@/components/ui`); AntD `a-form`, `a-form-item`, `a-input`, `a-input-number`, `a-select`, `a-switch`, `a-checkbox`, `a-radio`, `a-date-picker` |
+| Data display | `StateView`, `NoData`, `StatusChip` (`@/components/ui`); AntD `a-table`, `a-tag`, `a-statistic`, `a-typography`        |
+| Feedback     | `AppModal`, `ConfirmActionButton`, `useConfirm` (`@/composables/useConfirm`); AntD `message`, `a-progress`, `a-alert`  |
 | Icons        | `@ant-design/icons-vue`                                                                                                |
 
-Use default component styles, official props, slots, layout components, and theme tokens first. Custom CSS is for local layout constraints or real readability needs.
+For new or refactored UI, reuse the shared primitives in [Shared UI components](references/shared-ui-components.md) before hand-rolling raw `a-modal`, `Modal.confirm`, `a-spin`, `a-empty`, or `.form-section` wrappers. Use default component styles, official props, slots, layout components, and theme tokens first. Custom CSS is for local layout constraints or real readability needs.
 
 When overriding Ant Design Vue internals:
 
@@ -122,8 +122,8 @@ Before completing styling work that touches colors, borders, backgrounds, or add
 
 ### Modals And Drawers
 
-1. Use `Modal.confirm` for destructive confirmation.
-2. Use `a-modal` for short forms and simple flows.
+1. Use `useConfirm` (`@/composables/useConfirm`) or `ConfirmActionButton` (`@/components/ui`) for destructive confirmation instead of ad hoc `Modal.confirm` calls.
+2. Use `AppModal` (`@/components/ui`) for short forms and simple flows; rely on its `size`, `submitting`, `dirty`, `scroll`, and `layer` presets rather than hand-coding widths, `z-index`, or close locks per page.
 3. Prefer Drawer or a full page for long configuration, complex details, or logs.
 4. Titles use concrete wording such as "新增 XX", "编辑 XX", "查看 XX", "删除确认".
 5. Footer buttons follow "取消 / 确定" or "取消 / 保存".

@@ -9,19 +9,14 @@ html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
     .app-page-surface,
-    .page-surface,
     .ant-card,
     .ant-collapse,
     .ant-table,
     .ant-tree,
     .ant-descriptions-view,
     .tb-content,
-    .gamesign-content,
-    .tools-content,
     .cultivation-overview,
     .cultivation-content,
-    .theme-store-content,
-    .logs-content,
     .script-card,
     .emulator-tabs,
     .home-activity-notes,
@@ -50,16 +45,11 @@ html.appearance-background-custom
   :is(.content-area, .initialization-content, .standalone-container)
   :is(
     .app-page-surface,
-    .page-surface,
     .ant-card,
     .ant-collapse,
     .ui-section-card,
     .tb-content,
-    .gamesign-content,
-    .tools-content,
     .cultivation-content,
-    .theme-store-content,
-    .logs-content,
     .script-card,
     .emulator-tabs,
     .home-activity-notes,
@@ -69,7 +59,6 @@ html.appearance-background-custom
   )
   :is(
     .app-page-surface,
-    .page-surface,
     .banner-switcher,
     .ant-card,
     .ant-collapse,

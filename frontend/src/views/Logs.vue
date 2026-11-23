@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
 import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { useLogExport } from '@/composables/useLogExport'
@@ -245,10 +246,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="logs-container">
-    <div class="logs-header">
-      <h1 class="page-title app-page-title">{{ t('bootstrap.logs.pageTitle') }}</h1>
-      <div class="header-actions">
+  <AppPage layout="fill" class="logs-container">
+    <PageHeader :title="t('bootstrap.logs.pageTitle')">
+      <template #actions>
         <a-space :size="12" wrap>
           <a-radio-group
             v-model:value="selectedLogFile"
@@ -281,17 +281,19 @@ onUnmounted(() => {
             {{ t('bootstrap.logs.package') }}
           </a-button>
         </a-space>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
-    <div class="logs-content">
-      <a-spin :spinning="loading" :tip="t('bootstrap.logs.loading')">
-        <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
-          <div v-if="!loading && !logs" class="log-empty">
-            <NoData :description="emptyHint" />
-          </div>
+    <PageSurface :scrollable="false" class="logs-content">
+      <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
+        <StateView
+          :loading="loading"
+          :empty="!logs"
+          :loading-tip="t('bootstrap.logs.loading')"
+          :empty-description="emptyHint"
+          overlay-loading
+        >
           <vue-monaco-editor
-            v-else
             :value="logs"
             language="logfile"
             :theme="editorTheme"
@@ -300,50 +302,22 @@ onUnmounted(() => {
             @before-mount="registerLogLanguage"
             @mount="handleEditorMount"
           />
-        </div>
-      </a-spin>
-    </div>
-  </div>
+        </StateView>
+      </div>
+    </PageSurface>
+  </AppPage>
 </template>
 
 <style scoped>
 .logs-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
   padding: 20px;
   box-sizing: border-box;
 }
 
-.logs-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  flex-shrink: 0;
-}
-
-.page-title {
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-  min-width: 0;
-  justify-content: flex-end;
-}
-
 .logs-content {
-  flex: 1;
-  background: var(--ant-color-bg-container);
-  border-radius: 12px;
-  padding: 20px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  min-height: 0;
 }
 
 .editor-container {
@@ -368,24 +342,7 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.log-empty {
-  flex: 1;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  padding: 24px;
-  color: var(--ant-color-text-tertiary);
-  text-align: center;
-}
-
 :deep(.monaco-editor) {
   border-radius: 8px;
-}
-
-:deep(.ant-spin-nested-loading),
-:deep(.ant-spin-container) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
 }
 </style>

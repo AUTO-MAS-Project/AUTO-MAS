@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 
 defineProps<{
   ready: boolean
@@ -21,10 +22,7 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ title }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="title">
     <a-row :gutter="24">
       <a-col :span="$slots['package-mode'] ? 6 : 8">
         <a-form-item :label="t('core.edit.updateChannel')">
@@ -81,7 +79,7 @@ const { t } = useI18n()
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+  </SectionCard>
 </template>
 
 <style scoped src="@/styles/scriptEditForm.css"></style>

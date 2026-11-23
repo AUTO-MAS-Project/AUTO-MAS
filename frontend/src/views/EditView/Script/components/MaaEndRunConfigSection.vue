@@ -1,8 +1,5 @@
 <template>
-  <section class="form-section run-config-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.runConfiguration') }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="t('core.edit.runConfiguration')" class="run-config-section">
     <ScriptExecutionSessionField />
     <div class="run-config-grid">
       <ScriptHardTimeoutField
@@ -75,11 +72,12 @@
         @save="(key, value) => emit('save', key, value)"
       />
     </div>
-  </section>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
@@ -109,12 +107,6 @@ const transitionOptions = computed(() => [
 </script>
 
 <style scoped>
-.run-config-section {
-  container-type: inline-size;
-}
-.section-header {
-  margin-bottom: 16px;
-}
 .run-config-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

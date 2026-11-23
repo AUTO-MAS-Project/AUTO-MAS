@@ -138,7 +138,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { MaaFWQueueSourceChip } from '../maafwQueueSource'
 import { checkMaaFWQueueTemplateName } from '../maafwQueueTemplates'
@@ -240,10 +240,10 @@ const submitName = () => {
 }
 
 const confirmDelete = (name: string) => {
-  Modal.confirm({
+  void openConfirm({
+    tone: 'danger',
     title: t('core.edit.queueTemplateDeleteConfirm', { name }),
     okText: t('core.edit.queueTemplateDelete'),
-    okType: 'danger',
     cancelText: t('core.common.cancel'),
     onOk: () => emit('deleteQueueTemplate', name),
   })

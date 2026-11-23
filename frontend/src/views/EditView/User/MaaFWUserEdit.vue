@@ -1,17 +1,19 @@
 <template>
-  <div class="user-edit-container">
-    <component
-      :is="sections.header"
-      :save-status="saveStatus"
-      :save-error-message="saveErrorMessage"
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :script-route="scriptRoute"
-      :is-edit="isEdit"
-      :user-id="userIdHolder.value"
-      :leaving="leaving"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell :surface="false" class="user-edit-container">
+    <template #header>
+      <component
+        :is="sections.header"
+        :save-status="saveStatus"
+        :save-error-message="saveErrorMessage"
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :script-route="scriptRoute"
+        :is-edit="isEdit"
+        :user-id="userIdHolder.value"
+        :leaving="leaving"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="loading">
@@ -88,6 +90,7 @@
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
             :managed-task-entries="managedTaskEntries"
+            :deleting-task="deletingTask"
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
@@ -132,46 +135,49 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、MaaFW 项目配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="MAAFW_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('core.edit.maafwConfigRestoreUserDesc')"
-      :script-desc="t('core.edit.maafwConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-    >
-      <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewSections(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="maafw-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="maafw-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、MaaFW 项目配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="MAAFW_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.maafwConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.maafwConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+      >
+        <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="maafw-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="maafw-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { ConfigEditShell } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -232,6 +238,7 @@ const {
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
+  deletingTask,
   duplicateTask,
   renameTask,
   updateTaskWeekdays,

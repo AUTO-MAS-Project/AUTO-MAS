@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { VideoCameraOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import type { SettingChangeHandler } from '../settingTypes'
@@ -98,14 +99,14 @@ const savePassword = async () => {
 }
 
 const clearPassword = () => {
-  Modal.confirm({
+  void openConfirm({
+    tone: 'danger',
     // 与 a-modal 的 :z-index="900" 同理：遮罩整体压在标题栏（1000）之下，窗口控制按钮不被挡住
     zIndex: 900,
     title: t('core.setting.replay.clearPasswordTitle'),
-    content: t('core.setting.replay.clearPasswordContent'),
+    description: t('core.setting.replay.clearPasswordContent'),
     okText: t('core.setting.replay.clearPassword'),
     cancelText: t('core.common.cancel'),
-    okButtonProps: { danger: true },
     onOk: async () => {
       if (!(await updateReplaySetting('Password', '')))
         throw new Error(t('core.setting.toast.saveFailed'))

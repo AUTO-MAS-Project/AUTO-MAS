@@ -1,66 +1,79 @@
 <template>
-  <WhimboxUserEditHeader
-    :script-id="scriptId"
-    :script-name="scriptName"
-    :is-edit="isEdit"
-    @restore="openRestoreModal"
-    @cancel="handleCancel"
-  />
-
-  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-    <a-card class="config-card">
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <BasicInfoSection
-          :heading="{ isEdit }"
-          :form-data="formData"
-          :loading="loading"
-          @save="handleFieldSave"
-          @mode-change="handleConfigModeChange"
-          @quick-config-change="handleQuickConfigChange"
-        />
-
-        <TaskConfigSection
-          :loading="loading"
-          :steps="catalogSteps"
-          :options="catalogOptions"
-          :upstream-version="catalogData?.upstream_version ?? ''"
-          :catalog-error="catalogError"
-          :catalog-loading="catalogLoading || isInitializing"
-          :run-all-accounts="formData.OneDragon.IfRunAllAccounts"
-          :tasks="taskState"
-          :option-state="optionState"
-          @save="handleTaskConfigSave"
-          @tasks-change="handleTasksChange"
-          @options-change="handleOptionsChange"
-        />
-
-        <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
-
-        <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
-
-  <!-- ══ 配置恢复（通用组件：MAS 用户字段 + 奇想盒原生配置双池）══ -->
-  <ConfigRestoreSection
-    v-model:open="restoreOpen"
-    :disabled="configLocked"
-    :script-name="WHIMBOX_DISPLAY_NAME"
-    :targets="restoreTargets"
-    :api="restoreApi"
-    :user-desc="t('core.edit.whimboxConfigRestoreUserDesc')"
-    :script-desc="t('core.edit.whimboxConfigRestoreScriptDesc')"
-    :on-restored="handleRestored"
-  >
-    <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
-    <template #preview="{ raw }">
-      <BasicInfoRestorePreview :raw="raw" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <WhimboxUserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        @restore="openRestoreModal"
+        @cancel="handleCancel"
+      />
     </template>
-  </ConfigRestoreSection>
+
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+      <a-card class="config-card">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <BasicInfoSection
+            :heading="{ isEdit }"
+            :form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+            @mode-change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
+          />
+
+          <TaskConfigSection
+            :loading="loading"
+            :steps="catalogSteps"
+            :options="catalogOptions"
+            :upstream-version="catalogData?.upstream_version ?? ''"
+            :catalog-error="catalogError"
+            :catalog-loading="catalogLoading || isInitializing"
+            :run-all-accounts="formData.OneDragon.IfRunAllAccounts"
+            :tasks="taskState"
+            :option-state="optionState"
+            @save="handleTaskConfigSave"
+            @tasks-change="handleTasksChange"
+            @options-change="handleOptionsChange"
+          />
+
+          <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
+
+          <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+
+    <template #overlay>
+      <!-- ══ 配置恢复（通用组件：MAS 用户字段 + 奇想盒原生配置双池）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="WHIMBOX_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.whimboxConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.whimboxConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+      >
+        <!-- 两池同构：预览载荷为分区行（文件清单由基座在预览区最下方统一渲染） -->
+        <template #preview="{ raw }">
+          <BasicInfoRestorePreview :raw="raw" />
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
 import BasicInfoRestorePreview from '@/views/whimbox/user/BasicInfoRestorePreview.vue'
+import { ConfigEditShell } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
