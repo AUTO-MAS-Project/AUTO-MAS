@@ -200,6 +200,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
+        self._view_opened = False
         self._stop_scope = None
         self._gui_closed_for_stop = False
 
@@ -220,9 +221,12 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.prepare()
 
         await self.set_maa()
+        if self.view_only:
+            self._suspend_view_updates()
         logger.info(f"启动MAA进程: {self.maa_exe_path}")
         self.wait_event.clear()
         await self.maa_process_manager.open_process(self.maa_exe_path)
+        self._view_opened = self.view_only
         self._stop_scope = current_process_scope.get()
         if self._stop_scope is not None:
             self._stop_scope.add_check(
@@ -231,6 +235,46 @@ class ScriptConfigTask(TaskExecuteBase):
                 timeout=self.GUI_CLOSE_TIMEOUT,
             )
         await self.wait_event.wait()
+
+    def _suspend_view_updates(self) -> None:
+        """查看只改安装目录的临时副本，新旧 MAA 都不能消费备份中的待装包。"""
+        for name, group, overrides in (
+            (
+                "gui.new.json",
+                "Update",
+                {
+                    "UpdatePackage": "",
+                    "CheckOnStartup": False,
+                    "CheckOnSchedule": False,
+                    "AutoDownloadUpdatePackage": False,
+                    "AutoInstallUpdatePackage": False,
+                },
+            ),
+            (
+                "gui.json",
+                "Global",
+                {
+                    "VersionUpdate.package": "",
+                    "VersionUpdate.StartupUpdateCheck": "False",
+                    "VersionUpdate.ScheduledUpdateCheck": "False",
+                    "VersionUpdate.AutoDownloadUpdatePackage": "False",
+                    "VersionUpdate.AutoInstallUpdatePackage": "False",
+                },
+            ),
+        ):
+            # MAA 在主文件缺失或无法反序列化时会自动载入同名 .bak。
+            for filename in (name, f"{name}.bak"):
+                path = self.maa_set_path / filename
+                if not path.is_file():
+                    continue
+                doc = _utils_io.read_dict_file(path, format=".json")
+                doc.setdefault(group, {}).update(overrides)
+                _utils_io.write_file(path, doc, format=".json")
+        _utils_io.mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maa_set_path,
+            script_id=self.script_info.script_id,
+        )
 
     async def _close_gui_for_stop(self) -> None:
         await self.maa_process_manager.close()
@@ -412,6 +456,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def final_task(self):
 
+        if self.view_only and not self._view_opened:
+            return
         # MAA 的改动只堆在内存里，退出时才批量落盘；先把关闭请求发出去等它
         # 自己走完保存流程，直接强杀会让本次设置丢失、下次启动恢复原样
         if self._stop_scope is not None and self._stop_scope.requested:

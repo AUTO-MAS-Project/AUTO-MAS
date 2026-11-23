@@ -599,7 +599,16 @@ class MaaManager(ScriptManagerBase):
         # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
         self.prepared = True
 
-        await self._recover_unconfirmed_update()
+        if self.execution_mode == "ScriptConfig" and self.task_info.view_only:
+            root = self.maa_set_path.parent
+            if has_delegated_update_failure(root) or has_incomplete_resource_update(
+                root
+            ):
+                raise MaaUpdateUnsafeError(
+                    "当前 MAA 安装待修复，请完成修复后再查看备份"
+                )
+        else:
+            await self._recover_unconfirmed_update()
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("托管配置类型错误, 不是MAA托管类型")
@@ -662,6 +671,16 @@ class MaaManager(ScriptManagerBase):
                 # 用户停止也会经过账号收尾；未确认停写时，父层不能还原原生配置。
                 if isinstance(task, AutoProxyTask) and task.stop_unconfirmed:
                     self._updater_running = True
+                if isinstance(task, ScriptConfigTask) and task.view_only:
+                    # 任一停写检查中止时保留快照，不能向仍运行的 GUI 重新挂回更新包。
+                    self._updater_running = True
+                    root = self.maa_set_path.parent
+                    if not await process.is_process_stopped(root / "MAA.Updater.exe"):
+                        raise MaaUpdaterRunningError(
+                            "查看备份结束后无法确认更新器已退出，已保留原配置"
+                        )
+                    await stop_maa_gui(root / "MAA.exe")
+                    self._updater_running = False
                 # 即使安装失败并停止后续账号，也要把当前账号的失败截图带入汇总通知。
                 if images := getattr(task, "report_image_pairs", None):
                     self._rollup_image_pairs.extend(images)

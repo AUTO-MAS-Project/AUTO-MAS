@@ -176,6 +176,79 @@ def test_managed_config_session_suspends_and_restores_package_registration():
     assert docs == original
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("view_only", "only_backup"),
+    [(True, False), (True, True), (False, False)],
+    ids=["backup-view", "bak-only", "native-edit"],
+)
+async def test_native_backup_view_hides_both_registrations_at_gui_launch(
+    installation, view_only, only_backup
+):
+    from app.task.MAA.ScriptConfig import ScriptConfigTask
+
+    root, _, _, scheduler = installation
+    config = root / "config"
+    old_config = {
+        "Global": {
+            "VersionUpdate.name": "v6.2.0",
+            "VersionUpdate.package": "legacy.zip",
+        }
+    }
+    io_utils.write_file(config / "gui.json", old_config)
+    for name in ("gui.new.json", "gui.json"):
+        (config / f"{name}.bak").write_bytes((config / name).read_bytes())
+        if only_backup:
+            (config / name).unlink()
+    original = {path.name: path.read_bytes() for path in config.iterdir()}
+    snapshot = root.parent / "data/test-script/Temp"
+    io_utils.commit_native_config_snapshot(snapshot, config, script_id="test-script")
+    task = object.__new__(ScriptConfigTask)
+    task.view_only = view_only
+    task.script_info = scheduler.script_info
+    task.cur_user_item = SimpleNamespace(
+        user_id="Default" if view_only else "native-user"
+    )
+    task._mas_owner = lambda: None
+    task.prepare = AsyncMock()
+    task.maa_set_path = config
+    task.maa_exe_path = root / "MAA.exe"
+    task.wait_event = asyncio.Event()
+
+    async def open_gui(exe):
+        suffix = ".bak" if only_backup else ""
+        update = io_utils.read_dict_file(
+            config / f"gui.new.json{suffix}", format=".json"
+        )["Update"]
+        legacy = io_utils.read_dict_file(config / f"gui.json{suffix}", format=".json")[
+            "Global"
+        ]
+        if view_only:
+            assert update["UpdatePackage"] == legacy["VersionUpdate.package"] == ""
+            assert update["CheckOnStartup"] is False
+            assert not io_utils.read_dict_file(
+                config / "gui.new.json.bak", format=".json"
+            )["Update"]["UpdatePackage"]
+            assert not io_utils.read_dict_file(config / "gui.json.bak", format=".json")[
+                "Global"
+            ]["VersionUpdate.package"]
+        else:
+            assert update["UpdatePackage"] == str(root / "pending.zip")
+            assert legacy == old_config["Global"]
+        task.wait_event.set()
+
+    task.maa_process_manager = SimpleNamespace(open_process=open_gui, close=AsyncMock())
+    await task.main_task()
+    if view_only:
+        assert (
+            io_utils.recover_native_config(
+                snapshot, config, expected_script_id="test-script"
+            )
+            == "restored"
+        )
+    assert {path.name: path.read_bytes() for path in config.iterdir()} == original
+
+
 @pytest.fixture
 def installation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
