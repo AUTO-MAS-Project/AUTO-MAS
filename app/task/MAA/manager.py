@@ -86,11 +86,12 @@ from .tools.resource_update import (
     read_resource_clock,
 )
 from .tools.software_package import (
-    clear_applied_update_registrations,
     clear_deferred_update,
+    clear_matching_update_registrations,
     has_delegated_update_failure,
     install_attempts_path,
     load_deferred_update,
+    pending_ota_compatible,
     read_pending_update,
     save_deferred_update,
     write_pending_update,
@@ -243,7 +244,7 @@ class MaaManager(ScriptManagerBase):
                     if (target := parse_version(version))
                     and compare_versions(current, target) >= 0
                 }
-                clear_applied_update_registrations(self.maa_set_path, applied)
+                clear_matching_update_registrations(self.maa_set_path, applied)
                 attempts_path.unlink()
         try:
             saved = load_deferred_update(root)
@@ -254,12 +255,20 @@ class MaaManager(ScriptManagerBase):
                 or not (self.maa_set_path.parent / self._pending_update[1]).is_file()
             ):
                 return
-            release = read_installed_release(self.maa_set_path.parent)
+            release = read_installed_release(root)
             current = parse_version(release[0]) if release else None
             target = parse_version(self._pending_update[0])
             if current and target and compare_versions(target, current) <= 0:
                 clear_deferred_update(self.maa_set_path.parent)
                 self._pending_update = None
+                return
+            compatible = await self._check_pending_package(
+                self._pending_update, release
+            )
+            if compatible is not True:
+                if compatible is False:
+                    clear_deferred_update(root)
+                    self._pending_update = None
                 return
             _, current_package = read_pending_update(self.maa_set_path.parent)
             if (
@@ -891,7 +900,10 @@ class MaaManager(ScriptManagerBase):
         )
         return True
 
-    async def _install_round_update(self, pending: tuple[str, str] | None) -> None:
+    async def _install_round_update(
+        self,
+        pending: tuple[str, str] | None,
+    ) -> None:
         """每次代理退出后，仅将本地已就绪的原生登记交给官方安装器。"""
         if pending is None:
             return
@@ -980,14 +992,22 @@ class MaaManager(ScriptManagerBase):
             ) from error
 
     async def _install_pending_software_update(
-        self, *, target: str | None = None, pending: tuple[str, str] | None = None
+        self,
+        *,
+        target: str | None = None,
+        pending: tuple[str, str] | None = None,
     ) -> None:
         """复用官方安装入口；进程未退出或安装结果不明时阻止启动。"""
         await self.script_info.set_log("正在等待 MAA 官方更新器处理本地更新包")
         try:
             root = self.maa_set_path.parent
             candidate = pending or read_pending_update(root)
-            if all(candidate) and (root / candidate[1]).is_file():
+            if candidate[1] and (root / candidate[1]).is_file():
+                compatible = await self._check_pending_package(
+                    candidate, read_installed_release(root), installing=True
+                )
+                if compatible is not True:
+                    return
                 path = install_attempts_path(root, self.temp_path)
                 attempts = _utils_io.read_dict_file(path)
                 attempts[str((root / candidate[1]).resolve())] = candidate[0]
@@ -996,7 +1016,7 @@ class MaaManager(ScriptManagerBase):
                 self.maa_set_path.parent,
                 snapshot_path=self.temp_path,
                 script_id=self.script_info.script_id,
-                pending=pending,
+                pending=candidate,
             )
         except MaaUpdaterRunningError:
             self._updater_running = True
@@ -1017,6 +1037,27 @@ class MaaManager(ScriptManagerBase):
                 raise MaaUpdateUnsafeError(
                     "未确认 MAA 已完成更新，已停止后续账号任务，请先完成更新"
                 )
+
+    async def _check_pending_package(
+        self,
+        pending: tuple[str, str],
+        release: tuple[str, str] | None,
+        *,
+        installing: bool = False,
+    ) -> bool | None:
+        root = self.maa_set_path.parent
+        compatible = await _run_write_thread(
+            pending_ota_compatible, root, pending, release
+        )
+        # 恢复快照时保留用户原有的未知登记；工作配置则要让下一次下载能登记新包。
+        if compatible is False or (installing and compatible is None):
+            logger.warning(
+                f"已跳过不适用于当前安装的 MAA 差分包，等待重新下载：{pending[1]}"
+            )
+            clear_matching_update_registrations(
+                self.maa_set_path, {(pending[0], str((root / pending[1]).resolve()))}
+            )
+        return compatible
 
     async def final_task(self):
         """运行结束后的收尾工作"""

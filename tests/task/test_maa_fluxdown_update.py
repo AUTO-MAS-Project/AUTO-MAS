@@ -53,10 +53,13 @@ def installation(tmp_path, monkeypatch):
     update._latest_versions.clear()
 
     async def download(url, path, **kwargs):
-        path.write_bytes(b"opaque official package")
+        with zipfile.ZipFile(path, "w") as package:
+            package.writestr("MAA.exe", b"launcher")
+            package.writestr("MAA.dll", b"assembly")
+        size = path.stat().st_size
         if kwargs.get("progress"):
-            await kwargs["progress"](23, 23, 23)
-        return 23
+            await kwargs["progress"](size, size, size)
+        return size
 
     downloader = AsyncMock(side_effect=download)
     monkeypatch.setattr(update, "download_file", downloader)

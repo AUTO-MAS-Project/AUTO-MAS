@@ -32,6 +32,7 @@ from .resource_package import _copy_if_changed
 from .resource_update import _run_write_thread
 from .software_package import (
     has_delegated_update_failure,
+    ota_asset_name,
     read_pending_update,
     write_pending_update,
 )
@@ -99,9 +100,8 @@ async def query_latest_maa_version(
 async def _select_package(current: str, latest: str, arch: str, channel: str) -> str:
     """只选与已安装基线精确匹配的官方 OTA；没有该资产时回退完整包。"""
     tag = latest if latest.startswith("v") else f"v{latest}"
-    baseline = current if current.startswith("v") else f"v{current}"
     full = f"MAA-{tag}-win-{arch}.zip"
-    ota = f"MAAComponent-OTA-{baseline}_{tag}-win-{arch}.zip"
+    ota = ota_asset_name(current, tag, arch)
     release = await request_maa_release(channel)
     if release.get("version") != latest:
         raise RuntimeError("MAA 发行版本在查询期间发生变化，请重新运行")

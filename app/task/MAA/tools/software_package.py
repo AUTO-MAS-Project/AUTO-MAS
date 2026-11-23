@@ -46,6 +46,7 @@ import os
 import re
 import shutil
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.utils import get_logger
@@ -174,26 +175,128 @@ def has_delegated_update_failure(maa_root: Path) -> bool:
     return (maa_root / _FAILURE_FLAG_FILE).is_file()
 
 
-def read_pending_update(maa_root: Path) -> tuple[str, str]:
-    """读已登记的待更新包，返回 (版本名, 包路径)。
+def ota_asset_name(current: str, target: str, arch: str) -> str:
+    """官方差分包名包含精确基线、目标和架构，包括构建号。"""
+    return f"MAAComponent-OTA-v{current.removeprefix('v')}_v{target.removeprefix('v')}-win-{arch}.zip"
 
-    读取顺序对齐 UpdateMAA.update_maa：新格式 gui.new.json 的 Update 组
-    优先，回落旧格式 gui.json 的 Global.VersionUpdate.*。配置损坏或读取
-    失败上抛，由登记入口告警并停止，不把无法读取伪装成无登记。
-    """
-    new_set = _utils_io.read_dict_file(maa_root / "config" / "gui.new.json")
-    update = new_set.get("Update")
-    if isinstance(update, dict):
-        package = str(update.get("UpdatePackage") or "")
-        if package:
-            return str(update.get("Name") or ""), package
-    old_set = _utils_io.read_dict_file(maa_root / "config" / "gui.json")
-    global_set = old_set.get("Global")
-    if isinstance(global_set, dict):
-        package = str(global_set.get("VersionUpdate.package") or "")
-        if package:
-            return str(global_set.get("VersionUpdate.name") or ""), package
+
+_REGISTRATION_FIELDS = (
+    ("gui.new.json", "Update", "Name", "UpdatePackage"),
+    ("gui.json", "Global", "VersionUpdate.name", "VersionUpdate.package"),
+)
+
+
+def read_pending_update(maa_root: Path) -> tuple[str, str]:
+    """按 MAA 的优先顺序读取新旧配置，配置损坏时交由调用方处理。"""
+    for name, section, version_key, package_key in _REGISTRATION_FIELDS:
+        values = _utils_io.read_dict_file(maa_root / "config" / name).get(section)
+        if isinstance(values, dict) and (package := values.get(package_key)):
+            return str(values.get(version_key) or ""), str(package)
     return "", ""
+
+
+@dataclass(frozen=True)
+class NativeDownloadBaseline:
+    """Mirror 酱差分包名只有目标版本；记录启动时的本体和已有同名文件身份。"""
+
+    release: tuple[str, str]
+    files: dict[Path, os.stat_result]
+
+    @classmethod
+    def capture(
+        cls, root: Path, release: tuple[str, str]
+    ) -> NativeDownloadBaseline | None:
+        try:
+            return cls(
+                release,
+                {
+                    path: path.stat()
+                    for path in root.resolve().iterdir()
+                    if path.name.casefold().startswith("mirrorchyanapp")
+                    and path.suffix.casefold() == ".zip"
+                },
+            )
+        except OSError as error:
+            logger.warning(f"无法确认原生差分包的下载基线：{error}")
+            return None
+
+    def remember_download(self, root: Path, pending: tuple[str, str]) -> None:
+        """在进入安装检查前保存本轮原生下载的凭据，中止后也可复核。"""
+        target, package = pending
+        path = (root / package).resolve()
+        if (
+            path.parent != root.resolve()
+            or path.name.casefold() != f"MirrorChyanApp{target}.zip".casefold()
+        ):
+            return
+        # MAA 下载先写 .temp，再 File.Copy 覆盖同名 ZIP；仅凭已有登记不能证明来源。
+        live = _utils_io.read_dict_file(root / "config/gui.new.json").get("Update", {})
+        if (
+            not isinstance(live, dict)
+            or (live.get("Name"), live.get("UpdatePackage")) != pending
+        ):
+            return
+        try:
+            current = path.stat()
+            previous = self.files.get(path)
+            if previous is not None and (
+                previous.st_ino,
+                previous.st_size,
+                previous.st_mtime_ns,
+            ) == (current.st_ino, current.st_size, current.st_mtime_ns):
+                return
+            if _has_ota_metadata(path):
+                save_deferred_update(
+                    root,
+                    version=target,
+                    package=package,
+                    proof=(self.release, _file_sha256(path)),
+                )
+        except (FileNotFoundError, zipfile.BadZipFile):
+            return
+
+
+def _has_ota_metadata(path: Path) -> bool:
+    with zipfile.ZipFile(path) as archive:
+        return any(
+            Path(name.replace("\\", "/")).as_posix().casefold() in _OTA_MANIFEST_ENTRIES
+            for name in archive.namelist()
+        )
+
+
+def pending_ota_compatible(
+    root: Path,
+    pending: tuple[str, str],
+    release: tuple[str, str] | None,
+) -> bool | None:
+    """核对差分包基线和原生下载摘要；来源不明返回 None。"""
+    target, package = pending
+    path = (root / package).resolve()
+    try:
+        is_ota = _has_ota_metadata(path)
+    except (FileNotFoundError, zipfile.BadZipFile):
+        return None
+    name = path.name.casefold()
+    if name.startswith("maacomponent-ota-"):
+        if release is None:
+            return None
+        return name == ota_asset_name(release[0], target, release[1]).casefold()
+    if not is_ota:
+        return True
+    if (
+        path.parent != root.resolve()
+        or name != f"MirrorChyanApp{target}.zip".casefold()
+    ):
+        return None
+    # 中止后只信任之前核实过的原生下载；同名 ZIP 被替换后旧凭据即失效。
+    saved = _utils_io.read_dict_file(_deferred_update_path(root))
+    if (saved.get("version"), saved.get("package")) != pending or not saved.get(
+        "sha256"
+    ):
+        return None
+    if saved["sha256"] != _file_sha256(path):
+        return None
+    return None if release is None else saved.get("native_release") == list(release)
 
 
 def _deferred_update_path(maa_root: Path) -> Path:
@@ -204,16 +307,28 @@ def _deferred_update_path(maa_root: Path) -> Path:
     )
 
 
-def save_deferred_update(maa_root: Path, *, version: str, package: str) -> None:
+def save_deferred_update(
+    maa_root: Path,
+    *,
+    version: str,
+    package: str,
+    proof: tuple[tuple[str, str], str] | None = None,
+) -> None:
     """清空托管启动配置的待安装登记前，按安装归属原子保存透传值。"""
-    _utils_io.write_file(
-        _deferred_update_path(maa_root),
-        {
-            "install": _utils_config_archive.config_root_key(maa_root),
-            "version": version,
-            "package": package,
-        },
-    )
+    path = _deferred_update_path(maa_root)
+    record: dict[str, object] = {
+        "install": _utils_config_archive.config_root_key(maa_root),
+        "version": version,
+        "package": package,
+    }
+    if proof is None:
+        saved = _utils_io.read_dict_file(path)
+        if all(saved.get(key) == value for key, value in record.items()):
+            return
+    else:
+        native_release, digest = proof
+        record.update(native_release=list(native_release), sha256=digest)
+    _utils_io.write_file(path, record)
 
 
 def clear_deferred_update(maa_root: Path) -> None:
@@ -338,16 +453,17 @@ def install_attempts_path(maa_root: Path, snapshot_path: Path) -> Path:
     return snapshot_path.with_name(f"{snapshot_path.name}.{key}.maa-packages.json")
 
 
-def clear_applied_update_registrations(
-    config_dir: Path, applied: set[tuple[str, str]]
+def clear_matching_update_registrations(
+    config_dir: Path, registrations: set[tuple[str, str]]
 ) -> None:
-    """还原原生快照后，只撤销本批已安装的包登记，保留版本信息及其他待装包。"""
-    for name, section, version_key, package_key in (
-        ("gui.new.json", "Update", "Name", "UpdatePackage"),
-        ("gui.json", "Global", "VersionUpdate.name", "VersionUpdate.package"),
-    ):
+    """只撤销版本和路径均匹配的登记，保留版本信息、包文件及其他待装包。"""
+    for name, section, version_key, package_key in _REGISTRATION_FIELDS:
         path = config_dir / name
-        data = _utils_io.read_dict_file(path)
+        try:
+            data = _utils_io.read_dict_file(path)
+        except _utils_io.ConfigCorruptedError as error:
+            logger.warning(f"无法读取 {name} 的更新登记，保留原文件：{error}")
+            continue
         values = data.get(section)
         if not isinstance(values, dict):
             continue
@@ -359,7 +475,7 @@ def clear_applied_update_registrations(
                 str(values.get(version_key)),
                 str((config_dir.parent / package).resolve()),
             )
-            in applied
+            in registrations
         ):
             values[package_key] = ""
             _utils_io.write_file(path, data)

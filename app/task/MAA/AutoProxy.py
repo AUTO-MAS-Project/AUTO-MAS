@@ -124,12 +124,17 @@ from .tools.native_config import (
     load_infrast_plans,
     maa_scheme_name,
 )
+from .tools.resource_update import _run_write_thread
 from .tools.screenshot import (
     AdbCapture,
     capture_current_image,
     collect_maa_failure_image,
 )
-from .tools.software_package import read_pending_update, save_deferred_update
+from .tools.software_package import (
+    NativeDownloadBaseline,
+    read_pending_update,
+    save_deferred_update,
+)
 from .tools.software_update import (
     compare_versions,
     parse_version,
@@ -1256,6 +1261,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
     # 普通库存重试时仍下发目标，已执行过的阶段不再领取药石额度。
     _stock_depot_completed: bool = False
     _round_needs_update: bool = False
+    _native_download_baseline: NativeDownloadBaseline | None = None
     install_error: MaaUpdaterRunningError | MaaUpdateUnsafeError | None = None
 
     def __init__(
@@ -1545,6 +1551,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
                     else 0
                 )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
+                self._native_download_baseline = None
+                if not self.script_config.Update.TakeoverEnabled:
+                    release = read_installed_release(self.maa_exe_path.parent)
+                    if release is not None:
+                        self._native_download_baseline = await asyncio.to_thread(
+                            NativeDownloadBaseline.capture,
+                            self.maa_exe_path.parent,
+                            release,
+                        )
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(
                     self.maa_exe_path, env=await self._maa_process_env()
@@ -1754,10 +1769,23 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaConfig, MaaUserConfig]):
         if not self._round_needs_update:
             return
         self._round_needs_update = False
-        if self.stopped_manually:
-            return
         with self._pause_run_timeout():
-            await self.install_round_update(self.pending_update)
+            if (
+                self._native_download_baseline is not None
+                and self.pending_update is not None
+            ):
+                try:
+                    await _run_write_thread(
+                        self._native_download_baseline.remember_download,
+                        self.maa_exe_path.parent,
+                        self.pending_update,
+                    )
+                except (OSError, ValueError) as error:
+                    raise MaaUpdateUnsafeError(
+                        "无法核实或保存原生差分包的来源，已停止后续代理"
+                    ) from error
+            if not self.stopped_manually:
+                await self.install_round_update(self.pending_update)
 
     async def _finalize_task(self) -> None:
         """收尾：全部收尾动作结束后，还原 overlay 覆写的库存缓存。

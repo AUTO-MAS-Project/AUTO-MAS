@@ -11,6 +11,7 @@ import pytest
 from app.task.MAA import manager
 from app.task.MAA.base_preset import get_maa_base_preset
 from app.task.MAA.tools import UpdateMAA as installer
+from app.task.MAA.tools import software_package
 from app.task.MAA.tools.update_config import restore_maa_update_config
 from app.utils import io as io_utils
 
@@ -21,6 +22,160 @@ class SimulatedCrash(BaseException):
     """模拟安装配置已提交，但进程尚未进入安装收尾时被强制终止。"""
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pre_run", [False, True], ids=["after-round", "before-run"])
+async def test_stale_ota_is_neither_installed_nor_restored(
+    installation, monkeypatch, pre_run
+):
+    root, _, original, scheduler = installation
+    pending = ("v6.2.0", "MAAComponent-OTA-v6.0.0_v6.2.0-win-x64.zip")
+    package = root / pending[1]
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("changes.json", "{}")
+    old_config = root / "config/gui.json"
+    io_utils.write_file(
+        old_config,
+        {
+            "Global": {
+                "VersionUpdate.name": "v6.3.0",
+                "VersionUpdate.package": "another.zip",
+            }
+        },
+    )
+    original["Update"].update(Name=pending[0], UpdatePackage=pending[1])
+    config = root / "config/gui.new.json"
+    io_utils.write_file(config, original)
+    scheduler.script_config = SimpleNamespace(
+        Update=SimpleNamespace(TakeoverEnabled=False)
+    )
+    scheduler.script_info.set_log = AsyncMock()
+    scheduler._updater_running = False
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: ("v6.1.0", "x64"))
+    launch = AsyncMock()
+    monkeypatch.setattr(manager, "update_maa", launch)
+
+    if pre_run:
+        await scheduler._install_pending_software_update(target=pending[0])
+    else:
+        await scheduler._install_round_update(pending)
+    launch.assert_not_awaited()
+
+    # 原生快照和崩溃恢复记录都可能重新带回同一个旧 OTA。
+    io_utils.write_file(config, original)
+    software_package.save_deferred_update(root, version=pending[0], package=pending[1])
+    scheduler._pending_update = None
+    await scheduler._restore_pending_update()
+    assert not io_utils.read_dict_file(config)["Update"]["UpdatePackage"]
+    assert software_package.read_pending_update(root) == ("v6.3.0", "another.zip")
+    assert software_package.load_deferred_update(root) is None
+    assert package.is_file()
+
+
+def test_native_ota_requires_a_download_for_this_installation(tmp_path, monkeypatch):
+    root = tmp_path
+    monkeypatch.chdir(root)
+    release = ("v6.0.0+build1", "x64")
+    target = "v6.2.0"
+    pending = (target, f"MirrorChyanApp{target}.zip")
+    package = root / pending[1]
+    io_utils.write_file(
+        root / "config/gui.new.json",
+        {"Update": {"Name": target, "UpdatePackage": pending[1]}},
+    )
+
+    def write_package(payload):
+        with zipfile.ZipFile(package, "w") as archive:
+            archive.writestr("changes.json", "{}")
+            archive.writestr("MAA.dll", payload)
+
+    before = software_package.NativeDownloadBaseline.capture(root, release)
+    write_package(b"first download")
+    before.remember_download(root, pending)
+    assert software_package.pending_ota_compatible(root, pending, release)
+    previous = software_package.NativeDownloadBaseline.capture(root, release)
+    software_package.clear_deferred_update(root)
+    previous.remember_download(root, pending)
+    assert not software_package.pending_ota_compatible(root, pending, release)
+    write_package(b"new native download overwrites the old zip")
+    previous.remember_download(root, pending)
+    assert not software_package.pending_ota_compatible(
+        root, pending, ("v6.0.0+build2", "x64")
+    )
+    assert software_package.pending_ota_compatible(root, pending, release)
+    write_package(b"different bytes under the same name")
+    assert not software_package.pending_ota_compatible(root, pending, release)
+    github = root / "MAAComponent-OTA-v6.0.0+build1_v6.2.0-win-x64.zip"
+    package.rename(github)
+    assert software_package.pending_ota_compatible(root, (target, github.name), release)
+    assert not software_package.pending_ota_compatible(
+        root, (target, github.name), (release[0], "arm64")
+    )
+    assert not software_package.pending_ota_compatible(
+        root, ("v6.3.0", github.name), release
+    )
+    assert not software_package.pending_ota_compatible(
+        root, (target, github.name), ("v6.0.0+build2", "x64")
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "already_stopped",
+    [True, False],
+    ids=["stopped-before-check", "cancelled-during-check"],
+)
+async def test_stopped_round_restores_its_verified_mirror_ota(
+    installation, monkeypatch, already_stopped
+):
+    from app.task.MAA.AutoProxy import AutoProxyTask
+
+    root, _, _, scheduler = installation
+    pending = ("v6.2.0", "MirrorChyanAppv6.2.0.zip")
+    release = ("v6.1.0", "x64")
+    proxy = object.__new__(AutoProxyTask)
+    proxy._native_download_baseline = software_package.NativeDownloadBaseline.capture(
+        root, release
+    )
+    proxy._stopped_manually = already_stopped
+    proxy.execution = SimpleNamespace(cancelled=already_stopped)
+    proxy.maa_exe_path = root / "MAA.exe"
+    proxy.pending_update = pending
+    proxy._round_needs_update = True
+    proxy.install_round_update = AsyncMock(side_effect=asyncio.CancelledError)
+    with zipfile.ZipFile(root / pending[1], "w") as archive:
+        archive.writestr("changes.json", "{}")
+    software_package.write_pending_update(root, version=pending[0], package=pending[1])
+    if already_stopped:
+        await proxy._complete_round_update()
+        proxy.install_round_update.assert_not_awaited()
+    else:
+        with pytest.raises(asyncio.CancelledError):
+            await proxy._complete_round_update()
+    # 父任务接回同一登记；快照中没有包名，下次恢复必须复核已保存的下载凭据。
+    software_package.save_deferred_update(root, version=pending[0], package=pending[1])
+    software_package.write_pending_update(root, version="", package="")
+    scheduler._pending_update = None
+    monkeypatch.setattr(manager, "read_installed_release", lambda _: release)
+    await scheduler._restore_pending_update()
+    assert software_package.read_pending_update(root) == pending
+
+
+def test_managed_config_session_suspends_and_restores_package_registration():
+    from app.task.MAA.ScriptConfig import (
+        _apply_session_startup_overrides,
+        _restore_session_startup_overrides,
+    )
+
+    docs = {
+        "gui.new.json": {"Update": {"Name": "v6.2.0", "UpdatePackage": "saved.zip"}}
+    }
+    original = deepcopy(docs)
+    restore = _apply_session_startup_overrides(docs)
+    assert docs["gui.new.json"]["Update"]["UpdatePackage"] == ""
+    _restore_session_startup_overrides(docs, restore)
+    assert docs == original
+
+
 @pytest.fixture
 def installation(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -28,7 +183,9 @@ def installation(tmp_path, monkeypatch):
     config = root / "config"
     config.mkdir(parents=True)
     package = root / "pending.zip"
-    package.touch()
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("MAA.exe", b"launcher")
+        archive.writestr("MAA.dll", b"assembly")
     (root / "MAA.exe").touch()
     original = get_maa_base_preset()
     original.setdefault("Update", {}).update(

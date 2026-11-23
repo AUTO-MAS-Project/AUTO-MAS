@@ -92,6 +92,8 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
     ("gui.new.json", ("Update", "CheckOnSchedule"), False),
     ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
     ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
+    # 启动器会直接消费已登记包。托管配置会话临时撤下登记，保存时还原。
+    ("gui.new.json", ("Update", "UpdatePackage"), ""),
     # 引导跳过仅作用于会话，回写前同样还原原值与缺失状态。
     *(
         ("gui.new.json", ("Gui", key), value)
