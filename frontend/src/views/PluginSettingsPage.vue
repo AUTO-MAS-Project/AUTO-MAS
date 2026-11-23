@@ -9,10 +9,7 @@ import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vu
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
-import PageHeader from '@/components/PageHeader.vue'
-import NoData from '@/components/NoData.vue'
-import PageSurface from '@/components/PageSurface.vue'
-import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
+import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
 import type { PluginRegistryGetOut } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
@@ -237,31 +234,29 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
 </script>
 
 <template>
-  <main class="plugin-settings-page">
-    <PageHeader class="plugin-settings-header" :title="title || t('core.plugins.settings')">
-      <!-- PageHeader 没有标题下方的插槽：leading 里的内容与标题同属一个网格，副标题用网格行排到标题下面。 -->
+  <AppPage layout="fill">
+    <PageHeader :title="title || t('core.plugins.settings')" :subtitle="headerMeta || undefined">
       <template #leading>
-        <span class="plugin-settings-lead">
-          <a-button
-            type="text"
-            :aria-label="t('core.plugins.back')"
-            @click="router.push({ name: 'Plugins' })"
-            ><ArrowLeftOutlined
-          /></a-button>
-          <PluginAvatar v-if="view" :icon="view.icon" />
-        </span>
-        <span v-if="headerMeta" class="plugin-settings-meta">{{ headerMeta }}</span>
+        <a-button
+          type="text"
+          :aria-label="t('core.plugins.back')"
+          @click="router.push({ name: 'Plugins' })"
+          ><ArrowLeftOutlined
+        /></a-button>
+        <PluginAvatar v-if="view" :icon="view.icon" />
       </template>
     </PageHeader>
     <PageSurface>
-      <ApiRetryAlert :error="loadError" :loading="loading" @retry="fetchSettings" />
-      <a-spin :spinning="loading">
-        <NoData
-          v-if="!loading && !loadError && !groups.length"
-          :description="t('core.plugins.noSettings')"
-        />
+      <StateView
+        :loading="loading"
+        :error="loadError"
+        :empty="!groups.length"
+        :empty-description="t('core.plugins.noSettings')"
+        overlay-loading
+        @retry="fetchSettings"
+      >
         <PluginDeclarativeForm
-          v-else-if="groups.length"
+          v-if="groups.length"
           :groups="groups"
           :uid="configUid"
           :namespace="`plugins.${view?.pluginId ?? ''}.config`"
@@ -272,7 +267,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           @update:value="draft.update"
           @action="runAction"
         />
-      </a-spin>
+      </StateView>
       <SettingsDirtyBar
         v-if="draft.dirtyCount.value"
         :count="draft.dirtyCount.value"
@@ -290,48 +285,5 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
       @discard="discardAndLeave"
       @save="saveAndLeave"
     />
-  </main>
+  </AppPage>
 </template>
-
-<style scoped>
-.plugin-settings-page {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.plugin-settings-header :deep(.page-header-main) {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0 8px;
-  align-items: center;
-}
-
-.plugin-settings-header :deep(.app-page-title) {
-  min-width: 0;
-  grid-column: 2;
-  grid-row: 1;
-  overflow-wrap: anywhere;
-}
-
-.plugin-settings-lead {
-  display: flex;
-  align-items: center;
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  gap: 8px;
-}
-
-.plugin-settings-meta {
-  grid-column: 2;
-  grid-row: 2;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--ant-color-text-secondary);
-  overflow-wrap: anywhere;
-}
-</style>

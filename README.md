@@ -26,11 +26,11 @@
 
 ### Nature
 
-This software is a management tool for automation scripts. It centrally manages multiple managed scripts and their account configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
+This software is a management tool for automation scripts. It centrally manages multiple automation scripts and their account configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
 
-- **Centralized Management**: Manage multiple managed scripts and account configurations in one place—say goodbye to messy, scattered script windows!
+- **Centralized Management**: Manage multiple automation scripts and account configurations in one place—say goodbye to messy, scattered script windows!
 - **Unattended Operation**: Monitor script logs and automatically handle errors—no more worries about tasks freezing while you're away from your computer!
-- **Flexible Configuration**: Combine scheduling queues with managed scripts to freely implement any scheduling logic you can imagine!
+- **Flexible Configuration**: Combine scheduling queues with automation scripts to freely implement any scheduling logic you can imagine!
 - **Proxy Logging**: Record all proxy sessions and log snippets for faster, more accurate, and convenient troubleshooting!
 
 ### Working Principle
@@ -81,7 +81,7 @@ To better serve you, AUTO-MAS will automatically collect the following informati
 - Performance tracing information
 - Usage statistics: run counts and results per script type, which public MaaFramework project is run (only projects listed in the MaaFramework README; any other project is reported as "other"), and one daily-active count per day (no device identifier)
 
-AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under 「Settings -> Function Settings」; once disabled, neither the frontend nor backend sends telemetry data.
+AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under **Settings → Function Settings**; once disabled, neither the frontend nor backend sends telemetry data.
 
 ---
 
@@ -102,7 +102,7 @@ We thank the following contributors for their work on this project
 
 </a>
 
-![Alt](https://repobeats.axiom.co/api/embed/faac2ed458f7eebe0b7f31432224514d50367152.svg "Repobeats analytics image")
+![Repobeats analytics](https://repobeats.axiom.co/api/embed/faac2ed458f7eebe0b7f31432224514d50367152.svg "Repobeats analytics image")
 
 ## Star History
 

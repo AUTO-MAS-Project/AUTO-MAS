@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import type { BetterGIConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 
 defineProps<{ ready: boolean }>()
 const update = defineModel<BetterGIConfig_Update>('update', { required: true })
@@ -14,10 +15,7 @@ const handleChannel = (channel: 'stable' | 'beta') => {
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.bettergiProgramUpdate') }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="t('core.edit.bettergiProgramUpdate')">
     <a-row :gutter="24">
       <a-col :span="8">
         <a-form-item :label="t('core.edit.updateChannel')">
@@ -69,7 +67,7 @@ const handleChannel = (channel: 'stable' | 'beta') => {
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+  </SectionCard>
 </template>
 <style scoped src="@/styles/scriptEditForm.css"></style>
 <style scoped src="@/styles/scriptEdit.css"></style>

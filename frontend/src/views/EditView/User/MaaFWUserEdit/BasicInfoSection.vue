@@ -1,11 +1,7 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <div class="form-section">
-    <UserAccountHeading v-if="heading" :user-name="formData.userName" :options="heading" />
-    <div class="section-header">
-      <h3>{{ t('core.edit.basicInfo') }}</h3>
-    </div>
-
+  <UserAccountHeading v-if="heading" :user-name="formData.userName" :options="heading" />
+  <SectionCard variant="plain" :title="t('core.edit.basicInfo')" class="maafw-basic-info">
     <UserBasicInfoFields
       v-model:user-name="formData.userName"
       v-model:status="formData.Info.Status"
@@ -54,12 +50,13 @@
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
@@ -80,12 +77,8 @@ const emitSave = (key: string, value: unknown) => {
 </script>
 
 <style scoped>
-.form-section {
+.maafw-basic-info {
   margin-bottom: 24px;
-}
-
-.section-header {
-  margin-bottom: 16px;
 }
 
 .form-label {

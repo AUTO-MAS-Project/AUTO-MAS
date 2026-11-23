@@ -1,8 +1,9 @@
 <template>
-  <div class="form-section">
-    <div v-if="!hideSectionHeader" class="section-header">
-      <h3>{{ t('core.comp.extraScripts') }}</h3>
-    </div>
+  <SectionCard
+    variant="plain"
+    :title="hideSectionHeader ? undefined : t('core.comp.extraScripts')"
+    :class="{ 'extra-script-section--bare': hideSectionHeader }"
+  >
     <a-form-item name="scriptBeforeTask">
       <template #label>
         <FieldLabelWithHint
@@ -91,7 +92,7 @@
         </a-col>
       </a-row>
     </a-form-item>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -100,6 +101,7 @@ import { message } from 'ant-design-vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import SettingToggleButton from '@/components/SettingToggleButton.vue'
+import { SectionCard } from '@/components/ui'
 
 const { t } = useI18n()
 
@@ -169,12 +171,7 @@ const selectScriptAfterTask = async () => {
 </script>
 
 <style scoped>
-.form-section {
-  margin-bottom: 40px;
-}
-
-.section-header {
-  margin-bottom: 24px;
-  padding-bottom: 12px;
+.extra-script-section--bare {
+  margin-bottom: 0;
 }
 </style>

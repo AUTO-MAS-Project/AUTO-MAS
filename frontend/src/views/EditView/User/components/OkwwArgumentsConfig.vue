@@ -1,4 +1,5 @@
 <template>
+  <ModalContextHolder />
   <a-form-item
     :validate-status="previewError ? 'error' : undefined"
     :help="previewError || undefined"
@@ -34,9 +35,10 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useOkwwArgumentsApi } from '@/composables/useOkwwArgumentsApi'
+import { useConfirm } from '@/composables/useConfirm'
 import { useI18n } from 'vue-i18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { useOkwwCustomArguments } from './useOkwwCustomArguments'
@@ -45,27 +47,27 @@ import type { OkwwTaskForm } from './okwwTaskConfig'
 const task = defineModel<OkwwTaskForm>({ required: true })
 const emit = defineEmits<{ save: [] }>()
 const { t } = useI18n()
+const [modal, ModalContextHolder] = Modal.useModal()
+const { confirm } = useConfirm(modal)
 const props = defineProps<{ scriptId: string; save: () => Promise<boolean> }>()
 const { previewArguments } = useOkwwArgumentsApi()
 const resolvedArguments = ref('')
 const previewError = ref('')
 const previewLoading = ref(true)
-let confirmation: ReturnType<typeof Modal.confirm> | undefined
 
 const { saving, changeCustomArguments } = useOkwwCustomArguments(
   task,
   resolvedArguments,
   () => props.save(),
   onOk => {
-    confirmation = Modal.confirm({
+    void confirm({
+      tone: 'warning',
       title: t('core.edit.okwwCustomArguments'),
-      content: t('core.edit.okwwCustomArgumentsWarning'),
+      description: t('core.edit.okwwCustomArgumentsWarning'),
       onOk,
     })
   }
 )
-
-onBeforeUnmount(() => confirmation?.destroy())
 
 onMounted(() => {
   watch(

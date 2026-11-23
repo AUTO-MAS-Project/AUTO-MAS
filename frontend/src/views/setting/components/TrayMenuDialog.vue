@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { Modal, message, type FormInstance, type TableColumnsType } from 'ant-design-vue'
 import { DeleteOutlined, DownOutlined, UpOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   DEFAULT_TRAY_ITEMS,
   TRAY_ACTION_OPTIONS,
@@ -15,6 +17,8 @@ import { useTrayMenuTasks } from '@/composables/useTrayMenuTasks'
 const props = defineProps<{ savedItems: TrayMenuItem[] }>()
 const emit = defineEmits<{ saved: [items: TrayMenuItem[]]; close: [] }>()
 const { t } = useI18n()
+const [modal, ModalContextHolder] = Modal.useModal()
+const { confirm } = useConfirm(modal)
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
 const {
   options: taskOptions,
@@ -24,12 +28,11 @@ const {
 } = useTrayMenuTasks()
 const cloneItems = (items: TrayMenuItem[]) => items.map(item => ({ ...item }))
 const items = ref(cloneItems(props.savedItems))
+const dialogOpen = ref(true)
 const saving = ref(false)
 const confirming = ref(false)
 const form = ref<FormInstance>()
-let confirmation: ReturnType<typeof Modal.confirm> | null = null
 let discardPromise: Promise<boolean> | null = null
-let settleDiscard: ((discard: boolean) => void) | null = null
 
 const formModel = computed(() => ({ items: items.value }))
 const dirty = computed(() => JSON.stringify(items.value) !== JSON.stringify(props.savedItems))
@@ -96,31 +99,19 @@ const canDiscard = (): Promise<boolean> => {
   if (!dirty.value) return Promise.resolve(true)
   if (discardPromise) return discardPromise
   confirming.value = true
-  discardPromise = new Promise(resolve => {
-    settleDiscard = resolve
-    const finish = (discard: boolean) => {
-      confirming.value = false
-      discardPromise = null
-      settleDiscard = null
-      confirmation = null
-      resolve(discard)
-    }
-    confirmation = Modal.confirm({
-      title: t('core.setting.tray.unsavedTitle'),
-      content: t('core.setting.tray.unsavedContent'),
-      okText: t('core.setting.tray.discard'),
-      cancelText: t('core.setting.tray.continueEditing'),
-      okButtonProps: { danger: true },
-      autoFocusButton: 'cancel',
-      onOk: () => finish(true),
-      onCancel: () => finish(false),
-    })
+  discardPromise = confirm({
+    tone: 'danger',
+    title: t('core.setting.tray.unsavedTitle'),
+    description: t('core.setting.tray.unsavedContent'),
+    okText: t('core.setting.tray.discard'),
+    cancelText: t('core.setting.tray.continueEditing'),
+    autoFocusButton: 'cancel',
+    zIndex: 1050,
+  }).finally(() => {
+    confirming.value = false
+    discardPromise = null
   })
   return discardPromise
-}
-
-const requestClose = async () => {
-  if (await canDiscard()) emit('close')
 }
 
 const save = async () => {
@@ -149,22 +140,28 @@ const save = async () => {
 
 onBeforeRouteLeave(() => canDiscard())
 onMounted(() => void loadTasks())
-onBeforeUnmount(() => {
-  settleDiscard?.(false)
-  confirmation?.destroy()
-})
 </script>
 
 <template>
-  <a-modal
-    :open="true"
+  <ModalContextHolder />
+  <AppModal
+    v-model:open="dialogOpen"
+    size="lg"
     :title="t('core.setting.tray.editTitle')"
-    :width="760"
+    :dirty="dirty"
+    :dirty-title="t('core.setting.tray.unsavedTitle')"
+    :dirty-description="t('core.setting.tray.unsavedContent')"
+    :dirty-ok-text="t('core.setting.tray.discard')"
+    :dirty-cancel-text="t('core.setting.tray.continueEditing')"
+    :submitting="saving"
+    :ok-text="t('core.setting.tray.save')"
+    :ok-disabled="confirming || !dirty"
     wrap-class-name="tray-menu-dialog"
     :closable="!locked"
     :mask-closable="!locked"
     :keyboard="!locked"
-    @cancel="requestClose"
+    @ok="save"
+    @cancel="emit('close')"
   >
     <p class="tray-editor-hint">{{ t('core.setting.tray.editorHint') }}</p>
     <a-alert
@@ -262,13 +259,7 @@ onBeforeUnmount(() => {
         t('core.setting.tray.reset')
       }}</a-button>
     </div>
-    <template #footer>
-      <a-button :disabled="locked" @click="requestClose">{{ t('core.common.cancel') }}</a-button>
-      <a-button type="primary" :loading="saving" :disabled="confirming || !dirty" @click="save">{{
-        t('core.setting.tray.save')
-      }}</a-button>
-    </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

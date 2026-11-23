@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useId, type Component } from 'vue'
+import { computed, useId, useSlots, type Component } from 'vue'
 import { DownOutlined, RightOutlined } from '@ant-design/icons-vue'
 
 /**
@@ -31,6 +31,10 @@ const props = withDefaults(
 )
 
 const collapsed = defineModel<boolean>('collapsed', { default: false })
+const slots = useSlots()
+const hasHeader = computed(() =>
+  Boolean(props.title || props.subtitle || props.collapsible || slots.title || slots.actions)
+)
 const titleId = useId()
 const bodyId = useId()
 
@@ -50,7 +54,7 @@ const toggleCollapsed = () => {
     ]"
     :data-section-anchor="anchorId"
   >
-    <div class="section-header">
+    <div v-if="hasHeader" class="section-header">
       <h3>
         <button
           v-if="collapsible"
@@ -155,6 +159,21 @@ html:not(.dark):not(.appearance-custom) .ui-section-card--card {
   align-items: center;
   gap: 0 12px;
   margin-bottom: 16px;
+}
+
+.ui-section-card--plain.ui-section-card--compact .section-header {
+  margin-bottom: 12px;
+  border-bottom-width: 1px;
+}
+
+.ui-section-card--plain.ui-section-card--compact .section-header h3 {
+  gap: 10px;
+  font-size: 18px;
+}
+
+.ui-section-card--plain.ui-section-card--compact .section-header h3::before {
+  height: 20px;
+  background: var(--ant-color-primary);
 }
 
 .ui-section-card--plain.ui-section-card--collapsed .section-header {

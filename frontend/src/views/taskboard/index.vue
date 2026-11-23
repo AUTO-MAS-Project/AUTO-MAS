@@ -7,6 +7,7 @@ import { parseActivityTime } from '@/utils/activityTime'
 import { matchesKeyword } from '@/utils/searchMatch'
 import { useTaskboardStateStore } from '@/stores/taskboardState'
 import { useTaskboardData } from './useTaskboardData'
+import { AppPage, PageHeader, StateView } from '@/components/ui'
 import GamePickerModal from './components/GamePickerModal.vue'
 import TaskboardCard from './components/TaskboardCard.vue'
 import TaskboardToolbar from './components/TaskboardToolbar.vue'
@@ -197,22 +198,25 @@ const saveGames = async (keys: string[]) => {
 </script>
 
 <template>
-  <div class="taskboard-container">
-    <div class="tb-header">
-      <h1 class="page-title">{{ t('core.taskboard.title') }}</h1>
-      <span class="tb-updated">
-        {{
-          updatedAt
-            ? t('core.taskboard.dataUpdated', { p0: updatedAt })
-            : loading || completionLoading
-              ? t('core.taskboard.loading')
-              : t('core.taskboard.notUpdated')
-        }}
-      </span>
-      <a-button :loading="refreshing || loading" @click="load">
-        {{ t('core.taskboard.refresh') }}
-      </a-button>
-    </div>
+  <AppPage layout="scroll" :max-width="1600" class="taskboard-container">
+    <PageHeader :title="t('core.taskboard.title')">
+      <template #meta>
+        <span class="tb-updated">
+          {{
+            updatedAt
+              ? t('core.taskboard.dataUpdated', { p0: updatedAt })
+              : loading || completionLoading
+                ? t('core.taskboard.loading')
+                : t('core.taskboard.notUpdated')
+          }}
+        </span>
+      </template>
+      <template #actions>
+        <a-button :loading="refreshing || loading" @click="load">
+          {{ t('core.taskboard.refresh') }}
+        </a-button>
+      </template>
+    </PageHeader>
 
     <TaskboardToolbar
       :keyword="keyword"
@@ -253,33 +257,36 @@ const saveGames = async (keys: string[]) => {
       />
       <div v-if="hintText" class="tb-hint">{{ hintText }}</div>
 
-      <template v-if="isActivityTab">
-        <a-spin :spinning="loading && !allEvents.length" class="tb-spin">
-          <div class="tb-group">
-            <div class="tb-grid">
-              <TaskboardCard
-                v-for="e in items"
-                :key="e.id"
-                :event="e"
-                :cover="coverOf(e)"
-                :state="cardStateOf(e)"
-                :game-name="gameName(e.gameKey)"
-                :archived-note="archivedNoteOf(e)"
-                :ending-soon="endingSoonOf(e)"
-                :start-text="fmtDate(e.start_time)"
-                :end-text="fmtDate(e.end_time)"
-                :done-text="doneAtOf(e)"
-                :progress="progressOf(e)"
-                :saving="isSaving(e)"
-                :ready="isCompletionReady(e)"
-                @complete="setStatus(e, 'done')"
-                @undo="setStatus(e, 'active')"
-              />
-            </div>
+      <StateView
+        v-if="isActivityTab"
+        :loading="loading && !allEvents.length"
+        :empty="!loading && !items.length"
+        :empty-description="emptyText"
+        :min-height="240"
+      >
+        <div class="tb-group">
+          <div class="tb-grid">
+            <TaskboardCard
+              v-for="e in items"
+              :key="e.id"
+              :event="e"
+              :cover="coverOf(e)"
+              :state="cardStateOf(e)"
+              :game-name="gameName(e.gameKey)"
+              :archived-note="archivedNoteOf(e)"
+              :ending-soon="endingSoonOf(e)"
+              :start-text="fmtDate(e.start_time)"
+              :end-text="fmtDate(e.end_time)"
+              :done-text="doneAtOf(e)"
+              :progress="progressOf(e)"
+              :saving="isSaving(e)"
+              :ready="isCompletionReady(e)"
+              @complete="setStatus(e, 'done')"
+              @undo="setStatus(e, 'active')"
+            />
           </div>
-          <NoData v-if="!items.length && !loading" :description="emptyText" />
-        </a-spin>
-      </template>
+        </div>
+      </StateView>
 
       <WeeklyTasksPanel
         v-else-if="tab === 'weekly'"
@@ -296,38 +303,11 @@ const saveGames = async (keys: string[]) => {
       @update:open="editOpen = $event"
       @save="saveGames"
     />
-  </div>
+  </AppPage>
 </template>
 
 <style scoped>
-.taskboard-container {
-  width: 100%;
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
-
-.tb-header {
-  margin-bottom: 16px;
-  padding: 0 4px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.page-title {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--app-page-title-color, var(--ant-color-text));
-}
-
 .tb-updated {
-  margin-right: auto;
   font-size: 12px;
   color: var(--ant-color-text-secondary);
 }
@@ -353,15 +333,6 @@ const saveGames = async (keys: string[]) => {
   background: var(--app-background-card-bg, var(--ant-color-bg-container));
   color: var(--ant-color-text-secondary);
   font-size: 12px;
-}
-
-.tb-spin {
-  display: block;
-  min-height: 240px;
-}
-
-.tb-spin :deep(.ant-spin-container) {
-  min-height: 240px;
 }
 
 .tb-group {
