@@ -6,11 +6,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.config import ConfigCollection, config_manager
+from app.models.config import EmulatorConfig, MaaConfig
+from app.models.task import TaskItem, TaskMode
 from app.services import script_install
 from app.task.MAA import manager
 from app.task.MAA.tools import install_recovery as recovery
+from app.task.MAA.tools.update_config import write_maa_update_config
 from app.task.MAA.tools.update_errors import MaaUpdateUnsafeError
+from app.utils import ProcessManager
 from app.utils import io as io_utils
+from tests.config_support import activate_config
+from tests.task_stop_support import add_script
 
 
 @pytest.fixture
@@ -146,6 +153,105 @@ async def test_maa_manager_resource_recovery_goes_through_common_entry(
     common.assert_awaited_once()
     assert instance._maa_update_checked
     instance.script_info.set_log.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pending", ["resource-recovery", "registered-package", "snapshot", "journal"]
+)
+async def test_view_with_pending_update_keeps_installation_intact(
+    maa_root, monkeypatch, pending
+):
+    workspace = maa_root.parent / "workspace"
+    workspace.mkdir()
+    monkeypatch.chdir(workspace)
+    config_file = maa_root / "config/gui.new.json"
+    record = manager.round_resource_record(maa_root)
+    package = maa_root / "MirrorChyanAppv6.3.0.zip"
+    update = {"UpdatePackage": ""}
+    original_update = {"Name": "v6.3.0", "UpdatePackage": package.name}
+    if pending == "resource-recovery":
+        io_utils.write_file(record, {"target": "2026-10-02T00:00:00+00:00"})
+    else:
+        package.write_bytes(b"downloaded package")
+        if pending == "registered-package":
+            update.update(original_update)
+    io_utils.write_file(config_file, {"Update": update})
+    original_record = record.read_bytes() if record.is_file() else None
+    original_config = config_file.read_bytes()
+    resource_clock = datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+    emulators = ConfigCollection.build([EmulatorConfig])
+    await emulators.activate()
+    emulator_id = emulators.add(EmulatorConfig)
+    await emulators.commit()
+    monkeypatch.setitem(config_manager._collections, "EmulatorConfig", emulators)
+    config = await activate_config(
+        MaaConfig(
+            Emulator={"Id": emulator_id, "Index": "0"},
+            Update={"TakeoverEnabled": True},
+        )
+    )
+    config.Info.Path = maa_root
+    await config.commit()
+    root = TaskItem(info={"mode": TaskMode.SCRIPT_VIEW})
+    script = await add_script(root, str(config.uid))
+    instance = manager.MaaManager(script, device_provider=AsyncMock())
+    snapshot = workspace / f"data/{script.script_id}/Temp"
+    if pending in ("snapshot", "journal"):
+        io_utils.write_file(config_file, {"Update": original_update})
+        if pending == "snapshot":
+            io_utils.commit_native_config_snapshot(
+                snapshot, config_file.parent, script_id=script.script_id
+            )
+            io_utils.write_file(config_file, {"Update": update})
+            io_utils.mark_native_config_injected(
+                snapshot, config_file.parent, script_id=script.script_id
+            )
+        else:
+            write_maa_update_config(
+                maa_root,
+                {"Update": update},
+                snapshot_path=snapshot,
+                script_id=script.script_id,
+            )
+    monkeypatch.setattr(manager.Config, "ScriptConfig", {config.uid: config})
+    monkeypatch.setattr(
+        manager, "acquire_resource_access_lock", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        manager.process, "is_process_stopped", AsyncMock(return_value=True)
+    )
+    kill = AsyncMock(return_value=True)
+    monkeypatch.setattr(manager.process, "kill_process", kill)
+    monkeypatch.setattr(manager, "read_resource_clock", lambda root: resource_clock)
+
+    launch = AsyncMock(side_effect=AssertionError("backup view started MAA"))
+    monkeypatch.setattr(ProcessManager, "open_process", launch)
+    repair = AsyncMock(
+        side_effect=AssertionError("backup view attempted resource repair")
+    )
+    monkeypatch.setattr(manager, "auto_recover_script_install", repair)
+
+    try:
+        with pytest.raises(MaaUpdateUnsafeError, match="查看"):
+            await instance.main_task()
+        repair.assert_not_awaited()
+        launch.assert_not_awaited()
+        assert config_file.read_bytes() == original_config
+        assert not (maa_root / ".automas-resource-update.json").exists()
+        if pending != "registered-package":
+            kill.assert_not_awaited()
+        if pending == "resource-recovery":
+            assert record.read_bytes() == original_record
+        else:
+            assert package.read_bytes() == b"downloaded package"
+        if pending == "snapshot":
+            assert snapshot.is_dir()
+        if pending == "journal":
+            assert snapshot.with_name("Temp.maa-update.json").is_file()
+    finally:
+        await instance._finalize_task()
 
 
 @pytest.mark.asyncio

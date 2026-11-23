@@ -381,6 +381,10 @@ class ScriptConfigTask(TaskExecuteBase):
         update_set["CheckOnSchedule"] = False
         update_set["AutoDownloadUpdatePackage"] = False
         update_set["AutoInstallUpdatePackage"] = False
+        if self.view_only:
+            # 账号备份可能含下载登记，启动前临时清除，收尾恢复原生快照。
+            update_set["CheckOnStartup"] = False
+            update_set["UpdatePackage"] = ""
 
         _utils_io.write_file(self.maa_set_path / "gui.new.json", gui_new_set)
         _utils_io.mark_native_config_injected(

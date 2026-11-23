@@ -104,7 +104,7 @@ from .tools.software_update import (
     prepare_maa_software_before_run,
     read_installed_release,
 )
-from .tools.update_config import restore_maa_update_config
+from .tools.update_config import maa_update_config_journal, restore_maa_update_config
 from .tools.update_credentials import (
     resolve_takeover_cdk,
     resolve_takeover_credentials,
@@ -119,6 +119,14 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
     "AutoProxy": AutoProxyTask,
     "ScriptConfig": ScriptConfigTask,
 }
+
+
+def _update_recovery_paths(root: Path) -> tuple[Path, Path, Path]:
+    return (
+        root / "pending-update-failure.txt",
+        root / ".automas-resource-update.json",
+        round_resource_record(root),
+    )
 
 
 class MaaManager(ScriptManagerBase):
@@ -207,7 +215,8 @@ class MaaManager(ScriptManagerBase):
                                 and not self._keep_script_config_changes()
                             ):
                                 _utils_io.swap_in_dir(self.temp_path, self.maa_set_path)
-                            await self._restore_pending_update()
+                            if not self.task_info.view_only:
+                                await self._restore_pending_update()
                             _utils_io.clear_native_config_snapshot(self.temp_path)
                 finally:
                     self._resource_access.close()
@@ -369,7 +378,9 @@ class MaaManager(ScriptManagerBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载账号配置
-        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        script_id = self.script_info.script_id
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        snapshot_path = Path.cwd() / f"data/{script_id}/Temp"
         # 配置会话不触发下载，启动前取得安装访问锁并持有至子任务结束；
         # 更新器跳过被占用的安装，两侧共用互斥，避免启动 GUI 与写入交错。
         while True:
@@ -389,6 +400,17 @@ class MaaManager(ScriptManagerBase):
                 if script_config.Info.Path != install:
                     self._resource_access.close()
                     continue
+                if self.task_info.view_only and any(
+                    path.exists() or path.is_symlink()
+                    for path in (
+                        *_update_recovery_paths(install),
+                        snapshot_path,
+                        maa_update_config_journal(snapshot_path),
+                    )
+                ):
+                    raise MaaUpdateUnsafeError(
+                        "MAA 有待恢复的更新或配置，请先运行代理或在 MAA 内完成修复，再查看历史备份"
+                    )
                 if not await process.is_process_stopped(install / "MAA.Updater.exe"):
                     raise MaaUpdaterRunningError(
                         "无法确认 MAA 官方更新器已退出，请等待更新结束后重试"
@@ -397,6 +419,13 @@ class MaaManager(ScriptManagerBase):
                     install / "MAA.exe"
                 ) or not await process.is_process_stopped(install / "MAA.exe"):
                     raise RuntimeError("无法关闭 MAA，暂不恢复或覆盖原生配置")
+                if self.task_info.view_only:
+                    # MAA 启动时会处理已登记的包，即使会话关闭了自动安装。
+                    version, package = read_pending_update(install)
+                    if version and package and (install / package).is_file():
+                        raise MaaUpdateUnsafeError(
+                            "MAA 有待安装的更新，请先完成更新，再查看历史备份"
+                        )
                 self.config_locks[script_config.uid] = await self.lock_script_config(
                     script_config
                 )
@@ -410,7 +439,7 @@ class MaaManager(ScriptManagerBase):
         if root_path is None:
             raise ValueError("Path未配置，请检查路径设置")
         self.maa_set_path = root_path / "config"
-        self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+        self.temp_path = snapshot_path
 
         # 初始化模拟器管理器
         device_provider = self._device_provider or EmulatorManager.get_emulator_instance
@@ -420,8 +449,9 @@ class MaaManager(ScriptManagerBase):
 
         # 先处置上次崩溃残留的快照, 再备份原始配置。无条件清空会把崩溃后唯一
         # 一份原始配置副本删掉, 让注入污染的状态固化成「原始配置」。
-        self._recover_previous_run()
-        await self._restore_pending_update()
+        if not self.task_info.view_only:
+            self._recover_previous_run()
+            await self._restore_pending_update()
 
         # overlay 层覆写的库存缓存同样先还原：存底还在说明上次运行（崩溃、强杀）
         # 没走完结束还原，不还原就会把上一账号的库存固化成这一次的「原始现场」。
@@ -539,9 +569,7 @@ class MaaManager(ScriptManagerBase):
     async def _recover_unconfirmed_update(self) -> None:
         """公共入口核验官方本体和资源标记，自动选择安全恢复路径。"""
         root = self.maa_set_path.parent
-        software_flag = root / "pending-update-failure.txt"
-        resource_flag = root / ".automas-resource-update.json"
-        record = round_resource_record(root)
+        software_flag, resource_flag, record = _update_recovery_paths(root)
         minimum = None
         if record.is_file():
             minimum = datetime.fromisoformat(_utils_io.read_dict_file(record)["target"])
@@ -613,7 +641,8 @@ class MaaManager(ScriptManagerBase):
         # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
         self.prepared = True
 
-        await self._recover_unconfirmed_update()
+        if not self.task_info.view_only:
+            await self._recover_unconfirmed_update()
 
         if not isinstance(self.script_config, MaaConfig):
             raise RuntimeError("托管配置类型错误, 不是MAA托管类型")

@@ -11,7 +11,7 @@ from app.utils import io as _utils_io
 from .update_errors import MaaUpdateUnsafeError
 
 
-def _journal_path(snapshot_path: Path) -> Path:
+def maa_update_config_journal(snapshot_path: Path) -> Path:
     return snapshot_path.with_name(f"{snapshot_path.name}.maa-update.json")
 
 
@@ -19,7 +19,7 @@ def write_maa_update_config(
     root: Path, config: dict, *, snapshot_path: Path, script_id: str
 ) -> None:
     """先保存安装配置修改的归属与原值，再原子写入；中途退出也可恢复。"""
-    journal = _journal_path(snapshot_path)
+    journal = maa_update_config_journal(snapshot_path)
     if journal.exists():
         raise MaaUpdateUnsafeError("上次 MAA 安装配置尚未恢复，请重新运行后重试")
     original = _utils_io.read_dict_file(root / "config/gui.new.json")
@@ -39,7 +39,7 @@ def restore_maa_update_config(
     root: Path, *, snapshot_path: Path, script_id: str
 ) -> None:
     """仅在确认更新器已退出后调用；撤销安装覆盖，保留官方写回与用户修改。"""
-    journal = _journal_path(snapshot_path)
+    journal = maa_update_config_journal(snapshot_path)
     if not journal.exists():
         return
     try:
