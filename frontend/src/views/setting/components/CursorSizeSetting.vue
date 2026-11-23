@@ -16,6 +16,7 @@ function changeSize(value: number | string | null) {
 
 <template>
   <SettingRow
+    stacked
     :label="t('core.setting.basic.cursorSize')"
     :hint="t('core.setting.basic.cursorSizeHint')"
   >
@@ -29,17 +30,19 @@ function changeSize(value: number | string | null) {
         :aria-label="t('core.setting.basic.cursorSize')"
         @update:value="changeSize"
       />
-      <a-input-number
-        :value="cursorSizePx"
-        :min="CURSOR_SIZE_MIN"
-        :max="CURSOR_SIZE_MAX"
-        :precision="0"
-        :step="1"
-        :aria-label="t('core.setting.basic.cursorSize')"
-        placeholder="—"
-        @update:value="(value: number | string | null) => value !== null && changeSize(value)"
-      />
-      <span>px</span>
+      <div class="cursor-size-value">
+        <a-input-number
+          :value="cursorSizePx"
+          :min="CURSOR_SIZE_MIN"
+          :max="CURSOR_SIZE_MAX"
+          :precision="0"
+          :step="1"
+          :aria-label="t('core.setting.basic.cursorSize')"
+          placeholder="—"
+          @update:value="(value: number | string | null) => value !== null && changeSize(value)"
+        />
+        <span>px</span>
+      </div>
       <a-button :disabled="cursorSizePx === null" @click="changeSize(null)">
         {{ t('core.setting.basic.cursorSizeReset') }}
       </a-button>
@@ -49,15 +52,40 @@ function changeSize(value: number | string | null) {
 
 <style scoped>
 .cursor-size-controls {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) auto auto;
+  width: 100%;
   align-items: center;
   gap: 8px;
 }
 
 .cursor-size-slider {
-  width: 120px;
+  min-width: 0;
+  margin-inline: 6px;
 }
+.cursor-size-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.cursor-size-value :deep(.ant-input-number) {
+  width: 72px;
+}
+.cursor-size-controls > .ant-btn {
+  justify-self: end;
+}
+/* 小卡片先让滑条独占一行，数值、单位与恢复按钮仍保持同行。 */
+@container (max-width: 320px) {
+  .cursor-size-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .cursor-size-slider {
+    grid-column: 1 / -1;
+  }
+}
+
 html.appearance-cursor-custom .cursor-size-slider {
   cursor: var(--app-appearance-cursor-pointer);
 }

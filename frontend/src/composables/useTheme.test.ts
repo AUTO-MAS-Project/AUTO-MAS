@@ -126,3 +126,20 @@ describe('cursor size across windows', () => {
     }
   })
 })
+
+describe('slider contrast', () => {
+  it.each([
+    ['light', '#ffffff', '#f0f000'],
+    ['dark', '#141414', '#182018'],
+  ] as const)('keeps a low-contrast %s appearance readable', async (mode, background, primary) => {
+    appearance.tokens.colorBgContainer = background
+    appearance.tokens.colorPrimary = primary
+    const { useTheme } = await import('./useTheme')
+    const state = useTheme()
+    await state.initTheme({ themeMode: mode, appearanceId: appearance.id })
+    const config = state.antdTheme.value
+    const tokens = config.algorithm({ ...theme.defaultSeed, ...config.token })
+    const color = config.components.Slider?.colorPrimaryBorder ?? tokens.colorPrimaryBorder
+    expect(readability(color, background)).toBeGreaterThanOrEqual(3)
+  })
+})
