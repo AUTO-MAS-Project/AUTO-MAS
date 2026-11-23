@@ -3,6 +3,7 @@ import { onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, type FormInstance } from 'ant-design-vue'
 import { CloudUploadOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import { openExternalUrl } from '@/utils/openExternal'
 import {
   IDLE_SHARE_AUTH,
@@ -249,11 +250,12 @@ onUnmounted(() => {
     {{ t('core.edit.shareThisConfigurationConfig') }}
   </a-button>
   <!-- 上传脚本弹窗 -->
-  <a-modal
+  <AppModal
     v-model:open="uploadModalVisible"
+    size="md"
     :title="t('core.edit.uploadThisScriptConfiguration')"
-    :confirm-loading="uploadLoading || dialogLoading || shareAuthLoading"
-    width="600px"
+    :submitting="uploadLoading"
+    :ok-disabled="dialogLoading || shareAuthLoading"
     :mask-closable="false"
     @ok="handleUpload"
     @cancel="handleUploadCancel"
@@ -364,7 +366,7 @@ onUnmounted(() => {
         </template>
       </a-alert>
     </a-form>
-  </a-modal>
+  </AppModal>
 </template>
 <style scoped src="@/styles/scriptEditForm.css"></style>
 <style scoped src="@/styles/scriptEdit.css"></style>

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { QrcodeOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import type { CancelablePromise, OutBase } from '@/api'
 import { navigateTo } from '@/router'
 import { openExternalUrl } from '@/utils/openExternal'
@@ -254,13 +255,11 @@ onBeforeUnmount(() => {
       </a-col>
     </a-row>
 
-    <a-modal
+    <AppModal
       :open="taygedoVisible"
       :title="t('core.gamesign.login.taygedoTitle')"
-      :footer="null"
+      footer="none"
       :width="420"
-      :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
-      centered
       @cancel="closeTaygedo"
     >
       <a-alert
@@ -312,7 +311,7 @@ onBeforeUnmount(() => {
           </a-button>
         </a-space>
       </a-form>
-    </a-modal>
+    </AppModal>
 
     <QrLoginModal
       :open="qrVisible"

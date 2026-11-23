@@ -7,6 +7,7 @@ import { computed, ref, onScopeDispose } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import { BetterGiService, type BetterGIUserConfig_Switch } from '@/api'
 import { useBetterGIUpdate } from '../useBetterGIUpdate'
 const { executable: boundGamePath } = useBoundGameTarget()
@@ -315,16 +316,17 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     </a-col>
   </a-row>
 
-  <a-modal
+  <AppModal
     v-model:open="updateModal.open"
+    size="md"
     :title="
       updateModal.running
         ? t('core.edit.bettergiUpdateProgressTitle')
         : t('core.edit.bettergiCheckUpdateTitle')
     "
-    :confirm-loading="updateModal.starting"
+    :submitting="updateModal.starting"
     :mask-closable="!updateModal.running"
-    :footer="updateModal.running || updateModal.done ? null : undefined"
+    :footer="updateModal.running || updateModal.done ? 'none' : 'confirm'"
     @ok="startUpdate"
     @cancel="handleUpdateModalCancel"
   >
@@ -339,7 +341,7 @@ defineExpose({ reload: loadGameClientInfo, waitForPendingSaves, hasPendingSaves 
     <template v-else>
       <a-alert type="info" show-icon :message="t('core.edit.bettergiWillBeUpdated')" />
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

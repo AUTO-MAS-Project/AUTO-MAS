@@ -1,9 +1,9 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="openModel"
     :title="t('core.edit.queueTemplate')"
-    :footer="null"
-    width="720px"
+    footer="none"
+    :width="720"
     class="preset-template-modal"
   >
     <div class="queue-template-toolbar">
@@ -100,20 +100,21 @@
         </template>
       </MaaFWQueueCard>
     </div>
-  </a-modal>
+  </AppModal>
 
   <!-- 存为模板 / 重命名共用一个小弹窗：同一套名称校验，不覆盖同名 -->
-  <a-modal
+  <AppModal
     v-model:open="nameDialogOpen"
+    size="sm"
+    layer="nested"
     :title="
       nameDialogMode === 'save'
         ? t('core.edit.queueTemplateSaveTitle')
         : t('core.edit.queueTemplateRename')
     "
-    width="480px"
     :ok-text="t('core.edit.queueTemplateSave')"
     :cancel-text="t('core.common.cancel')"
-    :ok-button-props="{ disabled: !canSubmitName }"
+    :ok-disabled="!canSubmitName"
     @ok="submitName"
   >
     <div class="queue-template-name-label">{{ t('core.edit.queueTemplateName') }}</div>
@@ -132,12 +133,13 @@
       </div>
       <MaaFWQueueChips :chips="draft" />
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import { openConfirm } from '@/composables/useConfirm'
 import { EllipsisOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import type { MaaFWQueueSourceChip } from '../maafwQueueSource'

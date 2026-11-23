@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import type {
   DesktopSessionRequest,
   DesktopSessionSnapshot,
@@ -334,12 +335,13 @@ onBeforeUnmount(() => {
         }}
       </a-typography-text>
     </a-flex>
-    <a-modal
+    <AppModal
       v-model:open="passwordDialog"
+      size="sm"
       :title="t('bootstrap.desktopSession.passwordTitle')"
       :ok-text="t('bootstrap.desktopSession.connect')"
       :cancel-text="t('bootstrap.desktopSession.cancel')"
-      :ok-button-props="{ disabled: !password }"
+      :ok-disabled="!password"
       @ok="submitPassword"
       @cancel="password = ''"
     >
@@ -358,7 +360,7 @@ onBeforeUnmount(() => {
         autocomplete="off"
         @press-enter="password && submitPassword()"
       />
-    </a-modal>
+    </AppModal>
   </main>
 </template>
 

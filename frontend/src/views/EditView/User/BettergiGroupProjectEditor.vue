@@ -34,15 +34,12 @@
     <!-- 放大弹窗：更大编辑区居中显示。
          弹窗堆叠遵循「先开的在下、后开的在上」：放大弹窗作为底层 z-index 1000，
          内部双击项目再弹出的设置弹窗(1100)会盖在其上。 -->
-    <a-modal
+    <AppModal
       v-model:open="zoomed"
       :title="zoomTitle"
-      :footer="null"
+      footer="none"
       :width="860"
-      centered
-      :z-index="1000"
       wrap-class-name="bgi-project-zoom-modal"
-      @cancel="zoomed = false"
     >
       <BettergiGroupProjectBody
         v-if="zoomed"
@@ -56,7 +53,7 @@
         :editable="editable"
         @add-script="emit('add-script')"
       />
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
@@ -64,6 +61,7 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FullscreenOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import BettergiGroupProjectBody from './BettergiGroupProjectBody.vue'
 
 const { t } = useI18n()

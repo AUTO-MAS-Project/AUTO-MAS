@@ -1,6 +1,7 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
+    size="sm"
     :title="
       t(
         game.type.type === 'general_emulator'
@@ -8,11 +9,15 @@
           : 'core.games.createInstance'
       )
     "
-    :ok-button-props="{ disabled: !canCreate }"
-    :confirm-loading="saving || action?.state === 'busy'"
+    :ok-disabled="!canCreate"
+    :submitting="saving || action?.state === 'busy'"
+    :dirty="Boolean(name)"
+    :session-key="game.uid"
+    :dirty-title="t('core.games.discard')"
+    dirty-description=""
     :mask-closable="false"
     @ok="create"
-    @cancel="close"
+    @cancel="emit('close')"
   >
     <a-form layout="vertical">
       <a-form-item :label="t('core.games.name')"><a-input v-model:value="name" /></a-form-item>
@@ -48,13 +53,13 @@
       </template>
     </a-form>
     <a-alert v-if="error" type="error" :message="error" show-icon />
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useConfirm } from '@/composables/useConfirm'
+import { AppModal } from '@/components/ui'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
@@ -62,7 +67,6 @@ import { useGameTriggers } from '@/composables/useGameTriggers'
 const props = defineProps<{ open: boolean; game: GameRow }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
-const { confirm } = useConfirm()
 const api = useGamesApi(),
   operations = useGameTriggers()
 const action = computed(() => gameActionHint(props.game, props.game.uid, 'create_instance'))
@@ -109,12 +113,5 @@ async function create() {
   } finally {
     saving.value = false
   }
-}
-function close() {
-  if (!name.value) {
-    emit('close')
-    return
-  }
-  void confirm({ tone: 'warning', title: t('core.games.discard'), onOk: () => emit('close') })
 }
 </script>

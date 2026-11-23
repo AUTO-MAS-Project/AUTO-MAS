@@ -1,6 +1,7 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
+    size="md"
     :title="
       t(
         kind === 'connection'
@@ -10,11 +11,16 @@
             : 'core.games.settings'
       )
     "
-    :confirm-loading="saving"
-    :ok-button-props="{ disabled: saveBlocked }"
+    :footer="kind === 'options' ? 'close' : 'confirm'"
+    :submitting="saving"
+    :ok-disabled="saveBlocked"
+    :dirty="dirty"
+    :session-key="`${device.uid}:${kind}`"
+    :dirty-title="t('core.games.discard')"
+    dirty-description=""
     :mask-closable="false"
     @ok="save"
-    @cancel="close"
+    @cancel="emit('close')"
   >
     <a-spin :spinning="loading">
       <a-alert v-if="error" type="error" :message="error" show-icon />
@@ -54,14 +60,14 @@
         <a-alert v-if="result" type="info" :message="result" show-icon class="settings-result" />
       </a-form>
     </a-spin>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { useConfirm } from '@/composables/useConfirm'
+import { AppModal } from '@/components/ui'
 import { Service } from '@/api'
 import { gameActionHint, type GameRow, type GameDeviceRow } from '@/types/games'
 import { checkedGameResponse, useGamesApi } from '@/composables/useGamesApi'
@@ -74,7 +80,6 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
-const { confirm } = useConfirm()
 const api = useGamesApi()
 const saveBlocked = computed(
   () => gameActionHint(props.game, props.device.uid, props.kind)?.editable !== true
@@ -222,17 +227,11 @@ async function save() {
     saving.value = false
   }
 }
-function close() {
-  const dirty =
-    props.kind === 'connection'
-      ? initialConnection.value !== JSON.stringify(connection)
-      : props.kind === 'settings' && Object.keys(changes()).length > 0
-  if (!dirty) {
-    emit('close')
-    return
-  }
-  void confirm({ tone: 'warning', title: t('core.games.discard'), onOk: () => emit('close') })
-}
+const dirty = computed(() =>
+  props.kind === 'connection'
+    ? initialConnection.value !== JSON.stringify(connection)
+    : props.kind === 'settings' && Object.keys(changes()).length > 0
+)
 </script>
 
 <style scoped>

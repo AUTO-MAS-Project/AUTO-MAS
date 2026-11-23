@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n'
 import { BugOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { computed, reactive, watch } from 'vue'
+import { AppModal } from '@/components/ui'
 import { useLogPatternDebug } from '../composables/useLogPatternDebug'
 import type { PushLogPattern } from '../composables/usePushLogPatterns'
 
@@ -55,22 +56,16 @@ const configPreview = computed(() => {
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :title="title"
-    width="900px"
-    :footer="null"
+    :icon="BugOutlined"
+    :width="900"
+    footer="none"
+    scroll="none"
     :body-style="{ height: '60vh', minHeight: 0, overflow: 'hidden' }"
-    :destroy-on-close="true"
     @update:open="(v: boolean) => emit('update:open', v)"
   >
-    <template #title>
-      <span class="modal-title">
-        <BugOutlined />
-        {{ title }}
-      </span>
-    </template>
-
     <div class="debug-body">
       <!-- 左侧：输入 -->
       <div class="debug-input-pane">
@@ -184,16 +179,10 @@ const configPreview = computed(() => {
         />
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>
-.modal-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .debug-body {
   display: flex;
   gap: 16px;

@@ -3,7 +3,7 @@
     <!-- eslint-disable vue/no-v-html -- HTML is sanitized by sanitizeHtml before rendering. -->
     <div v-if="renderedHtml" @click="handleContentClick" v-html="renderedHtml" />
     <!-- eslint-enable vue/no-v-html -->
-    <a-modal v-model:open="previewOpen" :footer="null" centered width="80%">
+    <AppModal v-model:open="previewOpen" footer="none" width="80%">
       <img
         v-if="previewImage"
         :src="previewImage"
@@ -11,13 +11,14 @@
         loading="lazy"
         class="description-preview-image"
       />
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
+import { AppModal } from '@/components/ui'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 
 const props = withDefaults(

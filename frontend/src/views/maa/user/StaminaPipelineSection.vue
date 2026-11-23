@@ -76,16 +76,13 @@
         </a-button>
       </template>
     </PipelineRow>
-    <a-modal
+    <AppModal
       v-model:open="depotSettingsOpen"
       :title="t('plugins.maa_adapter.edit.maaDepotSettings')"
       :width="1100"
+      footer="close"
+      :submitting="loading"
       wrap-class-name="maa-plan-settings-modal"
-      centered
-      destroy-on-close
-      :closable="!loading"
-      :mask-closable="!loading"
-      :keyboard="!loading"
     >
       <DepotMaintainPlanEditor
         :editor="depotPlanEditor"
@@ -118,12 +115,7 @@
           @change="emitSave('Task.' + field.key, $event)"
         />
       </a-form-item>
-      <template #footer>
-        <a-button :disabled="loading" @click="depotSettingsOpen = false">
-          {{ t('core.common.close') }}
-        </a-button>
-      </template>
-    </a-modal>
+    </AppModal>
 
     <!-- 理智作战 -->
     <PipelineRow
@@ -143,6 +135,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import PipelineRow from './PipelineRow.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 import EventDepotPlanEditor from './EventDepotPlanEditor.vue'

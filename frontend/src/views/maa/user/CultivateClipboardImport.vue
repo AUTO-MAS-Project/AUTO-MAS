@@ -8,19 +8,16 @@
       )
     }}
   </a-button>
-  <a-modal
+  <AppModal
     v-model:open="manualOpen"
+    size="md"
     wrap-class-name="maa-plan-settings-modal"
-    centered
     :title="t('plugins.maa_adapter.edit.maaCultivateImportClipboard')"
     :ok-text="t('plugins.maa_adapter.edit.maaCultivateImportSubmit')"
     :cancel-text="t('core.common.cancel')"
-    :confirm-loading="busy"
-    :ok-button-props="{ disabled: disabled || !manualText.trim() }"
-    :cancel-button-props="{ disabled: busy }"
-    :closable="!busy"
+    :submitting="busy"
+    :ok-disabled="disabled || !manualText.trim()"
     :mask-closable="false"
-    :keyboard="!busy"
     @ok="importText(manualText)"
   >
     <p>{{ t('plugins.maa_adapter.edit.maaCultivateImportPasteHint') }}</p>
@@ -30,15 +27,15 @@
       :placeholder="t('plugins.maa_adapter.edit.maaCultivateImportPlaceholder')"
       :auto-size="{ minRows: 5, maxRows: 10 }"
     />
-  </a-modal>
-  <a-modal
+  </AppModal>
+  <AppModal
     v-model:open="reportOpen"
+    size="md"
+    footer="custom"
     :title="
       t('plugins.maa_adapter.edit.maaCultivateImportSkipped', { count: skippedMessages.length })
     "
     wrap-class-name="maa-plan-settings-modal"
-    centered
-    destroy-on-close
   >
     <ul class="cultivate-import-skipped">
       <li v-for="(text, index) in skippedMessages" :key="index">{{ text }}</li>
@@ -46,13 +43,14 @@
     <template #footer>
       <a-button type="primary" @click="reportOpen = false">{{ t('core.common.confirm') }}</a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import type { CultivateImportResult } from './cultivateTargets'
 
 const props = defineProps<{

@@ -5,6 +5,7 @@ import { computed, ref, h } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { useConfirm } from '@/composables/useConfirm'
+import { AppModal } from '@/components/ui'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { type ZzzOdInstanceOut } from '@/api'
 const props = defineProps<{
@@ -300,12 +301,13 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
       </div>
     </div>
   </div>
-  <a-modal
+  <AppModal
     v-model:open="addInstanceOpen"
+    size="sm"
     :title="t('core.edit.zzzodAddInstance')"
     :ok-text="t('core.edit.zzzodAddInstance')"
     :cancel-text="t('core.edit.cancel')"
-    :confirm-loading="instanceOpLoading"
+    :submitting="instanceOpLoading"
     @ok="confirmAddInstance"
   >
     <a-form layout="vertical" class="config-form">
@@ -326,13 +328,14 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
         />
       </a-form-item>
     </a-form>
-  </a-modal>
-  <a-modal
+  </AppModal>
+  <AppModal
     v-model:open="renameInstanceOpen"
+    size="sm"
     :title="t('core.edit.zzzodRenameInstance')"
     :ok-text="t('core.edit.zzzodRenameInstance')"
     :cancel-text="t('core.edit.cancel')"
-    :confirm-loading="instanceOpLoading"
+    :submitting="instanceOpLoading"
     @ok="confirmRenameInstance"
   >
     <a-form layout="vertical" class="config-form">
@@ -353,7 +356,7 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
         />
       </a-form-item>
     </a-form>
-  </a-modal>
+  </AppModal>
 </template>
 <style scoped>
 @import './zzzodFormControls.css';

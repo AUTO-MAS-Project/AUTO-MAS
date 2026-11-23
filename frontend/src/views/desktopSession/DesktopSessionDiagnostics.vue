@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { AppModal } from '@/components/ui'
 import type {
   DesktopSessionRepair,
   DesktopSessionSnapshot,
@@ -119,12 +120,13 @@ async function exportLogs() {
       </a-flex>
     </template>
   </template>
-  <a-modal
+  <AppModal
     :open="confirming"
+    size="sm"
     :title="t('bootstrap.desktopSession.repairTitle')"
     :ok-text="t('bootstrap.desktopSession.repairContinue')"
     :cancel-text="t('bootstrap.desktopSession.cancel')"
-    :ok-button-props="{ danger: true }"
+    ok-danger
     @ok="repairEnvironment"
     @cancel="confirming = false"
   >
@@ -134,5 +136,5 @@ async function exportLogs() {
         {{ t(`bootstrap.desktopSession.repairs.${item}`) }}
       </li>
     </ul>
-  </a-modal>
+  </AppModal>
 </template>
