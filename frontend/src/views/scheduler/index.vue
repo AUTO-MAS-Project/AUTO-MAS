@@ -1,12 +1,9 @@
 <template>
   <!-- 主要内容 -->
-  <div class="scheduler-main">
+  <AppPage layout="fill">
     <!-- 页面头部 -->
-    <div class="scheduler-header app-page-header">
-      <div class="header-left">
-        <h1 class="page-title app-page-title">{{ t('core.scheduler.title') }}</h1>
-      </div>
-      <div class="header-actions">
+    <PageHeader :title="t('core.scheduler.title')">
+      <template #actions>
         <a-space size="middle">
           <span class="power-label">{{ t('core.scheduler.powerLabel') }}</span>
           <a-select
@@ -25,11 +22,11 @@
             </a-select-option>
           </a-select>
         </a-space>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- 调度台标签页 -->
-    <div class="scheduler-tabs app-page-surface app-page-surface--tabs">
+    <PageSurface padding="none" :scrollable="false" class="scheduler-tabs app-page-surface--tabs">
       <a-tabs
         v-model:active-key="activeSchedulerTab"
         type="editable-card"
@@ -111,7 +108,7 @@
           </div>
         </template>
       </a-tabs>
-    </div>
+    </PageSurface>
 
     <!-- 电源操作倒计时弹窗已移至全局组件 GlobalPowerCountdown.vue -->
     <OverlayRainMask
@@ -120,7 +117,7 @@
       :block-size="128"
       @stopped="onAprilFoolsStopped"
     />
-  </div>
+  </AppPage>
 </template>
 
 <script setup lang="ts">
@@ -131,6 +128,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { message } from 'ant-design-vue'
 import { useTheme } from '@/composables/useTheme'
 import { MinusOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import { AppPage, PageHeader, PageSurface } from '@/components/ui'
 import { POWER_ACTION_LABEL_KEY, TAB_STATUS_COLOR } from './schedulerConstants'
 import { useSchedulerLogic } from './useSchedulerLogic'
 import SchedulerTaskControl from './SchedulerTaskControl.vue'
@@ -292,25 +290,6 @@ onDeactivated(() => {
 </script>
 
 <style scoped>
-/* 页面容器 */
-.scheduler-main {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: transparent;
-}
-
-.header-left {
-  flex: 1;
-}
-
-.header-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .power-label {
   font-size: 14px;
   color: var(--ant-color-text-secondary);
@@ -464,19 +443,8 @@ onDeactivated(() => {
 
 /* 响应式 - 移动端适配 */
 @media (max-width: 768px) {
-  .scheduler-header {
-    flex-direction: column;
-  }
-
-  .header-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
   .power-label {
     display: none;
   }
-
-  /* 移动端倒计时弹窗适配已移至 GlobalPowerCountdown.vue */
 }
 </style>

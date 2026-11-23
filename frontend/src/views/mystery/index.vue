@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
+import { AppPage, PageHeader } from '@/components/ui'
 import { useMysteryStore } from '@/stores/mystery'
 import BilibiliAgreement from './BilibiliAgreement.vue'
 
@@ -76,20 +77,21 @@ const lock = async () => {
 </script>
 
 <template>
-  <div class="mystery-page">
-    <div class="mystery-header">
-      <div class="mystery-heading">
+  <AppPage layout="scroll">
+    <PageHeader :title="pageTitle">
+      <template #leading>
         <a-button @click="back">
           <template #icon><ArrowLeftOutlined /></template>
           {{ t(isFeaturePage ? 'core.mystery.backToOverview' : 'core.mystery.back') }}
         </a-button>
-        <h1>{{ pageTitle }}</h1>
-      </div>
-      <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
-        <template #icon><LockOutlined /></template>
-        {{ t('core.mystery.lock') }}
-      </a-button>
-    </div>
+      </template>
+      <template #actions>
+        <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
+          <template #icon><LockOutlined /></template>
+          {{ t('core.mystery.lock') }}
+        </a-button>
+      </template>
+    </PageHeader>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
       <a-result v-if="store.loadError" status="error" :title="loadErrorMessage">
@@ -151,35 +153,10 @@ const lock = async () => {
         </a-col>
       </a-row>
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <style scoped>
-.mystery-page {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.mystery-header,
-.mystery-heading {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.mystery-header {
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.mystery-heading h1 {
-  margin: 0;
-  font-size: 24px;
-  color: var(--ant-color-text);
-}
-
 .mystery-unlock {
   width: 100%;
   max-width: 520px;
