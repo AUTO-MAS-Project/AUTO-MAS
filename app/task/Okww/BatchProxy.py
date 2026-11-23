@@ -12,7 +12,7 @@ from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 
 from . import push_log
-from .AutoProxy import AutoProxyTask, _okww_mas_config_dir
+from .AutoProxy import _OKWW_ERROR_PREFIX, AutoProxyTask, _okww_mas_config_dir
 from .tools.batch_config import (
     DAILY_TASK,
     completed_accounts,
@@ -26,6 +26,7 @@ from .tools.batch_logs import (
 )
 
 logger = get_logger("OK-WW 批次")
+_BATCH_FAILURE_LOG = "MultiAccountConfigTask:info_set 状态 执行失败"
 
 
 class BatchProxyTask(AutoProxyTask):
@@ -175,11 +176,18 @@ class BatchProxyTask(AutoProxyTask):
         # 完成账号归档和整批判定后再唤醒主流程，避免日志监控提前被取消。
         await super().check_log(log_content, latest_time, signal_completion=False)
         # 失败原因独立于节点采集开关，关闭详情时仍须保留账号结论。
+        failed_key = None
         for key, stage, line in account_log_context(log_content):
             if key in self.account_users:
                 self.attempted_accounts.add(key)
-                if "MultiAccountConfigTask:info_set 状态 执行失败" in line:
+            if _BATCH_FAILURE_LOG in line:
+                failed_key = key if key in self.account_users else None
+                if failed_key is not None:
                     self.account_failures[key] = f"OK-WW {stage}失败"
+        if failed_key is not None and self.cur_user_log.status.startswith(
+            _OKWW_ERROR_PREFIX
+        ):
+            self.account_failures[failed_key] = self.cur_user_log.status
         completed = completed_accounts(self.script_config_path, self.pending)
         self.succeeded.update(completed)
         for key in completed:
@@ -219,8 +227,8 @@ class BatchProxyTask(AutoProxyTask):
                 if current in pipelines:
                     self.attempted_accounts.add(current)
                     # OCR 回退警告不能代替上游终态失败。
-                    if "MultiAccountConfigTask:info_set 状态 执行失败" in line:
-                        self.account_failures[current] = f"OK-WW {stage}失败"
+                    if _BATCH_FAILURE_LOG in line:
+                        self.account_failures.setdefault(current, f"OK-WW {stage}失败")
                         pipelines[current].results.append(
                             (LOG_TYPE_NORMAL, f"❌ 失败: {stage}", None)
                         )
