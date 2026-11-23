@@ -97,7 +97,7 @@ watch(
 </script>
 
 <template>
-  <AppPage layout="fill">
+  <AppPage layout="fill" class="plugins-page">
     <PageHeader :title="t('core.plugins.title')">
       <template #actions>
         <a-button

@@ -1006,6 +1006,7 @@
   "core.edit.directEngineSra": "SRA",
   "core.edit.directory": "フォルダー",
   "core.edit.disabled": "無効",
+  "core.edit.discardChanges": "変更を破棄",
   "core.edit.doNotSwitch": "切り替えない",
   "core.edit.documentation": "ドキュメント",
   "core.edit.dragRule": "ドラッグして並び替え",

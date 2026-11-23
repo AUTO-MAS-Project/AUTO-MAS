@@ -1006,6 +1006,7 @@
   "core.edit.directEngineSra": "SRA",
   "core.edit.directory": "目录",
   "core.edit.disabled": "禁用",
+  "core.edit.discardChanges": "放弃修改",
   "core.edit.doNotSwitch": "不切换",
   "core.edit.documentation": "说明文档",
   "core.edit.dragRule": "拖拽排序",

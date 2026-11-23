@@ -17,6 +17,8 @@ export interface ConfirmOptions {
   description?: string | VNode
   okText?: string
   cancelText?: string
+  /** 默认聚焦按钮；danger 语义默认聚焦取消按钮，防止键盘误按 Enter 触发破坏性操作 */
+  autoFocusButton?: 'ok' | 'cancel' | null
   width?: number | string
   maskClosable?: boolean
   zIndex?: number
@@ -90,6 +92,12 @@ export function openConfirm(options: ConfirmOptions, host: ConfirmHost = Modal):
       okType: tone === 'danger' ? 'danger' : 'primary',
       okButtonProps: tone === 'danger' ? { danger: true } : undefined,
       cancelButtonProps: { disabled: false },
+      autoFocusButton:
+        options.autoFocusButton !== undefined
+          ? options.autoFocusButton
+          : tone === 'danger'
+            ? 'cancel'
+            : undefined,
       centered: true,
       keyboard: true,
       closable: false,

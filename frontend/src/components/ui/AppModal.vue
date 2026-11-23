@@ -52,6 +52,8 @@ const props = withDefaults(
     sessionKey?: string | number | symbol | null
     dirtyTitle?: string
     dirtyDescription?: string
+    dirtyOkText?: string
+    dirtyCancelText?: string
     /** body: 由弹窗正文单滚动体滚动；none: 交给内部独立面板（如编辑器）管理滚动 */
     scroll?: 'body' | 'none'
     /** default/nested 避让 32px 标题栏；blocking 仅用于启动/关闭安全层 */
@@ -79,6 +81,8 @@ const props = withDefaults(
     sessionKey: undefined,
     dirtyTitle: undefined,
     dirtyDescription: undefined,
+    dirtyOkText: undefined,
+    dirtyCancelText: undefined,
     scroll: 'body',
     layer: 'default',
     centered: true,
@@ -132,9 +136,12 @@ const { requestClose } = useModalCloseGuard({
   submitting: () => props.submitting,
   confirmDiscard: () =>
     confirm({
-      tone: 'warning',
+      tone: 'danger',
       title: props.dirtyTitle ?? t('core.edit.youHaveUnsavedChanges'),
       description: props.dirtyDescription ?? t('core.edit.leaveWithoutSavingUnsaved'),
+      okText: props.dirtyOkText ?? t('core.edit.discardChanges'),
+      cancelText: props.dirtyCancelText ?? t('core.edit.keepEditing'),
+      autoFocusButton: 'cancel',
       zIndex: resolvedZIndex.value + 50,
     }),
   onClose: () => {
