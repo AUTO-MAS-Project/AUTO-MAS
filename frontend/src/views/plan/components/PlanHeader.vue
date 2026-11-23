@@ -20,20 +20,20 @@
           </a-button>
         </a-dropdown>
 
-        <a-popconfirm
+        <ConfirmActionButton
           v-if="planList.length > 0"
+          risk="low"
+          tone="danger"
+          size="large"
           :title="t('core.plan.deleteConfirm')"
-          :ok-text="t('core.common.confirm')"
-          :cancel-text="t('core.common.cancel')"
-          @confirm="$emit('remove-plan', activePlanId)"
+          :disabled="!activePlanId || creating"
+          :confirm="() => removePlan(activePlanId)"
         >
-          <a-button danger size="large" :disabled="!activePlanId">
-            <template #icon>
-              <DeleteOutlined />
-            </template>
-            {{ t('core.plan.deleteCurrent') }}
-          </a-button>
-        </a-popconfirm>
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.plan.deleteCurrent') }}
+        </ConfirmActionButton>
       </a-space>
     </div>
   </div>
@@ -56,6 +56,7 @@ import {
   PLAN_TYPE_DESCRIPTORS,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
+import { ConfirmActionButton } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
@@ -78,12 +79,12 @@ interface Props {
   planList: Plan[]
   activePlanId: string
   creating?: boolean
+  removePlan: (planId: string) => void | Promise<unknown>
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
   'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
-  'remove-plan': [planId: string]
 }>()
 
 const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)

@@ -3,7 +3,8 @@ import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, ref, h } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { type ZzzOdInstanceOut } from '@/api'
 const props = defineProps<{
@@ -22,6 +23,7 @@ const nativeInstanceIdx = computed(() => props.selected)
 // 在途写入可晚于管理区块卸载；由页面级快照所有者接收结果。
 const instances = computed({ get: () => props.instances, set: props.updateInstances })
 const { t } = useI18n()
+const { confirm } = useConfirm()
 // ══ 实例管理（原生来源：添加 / 重命名 / 删除 / 参与「全部实例」开关，实时写回 one_dragon.yml）══
 const instanceName = ref('')
 
@@ -110,9 +112,10 @@ const confirmRenameInstance = async () => {
 }
 
 const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t('core.edit.zzzodDeleteInstance'),
-    content: h(
+    description: h(
       'p',
       { style: { color: 'var(--ant-color-error)', margin: 0 } },
       t('core.edit.zzzodDeleteInstanceConfirm', {
@@ -120,7 +123,6 @@ const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
       })
     ),
     okText: t('core.edit.zzzodDeleteInstance'),
-    okButtonProps: { danger: true },
     onOk: () => deleteInstance(inst),
   })
 }

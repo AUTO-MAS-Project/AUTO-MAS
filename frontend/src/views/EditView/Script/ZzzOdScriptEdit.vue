@@ -249,11 +249,13 @@ import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 
 const { t } = useI18n()
+const { alert } = useConfirm()
 const logger = window.electronAPI.getLogger('ZZZ-OD脚本编辑')
 const route = useRoute()
 const router = useRouter()
@@ -441,9 +443,10 @@ const selectRootPath = async () => {
     ZZZOD_LAUNCHER_NAMES.map(name => window.electronAPI.fileExists(`${normalized}/${name}`))
   )
   if (!launcherChecks.some(Boolean)) {
-    Modal.error({
+    void alert({
+      tone: 'error',
       title: t('core.edit.zzzodInvalidDirectory'),
-      content: t('core.edit.zzzodLauncherNotFound', {
+      description: t('core.edit.zzzodLauncherNotFound', {
         p0: ZZZOD_LAUNCHER_NAMES[0],
         p1: ZZZOD_LAUNCHER_NAMES[1],
       }),

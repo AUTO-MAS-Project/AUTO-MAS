@@ -88,6 +88,7 @@
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
             :managed-task-entries="managedTaskEntries"
+            :deleting-task="deletingTask"
             @reorder-tasks="applyQueuedTaskIds"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
@@ -232,6 +233,7 @@ const {
   applyPresetTemplate,
   deleteSelectedTask,
   deleteTask,
+  deletingTask,
   duplicateTask,
   renameTask,
   updateTaskWeekdays,

@@ -35,7 +35,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { DownOutlined, LoadingOutlined } from '@ant-design/icons-vue'
 import type { GameRow, GameDeviceRow } from '@/types/games'
 import { gameActionHint } from '@/types/games'
@@ -45,6 +46,7 @@ import { useGamesApi } from '@/composables/useGamesApi'
 const props = defineProps<{ game: GameRow; device: GameDeviceRow }>()
 const emit = defineEmits<{ edit: [kind: 'settings' | 'connection' | 'options'] }>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const operations = useGameTriggers()
 const api = useGamesApi()
 const primaryActions = ['open', 'close', 'show'] as const
@@ -116,9 +118,10 @@ function menuAction({ key }: { key: string | number }) {
     return
   }
   if (action === 'delete_instance') {
-    Modal.confirm({
+    void confirm({
+      tone: 'danger',
       title: t('core.games.deleteInstanceConfirm'),
-      content: props.device.document.info?.name,
+      description: props.device.document.info?.name ?? undefined,
       onOk: () => operate('delete_instance'),
     })
     return

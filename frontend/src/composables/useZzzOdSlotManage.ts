@@ -1,7 +1,8 @@
 import { AdapterSetupService as Service } from '@/composables/useAdapterSetupApi'
 import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { formatBytes } from '@/utils/byteFormat'
 import { type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
 
@@ -17,6 +18,7 @@ import { type ZzzOdRecycleEntryOut, type ZzzOdSlotOut } from '@/api'
  */
 export function useZzzOdSlotManage(scriptId: () => string) {
   const { t } = useI18n()
+  const { confirm } = useConfirm()
   const logger = window.electronAPI.getLogger('ZZZ-OD脚本编辑')
 
   const panelKeys = ref<string[]>([])
@@ -178,11 +180,11 @@ export function useZzzOdSlotManage(scriptId: () => string) {
       message.info(t('core.edit.zzzodSlotsCleanNone'))
       return
     }
-    Modal.confirm({
+    void confirm({
+      tone: 'danger',
       title: t('core.edit.zzzodSlotsClean'),
-      content: t('core.edit.zzzodSlotsCleanConfirm', { count }),
+      description: t('core.edit.zzzodSlotsCleanConfirm', { count }),
       okText: t('core.edit.zzzodSlotsClean'),
-      okButtonProps: { danger: true },
       onOk: () => cleanOrphanSlots(),
     })
   }
@@ -223,14 +225,14 @@ export function useZzzOdSlotManage(scriptId: () => string) {
   /** 清空回收池不可找回（恢复历史一并删除），需二次确认 */
   const confirmClearRecycle = () => {
     const totalSize = recycleRows.value.reduce((sum, item) => sum + item.size, 0)
-    Modal.confirm({
+    void confirm({
+      tone: 'danger',
       title: t('core.edit.zzzodRecycleClear'),
-      content: t('core.edit.zzzodRecycleClearConfirm', {
+      description: t('core.edit.zzzodRecycleClearConfirm', {
         count: recycleRows.value.length,
         size: formatBytes(totalSize),
       }),
       okText: t('core.edit.zzzodRecycleClear'),
-      okButtonProps: { danger: true },
       onOk: () => clearRecyclePool(),
     })
   }
@@ -344,9 +346,10 @@ export function useZzzOdSlotManage(scriptId: () => string) {
 
   /** 恢复是覆盖性操作（目标用户已有绑定槽时替换其内容），需二次确认 */
   const confirmRestoreRecycle = (entry: ZzzOdRecycleEntryOut) => {
-    Modal.confirm({
+    void confirm({
+      tone: 'warning',
       title: t('core.edit.zzzodRecycleRestore'),
-      content: t('core.edit.zzzodRecycleRestoreConfirm', {
+      description: t('core.edit.zzzodRecycleRestoreConfirm', {
         slot: String(entry.slot).padStart(2, '0'),
       }),
       okText: t('core.edit.zzzodRecycleRestore'),

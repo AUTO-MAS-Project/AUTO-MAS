@@ -2,7 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
@@ -84,15 +85,12 @@ const { loading, handleSettingChange, handleDynamicSettingChange, refreshSetting
   useSettingPersistence(settings, restartPolling)
 
 const confirmFluidCursor = () =>
-  new Promise<boolean>(resolve => {
-    Modal.confirm({
-      title: t('core.setting.toast.fluidTitle'),
-      content: t('core.setting.toast.fluidContent'),
-      okText: t('core.setting.toast.fluidOk'),
-      cancelText: t('core.common.cancel'),
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    })
+  openConfirm({
+    tone: 'warning',
+    title: t('core.setting.toast.fluidTitle'),
+    description: t('core.setting.toast.fluidContent'),
+    okText: t('core.setting.toast.fluidOk'),
+    cancelText: t('core.common.cancel'),
   })
 
 const handleCursorEffectChange = async (value: SelectValue) => {

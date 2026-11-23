@@ -54,7 +54,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
@@ -62,6 +62,7 @@ import { useGameTriggers } from '@/composables/useGameTriggers'
 const props = defineProps<{ open: boolean; game: GameRow }>()
 const emit = defineEmits<{ close: [] }>()
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const api = useGamesApi(),
   operations = useGameTriggers()
 const action = computed(() => gameActionHint(props.game, props.game.uid, 'create_instance'))
@@ -114,6 +115,6 @@ function close() {
     emit('close')
     return
   }
-  Modal.confirm({ title: t('core.games.discard'), onOk: () => emit('close') })
+  void confirm({ tone: 'warning', title: t('core.games.discard'), onOk: () => emit('close') })
 }
 </script>

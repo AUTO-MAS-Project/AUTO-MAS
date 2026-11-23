@@ -115,7 +115,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { SearchOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import type { CultivatePreviewOut } from '@/api'
 import { handleExternalLink } from '@/utils/openExternal'
 import { computed, onMounted, ref, shallowRef, watch } from 'vue'
@@ -270,14 +270,14 @@ const selectAllOperators = (checked: boolean) => {
 
 const removeSelectedOperators = () => {
   const selected = new Set(operatorSelection.value)
-  Modal.confirm({
+  void openConfirm({
+    tone: 'danger',
     title: t('plugins.maa_adapter.edit.maaCultivateDeleteSelected', { count: selected.size }),
-    content: t('plugins.maa_adapter.edit.maaCultivateDeleteSelectedConfirm', {
+    description: t('plugins.maa_adapter.edit.maaCultivateDeleteSelectedConfirm', {
       count: selected.size,
     }),
     okText: t('core.common.confirm'),
     cancelText: t('core.common.cancel'),
-    okType: 'danger',
     onOk: () => persist(rows.value.filter(row => !selected.has(row.operatorId))),
   })
 }

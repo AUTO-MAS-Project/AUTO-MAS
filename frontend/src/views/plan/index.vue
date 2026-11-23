@@ -12,8 +12,8 @@
         :plan-list="planList"
         :active-plan-id="activePlanId"
         :creating="planOperationPending"
+        :remove-plan="handleRemovePlan"
         @add-plan="handleAddPlan"
-        @remove-plan="handleRemovePlan"
       />
 
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
