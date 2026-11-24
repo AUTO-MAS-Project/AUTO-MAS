@@ -5,7 +5,6 @@ import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig, SettingMirrorCdkData } from '@/api'
 import type { SettingChangeHandler } from '../settingTypes'
 import { useSettingsApi } from '@/composables/useSettingsApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
 import MirrorCdkStatusHint from '@/components/MirrorCdkStatusHint.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -17,7 +16,6 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const { queryMirrorCdk } = useSettingsApi()
-const { enqueue } = useSaveQueue()
 const cdk = ref('')
 const checking = ref(false)
 const state = ref<SettingMirrorCdkData | null>(null)
@@ -79,7 +77,7 @@ const handleBlur = async () => {
   const sequence = draftSequence
   const value = cdk.value
   void refresh()
-  const saved = await enqueue(() => props.handleSettingChange('Update', 'MirrorChyanCDK', value))
+  const saved = await props.handleSettingChange('Update', 'MirrorChyanCDK', value)
   if (saved && sequence === draftSequence && cdk.value === props.settings.Update?.MirrorChyanCDK) {
     savedDraftSequence = sequence
   }
