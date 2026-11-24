@@ -4,19 +4,27 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
 import DeclarativeControl from '@/components/DeclarativeControl.vue'
-import SettingRow from '@/components/ui/SettingRow.vue'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { apiErrorMessage } from '@/utils/apiResult'
 
 export type { DeclarativeHint }
-const props = defineProps<{
-  group: string
-  namespace: string
-  hint: DeclarativeHint
-  value: unknown
-  options: Required<DeclarativeOption>[]
-  loading?: boolean
-  disabled?: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    group: string
+    namespace: string
+    hint: DeclarativeHint
+    value: unknown
+    options: Required<DeclarativeOption>[]
+    loading?: boolean
+    disabled?: boolean
+    error?: string
+    disabledReason?: string
+    tile?: boolean
+    tableCell?: boolean
+    retry?: () => void
+  }>(),
+  { error: undefined, disabledReason: undefined, retry: undefined }
+)
 const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
 const { t, te } = useI18n()
 const key = computed(
@@ -33,7 +41,6 @@ const tip = computed(() =>
     ? t(`${key.value}.tip`)
     : ''
 )
-const isStacked = computed(() => props.hint.component === 'path' || Boolean(props.hint.multiple))
 const isAction = computed(() =>
   /* 判断当前控件是否为按钮类动作，以区分触发操作和普通编辑。 */ [
     'button',
@@ -61,27 +68,91 @@ const pick = async () => {
 </script>
 
 <template>
-  <SettingRow
-    :label="label"
-    :hint="tip || undefined"
-    :disabled="disabled || hint.editable === false"
-    :stacked="isStacked"
+  <div
+    class="declarative-field"
+    :aria-label="label"
+    :title="tableCell ? tip || undefined : undefined"
   >
-    <DeclarativeControl
-      :component="hint.component"
-      :label="label"
-      :model-value="value"
-      :disabled="disabled || hint.editable === false || loading"
-      :loading="loading"
-      :secret="Boolean(hint.secret || hint.masked)"
-      :path-kind="hint.path_kind"
-      :min="hint.min"
-      :max="hint.max"
-      :multiple="hint.multiple"
-      :options="options"
-      @update:model-value="update"
-      @pick="pick"
-      @blur="emit('blur')"
-    />
-  </SettingRow>
+    <div
+      class="declarative-field-body"
+      :class="{ 'switch-tile': tile, 'switch-tile--on': tile && value }"
+    >
+      <FieldLabelWithHint
+        v-if="!tableCell"
+        :text="label"
+        :hint="tip"
+        :title="tile ? label : undefined"
+        variant="form"
+      />
+      <DeclarativeControl
+        :compact="tableCell || tile"
+        :component="hint.component"
+        :label="label"
+        :model-value="value"
+        :disabled="disabled || hint.editable === false || loading"
+        :loading="loading"
+        :secret="hint.secret"
+        :masked="hint.masked"
+        :format="hint.format"
+        :widget="hint.widget"
+        :ordered="hint.ordered"
+        :path-kind="hint.path_kind"
+        :min="hint.min"
+        :max="hint.max"
+        :multiple="hint.multiple"
+        :options="options"
+        @update:model-value="update"
+        @pick="pick"
+        @blur="emit('blur')"
+      />
+    </div>
+    <p v-if="error" class="field-error" role="alert">{{ error }}</p>
+    <p v-else-if="disabledReason" class="field-reason">{{ disabledReason }}</p>
+    <a-button v-if="retry" size="small" type="link" :loading="loading" @click="retry">
+      {{ t('core.common.retry') }}
+    </a-button>
+  </div>
 </template>
+
+<style scoped>
+.declarative-field,
+.declarative-field-body {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.declarative-field > .ant-btn {
+  justify-self: start;
+}
+.switch-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 42px;
+  padding: 4px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius);
+}
+.switch-tile--on {
+  border-color: var(--ant-color-primary-border);
+  background: var(--ant-color-primary-bg);
+}
+.switch-tile :deep(.field-label) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.field-error,
+.field-reason {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.field-error {
+  color: var(--ant-color-error);
+}
+</style>
