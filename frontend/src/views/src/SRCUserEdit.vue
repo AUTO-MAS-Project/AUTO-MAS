@@ -1,53 +1,19 @@
 <template>
-  <div class="user-edit-container">
-    <!-- ══ SRC 配置/查看会话遮罩（配置会话下发用户配置、查看会话只读）══ -->
-    <GuiSessionMask
-      :open="showSrcConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.srcConfigurationProgress')"
-      :description="`${t('core.edit.srcConfigurationThisUser')}\n${t('core.edit.clickSaveConfigurationWhen2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="srcTaskId"
-          type="primary"
-          size="large"
-          :loading="stoppingSrcConfig"
-          @click="handleSaveSRCConfig"
-        >
-          {{ t('core.edit.saveConfiguration') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showSrcViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.srcViewingTitle')"
-      :description="`${t('core.edit.srcViewingDesc')}\n${t('core.edit.srcViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          type="primary"
-          size="large"
-          :loading="stoppingSrcConfig"
-          @click="handleSaveSRCConfig"
-        >
-          {{ t('core.edit.srcViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <SRCUserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      :user-mode="formData.Info.Base"
-      :src-config-loading="srcConfigLoading"
-      :show-src-config-mask="showSrcConfigMask"
-      :config-locked="configLocked"
-      :user-id="userId"
-      @config="startConfigSession(false)"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <SRCUserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        :user-mode="formData.Info.Base"
+        :src-config-loading="srcConfigLoading"
+        :show-src-config-mask="showSrcConfigMask"
+        :config-locked="configLocked"
+        :user-id="userId"
+        @config="startConfigSession(false)"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
@@ -115,46 +81,75 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、SRC 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="SRC_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('core.edit.srcConfigRestoreUserDesc')"
-      :script-desc="t('core.edit.srcConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewSections(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="src-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="src-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- ══ SRC 配置/查看会话遮罩（配置会话下发用户配置、查看会话只读）══ -->
+      <GuiSessionMask
+        :open="showSrcConfigMask || showSrcViewMask"
+        :icon="showSrcViewMask ? EyeOutlined : SettingOutlined"
+        :title="
+          t(showSrcViewMask ? 'core.edit.srcViewingTitle' : 'core.edit.srcConfigurationProgress')
+        "
+        :description="
+          showSrcViewMask
+            ? `${t('core.edit.srcViewingDesc')}\n${t('core.edit.srcViewingDesc2')}`
+            : `${t('core.edit.srcConfigurationThisUser')}\n${t('core.edit.clickSaveConfigurationWhen2')}`
+        "
+      >
+        <template #actions>
+          <a-button
+            v-if="showSrcViewMask || srcTaskId"
+            type="primary"
+            size="large"
+            :loading="stoppingSrcConfig"
+            @click="handleSaveSRCConfig"
+          >
+            {{ t(showSrcViewMask ? 'core.edit.srcViewClose' : 'core.edit.saveConfiguration') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、SRC 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="SRC_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.srcConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.srcConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="src-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="src-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell } from '@/components/ui'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
