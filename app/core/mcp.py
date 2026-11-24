@@ -470,6 +470,9 @@ class McpService:
             # 唯一加载流程串行导入，禁用时不会到达这里。
             package = await self._in_thread(importlib.import_module, "fastapi_mcp")
             self._check_open()
+            from app.services.common import telemetry
+
+            telemetry.enable_mcp_integration()
             await self._stage("building")
             import httpx
 
