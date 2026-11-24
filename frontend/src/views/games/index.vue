@@ -2,15 +2,20 @@
   <AppPage layout="scroll" class="emulator-page">
     <PageHeader :title="t('core.games.title')" />
 
+    <ApiRetryAlert
+      :error="api.error.value ? String(api.error.value) : null"
+      :loading="api.loading.value"
+      class="games-error"
+      @retry="api.prepare"
+    />
+
     <StateView
       :loading="api.loading.value"
-      :error="api.error.value ? String(api.error.value) : null"
       :empty="!api.rows.value.length"
       :empty-description="t('core.games.empty')"
       empty-size="lg"
       :min-height="320"
       overlay-loading
-      @retry="api.prepare"
     >
       <template #empty-action>
         <a-space wrap>
@@ -105,6 +110,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { AppModal, AppPage, NoData, PageHeader, PageSurface, StateView } from '@/components/ui'
 import type { ActiveTriggerField } from '@/api'
 import { gameDevices } from '@/types/games'
@@ -188,6 +194,10 @@ async function cancel(field: ActiveTriggerField) {
 </script>
 
 <style scoped>
+.games-error {
+  margin-bottom: 12px;
+}
+
 .emulator-tabs :deep(.ant-tabs-nav) {
   margin-bottom: var(--app-page-content-gap);
 }
