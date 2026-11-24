@@ -23,15 +23,6 @@
   border-radius: 8px;
 }
 
-.form-section {
-  margin-bottom: 12px;
-}
-
-/* 紧凑脚本表单沿用 6px 标题间距，其余标题规则来自 formSection.css。 */
-.section-header {
-  margin-bottom: 6px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -76,6 +67,24 @@
 
 .config-form :deep(.ant-form-item) {
   margin-bottom: 24px;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 
 @media (max-width: 768px) {

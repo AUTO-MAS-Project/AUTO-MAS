@@ -32,10 +32,6 @@
   max-width: none;
 }
 
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
 /* 表单标签 */
 .form-label {
   color: var(--ant-color-text);
@@ -178,10 +174,6 @@ html.dark .modern-number-input :deep(.ant-input-number-focused) {
   .config-card :deep(.ant-card-body) {
     padding: 24px;
   }
-
-  .form-section {
-    margin-bottom: 12px;
-  }
 }
 
 @media (max-width: 768px) {
@@ -196,14 +188,6 @@ html.dark .modern-number-input :deep(.ant-input-number-focused) {
 
   .config-card :deep(.ant-card-head-title) {
     font-size: 20px;
-  }
-
-  .section-header h3 {
-    font-size: 18px;
-  }
-
-  .form-section {
-    margin-bottom: 12px;
   }
 
   .path-button {
