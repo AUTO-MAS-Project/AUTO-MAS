@@ -1,5 +1,6 @@
 """存量专项的客户端调用借用当前游戏插件，不再各自创建游戏进程管理器。"""
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -8,7 +9,10 @@ from app.config import LockTicket
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
 from app.task.game import current_game_session, selected_game_session
-from app.utils import ProcessManager
+from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils.common.process.operations import iter_processes, managed_process
+
+logger = get_logger("客户端进程")
 
 
 def client_executable_path(owner: GameBindingOwner) -> Path | None:
@@ -93,6 +97,47 @@ class ClientProcess(ProcessManager):
             await launcher.open_process(program, *args, breakaway=True, owned=False)
         finally:
             await launcher.clear()
+
+    async def stop_launcher_client(self, client_path: Path, started_at: float) -> None:
+        """收尾时只接管本轮启动、属于当前会话的目标客户端。"""
+
+        def find_started_client() -> tuple[int, float] | None:
+            candidates = []
+            for proc in iter_processes(
+                ["exe", "create_time"], current_session_only=True
+            ):
+                exe = proc.info["exe"]
+                created = proc.info["create_time"]
+                if (
+                    exe
+                    and Path(exe) == client_path
+                    and created is not None
+                    and created >= started_at
+                ):
+                    candidates.append((proc.pid, created))
+            if len(candidates) > 1:
+                raise RuntimeError("本轮发现多个同路径客户端，无法确认应关闭的进程")
+            return candidates[0] if candidates else None
+
+        client = await asyncio.to_thread(find_started_client)
+        if client is None:
+            return
+        pid, created = client
+        await self.search_process(
+            ProcessInfo(pid=pid, exe=str(client_path)),
+            timeout_seconds=1,
+            min_create_time=created,
+            owned=False,
+        )
+        try:
+            await self.kill()
+        except RuntimeError:
+            if await asyncio.to_thread(
+                managed_process, pid, expected_create_time=created
+            ):
+                raise
+            # 插件关闭后可能还会刷新同路径的其他实例，本轮进程已经退出。
+            logger.opt(exception=True).debug(f"已确认本轮客户端退出: {pid}")
 
     def __getattribute__(self, name: str) -> Any:
         if name in _METHODS:

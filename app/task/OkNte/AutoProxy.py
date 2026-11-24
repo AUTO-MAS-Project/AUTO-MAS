@@ -310,6 +310,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.script_config = script_config
         self.user_config = user_config
         self.game_manager = game_manager
+        self._launcher_started_at: float | None = None
 
         self.cur_user_item: UserItem = self.script_info.user_list[
             self.script_info.current_index
@@ -735,10 +736,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
         if self.game_manager is not None and game_type == "Client":
+            self._launcher_started_at = None
+            client_path = client_executable_path(self.script_config)
+            client_exe = str(client_path) if client_path is not None else None
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
-            if await has_process_window(_NTE_CLIENT_PROCESS):
+            if await has_process_window(_NTE_CLIENT_PROCESS, exe=client_exe):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
@@ -778,10 +782,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 logger.info(message)
                 await self._push_dispatch_log(message)
                 point(self, "start_game")
+                self._launcher_started_at = time.time()
                 await self.game_manager.open_launcher(launcher_path)
                 window_ready = bool(
                     await async_start_game_via_launcher(
-                        launcher_path, on_log=_push_launch_log
+                        launcher_path, client_path=client_path, on_log=_push_launch_log
                     )
                 )
             else:
@@ -795,7 +800,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     message = f"检测到启动器 {launcher_path.name} 已在运行，重新拉起以静默启动"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                    await self.game_manager.kill()
                     for path in launcher_paths:
                         if not await process.kill_process(path, kill_tree=False):
                             raise RuntimeError(f"无法关闭启动器: {path.name}")
@@ -804,15 +808,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
                 point(self, "start_game")
+                self._launcher_started_at = time.time()
                 await self.game_manager.open_launcher(launcher_path, AUTOPLAY_ARG)
                 if await async_wait_autoplay_game(
-                    launcher_path, on_log=_push_launch_log
+                    launcher_path, client_path=client_path, on_log=_push_launch_log
                 ):
                     window_ready = True
                     message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                elif await has_process_window(_NTE_CLIENT_PROCESS):
+                elif await has_process_window(_NTE_CLIENT_PROCESS, exe=client_exe):
                     # 启动器等待结束后再次确认客户端窗口，覆盖刚起窗的情况。
                     window_ready = True
                     logger.info(f"{AUTOPLAY_ARG} 等待结束后检测到客户端窗口")
@@ -833,10 +838,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 else f"客户端进程已在运行，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
             )
             # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
-            executable = client_executable_path(self.script_config)
-            target = ProcessInfo(
-                name=_NTE_CLIENT_PROCESS, exe=str(executable) if executable else None
-            )
+            target = ProcessInfo(name=_NTE_CLIENT_PROCESS, exe=client_exe)
             await wait_process_window_ready(target, wait_time)
             await self._push_dispatch_log("游戏启动完成")
             return
@@ -1482,7 +1484,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if self.game_manager is not None:
             try:
                 point(self, "stop_game")
-                await self.game_manager.kill()
+                if self._launcher_started_at is None:
+                    await self.game_manager.kill()
+                elif client_path := client_executable_path(self.script_config):
+                    await self.game_manager.stop_launcher_client(
+                        client_path, self._launcher_started_at
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
         try:

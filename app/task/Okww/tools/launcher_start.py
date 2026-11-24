@@ -70,7 +70,7 @@ from app.utils import display as _utils_display
 from app.utils.common import game_window as _game_window
 from app.utils.common.process.operations import iter_processes
 
-from .maintenance import find_game_maintenance_text
+from .maintenance import GameMaintenanceDetected, find_game_maintenance_text
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -261,7 +261,9 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     return pids
 
 
-def find_game_pids(launcher_path: Path) -> list[int]:
+def find_game_pids(
+    launcher_path: Path, *, started_at: float | None = None
+) -> list[int]:
     """按「客户端进程名 + exe 位于启动器安装根目录树内」找游戏 pid。
 
     口径与 find_launcher_pids 一致：``Client-Win64-Shipping.exe`` 是虚幻通用进程
@@ -274,7 +276,9 @@ def find_game_pids(launcher_path: Path) -> list[int]:
 
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
-    for process in iter_processes(["name", "exe"]):
+    for process in iter_processes(
+        ["name", "exe", "create_time"], current_session_only=True
+    ):
         try:
             name = (process.info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
@@ -286,6 +290,9 @@ def find_game_pids(launcher_path: Path) -> list[int]:
                 )
                 continue
             if not exe.casefold().startswith(root_prefix):
+                continue
+            created = process.info["create_time"]
+            if started_at is not None and (created is None or created < started_at):
                 continue
             pids.append(process.pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -613,7 +620,7 @@ def start_game_via_launcher(
     on_log: Callable[[str], None] | None = None,
     update_only: bool = False,
     stop_event: Event | None = None,
-) -> bool:
+) -> int | None:
     """通过官方启动器更新鸣潮，并按需启动客户端。
 
     启动器按钮有概率是「更新」而非「进入游戏」（游戏有新版本时）：点「更新」
@@ -631,7 +638,7 @@ def start_game_via_launcher(
         stop_event: 异步任务取消时置位，交互线程在下一次操作前退出。
 
     Returns:
-        游戏窗口就绪（仅更新时为启动器显示可启动）返回 True；失败抛 RuntimeError。
+        游戏窗口就绪后返回其 PID，仅更新模式返回 None。
 
     Raises:
         RuntimeError: 未找到启动器窗口 / 按钮点击失败 / 等待游戏窗口超时。
@@ -699,11 +706,15 @@ def start_game_via_launcher(
             if (
                 not update_only
                 and self_update_hwnd is None
-                and _find_game_hwnd(find_client_pids(client_path, game_install_root))
+                and (
+                    game_hwnd := _find_game_hwnd(
+                        find_client_pids(client_path, game_install_root)
+                    )
+                )
                 is not None
             ):
                 on_log("已检测到鸣潮游戏窗口")
-                return True
+                return int(win32process.GetWindowThreadProcessId(game_hwnd)[1])
 
             try:
                 if self_update_hwnd is not None:
@@ -901,7 +912,7 @@ def start_game_via_launcher(
                     _write_diagnostic("\n状态：官方启动器已确认游戏可启动\n")
                     _dump_ocr_items(items)
                     on_log("官方启动器已确认游戏可启动，更新检查完成")
-                    return True
+                    return None
                 _pause(2, stop_event)
                 continue
             ready_since = None
@@ -993,11 +1004,15 @@ def start_game_via_launcher(
             raise RuntimeError("等待鸣潮启动器更新后重开超时，请确认官方启动器状态")
         if (
             not update_only
-            and _find_game_hwnd(find_client_pids(client_path, game_install_root))
+            and (
+                game_hwnd := _find_game_hwnd(
+                    find_client_pids(client_path, game_install_root)
+                )
+            )
             is not None
         ):
             on_log("已检测到鸣潮游戏窗口")
-            return True
+            return int(win32process.GetWindowThreadProcessId(game_hwnd)[1])
         raise RuntimeError(
             (
                 "等待鸣潮启动器确认更新完成超时"
@@ -1025,14 +1040,17 @@ async def async_start_game_via_launcher(
     client_path: Path | None = None,
     on_log: Callable[[str], None] | None = None,
     update_only: bool = False,
-) -> bool:
+) -> int | None:
     """async 版本：在后台线程执行启动器交互，避免阻塞事件循环。"""
     from app.utils.common.process.session import desktop_process_target
 
     if (desktop := desktop_process_target.get()) is not None:
-        from app.task.desktop_session_worker import run_desktop_action
+        from app.task.desktop_session_worker import (
+            MAINTENANCE_RETURN_CODE,
+            request_desktop_action,
+        )
 
-        return await run_desktop_action(
+        code, pid = await request_desktop_action(
             desktop,
             "okww_start_game",
             {
@@ -1040,8 +1058,13 @@ async def async_start_game_via_launcher(
                 "client_path": str(client_path) if client_path else None,
                 "update_only": update_only,
             },
-            on_log,
+            on_log=on_log,
         )
+        if code == MAINTENANCE_RETURN_CODE:
+            raise GameMaintenanceDetected(str(pid))
+        if code != 0:
+            raise RuntimeError("桌面分身内的鸣潮启动器操作失败")
+        return int(pid) if pid is not None else None
 
     stop_event = Event()
     worker = asyncio.create_task(

@@ -81,6 +81,12 @@ def test_launcher_self_update_resumes(
     )
     monkeypatch.setattr(
         launcher_start,
+        "win32process",
+        SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (0, hwnd + 100)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        launcher_start,
         "time",
         SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep),
     )
@@ -98,7 +104,7 @@ def test_launcher_self_update_resumes(
     monkeypatch.setattr(
         launcher_start,
         "find_client_pids",
-        lambda *_: {30} if (20, start_box) in clicks else set(),
+        lambda *_: {30, 91} if (20, start_box) in clicks else {91},
     )
 
     def find_game_window(pids=None):
@@ -110,9 +116,10 @@ def test_launcher_self_update_resumes(
 
     monkeypatch.setattr(launcher_start, "_find_game_hwnd", find_game_window)
 
-    assert launcher_start.start_game_via_launcher(
+    pid = launcher_start.start_game_via_launcher(
         Path("launcher.exe"), update_only=update_only
     )
+    assert pid == (None if update_only else 130)
     expected = [(10, update_box)]
     if window_flow == "second_popup":
         expected.append((20, update_box))

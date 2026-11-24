@@ -237,6 +237,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         self.script_config = script_config
         self.user_config = user_config
         self.game_manager = game_manager
+        self._launcher_started_at: float | None = None
 
         self.cur_user_item: UserItem = self.script_info.user_list[
             self.script_info.current_index
@@ -672,6 +673,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         """
 
         if isinstance(self.game_manager, ProcessManager):
+            self._launcher_started_at = None
             # check() 阶段的兜底提示在这里补推：此时本轮日志已重置完，推送能
             # 留在调度台上；整个任务只推一次（用户已知晓后不必每轮重复）。
             # 必须排在更新之前：更新失败会直接抛错退出，放它后面提示就丢了
@@ -721,6 +723,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         if launcher_path is None:
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
+        self._launcher_started_at = time.time()
         await self.game_manager.open_launcher(
             launcher_path,
             *split_args(self.script_config.Game.Arguments),
@@ -734,19 +737,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         def _push_launch_log(line: str) -> None:
             asyncio.run_coroutine_threadsafe(self._push_dispatch_log(line), launch_loop)
 
-        launched = await async_start_game_via_launcher(
+        pid = await async_start_game_via_launcher(
             launcher_path,
             client_path=self.game_process_path,
             on_log=_push_launch_log,
         )
-        if not launched:
+        if pid is None:
             raise RuntimeError("鸣潮启动器未能拉起游戏，请人工确认启动器状态")
-        if self.game_process_path is not None:
-            return self._game_process_info()
-        pids = await asyncio.to_thread(find_game_pids, launcher_path)
-        if not pids:
-            raise RuntimeError("鸣潮客户端已退出，无法确认游戏窗口就绪")
-        return ProcessInfo(pid=pids[0])
+        return ProcessInfo(pid=pid)
 
     async def _launch_game_direct(self) -> None:
         """直启客户端：用户指定资源档位优先，否则沿用本次更新的档位。
@@ -1409,7 +1407,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
 
     async def _kill_game_process(self) -> None:
         """结束游戏与官方启动器：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
-        if isinstance(self.game_manager, ProcessManager):
+        if self.game_manager is not None and self._launcher_started_at is not None:
+            if self.game_process_path is not None:
+                try:
+                    point(self, "stop_game")
+                    await self.game_manager.stop_launcher_client(
+                        self.game_process_path, self._launcher_started_at
+                    )
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"关闭本轮启动的鸣潮客户端失败: {e}"
+                    )
+        elif isinstance(self.game_manager, ProcessManager):
             if (
                 self.game_process_path is not None
                 and self.game_manager.target_process is None
@@ -1432,7 +1441,9 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             try:
                 if self.game_process_path is None:
                     for pid in await asyncio.to_thread(
-                        find_game_pids, self.launcher_path
+                        find_game_pids,
+                        self.launcher_path,
+                        started_at=self._launcher_started_at,
                     ):
                         await process.kill_process_by_pid(pid, kill_tree=True)
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
