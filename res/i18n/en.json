@@ -4722,6 +4722,7 @@
   "core.themeStore.mode": "Mode",
   "core.themeStore.noDescription": "No description",
   "core.themeStore.noMatch": "No matching resources",
+  "core.themeStore.noPreview": "No preview image",
   "core.themeStore.noVersions": "This resource has no downloadable versions yet",
   "core.themeStore.openDocs": "Open docs",
   "core.themeStore.packageName": "Package name",

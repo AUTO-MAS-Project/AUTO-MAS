@@ -4722,6 +4722,7 @@
   "core.themeStore.mode": "モード",
   "core.themeStore.noDescription": "説明なし",
   "core.themeStore.noMatch": "一致するリソースがありません",
+  "core.themeStore.noPreview": "プレビュー画像はありません",
   "core.themeStore.noVersions": "このリソースにはダウンロードできるバージョンがありません",
   "core.themeStore.openDocs": "ドキュメントを開く",
   "core.themeStore.packageName": "パッケージ内の名前",

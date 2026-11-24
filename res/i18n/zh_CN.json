@@ -4722,6 +4722,7 @@
   "core.themeStore.mode": "模式",
   "core.themeStore.noDescription": "暂无描述",
   "core.themeStore.noMatch": "没有匹配的资源",
+  "core.themeStore.noPreview": "暂无预览图",
   "core.themeStore.noVersions": "这个资源还没有可下载的版本",
   "core.themeStore.openDocs": "打开文档",
   "core.themeStore.packageName": "包内名称",

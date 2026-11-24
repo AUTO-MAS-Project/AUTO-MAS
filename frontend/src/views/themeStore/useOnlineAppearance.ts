@@ -278,7 +278,7 @@ export function useOnlineAppearance(options: {
     void loadList(1)
   }
 
-  // 预览就是把选中的版本完整下载并校验一遍；安装直接用这一份，不再下载第二次。
+  // 安装时下载并校验选中的版本，覆盖确认可复用同一份临时包。
   const prepareSelected = async (): Promise<PreparedOnlineAppearance | null> => {
     const item = detailItem.value
     const versionNo = selectedVersionNo.value
@@ -394,7 +394,6 @@ export function useOnlineAppearance(options: {
     if (selectedVersion.value?.hasCover && detailItem.value) {
       ensureCover(detailItem.value.fileKey, selectedVersionNo.value, detailItem.value.categoryKey)
     }
-    await prepareSelected()
   }
 
   const retryDetail = (): void => {
@@ -409,7 +408,8 @@ export function useOnlineAppearance(options: {
     selectedVersionNo.value = versionNo
     if (version.hasCover && detailItem.value)
       ensureCover(detailItem.value.fileKey, versionNo, detailItem.value.categoryKey)
-    void prepareSelected()
+    discardPrepared()
+    prepareError.value = null
   }
 
   const install = async (): Promise<OnlineAppearanceInstallOutcome> => {
@@ -507,7 +507,6 @@ export function useOnlineAppearance(options: {
     openDetail,
     retryDetail,
     selectVersion,
-    prepareSelected,
     install,
     backToList,
   }
