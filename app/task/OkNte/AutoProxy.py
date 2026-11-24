@@ -908,24 +908,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     ) -> None:
         """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 OK-WW）。"""
 
-        if e is None:
-            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=error_message),
-            )
-        else:
-            logger.opt(exception=True).warning(
-                f"账号: {self.cur_user_uid} - {error_message}: {e}"
-            )
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
-            )
-        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
-        await self.cur_user_log.set_state(status=error_message)
+        error_detail = f"{error_message}: {e}" if e is not None else error_message
+        logger.opt(exception=e is not None).warning(
+            f"账号: {self.cur_user_uid} - {error_detail}"
+        )
+        await self.cur_user_log.set_state(status=error_detail, content=[error_detail])
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=error_detail),
+        )
 
         await self.kill_managed_process(
             kill_game=self._mas_should_close_game_on_retry()
@@ -935,7 +927,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="OK-NTE 自动代理出现异常！",
-                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_detail}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
@@ -1072,11 +1064,23 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"启动 OK-NTE 进程: {self.script_exe_path} {' '.join(self.oknte_args)}"
             )
 
-            with operation(self, "start_script"):
-                await self.oknte_process_manager.open_oknte(
-                    self.script_exe_path,
-                    *self.oknte_args,
-                )
+            try:
+                with operation(self, "start_script"):
+                    await self.oknte_process_manager.open_oknte(
+                        self.script_exe_path,
+                        *self.oknte_args,
+                        on_log=self._push_dispatch_log,
+                    )
+            except (OSError, RuntimeError) as e:
+                await self.handle_pre_oknte_error("OK-NTE 启动失败", e)
+                if i + 1 < run_limit:
+                    await self._push_dispatch_log(
+                        f"OK-NTE 启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                    )
+                    await asyncio.sleep(10)
+                else:
+                    await self.cur_user_item.set_state(status="异常")
+                continue
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
@@ -1293,10 +1297,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "任务被用户手动中止"
             )
-            if len(log_item.content) == 0:
-                await log_item.set_state(content=["未捕获到任何日志内容"])
-                if not was_cancelled:
-                    await log_item.set_state(status="未捕获到日志")
+            if not log_item.content:
+                # 启动失败可能早于本体日志，历史和报告仍须保留已有结论。
+                if log_item.status == "未开始监看日志":
+                    await log_item.set_state(
+                        status="未捕获到日志", content=["未捕获到任何日志内容"]
+                    )
+                else:
+                    await log_item.set_state(content=[log_item.status])
 
             history_records.append(
                 HistoryWrite(
