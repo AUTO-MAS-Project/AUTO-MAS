@@ -2,7 +2,7 @@
 
 宿主不再内置通用 MFW、M9A、MSS（见 [maafw-plugin-migration.md](maafw-plugin-migration.md)）。只用发行版时什么都不用做：配置里有这三类托管，宿主启动时会从 PyPI 装上并启用对应插件；新用户在插件中心装 `auto-mas-maafw-adapter`、`auto-mas-m9a-adapter`、`auto-mas-mss-adapter` 即可。
 
-本文写**要改插件包源码时**怎样把本地源码接进宿主、怎样确认装的是本地这份、怎样走一遍主路径和一次无害的真跑，以及怎样拿存量配置的副本演练升级。下面的命令和结果是 2026-11-22 在本分支实际跑通的（端口 36196，换成任何空闲端口都行）。
+本文写**要改插件包源码时**怎样把本地源码接进宿主、怎样确认装的是本地这份、怎样走一遍主路径和一次无害的真跑，以及怎样拿存量配置的副本演练升级。下面的命令和结果是 2026-11-24 依据当前迁移分支核对的（端口 36197，换成任何空闲端口都行）。
 
 涉及的包：
 
@@ -53,7 +53,7 @@ pwsh -NoProfile -File scripts\dev\link_mfw_plugins.ps1 `
 
 ```powershell
 $env:AUTO_MAS_ENV       = 'dev'
-$env:AUTO_MAS_HTTP_PORT = '36196'
+$env:AUTO_MAS_HTTP_PORT = '36197'
 $env:AUTO_MAS_UV_EXE    = '<uv.exe>'
 $env:UV_CONFIG_FILE     = "$env:TEMP\mfwl\wheels\uv.toml"
 Start-Process .\.venv\Scripts\python.exe -ArgumentList main.py -WorkingDirectory . `
@@ -174,13 +174,13 @@ POST /api/scripts/maafw/agent-env/prepare  {"scriptId": ..., "path": "", "force"
 开发模式下 `POST /api/core/close` 只做清理、不退出。`.venv\Scripts\python.exe` 是启动器，真正监听端口的是它的子进程，按进程树停：
 
 ```powershell
-$owner = (Get-NetTCPConnection -LocalPort 36196 -State Listen).OwningProcess
+$owner = (Get-NetTCPConnection -LocalPort 36197 -State Listen).OwningProcess
 function Get-Tree($id) { Get-CimInstance Win32_Process -Filter "ParentProcessId=$id" | ForEach-Object { $_; Get-Tree $_.ProcessId } }
 $all = @(Get-CimInstance Win32_Process -Filter "ProcessId=$owner") + @(Get-Tree $owner)
 $parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner").ParentProcessId
 $all += @(Get-CimInstance Win32_Process -Filter "ProcessId=$parent" | Where-Object { $_.CommandLine -match 'main\.py' })
 $all | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Get-NetTCPConnection -LocalPort 36196 -State Listen -ErrorAction SilentlyContinue   # 应为空
+Get-NetTCPConnection -LocalPort 36197 -State Listen -ErrorAction SilentlyContinue   # 应为空
 ```
 
 拆联接：`pwsh -NoProfile -File scripts\dev\link_mfw_plugins.ps1 -Unlink`（只删联接，不碰目标仓库）。拆完不设 `UV_CONFIG_FILE` 再起，配置里有 MFW 族托管时宿主会从 PyPI 装发行版。
@@ -192,3 +192,4 @@ Get-NetTCPConnection -LocalPort 36196 -State Listen -ErrorAction SilentlyContinu
 - **新发的包插件中心里找不到**：数据站插件目录还没收录。起后端前设 `AUTO_MAS_PLUGIN_EXTRA_PACKAGES=auto-mas-maafw-adapter,auto-mas-m9a-adapter,auto-mas-mss-adapter`，刷新目录时按包名从 PyPI 补进来。
 - 运行数据都在树根被忽略的 `config\ data\ debug\ history\ temp\ plugins\pypi\` 下。
 - 插件包自己的已知问题见积木仓库 `docs/known-issues-0.2.0.md`。
+
