@@ -1,4 +1,7 @@
+import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -116,6 +119,72 @@ class TelemetryDevelopmentTest(unittest.TestCase):
             telemetry.init_sentry(release="v0.0.0", development=False, enabled=False)
 
             start_sentry.assert_not_called()
+
+
+def test_sentry_defers_mcp_without_losing_integrations_or_telemetry_toggle(tmp_path):
+    """真实 SDK 的冷启动不加载 MCP，加载后的采集在开关切换后仍有效。"""
+    root = Path(__file__).resolve().parents[1]
+    code = r"""
+import json, sys
+import sentry_sdk
+from sentry_sdk.transport import Transport
+from app.services.common import telemetry
+
+events = []
+class LocalTransport(Transport):
+    def capture_envelope(self, envelope):
+        event = envelope.get_event()
+        if event is not None:
+            events.append(event)
+
+original_init = sentry_sdk.init
+def init_local(*args, **kwargs):
+    if kwargs.get("dsn"):
+        kwargs["transport"] = LocalTransport
+    return original_init(*args, **kwargs)
+sentry_sdk.init = init_local
+
+telemetry.init_sentry(release="v0.0.0", development=False, enabled=True)
+expected = {"fastapi", "starlette", "httpx", "logging", "loguru"}
+assert expected <= sentry_sdk.get_client().integrations.keys()
+assert "mcp" not in sys.modules and "fastapi_mcp" not in sys.modules
+sentry_sdk.capture_event({
+    "message": "startup check",
+    "user": {"id": "PRIVATE_VALUE_FOR_STARTUP_CHECK"},
+    "extra": {"value": "PRIVATE_VALUE_FOR_STARTUP_CHECK"},
+    "request": {"url": "http://localhost/api/check", "headers": {"authorization": "PRIVATE_VALUE_FOR_STARTUP_CHECK"}},
+})
+assert len(events) == 1
+assert "user" not in events[0] and "extra" not in events[0]
+assert "PRIVATE_VALUE_FOR_STARTUP_CHECK" not in json.dumps(events[0])
+telemetry.set_telemetry_enabled(False)
+assert sentry_sdk.get_client().transport is None
+assert "mcp" not in sys.modules
+telemetry.set_telemetry_enabled(True)
+assert expected <= sentry_sdk.get_client().integrations.keys()
+assert "mcp" not in sys.modules
+
+import fastapi_mcp
+telemetry.enable_mcp_integration()
+assert "mcp" in sentry_sdk.get_client().integrations
+telemetry.set_telemetry_enabled(False)
+telemetry.enable_mcp_integration()
+assert sentry_sdk.get_client().transport is None
+telemetry.set_telemetry_enabled(True)
+assert expected | {"mcp"} <= sentry_sdk.get_client().integrations.keys()
+telemetry.set_telemetry_enabled(False)
+print(json.dumps({"ok": True}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "SENTRY_DSN": ""},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {"ok": True}
 
 
 if __name__ == "__main__":

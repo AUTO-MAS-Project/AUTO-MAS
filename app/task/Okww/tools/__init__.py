@@ -16,6 +16,4 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-from .account_switch import account_switch, async_switch_account
-
-__all__ = ["account_switch", "async_switch_account"]
+"""OK-WW 工具包；调用方直接导入所需模块。"""
