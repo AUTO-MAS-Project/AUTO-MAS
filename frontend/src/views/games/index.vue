@@ -1,18 +1,18 @@
 <template>
-  <main class="emulator-page">
-    <header class="app-page-header">
-      <h1 class="app-page-title">{{ t('core.games.title') }}</h1>
-    </header>
+  <AppPage layout="scroll" class="emulator-page">
+    <PageHeader :title="t('core.games.title')" />
 
-    <a-alert v-if="api.error.value" type="error" :message="String(api.error.value)" show-icon>
-      <template #action
-        ><a-button @click="api.prepare">{{ t('core.games.retry') }}</a-button></template
-      >
-    </a-alert>
-
-    <a-spin :spinning="api.loading.value" class="page-content">
-      <div v-if="!api.rows.value.length && !api.loading.value" class="empty-state-large">
-        <a-empty :description="t('core.games.empty')" />
+    <StateView
+      :loading="api.loading.value"
+      :error="api.error.value ? String(api.error.value) : null"
+      :empty="!api.rows.value.length"
+      :empty-description="t('core.games.empty')"
+      empty-size="lg"
+      :min-height="320"
+      overlay-loading
+      @retry="api.prepare"
+    >
+      <template #empty-action>
         <a-space wrap>
           <a-button :loading="searching" @click="search">
             <template #icon><SearchOutlined /></template>
@@ -23,36 +23,37 @@
             {{ t('core.games.add') }}
           </a-button>
         </a-space>
-      </div>
-      <a-tabs
-        v-else-if="api.rows.value.length"
-        v-model:active-key="activeKey"
-        type="editable-card"
-        hide-add
-        class="emulator-tabs app-page-surface app-page-surface--tabs"
-      >
-        <a-tab-pane v-for="row in api.rows.value" :key="row.uid" :closable="false">
-          <template #tab>
-            <span class="tab-title" :title="row.document.info?.name ?? undefined">
-              {{ row.document.info?.name || t('core.emulator.unnamed') }}
-            </span>
+      </template>
+
+      <PageSurface :scrollable="false" class="emulator-tabs">
+        <a-tabs v-model:active-key="activeKey" type="editable-card" hide-add>
+          <a-tab-pane v-for="row in api.rows.value" :key="row.uid" :closable="false">
+            <template #tab>
+              <span class="tab-title" :title="row.document.info?.name ?? undefined">
+                {{ row.document.info?.name || t('core.emulator.unnamed') }}
+              </span>
+            </template>
+            <GameTargetPanel :game="row" />
+          </a-tab-pane>
+          <template #rightExtra>
+            <a-space wrap class="tab-extra-actions">
+              <a-button :loading="searching" @click="search">
+                <template #icon><SearchOutlined /></template>
+                {{ t('core.games.discover') }}
+              </a-button>
+              <a-button
+                type="primary"
+                :disabled="!api.types.value.length"
+                @click="editorOpen = true"
+              >
+                <template #icon><PlusOutlined /></template>
+                {{ t('core.games.add') }}
+              </a-button>
+            </a-space>
           </template>
-          <GameTargetPanel :game="row" />
-        </a-tab-pane>
-        <template #rightExtra>
-          <a-space wrap class="tab-extra-actions">
-            <a-button :loading="searching" @click="search">
-              <template #icon><SearchOutlined /></template>
-              {{ t('core.games.discover') }}
-            </a-button>
-            <a-button type="primary" :disabled="!api.types.value.length" @click="editorOpen = true">
-              <template #icon><PlusOutlined /></template>
-              {{ t('core.games.add') }}
-            </a-button>
-          </a-space>
-        </template>
-      </a-tabs>
-    </a-spin>
+        </a-tabs>
+      </PageSurface>
+    </StateView>
 
     <GameEditor
       v-if="editorOpen"
@@ -77,7 +78,9 @@
             </a-button>
           </a-list-item>
         </template>
-        <template #emptyText><a-empty :description="t('core.games.noDiscovery')" /></template>
+        <template #emptyText
+          ><NoData :description="t('core.games.noDiscovery')" size="sm"
+        /></template>
       </a-list>
     </AppModal>
     <a-alert
@@ -94,7 +97,7 @@
         </a-button>
       </template>
     </a-alert>
-  </main>
+  </AppPage>
 </template>
 
 <script setup lang="ts">
@@ -102,7 +105,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
-import { AppModal } from '@/components/ui'
+import { AppModal, AppPage, NoData, PageHeader, PageSurface, StateView } from '@/components/ui'
 import type { ActiveTriggerField } from '@/api'
 import { gameDevices } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
@@ -185,27 +188,6 @@ async function cancel(field: ActiveTriggerField) {
 </script>
 
 <style scoped>
-.emulator-page {
-  min-height: 100%;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.page-content {
-  flex: 1;
-  min-height: 0;
-}
-
-.empty-state-large {
-  min-height: 320px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
 .emulator-tabs :deep(.ant-tabs-nav) {
   margin-bottom: var(--app-page-content-gap);
 }
