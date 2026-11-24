@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import type { HSRConfig_Run } from '@/api'
 import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
@@ -13,10 +14,7 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.runLimits') }}</h3>
-    </div>
+  <SectionCard variant="plain" :title="t('core.edit.runLimits')">
     <ScriptExecutionSessionField />
     <a-row :gutter="16">
       <a-col :span="12">
@@ -81,19 +79,5 @@ const { t } = useI18n()
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+  </SectionCard>
 </template>
-
-<style scoped>
-.form-section {
-  margin-bottom: 12px;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
-.section-header h3::before {
-  background: var(--ant-color-primary);
-}
-</style>

@@ -67,8 +67,7 @@
             </a-row>
           </SectionCard>
 
-          <!-- 模拟器管理 -->
-          <div class="form-section">
+          <SectionCard variant="plain">
             <a-form-item>
               <template #label>
                 <FieldLabelWithHint
@@ -83,7 +82,7 @@
                 @change="(value: boolean) => handleChange('Update', 'TakeoverEnabled', value)"
               />
             </a-form-item>
-          </div>
+          </SectionCard>
 
           <SectionCard variant="plain" :title="t('core.edit.emulators')">
             <a-row :gutter="24"> </a-row>
@@ -91,67 +90,47 @@
 
           <!-- 运行配置 -->
           <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
-            <ScriptHardTimeoutField
-              v-model:value="srcConfig.Run.HardTimeLimit"
-              @save="handleChange('Run', 'HardTimeLimit', srcConfig.Run.HardTimeLimit)"
-            />
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.accountSwitchingMethod')"
-                      :hint="t('core.edit.whatDoWhenSwitching')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="srcConfig.Run.TaskTransitionMethod"
-                    size="large"
-                    @change="handleChange('Run', 'TaskTransitionMethod', $event)"
-                  >
-                    <a-select-option value="ExitEmulator">{{
-                      t('core.edit.restartEmulator')
-                    }}</a-select-option>
-                    <a-select-option value="ExitGame">{{
-                      t('core.edit.restartGame')
-                    }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <ScriptRunLimitField
-                  v-model="srcConfig.Run.ProxyTimesLimit"
-                  kind="daily"
-                  :label="t('core.edit.runsPerDayThis')"
-                  :hint="t('core.edit.skipRunOnceThis')"
-                  enhanced
-                  @save="handleChange('Run', 'ProxyTimesLimit', srcConfig.Run.ProxyTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="8">
-                <ScriptRunLimitField
-                  v-model="srcConfig.Run.RunTimesLimit"
-                  kind="retry"
-                  :label="t('core.edit.retryLimit')"
-                  :hint="t('core.edit.ifRunStillUnfinished')"
-                  enhanced
-                  @save="handleChange('Run', 'RunTimesLimit', srcConfig.Run.RunTimesLimit)"
-                />
-              </a-col>
-            </a-row>
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <ScriptRunLimitField
-                  v-model="srcConfig.Run.RunTimeLimit"
-                  kind="timeout"
-                  :label="t('core.edit.runTimeoutMinutes2')"
-                  :hint="t('core.edit.treatRunAsTimed2')"
-                  enhanced
-                  @save="handleChange('Run', 'RunTimeLimit', srcConfig.Run.RunTimeLimit)"
-                />
-              </a-col>
-            </a-row>
+            <ScriptRunLimitsSection
+              v-model:hard-time-limit="srcConfig.Run.HardTimeLimit"
+              v-model:daily-limit="srcConfig.Run.ProxyTimesLimit"
+              v-model:retry-limit="srcConfig.Run.RunTimesLimit"
+              v-model:timeout="srcConfig.Run.RunTimeLimit"
+              hide-execution-session
+              :daily-label="t('core.edit.runsPerDayThis')"
+              :daily-hint="t('core.edit.skipRunOnceThis')"
+              :retry-label="t('core.edit.retryLimit')"
+              :retry-hint="t('core.edit.ifRunStillUnfinished')"
+              :timeout-label="t('core.edit.runTimeoutMinutes2')"
+              :timeout-hint="t('core.edit.treatRunAsTimed2')"
+              enhanced
+              @save="key => handleChange('Run', key, srcConfig.Run[key])"
+            >
+              <template #before-limits>
+                <a-col :span="8">
+                  <a-form-item>
+                    <template #label>
+                      <FieldLabelWithHint
+                        :text="t('core.edit.accountSwitchingMethod')"
+                        :hint="t('core.edit.whatDoWhenSwitching')"
+                        variant="form"
+                      />
+                    </template>
+                    <a-select
+                      v-model:value="srcConfig.Run.TaskTransitionMethod"
+                      size="large"
+                      @change="handleChange('Run', 'TaskTransitionMethod', $event)"
+                    >
+                      <a-select-option value="ExitEmulator">{{
+                        t('core.edit.restartEmulator')
+                      }}</a-select-option>
+                      <a-select-option value="ExitGame">{{
+                        t('core.edit.restartGame')
+                      }}</a-select-option>
+                    </a-select>
+                  </a-form-item>
+                </a-col>
+              </template>
+            </ScriptRunLimitsSection>
           </SectionCard>
 
           <!-- 游戏更新 -->
@@ -230,10 +209,9 @@
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from '@/views/EditView/Script/components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from '@/views/EditView/Script/components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { createSrcScriptDraft } from './srcScriptDraft'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
