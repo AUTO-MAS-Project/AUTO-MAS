@@ -27,6 +27,7 @@ from app.core.config.backup import (
     backup_database,
     backup_includes,
 )
+from app.utils import get_logger
 from app.utils.common.io import atomic_write, force_rmtree
 from app.utils.common.zip_delta import file_digest
 
@@ -58,6 +59,7 @@ BACKUP_WARNING_LINES: dict[BackupWarning, tuple[str, str]] = {
 }
 _DATA_DIRECTORIES = ("config", "data", "history")
 _DATABASES = ("data/data.db", "data/history.db")
+logger = get_logger("升级备份")
 
 
 class _BackupAttempt(BaseModel):
@@ -113,6 +115,10 @@ def _raise_walk_error(error: OSError) -> None:
 
 def _is_redirected(path: Path) -> bool:
     return path.is_symlink() or path.is_junction()
+
+
+def _installation_owner(root: Path) -> str:
+    return sha256(os.fsencode(os.path.normcase(str(root)))).hexdigest()
 
 
 def _make_snapshot(root: Path, snapshot: Path) -> None:
@@ -184,7 +190,7 @@ def _check_zip(path: Path) -> None:
                 or archive.testzip()
             ):
                 raise zipfile.BadZipFile("升级备份 ZIP 校验失败")
-    except zlib.error as error:
+    except (EOFError, RuntimeError, zlib.error) as error:
         raise zipfile.BadZipFile("升级备份 ZIP 校验失败") from error
 
 
@@ -275,7 +281,7 @@ class UpgradeBackup:
         self.version = version
         self.default_directory = self.root / "backup"
         self.directory = self.default_directory
-        self.owner = sha256(os.fsencode(os.path.normcase(str(self.root)))).hexdigest()
+        self.owner = _installation_owner(self.root)
         self.enabled = True
         self.state_path = root / "config" / UPGRADE_BACKUP_STATE
         self.migration_mark = root / "data" / UPGRADE_MIGRATION_MARK
@@ -305,6 +311,67 @@ class UpgradeBackup:
         return attempt.owner == self.owner and attempt.directory == os.path.normcase(
             str(self.directory)
         )
+
+    def _rebind_default_archives(self) -> None:
+        """搬动安装目录后，只接续状态和默认目录归档登记能够互相印证的旧档。"""
+
+        if self.directory != self.default_directory or _is_redirected(self.directory):
+            return
+        directory = os.path.normcase(str(self.directory))
+        changed = False
+        for item in self.state.attempts:
+            if item.owner in {None, self.owner} or item.directory is None:
+                continue
+            origin = Path(item.directory)
+            if (
+                not origin.is_absolute()
+                or origin != origin.parent / self.default_directory.name
+                or item.owner != _installation_owner(origin.parent)
+            ):
+                continue
+            registration = self._registration_path(item)
+            if _is_redirected(registration):
+                continue
+            try:
+                archived = _BackupAttempt.model_validate_json(registration.read_bytes())
+            except FileNotFoundError:
+                snapshot = self._snapshot_path(item)
+                if item.published or _is_redirected(snapshot) or not snapshot.is_dir():
+                    continue
+                archived = None
+            except (OSError, ValueError):
+                continue
+            if archived is not None:
+                old_location = (item.owner, item.directory)
+                new_location = (self.owner, directory)
+                if (
+                    not archived.published
+                    or archived.id != item.id
+                    or archived.filename != item.filename
+                    or (archived.owner, archived.directory)
+                    not in {old_location, new_location}
+                ):
+                    continue
+                if (archived.owner, archived.directory) == old_location:
+                    try:
+                        _write_registration(
+                            archived.model_copy(
+                                update={"owner": self.owner, "directory": directory}
+                            ),
+                            registration,
+                        )
+                    except OSError as error:
+                        logger.debug(
+                            "暂无法更新搬迁前的归档登记：{} ({})",
+                            type(error).__name__,
+                            error.errno,
+                        )
+                        continue
+            item.owner = self.owner
+            item.directory = directory
+            changed = True
+        if changed:
+            self._save()
 
     def _frontend_config(self) -> dict[str, Any]:
         try:
@@ -369,6 +436,7 @@ class UpgradeBackup:
                 else self.state.selected_directory or preferences.directory
             )
             self.directory = self._resolve_directory(configured)
+            self._rebind_default_archives()
         except (OSError, ValueError) as error:
             self.prepared = True
             self.error = error
@@ -530,7 +598,8 @@ class UpgradeBackup:
                 return
             if _is_redirected(self.directory):
                 raise ValueError("升级备份目录被重定向")
-            self._plan_cleanup(self.attempt)
+            if not self._plan_cleanup(self.attempt):
+                return
 
         retired = [
             item
@@ -574,7 +643,7 @@ class UpgradeBackup:
                 archived.settled = True
                 self.state.attempts.append(archived)
 
-    def _plan_cleanup(self, attempt: _BackupAttempt) -> None:
+    def _plan_cleanup(self, attempt: _BackupAttempt) -> bool:
         _check_zip(self.directory / attempt.filename)
         self._load_registered_archives()
         published = sorted(
@@ -586,50 +655,52 @@ class UpgradeBackup:
             key=lambda item: item.captured_at,
             reverse=True,
         )
-        existing = []
+        valid = []
         for item in published:
             archive = self.directory / item.filename
-            if not archive.is_file() or _is_redirected(archive):
-                continue
-            existing.append((item, Version(item.source)))
+            if item.id != attempt.id:
+                try:
+                    _check_zip(archive)
+                except (FileNotFoundError, ValueError, zipfile.BadZipFile):
+                    continue
+                except OSError:
+                    # 磁盘或文件暂不可读时保留所有回退点，等待下次启动重试。
+                    return False
+            valid.append((item, Version(item.source)))
 
         target = Version(self.version)
         current = (target.major, target.minor)
         previous = max(
             (
                 (version.major, version.minor)
-                for _, version in existing
+                for _, version in valid
                 if (version.major, version.minor) < current
             ),
             default=current,
         )
         retained = {
             item.id
-            for item, version in existing
+            for item, version in valid
             if (version.major, version.minor) in {current, previous}
         }
         # 版本段之外仍保留可用的渠道回退点，公测版同时保留最近公测。
         channels = {False, True} if target.is_prerelease else {False}
         valid_count = 0
-        for item, version in existing:
+        for item, version in valid:
             channel = version.is_prerelease
             if valid_count >= 2 and channel not in channels:
                 continue
-            if item.id != attempt.id:
-                try:
-                    _check_zip(self.directory / item.filename)
-                except (OSError, ValueError, zipfile.BadZipFile):
-                    continue
             retained.add(item.id)
             valid_count += 1
             channels.discard(channel)
             if valid_count >= 2 and not channels:
                 break
         attempt.settled = True
-        for item in published:
+        for item, _ in valid:
             item.retired = item.id not in retained
         # 先提交清理决定，重启能继续清理而不会重新备份已经迁移的数据。
         self._save()
+        return True
 
     def _finish_directory_cleanup(self) -> bool:
         cleanup = self.state.directory_cleanup
@@ -689,6 +760,7 @@ class UpgradeBackup:
             use_default = destination == self.default_directory
             if _is_redirected(self.directory) or _is_redirected(destination):
                 raise ValueError("升级备份目录被重定向")
+            self._rebind_default_archives()
             self._load_registered_archives()
             owned = [
                 item

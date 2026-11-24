@@ -1,4 +1,5 @@
 import json
+import shutil
 import sqlite3
 import zipfile
 from contextlib import closing
@@ -162,6 +163,38 @@ def test_rotation_removes_older_segments_when_two_newer_archives_exist(tmp_path)
     _start(tmp_path, "6.1.0").finish()
     assert not earliest.exists()
     assert len(_archives(tmp_path)) == 2
+
+
+@pytest.mark.parametrize("failure", ["corrupt", "unreadable"])
+def test_rotation_preserves_valid_previous_segment_when_nearer_archive_fails(
+    tmp_path, monkeypatch, failure
+):
+    _install(tmp_path, "5.7.0")
+    _start(tmp_path, "5.8.0").finish()
+    _start(tmp_path, "5.9.0").finish()
+    earlier, nearer = _archives(tmp_path)
+    if failure == "corrupt":
+        nearer.write_bytes(b"broken ZIP")
+
+    original_open = zipfile.io.open
+
+    def open_archive(file, *args, **kwargs):
+        if isinstance(file, (str, Path)) and Path(file) == nearer:
+            raise PermissionError("archive temporarily in use")
+        return original_open(file, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        if failure == "unreadable":
+            patch.setattr(zipfile.io, "open", open_archive)
+        _start(tmp_path, "5.9.1").finish()
+        _start(tmp_path, "5.9.2").finish()
+        with zipfile.ZipFile(earlier) as archive:
+            assert archive.testzip() is None
+
+    if failure == "unreadable":
+        _start(tmp_path, "5.9.2").finish()
+        assert nearer.exists()
+        assert not earlier.exists()
 
 
 def test_beta_keeps_latest_stable_fallback_outside_the_rolling_segments(tmp_path):
@@ -421,13 +454,15 @@ def test_disconnected_old_directory_does_not_block_rotation_or_more_moves(
 def test_reset_to_default_creates_directory_and_survives_install_move(tmp_path):
     installation = tmp_path / "installation"
     installation.mkdir()
-    _install(installation, "5.8.0")
+    _install(installation, "5.7.0")
     custom = tmp_path / "custom"
     _preferences(installation, enabled=True, directory=custom)
+    _start(installation, "5.8.0").finish()
+    earliest = next(custom.glob("*.zip"))
     backup = _start(installation, "5.9.0")
     backup.finish()
     default = installation / "backup"
-    original = next(custom.glob("*.zip"))
+    original = next(path for path in custom.glob("*.zip") if path != earliest)
     assert not default.exists()
 
     assert backup.move_directory(None, expected=str(custom))
@@ -436,10 +471,59 @@ def test_reset_to_default_creates_directory_and_survives_install_move(tmp_path):
     restarted = _start(installation, "5.9.0")
     assert restarted.directory_info()["directory"] is None
 
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    _install(foreign, "5.8.0")
+    _start(foreign, "5.9.0").finish()
+    foreign_archive = _archives(foreign)[0]
+    for file in (foreign / "backup").iterdir():
+        shutil.copy2(file, default / file.name)
+
     relocated = installation.rename(tmp_path / "relocated")
-    restarted = _start(relocated, "5.9.0")
-    assert restarted.directory_info()["resolvedDirectory"] == str(relocated / "backup")
-    assert (relocated / "backup" / original.name).exists()
+    restarted = _start(relocated, "6.1.0")
+    restarted.finish()
+    previous_directory = relocated / "backup"
+    assert restarted.directory_info()["resolvedDirectory"] == str(previous_directory)
+    assert not (previous_directory / earliest.name).exists()
+    owned_backups = {archive.name for archive in _archives(relocated)} - {
+        foreign_archive.name
+    }
+    assert original.name in owned_backups
+    assert len(owned_backups) == 2
+
+    assert restarted.move_directory(str(custom), expected=str(previous_directory))
+    assert {archive.name for archive in custom.glob("*.zip")} == owned_backups
+    assert _archives(relocated) == [previous_directory / foreign_archive.name]
+
+
+def test_locked_registration_after_install_move_does_not_block_new_backup(
+    tmp_path, monkeypatch
+):
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    _install(installation, "5.8.0")
+    _start(installation, "5.9.0").finish()
+    relocated = installation.rename(tmp_path / "relocated")
+    previous = _archives(relocated)[0]
+    registration = next(previous.parent.glob(".*.archive.json"))
+    replace = Path.replace
+
+    def replace_file(file: Path, target: Path) -> Path:
+        if target == registration:
+            raise PermissionError("archive registration in use")
+        return replace(file, target)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "replace", replace_file)
+        _start(relocated, "5.9.1").finish()
+    assert previous.exists()
+    assert len(_archives(relocated)) == 2
+
+    destination = tmp_path / "new-backups"
+    restarted = _start(relocated, "5.9.1")
+    assert restarted.move_directory(str(destination), expected=str(previous.parent))
+    assert not previous.exists()
+    assert (destination / previous.name).exists()
 
 
 @pytest.mark.parametrize("temporarily_unavailable", [False, True])
