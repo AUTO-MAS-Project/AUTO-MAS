@@ -27,6 +27,7 @@ import tempfile
 import zipfile
 from contextlib import closing
 from pathlib import Path
+from time import monotonic
 
 from app.config import config_manager
 from app.core import Config, History
@@ -60,12 +61,47 @@ _DATABASE_FILES = {
     "data/history.db-wal",
 }
 
+UPGRADE_BACKUP_STATE = "upgrade-backup-state.json"
+UPGRADE_MIGRATION_MARK = ".upgrade-backup-migrating"
 
-def _backup_database(source: Path, destination: Path) -> None:
+
+def backup_includes(relative: str) -> bool:
+    """判断文件或目录是否属于 MAS 数据备份。"""
+
+    return (
+        relative not in _DATABASE_FILES
+        and relative
+        not in {
+            f"config/{UPGRADE_BACKUP_STATE}",
+            f"config/{UPGRADE_BACKUP_STATE}.tmp",
+            f"data/{UPGRADE_MIGRATION_MARK}",
+            f"data/{UPGRADE_MIGRATION_MARK}.tmp",
+        }
+        and not any(
+            relative == directory or relative.startswith(f"{directory}/")
+            for directory in _EXCLUDED_DIRS
+        )
+        and not relative.endswith(_EXCLUDED_SUFFIXES)
+    )
+
+
+def backup_database(
+    source: Path, destination: Path, *, busy_timeout: float | None = None
+) -> None:
     source_uri = f"{source.resolve().as_uri()}?mode=ro"
+    deadline = None if busy_timeout is None else monotonic() + busy_timeout
+
+    def check_busy(status: int, _remaining: int, _total: int) -> None:
+        if (
+            deadline is not None
+            and status in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+            and monotonic() >= deadline
+        ):
+            raise TimeoutError(f"数据库仍被占用：{source.name}")
+
     with closing(sqlite3.connect(source_uri, uri=True)) as source_db:
         with closing(sqlite3.connect(destination)) as destination_db:
-            source_db.backup(destination_db)
+            source_db.backup(destination_db, pages=128, progress=check_busy)
 
 
 async def create_data_backup(root: Path | None = None) -> Path:
@@ -126,7 +162,7 @@ def _create_data_backup(
             database_path = root / "data" / "data.db"
             database_snapshot = Path(temp_dir) / "data.db"
             if database_path.is_file():
-                _backup_database(database_path, database_snapshot)
+                backup_database(database_path, database_snapshot)
 
             with zipfile.ZipFile(
                 backup_path, mode="w", compression=zipfile.ZIP_DEFLATED
@@ -144,13 +180,7 @@ def _create_data_backup(
                             in exported_files
                         ):
                             continue
-                        if path.is_symlink() or archive_name in _DATABASE_FILES:
-                            continue
-                        if archive_name in _EXCLUDED_DIRS or any(
-                            archive_name.startswith(f"{d}/") for d in _EXCLUDED_DIRS
-                        ):
-                            continue
-                        if path.name.endswith(_EXCLUDED_SUFFIXES):
+                        if path.is_symlink() or not backup_includes(archive_name):
                             continue
                         if path.is_dir():
                             archive.writestr(f"{archive_name}/", b"")

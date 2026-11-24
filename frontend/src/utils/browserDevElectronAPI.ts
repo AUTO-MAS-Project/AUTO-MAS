@@ -113,6 +113,7 @@ const browserDevElectronAPI = {
   onNativeWindowCloseRequested: () => () => undefined,
   selectFolder: async () => null,
   selectFile: async () => [],
+  getUpgradeBackupDirectory: async () => null,
   saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
     const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY, true)
     localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...defaults, ...current, ...config }))

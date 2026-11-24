@@ -93,6 +93,7 @@
       "updateRuntime": "更新 Runtime"
     },
     "msg": {
+      "backingUpUpgrade": "正在备份升级前的数据…",
       "execFailed": "执行失败",
       "autoRetry": "正在重新尝试启动",
       "initDone": "初始化完成",

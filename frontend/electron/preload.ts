@@ -244,6 +244,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportMSSIssueReport: () => ipcRenderer.invoke('mss:exportIssueReport'),
   exportHSRIssueReport: () => ipcRenderer.invoke('hsr:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
+  getUpgradeBackupDirectory: () => ipcRenderer.invoke('upgrade-backup:directory'),
+  chooseUpgradeBackupDirectory: (reset: boolean) =>
+    ipcRenderer.invoke('upgrade-backup:choose-directory', reset),
+  confirmUpgradeBackupDirectory: (id: string) =>
+    ipcRenderer.invoke('upgrade-backup:confirm-directory', id),
+  cancelUpgradeBackupDirectory: (id: string) =>
+    ipcRenderer.invoke('upgrade-backup:cancel-directory', id),
   // 传 fromOffset 时只读该字节偏移之后的新增部分，返回 { content, size, reset }
   getLogs: (lines?: number, fileName?: string, fromOffset?: number) =>
     ipcRenderer.invoke('log:getContent', lines, fileName, fromOffset),

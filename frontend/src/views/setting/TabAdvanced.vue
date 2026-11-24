@@ -27,6 +27,7 @@ import { useHSRIssueReport } from '@/composables/useHSRIssueReport'
 import { useScriptApi } from '@/composables/useScriptApi'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import UpgradeBackupSettings from './components/UpgradeBackupSettings.vue'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
 
@@ -181,11 +182,11 @@ const exportDataBackup = async () => {
 </script>
 <template>
   <div class="tab-content">
-    <!-- 备份与导出：两条「标题 + 说明 + 按钮」的行，主色只留给最该被点的数据备份 -->
     <SectionCard
       :title="t('core.setting.advanced.backupExportSection')"
       :icon="CloudDownloadOutlined"
     >
+      <UpgradeBackupSettings />
       <div class="export-row">
         <div class="export-row-text">
           <span class="export-row-title">{{ t('core.setting.advanced.exportBackup') }}</span>

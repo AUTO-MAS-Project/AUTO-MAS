@@ -8,6 +8,8 @@ import type { HomeSatelliteStyle } from '@/types/homeSatellite'
 const logger = window.electronAPI.getLogger('配置管理')
 
 export interface FrontendConfig {
+  upgradeBackup?: { enabled?: boolean; directory?: string | null }
+
   /** 关闭窗口时是否先显示退出/最小化到托盘确认。 */
   confirmBeforeClose?: boolean
   /** 关闭时的默认动作；开启确认后也作为弹窗的默认选择。 */

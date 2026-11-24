@@ -456,8 +456,66 @@ def main():
 
             app.state.background_status = "running"
             try:
+                upgrade_backup = None
+                backup_warning = None
+                desktop_version = os.getenv("AUTO_MAS_DESKTOP_VERSION")
+                if supervised and not development_environment and desktop_version:
+                    from app.core.config.upgrade_backup import UpgradeBackup
+
+                    loop = asyncio.get_running_loop()
+                    with startup_stage("后端/升级前数据备份"):
+                        try:
+                            upgrade_backup = UpgradeBackup(
+                                root=Config.work_path, desktop_version=desktop_version
+                            )
+                            backup_warning = await asyncio.to_thread(
+                                upgrade_backup.prepare,
+                                on_backup=lambda: loop.call_soon_threadsafe(
+                                    setattr,
+                                    app.state,
+                                    "business_message",
+                                    "bootstrap.init.msg.backingUpUpgrade",
+                                ),
+                            )
+                            if upgrade_backup.error is not None:
+                                logger.info("升级前备份失败，继续启动")
+                                logger.debug("升级前备份错误：{}", upgrade_backup.error)
+                            if upgrade_backup.outcome is not None:
+                                _service_telemetry.record_count(
+                                    "auto_mas.upgrade_backup.attempts",
+                                    attributes={"outcome": upgrade_backup.outcome},
+                                )
+                        except Exception:
+                            logger.info("无法准备升级前备份，继续启动")
+                            logger.opt(exception=True).debug("准备升级前备份失败")
+                            backup_warning = "backup_failed"
+                    if upgrade_backup is not None:
+                        guarded = await asyncio.to_thread(
+                            upgrade_backup.begin_migration
+                        )
+                        if not guarded:
+                            logger.info("升级备份状态暂不可写，已使用独立迁移标记")
+                            backup_warning = "backup_failed"
+                        app.state.upgrade_backup = upgrade_backup
+                    app.state.business_message = "正在初始化配置与插件"
+
                 with startup_stage("后端/必要配置初始化"):
                     await Config.init_config(prepare_plugins=prepare_plugins)
+
+                if backup_warning is not None:
+                    from app.core.config.upgrade_backup import (
+                        BACKUP_WARNING_LINES,
+                        BACKUP_WARNING_TITLE,
+                    )
+
+                    line_key, line = BACKUP_WARNING_LINES[backup_warning]
+                    await Notify.push_system_notice(
+                        level="warning",
+                        title="更新前备份提示",
+                        title_key=BACKUP_WARNING_TITLE,
+                        line_keys=[line_key],
+                        lines=[line],
+                    )
 
                 MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
                 startup_mark("后端/必要配置就绪")
@@ -562,6 +620,13 @@ def main():
                     if not warnings:
                         logger.info("后端后台初始化完成")
                     startup_mark("后端/主业务就绪")
+                    if upgrade_backup is not None:
+                        await Startup.wait()
+                        try:
+                            await asyncio.to_thread(upgrade_backup.finish)
+                        except Exception:
+                            logger.info("无法确认更新备份或清理旧备份")
+                            logger.opt(exception=True).debug("更新备份确认或清理失败")
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
