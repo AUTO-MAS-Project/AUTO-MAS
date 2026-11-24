@@ -15,14 +15,14 @@ const globalQueue: QueuedSave[] = []
 const idleWaiters: Array<() => void> = []
 let draining = false
 
-const findCoalesceTarget = (owner: symbol, key: string): QueuedSave | undefined => {
+const findCoalesceTargetIndex = (owner: symbol, key: string): number => {
   // 从队尾往前找，遇到无 key 顺序屏障立刻停止，防止跨屏障合并破坏因果顺序。
   for (let i = globalQueue.length - 1; i >= 0; i -= 1) {
     const entry = globalQueue[i]!
-    if (entry.key === undefined) return undefined
-    if (entry.owner === owner && entry.key === key) return entry
+    if (entry.key === undefined) return -1
+    if (entry.owner === owner && entry.key === key) return i
   }
-  return undefined
+  return -1
 }
 
 const drain = async () => {
@@ -68,10 +68,12 @@ export const useSaveQueue = (): {
   const enqueue = <T>(run: () => Promise<T>, key?: string): Promise<T> =>
     new Promise<T>((resolve, reject) => {
       const settler = { resolve: resolve as (value: unknown) => void, reject }
-      const pending = key === undefined ? undefined : findCoalesceTarget(owner, key)
-      if (pending) {
-        pending.run = run
-        pending.settlers.push(settler)
+      const targetIndex = key === undefined ? -1 : findCoalesceTargetIndex(owner, key)
+      if (targetIndex !== -1) {
+        const [pending] = globalQueue.splice(targetIndex, 1)
+        pending!.run = run
+        pending!.settlers.push(settler)
+        globalQueue.push(pending!)
       } else {
         pendingCount.value += 1
         globalQueue.push({ owner, key, run, pendingCount, settlers: [settler] })
