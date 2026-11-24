@@ -1052,7 +1052,7 @@ const handleSaveMaaEndConfig = async () => {
     }
 
     cleanupConfigSession()
-    message.success(t('core.edit.maaendConfigurationSaved'))
+    message.info(t('core.edit.configurationSaveUnconfirmed'))
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存配置失败')
   }

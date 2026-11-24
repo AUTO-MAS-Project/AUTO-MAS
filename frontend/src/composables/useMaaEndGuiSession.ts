@@ -11,7 +11,6 @@ export function useMaaEndGuiSession() {
       opened: 'core.edit.maaendSessionOpened',
       viewOpened: 'core.edit.maaendViewOpened',
       timeoutWarn: 'core.edit.maaendSessionTimeoutWarn',
-      saved: 'core.edit.maaendConfigurationSaved',
       saveFailed: 'core.edit.maaendSessionSaveFailed',
     },
   })

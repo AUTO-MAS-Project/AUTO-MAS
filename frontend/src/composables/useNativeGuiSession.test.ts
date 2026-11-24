@@ -4,6 +4,7 @@ import { WS_TASK_NOTICE } from '@/services/websocket/types'
 
 const mocks = vi.hoisted(() => ({
   success: vi.fn(),
+  info: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
   start: vi.fn(),
@@ -38,9 +39,7 @@ const keys = {
   opened: 'opened',
   viewOpened: 'viewOpened',
   timeoutWarn: 'timeoutWarn',
-  saved: 'saved',
   saveFailed: 'saveFailed',
-  saveUnknown: 'saveUnknown',
 }
 
 describe('native configuration session during scheduler migration', () => {
@@ -70,14 +69,13 @@ describe('native configuration session during scheduler migration', () => {
     await session.dispose()
   })
 
-  it('does not query a deferred plan result when saving a normal session', async () => {
+  it('reports that a stopped session has no confirmed save result', async () => {
     const session = useNativeGuiSession({ loggerName: 'test', keys })
     await session.startSession('script')
     const saving = session.saveSession()
-    await vi.advanceTimersByTimeAsync(300)
     await saving
     expect(mocks.status).not.toHaveBeenCalled()
-    expect(mocks.success).toHaveBeenCalledWith('saved')
+    expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
   })
 
   it('keeps a failed save from reporting success and resets for the next session', async () => {
@@ -91,15 +89,14 @@ describe('native configuration session during scheduler migration', () => {
       return { code: 200 }
     })
     const failedSave = session.saveSession()
-    await vi.advanceTimersByTimeAsync(300)
     await failedSave
     expect(mocks.error).toHaveBeenCalledWith('setupFailed')
-    expect(mocks.success).not.toHaveBeenCalledWith('saved')
+    expect(mocks.info).not.toHaveBeenCalled()
+    expect(mocks.success).not.toHaveBeenCalled()
 
     await session.startSession('script')
     const successfulSave = session.saveSession()
-    await vi.advanceTimersByTimeAsync(300)
     await successfulSave
-    expect(mocks.success).toHaveBeenCalledWith('saved')
+    expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
   })
 })

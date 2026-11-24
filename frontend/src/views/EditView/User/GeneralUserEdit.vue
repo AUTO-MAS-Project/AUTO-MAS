@@ -541,7 +541,7 @@ const handleGeneralConfig = async (viewOnly = false, target = 'mas') => {
               if (generalSessionViewOnly.value) {
                 logger.info('通用脚本查看会话已超时，静默关闭')
               } else {
-                message.success(t('core.edit.configurationSessionTimedOut'))
+                message.info(t('core.edit.configurationSaveUnconfirmed'))
               }
             } else if (generalSessionViewOnly.value) {
               logger.error(response?.message || '查看会话超时关闭失败')
@@ -594,7 +594,7 @@ const handleSaveGeneralConfig = async () => {
       if (wasViewOnly) {
         logger.info('通用脚本查看会话已关闭，配置保持原状')
       } else {
-        message.success(t('core.edit.generalConfigurationThisUser2'))
+        message.info(t('core.edit.configurationSaveUnconfirmed'))
       }
     } else {
       message.error(response.message || '保存配置失败')

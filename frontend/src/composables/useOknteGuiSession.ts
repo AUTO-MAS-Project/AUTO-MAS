@@ -12,7 +12,6 @@ export function useOknteGuiSession() {
       opened: 'core.edit.oknteSessionOpened',
       viewOpened: 'core.edit.oknteViewOpened',
       timeoutWarn: 'core.edit.oknteSessionTimeoutWarn',
-      saved: 'core.edit.okNteConfigurationThis',
       saveFailed: 'core.edit.couldNotSaveOk',
     },
   })
@@ -25,6 +24,6 @@ export function useOknteGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
-      session.stopSession(keepOnFailure, false, action),
+      session.stopSession(keepOnFailure, action),
   }
 }

@@ -110,7 +110,6 @@ const {
     opened: 'core.plan.universal.sessionOpened',
     viewOpened: 'core.plan.universal.sessionOpened',
     timeoutWarn: 'core.plan.universal.sessionTimeoutWarn',
-    saved: 'core.plan.universal.sessionSaved',
     saveFailed: 'core.plan.universal.saveFailed',
   },
 })

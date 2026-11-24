@@ -12,7 +12,6 @@ export function useBettergiGuiSession() {
       opened: 'core.edit.bettergiSessionOpened',
       viewOpened: 'core.edit.bettergiViewOpened',
       timeoutWarn: 'core.edit.bettergiSessionTimeoutWarn',
-      saved: 'core.edit.bettergiSettingsSaved',
       saveFailed: 'core.edit.bettergiSettingsSaveFailed',
       viewStartFailed: 'core.edit.bettergiViewStartFailed',
     },
@@ -27,7 +26,7 @@ export function useBettergiGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
-      session.stopSession(keepOnFailure, false, action),
+      session.stopSession(keepOnFailure, action),
     dispose: session.dispose,
   }
 }

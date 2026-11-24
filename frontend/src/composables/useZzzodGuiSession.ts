@@ -13,7 +13,6 @@ export function useZzzodGuiSession() {
       opened: 'core.edit.zzzodSessionOpened',
       viewOpened: 'core.edit.zzzodViewOpened',
       timeoutWarn: 'core.edit.zzzodSessionTimeoutWarn',
-      saved: 'core.edit.zzzodSettingsSaved',
       saveFailed: 'core.edit.zzzodSettingsSaveFailed',
     },
   })
@@ -34,6 +33,6 @@ export function useZzzodGuiSession() {
       }),
     saveSession: session.saveSession,
     stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
-      session.stopSession(keepOnFailure, false, action),
+      session.stopSession(keepOnFailure, action),
   }
 }

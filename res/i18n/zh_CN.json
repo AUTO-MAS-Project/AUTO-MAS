@@ -942,6 +942,7 @@
   "core.edit.configurationManagement": "配置管理方式",
   "core.edit.configurationName": "配置名称",
   "core.edit.configurationSaved": "配置已保存",
+  "core.edit.configurationSaveUnconfirmed": "配置会话已关闭，保存结果未确认",
   "core.edit.configurationSessionTimedOut": "配置会话超时，已自动保存配置",
   "core.edit.configurationSessionUserP0": "账号 {p0} 的配置会话已超时断开",
   "core.edit.configurationSource": "配置文件来源",
