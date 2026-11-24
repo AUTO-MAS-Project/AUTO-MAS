@@ -231,8 +231,10 @@ async def _query_mirrorchyan(
     proxy: httpx.Proxy | None,
 ) -> tuple[str, str, str, str]:
     params: dict[str, str] = {"user_agent": _USER_AGENT, "channel": channel or "stable"}
-    if current_version:
-        params["current_version"] = current_version
+    # 故意不带 current_version：带上后 Mirror 酱返回增量包（顶层多一个
+    # changes.json，程序在 March7thAssistant_full/ 下且只含变动文件），安装
+    # 逻辑按全量包处理，会把整个目录装成子目录或拒装。不带时返回的全量包与
+    # GitHub 发布附件逐字节一致。是否有新版由本地比较版本号决定，不依赖此参数。
     if cdk:
         params["cdk"] = cdk
     # 两个 rid 都是单平台：带 os/arch 会 404，实测确认，别加。
