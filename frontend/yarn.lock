@@ -2538,6 +2538,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/yauzl@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "@types/yauzl@npm:3.4.0"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/9992cf7bf129466016baa4e99e05ad524afe2ff6e5d84e7408f2a7123bc4af3b4bfb639237308574b80e7e435571b6e1af6113910d166e8ea8b80da422ba8ecb
+  languageName: node
+  linkType: hard
+
 "@vitejs/plugin-vue@npm:^6.0.1":
   version: 6.0.5
   resolution: "@vitejs/plugin-vue@npm:6.0.5"
@@ -4997,6 +5006,7 @@ __metadata:
     "@types/node": "npm:22.17.1"
     "@types/qrcode": "npm:1.5.5"
     "@types/three": "npm:^0"
+    "@types/yauzl": "npm:^3.4.0"
     "@vitejs/plugin-vue": "npm:^6.0.1"
     "@vue/devtools-core": "npm:8.2.1"
     "@vue/tsconfig": "npm:^0.7.0"
@@ -5035,6 +5045,7 @@ __metadata:
     vuedraggable: "npm:^4.1.0"
     wait-on: "npm:^8.0.4"
     yaml: "npm:2.8.1"
+    yauzl: "npm:^3.4.0"
   languageName: unknown
   linkType: soft
 
@@ -7753,6 +7764,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pend@npm:~1.2.0":
+  version: 1.2.0
+  resolution: "pend@npm:1.2.0"
+  checksum: 10c0/8a87e63f7a4afcfb0f9f77b39bb92374afc723418b9cb716ee4257689224171002e07768eeade4ecd0e86f1fa3d8f022994219fb45634f2dbd78c6803e452458
+  languageName: node
+  linkType: hard
+
 "perfect-debounce@npm:^1.0.0":
   version: 1.0.0
   resolution: "perfect-debounce@npm:1.0.0"
@@ -9758,6 +9776,15 @@ __metadata:
     y18n: "npm:^4.0.0"
     yargs-parser: "npm:^18.1.2"
   checksum: 10c0/f1ca680c974333a5822732825cca7e95306c5a1e7750eb7b973ce6dc4f97a6b0a8837203c8b194f461969bfe1fb1176d1d423036635285f6010b392fa498ab2d
+  languageName: node
+  linkType: hard
+
+"yauzl@npm:^3.4.0":
+  version: 3.4.0
+  resolution: "yauzl@npm:3.4.0"
+  dependencies:
+    pend: "npm:~1.2.0"
+  checksum: 10c0/17a98c42c0065e8af429eb8a61f7a0e4562181ed54080366b838f34f741b6829f167f804787c86b7646bb042707f35871739f053de0548285e405a2eae4da025
   languageName: node
   linkType: hard
 
