@@ -38,6 +38,6 @@ export type ScriptGetOut = {
     /**
      * 托管数据字典, key来自于index列表的uid
      */
-    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig | MaaConfig | WhimboxConfig | SrcConfig)>;
+    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | ZzzOdConfig | BAAHConfig | MSSConfig | MaaConfig | WhimboxConfig | SrcConfig | BetterGIConfig)>;
 };
 

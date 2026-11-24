@@ -24,13 +24,13 @@ export namespace UserIndexItem {
         M9AUSER_CONFIG = 'M9AUserConfig',
         MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
         HSRUSER_CONFIG = 'HSRUserConfig',
-        BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
         ZZZ_OD_USER_CONFIG = 'ZzzOdUserConfig',
         BAAHUSER_CONFIG = 'BAAHUserConfig',
         MSSUSER_CONFIG = 'MSSUserConfig',
         MAA_USER_CONFIG = 'MaaUserConfig',
         WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
         SRC_USER_CONFIG = 'SrcUserConfig',
+        BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
     }
 }
 

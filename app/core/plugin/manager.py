@@ -1338,7 +1338,27 @@ class _PluginManager:
         entries = await gate.wrap(decl.search)()
         return entries if gate.accepting and self.game_types.get(uid) is decl else ()
 
-    def resolve_script_expander(self, script, config):
+    def _script_decl_gate(self, config):
+        """按托管配置找声明及其插件的调用门；声明在、门不在时门为 ``None``。"""
+        for uid, decl in self.script_types.items():
+            if isinstance(config, decl.script_type):
+                return decl, self._calls.get(uid)
+        return None, None
+
+    def script_supports_desktop(self, config) -> bool:
+        """插件托管能否在桌面分身里跑；未声明、插件不可用或判定失败时为否。"""
+        decl, gate = self._script_decl_gate(config)
+        if decl is None or decl.desktop_session is None or gate is None:
+            return False
+        try:
+            return bool(gate.wrap(decl.desktop_session)(config))
+        except Exception:
+            logger.opt(exception=True).warning(
+                f"插件判定桌面分身失败，按不支持处理: {type(config).__name__}"
+            )
+            return False
+
+    def resolve_script_expander(self, script, config, *, maintenance: bool = False):
         """托管锁内按实际启用声明分派；旧类型由调用方继续走旧工厂。"""
         from app.models.config import ScriptEntry
 
@@ -1349,6 +1369,10 @@ class _PluginManager:
             if record.info.state != PluginState.ENABLED or decl is None:
                 continue
             if isinstance(config, decl.script_type):
+                if maintenance:
+                    if decl.maintenance_expander is None:
+                        raise PluginPrecheckError("该托管不支持手动更新")
+                    return decl.maintenance_expander(script, config)
                 if script.task_info.info.mode not in decl.supported_modes:
                     raise PluginPrecheckError("该插件不支持当前执行模式")
                 return decl.expander_class(script, config)

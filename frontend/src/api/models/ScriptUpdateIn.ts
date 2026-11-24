@@ -24,6 +24,6 @@ export type ScriptUpdateIn = {
     /**
      * 托管更新数据
      */
-    data: (GeneralConfigInput | OkwwConfigInput | OkNteConfigInput | MaaEndConfigInput | M9AConfigInput | MaaFWConfigInput | HSRConfigInput | BetterGIConfigInput | ZzzOdConfigInput | BAAHConfigInput | MSSConfigInput | MaaConfigInput | WhimboxConfigInput | SrcConfigInput);
+    data: (GeneralConfigInput | OkwwConfigInput | OkNteConfigInput | MaaEndConfigInput | M9AConfigInput | MaaFWConfigInput | HSRConfigInput | ZzzOdConfigInput | BAAHConfigInput | MSSConfigInput | MaaConfigInput | WhimboxConfigInput | SrcConfigInput | BetterGIConfigInput);
 };
 

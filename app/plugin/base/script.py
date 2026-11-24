@@ -15,6 +15,8 @@ from app.task.user_expander import UserExpander
 from .extension import _AdapterPlugin
 
 if TYPE_CHECKING:
+    from app.utils.common.config.restore import ConfigRestorePool
+
     from .emulator import EmulatorExpect
 
 
@@ -45,6 +47,10 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    desktop_session: Callable[[ScriptEntry], bool] | None = None
+    # 维护入口复用调度任务的锁、进程归属和停止确认。
+    maintenance_expander: type[UserExpander] | None = None
+    restore_pools: tuple[ConfigRestorePool, ...] = ()
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

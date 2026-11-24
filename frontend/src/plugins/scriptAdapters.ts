@@ -2,6 +2,7 @@ import type { Component } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
 import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
+import bettergi from '@/views/bettergi/entry'
 import maa from '@/views/maa/entry'
 import src from '@/views/src/entry'
 import whimbox from '@/views/whimbox/entry'
@@ -27,7 +28,7 @@ export interface ScriptFrontendAdapter {
   }
 }
 
-const adapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
+const adapters: ScriptFrontendAdapter[] = [maa, whimbox, src, bettergi]
 
 export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
   adapters.map(adapter => [adapter.type, adapter.editors])

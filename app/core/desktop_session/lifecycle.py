@@ -27,17 +27,21 @@ _CLOSE_RESERVATION_SECONDS = 180
 def _support_probe(config: object) -> bool | Callable[[], bool]:
     """同步读取能力参数，按需构造只读取上游资源的检查。"""
     from app.models.config import (
-        BetterGIConfig,
         GeneralConfig,
         HSRConfig,
         MaaEndConfig,
         MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
+        ScriptEntry,
         ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
 
+    if isinstance(config, ScriptEntry):
+        from app.core import Plugin
+
+        return Plugin.script_supports_desktop(config)
     if isinstance(config, GeneralConfig):
         return not config.Game.Enabled or config.Game.Type != "Emulator"
     if isinstance(config, MaaEndConfig):
@@ -87,10 +91,6 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         return check_maafw
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return True
-    if isinstance(config, BetterGIConfig):
-        return (
-            not config.Run.UseAdmin or IS_ELEVATED
-        ) and not config.Update.TakeoverEnabled
     return isinstance(config, ZzzOdConfig) and IS_ELEVATED
 
 

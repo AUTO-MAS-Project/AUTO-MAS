@@ -52,12 +52,6 @@ BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
 BAAHUserConfigInput = ConfigInput[_config_models.BAAHUserConfig]
 
 
-BetterGIUserConfig = ConfigPayload[_config_models.BetterGIUserConfig]
-
-
-BetterGIUserConfigInput = ConfigInput[_config_models.BetterGIUserConfig]
-
-
 GeneralUserConfig = ConfigPayload[_config_models.GeneralUserConfig]
 
 
@@ -124,7 +118,6 @@ class UserIndexItem(BaseModel):
                 "M9AUserConfig",
                 "MaaFWUserConfig",
                 "HSRUserConfig",
-                "BetterGIUserConfig",
                 "ZzzOdUserConfig",
                 "BAAHUserConfig",
                 "MSSUserConfig",
@@ -162,7 +155,6 @@ class UserGetOut(ConfigSnapshotOut):
             M9AUserConfig,
             MaaFWUserConfig,
             HSRUserConfig,
-            BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
             MSSUserConfig,
@@ -181,7 +173,6 @@ class UserCreateOut(OutBase):
         M9AUserConfig,
         MaaFWUserConfig,
         HSRUserConfig,
-        BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
         MSSUserConfig,
@@ -199,7 +190,6 @@ class UserUpdateIn(UserInBase):
         M9AUserConfigInput,
         MaaFWUserConfigInput,
         HSRUserConfigInput,
-        BetterGIUserConfigInput,
         ZzzOdUserConfigInput,
         BAAHUserConfigInput,
         MSSUserConfigInput,

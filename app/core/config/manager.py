@@ -72,8 +72,6 @@ from app.models.config import (
     BAAHConfig,
     BAAHPlanConfig,
     BAAHUserConfig,
-    BetterGIConfig,
-    BetterGIUserConfig,
     EmulatorConfig,
     GameSignAccountGroup,
     GeneralConfig,
@@ -1221,7 +1219,6 @@ class AppConfig:
         | OkwwConfig
         | OkNteConfig
         | HSRConfig
-        | BetterGIConfig
         | ZzzOdConfig
         | BAAHConfig
         | MSSConfig,
@@ -1436,6 +1433,7 @@ class AppConfig:
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
             self.script_classes.get("SRC"),
+            self.script_classes.get("BetterGI"),
         )
         if not plugin_defaults and not isinstance(
             script,
@@ -1443,7 +1441,6 @@ class AppConfig:
                 MaaEndConfig,
                 OkwwConfig,
                 OkNteConfig,
-                BetterGIConfig,
                 ZzzOdConfig,
             ),
         ):
@@ -1467,7 +1464,6 @@ class AppConfig:
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig
-        | BetterGIUserConfig
         | ZzzOdUserConfig
         | BAAHUserConfig
         | MSSUserConfig,
@@ -1539,8 +1535,13 @@ class AppConfig:
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
         if self._restore_pool_resolver is None:
             raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
-        # [兼容旧专项] 插件通过自己的 API 构建恢复服务，宿主不再接收插件池表。
-        pools = self._restore_pool_resolver(script_config)
+        if isinstance(script_config, ScriptEntry):
+            from app.core import Plugin
+
+            decl = Plugin.script_decl(script_config)
+            pools = list(decl.restore_pools) if decl is not None else []
+        else:
+            pools = self._restore_pool_resolver(script_config)
         return _utils_config_restore.build_restore_service(
             _utils_config_restore.RestoreContext(
                 config=self,

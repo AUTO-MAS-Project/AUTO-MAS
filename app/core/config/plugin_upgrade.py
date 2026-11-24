@@ -14,6 +14,7 @@ from app.utils import io as _utils_io
 
 # 只列入已经完成插件化的专项；后续专项迁移随对应的数据升级段落扩展。
 _ADAPTER_PLUGINS = {
+    "BetterGIConfig": ("bettergi_adapter", "auto-mas-bettergi-adapter"),
     "SrcConfig": ("src_adapter", "auto-mas-src-adapter"),
     "WhimboxConfig": ("whimbox_adapter", "auto-mas-whimbox-adapter"),
     "MaaConfig": ("maa_adapter", "auto-mas-maa-adapter"),
@@ -46,6 +47,8 @@ def required_adapter_plugins(config_path: Path) -> dict[str, str]:
         required["maa_adapter"] = "auto-mas-maa-adapter"
     if any(config_path.glob("WhimboxConfig/*/config.json")):
         required["whimbox_adapter"] = "auto-mas-whimbox-adapter"
+    if any(config_path.glob("BetterGIConfig/*/config.json")):
+        required["bettergi_adapter"] = "auto-mas-bettergi-adapter"
     return required
 
 

@@ -24,6 +24,7 @@ from app.utils import io as config_io
     ("config_type", "name", "package"),
     [
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
+        ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
     ],
 )

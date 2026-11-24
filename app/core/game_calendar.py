@@ -29,7 +29,6 @@ SCRIPT_CALENDAR_GAMES = {
     for script, game in {
         "MaaEnd": "endfield",
         "HSR": "starrail",
-        "BetterGI": "genshin",
         "ZzzOd": "zenless",
         "Okww": "wutheringwaves",
         "OkNte": "nte",

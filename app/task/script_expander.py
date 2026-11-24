@@ -197,7 +197,9 @@ class ScriptExpander(TaskBase):
             ):
                 # 插件接入位置：真实解析器在托管锁内接收当前配置，提供 L3 与模式能力。
                 plugin = None
-                if not self.maintenance and self.dispatcher.plugin_expander is not None:
+                if self.dispatcher.plugin_expander is not None and (
+                    not self.maintenance or isinstance(entry, ScriptEntry)
+                ):
                     last_wait_message = None
                     while True:
                         candidate = Config.ScriptConfig.get(script.script_id)
@@ -230,7 +232,14 @@ class ScriptExpander(TaskBase):
                         await asyncio.sleep(1)
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
-                    plugin = self.dispatcher.plugin_expander(script, entry)
+                    if self.maintenance:
+                        from app.core import Plugin
+
+                        plugin = Plugin.resolve_script_expander(
+                            script, entry, maintenance=True
+                        )
+                    else:
+                        plugin = self.dispatcher.plugin_expander(script, entry)
                     if plugin is None:
                         # 旧 manager 自持递归锁，必须先归还探测锁，不能叠加持锁等待。
                         await self._release_script_lock()
@@ -243,7 +252,8 @@ class ScriptExpander(TaskBase):
                         or plugin.script_config is not entry
                     ):
                         raise TypeError("插件必须绑定当前托管运行节点及已锁配置")
-                    await self._prefetch.prepare(script, entry)
+                    if not self.maintenance:
+                        await self._prefetch.prepare(script, entry)
                     from app.core import Plugin
 
                     declaration = next(
@@ -253,8 +263,9 @@ class ScriptExpander(TaskBase):
                     )
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
-                    await self._game_session.select()
-                    plugin.game_session = self._game_session
+                    if not self.maintenance:
+                        await self._game_session.select()
+                        plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin
@@ -357,6 +368,8 @@ class ScriptExpander(TaskBase):
         token = current_process_scope.set(scope)
         try:
             await self.spawn(plugin)
+            if isinstance(plugin.error, FluxdownCancelUnconfirmed):
+                raise plugin.error
         finally:
             try:
                 await scope.force_close()

@@ -32,13 +32,13 @@ export namespace ScriptIndexItem {
         M9ACONFIG = 'M9AConfig',
         MAA_FWCONFIG = 'MaaFWConfig',
         HSRCONFIG = 'HSRConfig',
-        BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
         BAAHCONFIG = 'BAAHConfig',
         MSSCONFIG = 'MSSConfig',
         MAA_CONFIG = 'MaaConfig',
         WHIMBOX_CONFIG = 'WhimboxConfig',
         SRC_CONFIG = 'SrcConfig',
+        BETTER_GICONFIG = 'BetterGIConfig',
     }
 }
 
