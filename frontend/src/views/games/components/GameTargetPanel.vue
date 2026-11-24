@@ -79,7 +79,9 @@
         :scroll="{ x: game.type.kind === 'emulator' ? 640 : 520 }"
         size="small"
       >
-        <template #emptyText><a-empty :description="t('core.emulator.noDevice')" /></template>
+        <template #emptyText
+          ><NoData :description="t('core.emulator.noDevice')" size="sm"
+        /></template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
             {{ record.document.info?.name }}
@@ -133,6 +135,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { NoData } from '@/components/ui'
 import { useConfirm } from '@/composables/useConfirm'
 import { DeleteOutlined, DownOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { Service, type DeviceStatus } from '@/api'
