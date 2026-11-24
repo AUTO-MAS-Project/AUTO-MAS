@@ -905,8 +905,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
     async def handle_pre_oknte_error(
         self, error_message: str, e: Exception | None = None
-    ) -> None:
-        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 OK-WW）。"""
+    ) -> bool:
+        """记录前置步骤失败，返回是否已确认旧 OK-NTE 进程退出。"""
 
         error_detail = f"{error_message}: {e}" if e is not None else error_message
         logger.opt(exception=e is not None).warning(
@@ -919,7 +919,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             data=WSTaskNoticeData(level="error", message=error_detail),
         )
 
-        await self.kill_managed_process(
+        stopped = await self.kill_managed_process(
             kill_game=self._mas_should_close_game_on_retry()
         )
 
@@ -934,6 +934,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             )
         except Exception:
             pass
+        return stopped
 
     async def main_task(self):
         await self.prepare()
@@ -1072,7 +1073,13 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                         on_log=self._push_dispatch_log,
                     )
             except (OSError, RuntimeError) as e:
-                await self.handle_pre_oknte_error("OK-NTE 启动失败", e)
+                stopped = await self.handle_pre_oknte_error("OK-NTE 启动失败", e)
+                if not stopped:
+                    message = "无法确认旧 OK-NTE 进程已退出，已停止重试"
+                    await self.cur_user_log.append_content(f"\n{message}")
+                    await self.cur_user_item.set_state(status="异常")
+                    await self._push_dispatch_log(message)
+                    break
                 if i + 1 < run_limit:
                     await self._push_dispatch_log(
                         f"OK-NTE 启动失败，将在稍后重试 ({i + 1}/{run_limit})"
@@ -1462,7 +1469,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         except Exception:
             pass
 
-    async def _kill_oknte_process(self) -> None:
+    async def _kill_oknte_process(self) -> bool:
+        """结束 OK-NTE 启动器与本体，并按路径确认退出。"""
         try:
             point(self, "stop_script")
             await self.oknte_process_manager.kill()
@@ -1471,13 +1479,29 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"通过进程管理器中止 OK-NTE 进程失败: {e}"
             )
         # 更新前后的两种本体都清理，防止冻结 EXE 脱离启动器后继续占用配置。
-        for exe in self.oknte_process_manager.cleanup_executables():
+        executables = self.oknte_process_manager.cleanup_executables()
+        for exe in executables:
             try:
-                await process.kill_process(exe)
+                if not await process.kill_process(exe):
+                    logger.warning(f"未能完整清理 OK-NTE 进程，将复核退出状态: {exe}")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
         if self.script_config.Game.Enabled and self.script_config.Game.Type == "Client":
             await self._kill_launcher_process(use_script_fallback=False)
+
+        # 进程管理器会释放句柄，按路径复核可发现仍在运行或路径不可读的同名进程。
+        stopped = True
+        for exe in executables:
+            try:
+                if not await process.is_process_stopped(exe):
+                    stopped = False
+                    logger.warning(f"无法确认 OK-NTE 进程已退出: {exe}")
+            except Exception as e:
+                stopped = False
+                logger.opt(exception=True).warning(
+                    f"复核 OK-NTE 进程退出状态失败: {exe}: {e}"
+                )
+        return stopped
 
     async def _kill_launcher_process(self, *, use_script_fallback: bool) -> None:
         try:
@@ -1510,11 +1534,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
-    async def kill_managed_process(self, *, kill_game: bool = True) -> None:
-        """中止 OK-NTE；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
-        await self._kill_oknte_process()
+    async def kill_managed_process(self, *, kill_game: bool = True) -> bool:
+        """清理脚本与可选的游戏进程，返回脚本进程是否已确认退出。"""
+        stopped = await self._kill_oknte_process()
         if kill_game:
             await self._kill_game_process()
+        return stopped
 
     async def _wait_game_exit_before_next_user(self) -> None:
         """多账号切换：等上一账号的游戏完全退出后再进下个账号。
