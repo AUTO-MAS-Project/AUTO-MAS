@@ -24,8 +24,8 @@ import sys
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable
-from contextlib import closing
+from collections.abc import Callable, Iterator
+from contextlib import closing, contextmanager, nullcontext
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import (
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config.plugin_upgrade import (
-    backup_legacy_src_users,
+    backup_legacy_adapter_users,
     install_adapter_plugin,
     install_adapter_plugins,
     prepare_plugin_documents,
@@ -596,8 +596,14 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
-        if "src_adapter" in required:
-            await asyncio.to_thread(backup_legacy_src_users, self.config_path)
+        for adapter, config_type in (
+            ("src", "SrcConfig"),
+            ("bettergi", "BetterGIConfig"),
+        ):
+            if f"{adapter}_adapter" in required:
+                await asyncio.to_thread(
+                    backup_legacy_adapter_users, self.config_path, adapter, config_type
+                )
         from app.core.config.game_upgrade import (
             migrate_game_documents,
             required_game_plugins,
@@ -1520,9 +1526,10 @@ class AppConfig:
 
         self._restore_pool_resolver = resolver
 
-    def restore_service(
+    @contextmanager
+    def _using_restore_service(
         self, script_id: str, user_id: str, *, force: bool = False
-    ) -> "_utils_config_restore.ConfigRestoreService":
+    ) -> Iterator["_utils_config_restore.ConfigRestoreService"]:
         """[兼容旧专项] 通过原有解析函数取得恢复池并构建运行时服务。
 
         专项只声明池表（普通函数，显式收 :class:`RestoreContext`），由宿主
@@ -1533,25 +1540,25 @@ class AppConfig:
         from app.utils.common.config import restore as _utils_config_restore
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
-        if self._restore_pool_resolver is None:
-            raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
         if isinstance(script_config, ScriptEntry):
             from app.core import Plugin
 
-            decl = Plugin.script_decl(script_config)
-            pools = list(decl.restore_pools) if decl is not None else []
+            scope = Plugin.use_script_restore_pools(script_config)
         else:
-            pools = self._restore_pool_resolver(script_config)
-        return _utils_config_restore.build_restore_service(
-            _utils_config_restore.RestoreContext(
-                config=self,
-                script_config=script_config,
-                script_id=script_id,
-                user_id=user_id,
-                force=force,
-            ),
-            pools,
-        )
+            if self._restore_pool_resolver is None:
+                raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
+            scope = nullcontext(self._restore_pool_resolver(script_config))
+        with scope as pools:
+            yield _utils_config_restore.build_restore_service(
+                _utils_config_restore.RestoreContext(
+                    config=self,
+                    script_config=script_config,
+                    script_id=script_id,
+                    user_id=user_id,
+                    force=force,
+                ),
+                list(pools),
+            )
 
     async def list_config_backups(
         self, script_id: str, user_id: str, target: str
@@ -1563,11 +1570,11 @@ class AppConfig:
         target 取值由专项池定义。
         """
 
-        service = self.restore_service(script_id, user_id)
-        return {
-            "items": await service.list(target),
-            "base": await service.current_base(target),
-        }
+        with self._using_restore_service(script_id, user_id) as service:
+            return {
+                "items": await service.list(target),
+                "base": await service.current_base(target),
+            }
 
     async def ensure_config_backup(
         self, script_id: str, user_id: str, target: str
@@ -1578,7 +1585,8 @@ class AppConfig:
         （各专项任务流程调用专项归档函数，不经本方法）。
         """
 
-        return await self.restore_service(script_id, user_id).ensure(target)
+        with self._using_restore_service(script_id, user_id) as service:
+            return await service.ensure(target)
 
     async def restore_config_backup(
         self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
@@ -1599,7 +1607,8 @@ class AppConfig:
         if self.ScriptConfig[uid].is_locked:
             raise RuntimeError(f"托管 {script_id} 正在运行, 无法恢复配置")
 
-        await self.restore_service(script_id, user_id, force=force).restore(target, ts)
+        with self._using_restore_service(script_id, user_id, force=force) as service:
+            await service.restore(target, ts)
         return {"target": target}
 
     async def get_config_backup_preview(
@@ -1607,7 +1616,8 @@ class AppConfig:
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复）；载荷结构由专项定义。"""
 
-        payload = await self.restore_service(script_id, user_id).preview(target, ts)
+        with self._using_restore_service(script_id, user_id) as service:
+            payload = await service.preview(target, ts)
         return {"time": ts, "target": target, "data": payload}
 
     async def get_config_backup_file(
@@ -1619,9 +1629,8 @@ class AppConfig:
         ``config_archive.read_backup_text`` 与专项池函数保证。
         """
 
-        content = await self.restore_service(script_id, user_id).read_backup_file(
-            target, ts, path
-        )
+        with self._using_restore_service(script_id, user_id) as service:
+            content = await service.read_backup_file(target, ts, path)
         return {"time": ts, "target": target, **content}
 
     async def update_user(

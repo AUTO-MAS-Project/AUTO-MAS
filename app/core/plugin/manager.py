@@ -1345,6 +1345,15 @@ class _PluginManager:
                 return decl, self._calls.get(uid)
         return None, None
 
+    @contextlib.contextmanager
+    def use_script_restore_pools(self, config):
+        """在插件调用门内使用该托管的备份池，包含读写与字段回填。"""
+        decl, gate = self._script_decl_gate(config)
+        if decl is None or gate is None:
+            raise PluginBusyError("托管所属插件当前不可用")
+        with gate.active_call():
+            yield decl.restore_pools
+
     def script_supports_desktop(self, config) -> bool:
         """插件托管能否在桌面分身里跑；未声明、插件不可用或判定失败时为否。"""
         decl, gate = self._script_decl_gate(config)

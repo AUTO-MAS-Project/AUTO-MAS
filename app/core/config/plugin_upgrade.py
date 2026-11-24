@@ -94,16 +94,27 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         raise RuntimeError(f"适配插件未启用：{name}")
 
 
-def backup_legacy_src_users(config_path: Path) -> None:
-    """首次接手 SRC 索引时备份原文件，正文的加载和校验交给配置集合。"""
+def backup_legacy_adapter_users(
+    config_path: Path, adapter: str, config_type: str
+) -> None:
+    """首次接手内置托管索引时备份原文件，正文的加载和校验交给配置集合。"""
     for name in ("scripts.yaml", "ScriptConfig.json"):
         path = config_path / name
-        backup = config_path / "legacy-src-plugin" / name
+        backup = config_path / f"legacy-{adapter}-plugin" / name
         if backup.exists() or not path.is_file() or is_blank_file(path):
             continue
         document = _utils_io.read_dict_file(path)
         index = document.get("order", document.get("instances", []))
-        if any(item["type"] == "SrcConfig" for item in index):
+        entries = document.get("data", document)
+        if any(
+            item["type"] == config_type
+            and (
+                config_type == "SrcConfig"
+                or "UserData" in entries[item["uid"]]
+                or "UserData" in entries[item["uid"]].get("SubConfigsInfo", {})
+            )
+            for item in index
+        ):
             backup.parent.mkdir(parents=True, exist_ok=True)
             _utils_io.atomic_write(backup, path.read_bytes())
 

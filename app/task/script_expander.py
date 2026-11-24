@@ -265,7 +265,7 @@ class ScriptExpander(TaskBase):
                         self._game_session.expect = declaration.expect_builder(entry)
                     if not self.maintenance:
                         await self._game_session.select()
-                        plugin.game_session = self._game_session
+                    plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin
