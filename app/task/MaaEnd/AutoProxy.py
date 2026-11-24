@@ -897,22 +897,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 拉起前校验官方签名：与直接启动（game_launcher）同一套校验口径
             await asyncio.to_thread(verify_launcher_signature, launcher_path)
             point(self, "start_game")
-            if await self.game_process_manager.is_running():
-                # 阶段切换可能只关闭游戏；手动指定的常驻启动器仍由同一管理器持有。
-                await push_dispatch_log(self.script_info, "复用仍在运行的终末地启动器")
-            else:
-                await push_dispatch_log(
-                    self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
-                )
-                # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
-                await self.game_process_manager.open_process(
-                    launcher_path,
-                    "--game=Endfield",
-                    "--reason=4",
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+            await push_dispatch_log(
+                self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
+            )
+            # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
+            await self.game_process_manager.open_launcher(
+                launcher_path,
+                "--game=Endfield",
+                "--reason=4",
+            )
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
             # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
             launch_loop = asyncio.get_running_loop()
@@ -948,9 +941,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 f"游戏窗口已出现，正在等待画面就绪（最多 {wait_time}s）...",
             )
             # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
-            await wait_process_window_ready(
-                ProcessInfo(name=_MAAEND_CLIENT_PROCESS), wait_time
+            executable = client_executable_path(self.script_config)
+            target = ProcessInfo(
+                name=_MAAEND_CLIENT_PROCESS, exe=str(executable) if executable else None
             )
+            await wait_process_window_ready(target, wait_time)
 
     async def _kill_launcher_process(self) -> None:
         """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""

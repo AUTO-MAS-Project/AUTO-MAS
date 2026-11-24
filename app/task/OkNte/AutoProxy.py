@@ -39,7 +39,7 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
-from app.task.client import client_executable_path, client_launcher_path
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     push_dispatch_log,
@@ -55,7 +55,6 @@ from app.utils import (
     UTC4,
     LogMonitor,
     ProcessInfo,
-    ProcessManager,
     compile_log_signs,
     get_logger,
     is_process_alive,
@@ -300,7 +299,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         script_info: ScriptItem,
         script_config: OkNteConfig,
         user_config: ConfigCollection[OkNteUserConfig],
-        game_manager: ProcessManager | None,
+        game_manager: ClientProcess | None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -735,7 +734,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         game_type = self.script_config.Game.Type
         await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
-        if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
+        if self.game_manager is not None and game_type == "Client":
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
@@ -779,12 +778,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 logger.info(message)
                 await self._push_dispatch_log(message)
                 point(self, "start_game")
-                await self.game_manager.open_process(
-                    launcher_path,
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+                await self.game_manager.open_launcher(launcher_path)
                 window_ready = bool(
                     await async_start_game_via_launcher(
                         launcher_path, on_log=_push_launch_log
@@ -810,13 +804,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
                 point(self, "start_game")
-                await self.game_manager.open_process(
-                    launcher_path,
-                    AUTOPLAY_ARG,
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+                await self.game_manager.open_launcher(launcher_path, AUTOPLAY_ARG)
                 if await async_wait_autoplay_game(
                     launcher_path, on_log=_push_launch_log
                 ):
@@ -845,13 +833,15 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 else f"客户端进程已在运行，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
             )
             # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
-            await wait_process_window_ready(
-                ProcessInfo(name=_NTE_CLIENT_PROCESS), wait_time
+            executable = client_executable_path(self.script_config)
+            target = ProcessInfo(
+                name=_NTE_CLIENT_PROCESS, exe=str(executable) if executable else None
             )
+            await wait_process_window_ready(target, wait_time)
             await self._push_dispatch_log("游戏启动完成")
             return
 
-        if isinstance(self.game_manager, ProcessManager) and game_type == "URL":
+        if self.game_manager is not None and game_type == "URL":
             await self._push_dispatch_log("正在通过 URL 协议启动游戏...")
             game_url = str(self.game_url or "").strip()
             game_process_name = str(self.game_process_name or "").strip()
@@ -1489,7 +1479,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.Game.Type
-        if isinstance(self.game_manager, ProcessManager):
+        if self.game_manager is not None:
             try:
                 point(self, "stop_game")
                 await self.game_manager.kill()

@@ -609,6 +609,7 @@ def _save_error_screenshot(launcher_hwnd: int | None) -> None:
 def start_game_via_launcher(
     launcher_path: Path,
     *,
+    client_path: Path | None = None,
     on_log: Callable[[str], None] | None = None,
     update_only: bool = False,
     stop_event: Event | None = None,
@@ -624,6 +625,7 @@ def start_game_via_launcher(
 
     Args:
         launcher_path: 启动器 exe 路径（鸣潮官方启动器 launcher.exe）。
+        client_path: 已确认的客户端路径，未知时按启动器安装目录查找游戏窗口。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
         update_only: 只检查并更新，启动器显示可进入游戏时结束，不启动客户端。
         stop_event: 异步任务取消时置位，交互线程在下一次操作前退出。
@@ -640,6 +642,7 @@ def start_game_via_launcher(
     # 光标停在主屏四角时 pyautogui 全部鼠标/键盘操作都会在真实移动前抛
     # FailSafeException 且重试无法自愈；MAS 属无人值守托管，停用四角 fail-safe
     pyautogui.FAILSAFE = False
+    game_install_root = launcher_path if client_path is None else None
 
     # 开启诊断记录：窗口定位结果与各轮 OCR 全量条目写入 debug/okww-launcher-start/，
     # 供按钮未被点击时排查窗口错抓、截图偏移与 OCR 文本漂移
@@ -696,7 +699,8 @@ def start_game_via_launcher(
             if (
                 not update_only
                 and self_update_hwnd is None
-                and _find_game_hwnd() is not None
+                and _find_game_hwnd(find_client_pids(client_path, game_install_root))
+                is not None
             ):
                 on_log("已检测到鸣潮游戏窗口")
                 return True
@@ -987,7 +991,11 @@ def start_game_via_launcher(
         _pause(0, stop_event)
         if self_update_hwnd is not None:
             raise RuntimeError("等待鸣潮启动器更新后重开超时，请确认官方启动器状态")
-        if not update_only and _find_game_hwnd() is not None:
+        if (
+            not update_only
+            and _find_game_hwnd(find_client_pids(client_path, game_install_root))
+            is not None
+        ):
             on_log("已检测到鸣潮游戏窗口")
             return True
         raise RuntimeError(
@@ -1014,6 +1022,7 @@ def start_game_via_launcher(
 async def async_start_game_via_launcher(
     launcher_path: Path,
     *,
+    client_path: Path | None = None,
     on_log: Callable[[str], None] | None = None,
     update_only: bool = False,
 ) -> bool:
@@ -1026,7 +1035,11 @@ async def async_start_game_via_launcher(
         return await run_desktop_action(
             desktop,
             "okww_start_game",
-            {"launcher_path": str(launcher_path), "update_only": update_only},
+            {
+                "launcher_path": str(launcher_path),
+                "client_path": str(client_path) if client_path else None,
+                "update_only": update_only,
+            },
             on_log,
         )
 
@@ -1035,6 +1048,7 @@ async def async_start_game_via_launcher(
         asyncio.to_thread(
             start_game_via_launcher,
             launcher_path,
+            client_path=client_path,
             on_log=on_log,
             update_only=update_only,
             stop_event=stop_event,

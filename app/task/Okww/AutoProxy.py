@@ -38,7 +38,7 @@ from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNotice
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import wuthering_waves as _service_wuthering_waves
 from app.task.base import ScriptAutoProxyBase
-from app.task.client import client_executable_path, client_launcher_path
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     push_dispatch_log,
     split_args,
@@ -226,7 +226,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         script_info: ScriptItem,
         script_config: OkwwConfig,
         user_config: ConfigCollection[OkwwUserConfig],
-        game_manager: ProcessManager | None,
+        game_manager: ClientProcess | None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -705,27 +705,25 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
             point(self, "start_game")
             if self._game_launch_type() == "Client":
                 await self._launch_game_direct()
+                target = self._game_process_info()
             else:
-                await self._launch_game_via_launcher()
+                target = await self._launch_game_via_launcher()
             wait_time = max(int(self.script_config.Game.WaitTime), 0)
             await self._push_dispatch_log(
                 f"等待游戏窗口就绪（最多 {wait_time or 60} 秒）..."
             )
-            await wait_process_window_ready(
-                ProcessInfo(name=_WUWA_CLIENT_PROCESS), wait_time
-            )
+            await wait_process_window_ready(target, wait_time)
 
-    async def _launch_game_via_launcher(self) -> None:
+    async def _launch_game_via_launcher(self) -> ProcessInfo:
         """经官方启动器拉起游戏：开启动器并等待 OCR 点击「进入游戏」。"""
 
         launcher_path = self.launcher_path
         if launcher_path is None:
             raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
-        await self.game_manager.open_process(
+        await self.game_manager.open_launcher(
             launcher_path,
             *split_args(self.script_config.Game.Arguments),
-            retain_desktop_descendants=True,
         )
         await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
         # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
@@ -736,7 +734,19 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
         def _push_launch_log(line: str) -> None:
             asyncio.run_coroutine_threadsafe(self._push_dispatch_log(line), launch_loop)
 
-        await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
+        launched = await async_start_game_via_launcher(
+            launcher_path,
+            client_path=self.game_process_path,
+            on_log=_push_launch_log,
+        )
+        if not launched:
+            raise RuntimeError("鸣潮启动器未能拉起游戏，请人工确认启动器状态")
+        if self.game_process_path is not None:
+            return self._game_process_info()
+        pids = await asyncio.to_thread(find_game_pids, launcher_path)
+        if not pids:
+            raise RuntimeError("鸣潮客户端已退出，无法确认游戏窗口就绪")
+        return ProcessInfo(pid=pids[0])
 
     async def _launch_game_direct(self) -> None:
         """直启客户端：用户指定资源档位优先，否则沿用本次更新的档位。
@@ -1420,6 +1430,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkwwConfig, OkwwUserConfig]):
                 )
         if self.launcher_path is not None and self._game_launch_type() == "Launcher":
             try:
+                if self.game_process_path is None:
+                    for pid in await asyncio.to_thread(
+                        find_game_pids, self.launcher_path
+                    ):
+                        await process.kill_process_by_pid(pid, kill_tree=True)
                 # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
                 # launcher_main.exe（真窗口，版本目录随自更新变化）。launcher.exe
                 # 是通用进程名，按「家族 + 安装根目录树内」限定清理，避免误伤

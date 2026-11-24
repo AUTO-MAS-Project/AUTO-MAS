@@ -2,7 +2,9 @@
 
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
+from app.config import LockTicket
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
 from app.task.game import current_game_session, selected_game_session
@@ -59,48 +61,64 @@ _METHODS = {
 _PROPERTIES = {"main_pid", "main_hwnd", "target_process"}
 
 
+def _selected_client_binding() -> tuple[ClientControl, UUID, LockTicket] | None:
+    session = current_game_session.get()
+    if session is None:
+        raise RuntimeError("客户端操作不在托管执行会话内")
+    if not session.selected:
+        raise RuntimeError("游戏会话尚未选定，不能操作游戏进程")
+    if session.control is None:
+        return None
+    if (
+        not isinstance(session.control, ClientControl)
+        or session.device_uid is None
+        or session.ticket is None
+    ):
+        raise TypeError("当前目标不是本地游戏客户端")
+    return session.control, session.device_uid, session.ticket
+
+
 class ClientProcess(ProcessManager):
     """[兼容旧专项] 保留原过程调用面，所有本地游戏操作先核对当前票据。"""
+
+    async def open_launcher(self, program: Path, *args: str) -> None:
+        """拉起启动器，交由专项完成后续交互与游戏就绪检查。"""
+        if binding := _selected_client_binding():
+            control, device_uid, ticket = binding
+            control.checked_process(device_uid, ticket=ticket)
+        # 启动器由专项按安装路径收尾。插件管理器只跟踪游戏，
+        # 这样交互中止时插件仍能按已绑定的客户端路径发现并关闭游戏。
+        launcher = ProcessManager()
+        try:
+            await launcher.open_process(program, *args, breakaway=True, owned=False)
+        finally:
+            await launcher.clear()
 
     def __getattribute__(self, name: str) -> Any:
         if name in _METHODS:
 
             async def invoke(*args, **kwargs):
-                session = current_game_session.get()
-                if session is None:
-                    raise RuntimeError("客户端操作不在托管执行会话内")
-                if not session.selected:
-                    # 未选定时只读查询会按配置回落；操作必须持票，不能退成裸进程管理。
-                    raise RuntimeError("游戏会话尚未选定，不能操作游戏进程")
-                if session.control is None:
-                    # URL/云端由既有上游入口启动，没有可伪造的本地游戏可执行文件。
+                binding = _selected_client_binding()
+                if binding is None:
+                    # 未绑定的托管仍可沿用专项自身的进程管理。
                     return await getattr(super(ClientProcess, self), name)(
                         *args, **kwargs
                     )
-                if (
-                    not isinstance(session.control, ClientControl)
-                    or session.device_uid is None
-                    or session.ticket is None
-                ):
-                    raise TypeError("当前目标不是本地游戏客户端")
-                manager = session.control.checked_process(
-                    session.device_uid, ticket=session.ticket
-                )
+                control, device_uid, ticket = binding
+                manager = control.checked_process(device_uid, ticket=ticket)
                 if name == "open_process":
-                    return await session.control.start_process(
-                        session.device_uid, *args, ticket=session.ticket, **kwargs
+                    return await control.start_process(
+                        device_uid, *args, ticket=ticket, **kwargs
                     )
                 if name == "search_process":
-                    return await session.control.track_process(
-                        session.device_uid, *args, ticket=session.ticket, **kwargs
+                    return await control.track_process(
+                        device_uid, *args, ticket=ticket, **kwargs
                     )
                 if name == "kill":
-                    return await session.control.stop_process(
-                        session.device_uid, ticket=session.ticket
-                    )
+                    return await control.stop_process(device_uid, ticket=ticket)
                 if name == "open_protocol":
-                    return await session.control.start_protocol(
-                        session.device_uid, *args, ticket=session.ticket, **kwargs
+                    return await control.start_protocol(
+                        device_uid, *args, ticket=ticket, **kwargs
                     )
                 return await getattr(manager, name)(*args, **kwargs)
 
