@@ -52,6 +52,7 @@ def test_business_ready_and_timer_precede_blocked_or_failed_mcp(
     calls = []
 
     async def timer_start():
+        assert core.Startup.status in {"pending", "active"}
         calls.append("timer")
         if failure == "timer":
             raise RuntimeError("timer failed")

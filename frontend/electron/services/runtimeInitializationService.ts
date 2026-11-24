@@ -15,6 +15,7 @@ import { app } from 'electron'
 
 import { getLogger } from './logger'
 import { observeInitializationStage } from './initializationAnalytics'
+import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 import {
   RUNTIME_BINARY_ALIGN_ERROR,
   RUNTIME_BINARY_CANCELLED,
@@ -400,6 +401,7 @@ function clampRunningPercent(percent: number): number {
 
 /** Runtime 的结构化失败详情，供初始化界面按需展示。 */
 export interface RuntimeStageOutcome {
+  runtimeFailure?: StartupFailureContext
   success: boolean
   /** 仅当前 Runtime 对齐结果实际确认支持时存在。 */
   bootstrapEnvironmentReuse?: true
@@ -603,7 +605,12 @@ export class RuntimeInitializationService {
   }
 
   get isBusy(): boolean {
-    return this.operating || this.activeControl !== null || this.aligning
+    return (
+      this.operating ||
+      this.activeControl !== null ||
+      this.aligning ||
+      [...this.clients].some(client => client.hasActiveSessions)
+    )
   }
 
   async checkRuntimeBinaryUpdate(): Promise<RuntimeBinaryUpdateCheck> {
@@ -704,6 +711,15 @@ export class RuntimeInitializationService {
     this.shuttingDown = true
     this.cancelRequested = true
     await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+  }
+
+  /** 只收口失败尝试，保留本实例的修复信息及后续可用性。 */
+  async settleFailedAttempt(timeoutMs?: number): Promise<void> {
+    await Promise.all([...this.clients].map(client => client.stop(timeoutMs)))
+    for (const client of this.clients) {
+      if (client.hasActiveSessions) throw new Error('无法确认上一轮 Runtime 已结束')
+      this.clients.delete(client)
+    }
   }
 
   /**
@@ -1157,6 +1173,10 @@ export class RuntimeInitializationService {
           retryable: error.retryable,
           remediation: [...error.remediation],
           logs: mergeRuntimeLogs(stdoutLines, stderrLines, error.details.stderr),
+          runtimeFailure: {
+            command: error.details.command,
+            processExited: error.details.processExited,
+          },
           failedStage: bridge.currentStage ?? FALLBACK_INITIALIZATION_STAGE,
         }
       }
@@ -1204,6 +1224,7 @@ export class RuntimeInitializationService {
       remediation,
       logs: mergeRuntimeLogs(stdoutLines, stderrLines, outcome.stderr),
       logPath: readRuntimeLogPath(outcome.result.details),
+      runtimeFailure: runtimeFailureContext(outcome),
       failedStage,
     }
   }
