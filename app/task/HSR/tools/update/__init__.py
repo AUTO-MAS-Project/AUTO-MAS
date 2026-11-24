@@ -197,15 +197,18 @@ async def update_engine_if_needed(
         "update_available": result.update_available,
     }
 
+    if result.blocked_reason:
+        if result.update_available:
+            log(
+                f"{label}有新版本 {result.latest_version}，但无法安装：{result.blocked_reason}"
+            )
+        else:
+            log(f"{label}跳过更新：{result.blocked_reason}")
+        return UpdateOutcome(**base, updated=False, message=result.blocked_reason)
+
     if not result.update_available:
         log(f"{label}已是最新版本（{result.current_version or '未知'}）")
         return UpdateOutcome(**base, updated=False)
-
-    if result.blocked_reason:
-        log(
-            f"{label}有新版本 {result.latest_version}，但无法安装：{result.blocked_reason}"
-        )
-        return UpdateOutcome(**base, updated=False, message=result.blocked_reason)
 
     candidate = result.candidate
     assert candidate is not None  # installable 为真时必然存在
