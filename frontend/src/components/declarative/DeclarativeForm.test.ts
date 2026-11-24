@@ -4,8 +4,8 @@ import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import Antd from 'ant-design-vue'
-import { pluginSettingsTables } from '../pluginCenterModel'
-import PluginDeclarativeForm from './PluginDeclarativeForm.vue'
+import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
+import DeclarativeForm from './DeclarativeForm.vue'
 
 /** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
 async function render(transpose: boolean, includeOptionsGroup = true) {
@@ -43,7 +43,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
     queryFn: () => Promise.reject(new Error('options unavailable')),
   })
   const app = createSSRApp(() =>
-    h(PluginDeclarativeForm, {
+    h(DeclarativeForm, {
       groups: includeOptionsGroup ? groups : groups.slice(0, 2),
       values,
       uid: 'uid',

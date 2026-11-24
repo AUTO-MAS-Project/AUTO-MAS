@@ -3,11 +3,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
-import DeclarativeControl from '@/components/DeclarativeControl.vue'
+import DeclarativeControl from './DeclarativeControl.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { apiErrorMessage } from '@/utils/apiResult'
 
-export type { DeclarativeHint }
 const props = withDefaults(
   defineProps<{
     group: string

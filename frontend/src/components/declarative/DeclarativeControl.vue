@@ -6,7 +6,7 @@ import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { isSwitchComponent } from './declarativeLayout'
 import DeclarativeOrderedSelect from './DeclarativeOrderedSelect.vue'
-import SettingToggleButton from './SettingToggleButton.vue'
+import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
 type Option = { value?: string | number | boolean; label?: string }
 

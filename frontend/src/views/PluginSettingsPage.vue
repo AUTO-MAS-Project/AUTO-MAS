@@ -5,7 +5,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vue'
+import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
@@ -27,7 +27,6 @@ import {
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
-import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -254,7 +253,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         overlay-loading
         @retry="fetchSettings"
       >
-        <PluginDeclarativeForm
+        <DeclarativeForm
           v-if="groups.length"
           :groups="groups"
           :tables="tables"
