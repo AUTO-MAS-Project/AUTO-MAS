@@ -24,8 +24,8 @@ import sys
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterator
-from contextlib import closing, contextmanager, nullcontext
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import (
@@ -1540,6 +1540,7 @@ class AppConfig:
         from app.utils.common.config import restore as _utils_config_restore
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        scope: AbstractContextManager[Sequence[_utils_config_restore.ConfigRestorePool]]
         if isinstance(script_config, ScriptEntry):
             from app.core import Plugin
 
