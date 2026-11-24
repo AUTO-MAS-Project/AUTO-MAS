@@ -295,6 +295,7 @@ import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 
 const { t } = useI18n()
 
@@ -308,12 +309,12 @@ const { getScript, error: scriptApiError } = useScriptApi()
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
 
 let userId = route.params.userId as string
+const { enqueue: enqueueSave } = useSaveQueue()
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
@@ -436,27 +437,18 @@ const handleGoToPlans = () => {
   navigateTo('/plans', { query: { planId: formData.Info.StageMode } })
 }
 
-// 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
-
-  isSaving.value = true
-  try {
-    let userData = buildFieldPatch(key, value)
-
-    // 特殊处理：userName 需要同步到 Info.Name
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
+// 即时保存单个字段变更（经实体串行队列按序落盘，不丢并发修改）
+const handleFieldSave = (key: string, value: any) => {
+  if (isInitializing.value || !userId) return
+  void enqueueSave(async () => {
+    try {
+      const userData = key === 'userName' ? { Info: { Name: value } } : buildFieldPatch(key, value)
+      if (!(await updateUser(scriptId, userId, userData))) return
+      logger.info(`用户配置已保存: ${key}`)
+    } catch (error) {
+      logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
     }
-
-    if (!(await updateUser(scriptId, userId, userData))) return
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 // 加载脚本信息

@@ -619,6 +619,7 @@ import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/util
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ZzzOdPredefinedTeams from '@/components/ZzzOdPredefinedTeams.vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -865,34 +866,26 @@ const createUserImmediately = async (): Promise<boolean> => {
   return true
 }
 
-// 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
-let saveChain: Promise<boolean> = Promise.resolve(true)
+const {
+  enqueue: enqueueUserSave,
+  isSaving: hasPendingUserSaves,
+  waitForIdle: waitForUserSaves,
+} = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
-
   const patch = buildFieldPatch(key, value)
-
-  if (key === 'Info.Name') {
-    formData.userName = String(value || '')
-  }
-
-  const persist = async (): Promise<boolean> => {
+  if (key === 'Info.Name') formData.userName = String(value || '')
+  return enqueueUserSave(async () => {
     try {
       const ok = await updateUser(scriptId, userId.value, patch)
-      if (!ok) {
-        logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
-      }
+      if (!ok) logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
       return ok
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       return false
     }
-  }
-
-  const run = saveChain.then(persist, persist)
-  saveChain = run
-  return run
+  }, key)
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -1126,16 +1119,17 @@ const trackInstanceWrite = <T>(operation: () => Promise<T>): Promise<T> => {
   return run
 }
 const flushPendingSaves = async () => {
-  let tail: Promise<boolean>
   do {
-    tail = saveChain
     await Promise.all(
-      [tail, flushNativeSaves(), taskEditor.flushAllTaskConfigSaves(), ...instanceWrites].map(run =>
-        run.catch(() => undefined)
-      )
+      [
+        waitForUserSaves(),
+        flushNativeSaves(),
+        taskEditor.flushAllTaskConfigSaves(),
+        ...instanceWrites,
+      ].map(run => run.catch(() => undefined))
     )
   } while (
-    tail !== saveChain ||
+    hasPendingUserSaves.value ||
     hasPendingNativeSaves() ||
     taskEditor.hasPendingSaves() ||
     instanceWrites.size
