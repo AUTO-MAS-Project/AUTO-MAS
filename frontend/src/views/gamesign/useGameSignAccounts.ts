@@ -21,51 +21,82 @@ interface AccountListData {
 }
 
 /**
- * 游戏社区帐号与签到结果的页面状态。
+ * 帐号列表是签到页和帐号管理页共用的同一份数据，因此状态放在模块级。
  *
- * 签到页和帐号管理页都要读同一份帐号列表和签到结果，但两个页签互斥渲染，
- * 所以各自持有一份实例即可：切换页签时重新加载，避免编辑后残留旧快照。
+ * 两个页签互斥渲染，但签到页要展示的"凭据是否已绑定"、签名结果里的账号名，
+ * 都来自帐号列表；各持一份实例会让帐号管理页改完名字、停用或新增帐号后，
+ * 切回签到页仍然显示旧数据。结果解析（signResult）仍跟着各自的配置来源走。
  * 提交一律走 diffAccountForm 产出的补丁，不整份回写。
  */
+const sharedAccounts = ref<AccountInstance[]>([])
+const sharedLoading = ref(false)
+const sharedReordering = ref(false)
+
+/** 拉一次服务端快照并解析成帐号实例，失败返回 null（由调用方决定是保留旧值还是报错） */
+const fetchAccountList = async (): Promise<AccountInstance[] | null> => {
+  const { listAccounts } = useGameSignApi()
+  const response = await listAccounts()
+  if (response.code !== 200) return null
+  const data = response.data as unknown as AccountListData | undefined
+  const entries = Array.isArray(data?.order) ? data.order : []
+  const next: AccountInstance[] = []
+  for (const entry of entries) {
+    const uid = asString(entry.uid)
+    if (!uid) continue
+    const raw = asRecord(asRecord(data?.data?.[uid]).GameSignAccount)
+    next.push({
+      uid,
+      Name: asString(raw.Name) || t('core.gamesign.defaultUserName'),
+      Enabled: typeof raw.Enabled === 'boolean' ? raw.Enabled : true,
+      MiyousheToken: asString(raw.MiyousheToken),
+      MiyousheDeviceId: asString(raw.MiyousheDeviceId),
+      MiyousheDeviceFp: asString(raw.MiyousheDeviceFp),
+      CloudGenshinToken: asString(raw.CloudGenshinToken),
+      KuroToken: asString(raw.KuroToken),
+      SklandToken: asString(raw.SklandToken),
+      TaygedoToken: asString(raw.TaygedoToken),
+    })
+  }
+  return next
+}
+
 export function useGameSignAccounts(resultSource: () => string | null | undefined) {
   const logger = window.electronAPI.getLogger('游戏社区')
   const { addAccount, updateAccount, deleteAccount } = useGameSignAccountApi()
-  const { listAccounts, reorderAccounts } = useGameSignApi()
+  const { reorderAccounts } = useGameSignApi()
 
-  const accounts = ref<AccountInstance[]>([])
-  const loading = ref(false)
-  const reordering = ref(false)
+  const accounts = sharedAccounts
+  const loading = sharedLoading
+  const reordering = sharedReordering
 
   const load = async () => {
     loading.value = true
     try {
-      const response = await listAccounts()
-      if (response.code !== 200) return
-      const data = response.data as unknown as AccountListData | undefined
-      const entries = Array.isArray(data?.order) ? data.order : []
-      const next: AccountInstance[] = []
-      for (const entry of entries) {
-        const uid = asString(entry.uid)
-        if (!uid) continue
-        const raw = asRecord(asRecord(data?.data?.[uid]).GameSignAccount)
-        next.push({
-          uid,
-          Name: asString(raw.Name) || t('core.gamesign.defaultUserName'),
-          Enabled: typeof raw.Enabled === 'boolean' ? raw.Enabled : true,
-          MiyousheToken: asString(raw.MiyousheToken),
-          MiyousheDeviceId: asString(raw.MiyousheDeviceId),
-          MiyousheDeviceFp: asString(raw.MiyousheDeviceFp),
-          CloudGenshinToken: asString(raw.CloudGenshinToken),
-          KuroToken: asString(raw.KuroToken),
-          SklandToken: asString(raw.SklandToken),
-          TaygedoToken: asString(raw.TaygedoToken),
-        })
-      }
+      const next = await fetchAccountList()
+      if (!next) return
       accounts.value = next
     } catch (error) {
       logger.error(`加载账号列表失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       loading.value = false
+    }
+  }
+
+  /**
+   * 按帐号 UID 回读单个帐号。
+   *
+   * 扫码和账密登录都由后端直接写库，前端拿到的只是扫码票据这类一次性参数，
+   * 所以这两个流程结束后必须回读已保存的字段，不能把回调参数当成凭据。
+   */
+  const reloadAccount = async (uid: string): Promise<AccountInstance | null> => {
+    try {
+      const next = await fetchAccountList()
+      if (!next) return null
+      accounts.value = next
+      return next.find(item => item.uid === uid) ?? null
+    } catch (error) {
+      logger.error(`回读账号失败: ${error instanceof Error ? error.message : String(error)}`)
+      return null
     }
   }
 
@@ -173,6 +204,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
     removeAccount,
     toggleEnabled,
     reorder,
+    reloadAccount,
     toAccountForm,
   }
 }

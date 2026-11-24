@@ -214,7 +214,11 @@ const handleGameSignFieldChange = async <K extends GameSignFieldKey>(
 const goAccounts = () => handleViewChange('accounts')
 
 watch(activeView, view => {
-  if (view === 'sign' && isMounted) void updateStatus()
+  if (view !== 'sign' || !isMounted) return
+  // 签到页展示的「凭据已绑定」和结果里的账号名都来自帐号列表，
+  // 切回来时除了刷新签到状态，还要重拉一次帐号，避免帐号管理页改完后仍显示旧快照。
+  void updateStatus()
+  void loadAccounts()
 })
 
 watch(activityEnabled, enabled => {

@@ -31,6 +31,7 @@ const {
   removeAccount,
   toggleEnabled,
   reorder,
+  reloadAccount,
 } = useGameSignAccounts(() => props.resultSource())
 
 const drawerVisible = ref(false)
@@ -95,13 +96,17 @@ const handleToggle = (account: AccountInstance, enabled: boolean) => {
   void toggleEnabled(account, enabled)
 }
 
-const handleDragEnd = (event: { oldIndex?: number; newIndex?: number }) => {
-  if (event.oldIndex === undefined || event.newIndex === undefined) return
-  if (event.oldIndex === event.newIndex) return
-  void reorder()
+/**
+ * 拖拽松手后 vuedraggable 只抛出新数组，不会自己写回源数据。
+ *
+ * 这里接住它给出的顺序再提交：只监听 @end 的话拿不到新顺序，
+ * 提交的仍是拖动前的旧顺序，刷新后又回到原位。
+ */
+const handleReorder = (next: AccountInstance[]) => {
+  void reorder(next.map(item => item.uid))
 }
 
-// 该页签按需渲染，每次切进来都会重新挂载并拉一次，避免跨页编辑后看到旧数据
+// 帐号列表是模块级共享状态，这里拉一次保证直连帐号页时也有最新快照
 onMounted(() => {
   void load()
 })
@@ -130,7 +135,7 @@ onMounted(() => {
         handle=".card-mark"
         ghost-class="account-ghost"
         class="accounts-grid"
-        @end="handleDragEnd"
+        @update:model-value="handleReorder"
       >
         <template #item="{ element }">
           <AccountCard
@@ -157,9 +162,9 @@ onMounted(() => {
       :open="drawerVisible"
       :account="editingAccount"
       :saving="saving"
+      :on-reload="reloadAccount"
       @close="closeDrawer"
       @save="handleSave"
-      @reload="load"
     />
   </div>
 </template>

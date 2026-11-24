@@ -3,6 +3,9 @@
   名称与开关随保存一起提交；凭据按平台逐项绑定，扫码走神秘入口已有的 useQrLogin，
   塔吉多走账密接口，库街区与云·原神只支持手动粘贴。
   提交一律走 diffAccountForm 产出的补丁，避免把加载时的旧凭据整份回写。
+  扫码与账密登录都由后端直接落库：森空岛扫码确认只能拿到短时扫码码，
+  真正的凭据是后端拿它兑换后再写进账号组的，所以成功后按账号 UID 回读，
+  只更新该字段的表单值与基线，不改动其它还没提交的编辑。
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
@@ -27,12 +30,13 @@ const props = defineProps<{
   open: boolean
   account: AccountInstance | null
   saving?: boolean
+  /** 按帐号 UID 回读服务端最新快照；扫码与账密登录都由后端直接写库，界面不能凭回调参数猜值 */
+  onReload?: (uid: string) => Promise<AccountInstance | null>
 }>()
 
 const emit = defineEmits<{
   close: []
   save: [account: AccountInstance, patch: Record<string, unknown>]
-  reload: []
 }>()
 
 const { t } = useI18n()
@@ -87,14 +91,32 @@ const {
 } = useQrLogin({
   getAccountId: () => qrAccountId.value,
   provider: () => qrProvider.value,
-  onSaved: (_accountId, credential) => {
-    // 扫码保存成功后后端已写库，本地同步进表单，保存时补丁里就是同一份值
-    const field: CredentialField = qrProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
-    form.value = { ...form.value, [field]: credential }
-    baseline.value = { ...baseline.value, [field]: credential }
+  onSaved: () => {
+    // 回调里的 credential 只是扫码票据（森空岛是短时 scan_code），不是账号组里的凭据，
+    // 直接写进表单会把票据存成 Token，所以回读后端已保存的字段。
+    void reloadCredentialField(qrProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken')
   },
   logger,
 })
+
+/**
+ * 按账号 UID 回读服务端已保存的字段，只覆盖该字段的表单值与基线。
+ *
+ * 扫码和账密登录都不经过本抽屉的保存动作，后端写完库后表单必须重新对齐，
+ * 否则保存时会把回调参数（票据）当成新凭据提交，或整份覆盖掉后台刚轮换的凭据。
+ */
+const reloadCredentialField = async (field: CredentialField) => {
+  const account = props.account
+  const reload = props.onReload
+  if (!account || !reload) return
+  const fresh = await reload(account.uid)
+  // 回读期间抽屉可能已切到别的账号，此时不能把结果写进新表单
+  if (!props.account || props.account.uid !== account.uid) return
+  if (!fresh) return
+  const value = toAccountForm(fresh)[field]
+  form.value = { ...form.value, [field]: value }
+  baseline.value = { ...baseline.value, [field]: value }
+}
 
 const startQrLogin = (field: CredentialField) => {
   if (!props.account) return
@@ -113,9 +135,16 @@ const openPasswordLogin = () => {
   passwordVisible.value = true
 }
 
+/**
+ * 关闭账密弹窗：取消在途请求时一并复位加载态。
+ *
+ * 取消后 Promise 会 reject，但那时 loginRequest 已被清空，finally 里的身份比对不再成立，
+ * 只复位 loading 的分支不会执行；这里不显式复位，下次打开弹窗提交按钮会一直转圈。
+ */
 const closePasswordLogin = () => {
   loginRequest?.cancel()
   loginRequest = undefined
+  passwordLoading.value = false
   passwordVisible.value = false
   passwordForm.value = { phone: '', password: '' }
 }
@@ -137,9 +166,11 @@ const submitPasswordLogin = async () => {
     }
     message.success(t('core.gamesign.toast.tokenSaved'))
     closePasswordLogin()
-    // 账密登录由后端直接写库，通知父级重拉，避免本地表单与后端值分叉
-    emit('reload')
+    // 账密登录由后端直接写库，密码换来的 Token 只在响应之外落盘，必须回读
+    await reloadCredentialField('TaygedoToken')
   } catch (error) {
+    // 用户关闭弹窗会取消请求，这不是登录失败，迟到的 reject 直接丢弃
+    if (loginRequest !== request) return
     logger.error(`塔吉多账密登录失败: ${error instanceof Error ? error.message : String(error)}`)
     message.error(t('core.mystery.tokens.taygedoFailed'))
   } finally {
