@@ -116,6 +116,7 @@ import {
   getBackendOwnership,
 } from './services/instanceConfig'
 import { resolveRuntimeLaunchModeDetail } from './services/runtime'
+import { resolveUpgradeBackupVersion } from './services/backendService'
 import { setupStartupHardware, localStartupAttempt } from './services/startupHardware/monitor'
 import { startupProbeConfig, flushStartupHardwareLog } from './services/startupHardware/config'
 import AdmZip = require('adm-zip')
@@ -2496,7 +2497,7 @@ app.whenReady().then(async () => {
   registerUpgradeBackupHandlers(
     () => mainWindow,
     getLocalApiEndpoint,
-    () => getBackendOwnership() === 'owned'
+    () => resolveUpgradeBackupVersion(resolveRuntimeLaunchModeDetail().mode) !== undefined
   )
   registerAppUpdateHandlers({
     installRoot: updateRoot,

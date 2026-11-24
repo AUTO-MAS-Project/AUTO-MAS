@@ -448,7 +448,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
-  getUpgradeBackupDirectory: () => Promise<UpgradeBackupDirectory>
+  getUpgradeBackupDirectory: () => Promise<UpgradeBackupDirectory | null>
   chooseUpgradeBackupDirectory: (reset: boolean) => Promise<UpgradeBackupSelection | null>
   confirmUpgradeBackupDirectory: (id: string) => Promise<UpgradeBackupDirectory>
   cancelUpgradeBackupDirectory: (id: string) => Promise<void>

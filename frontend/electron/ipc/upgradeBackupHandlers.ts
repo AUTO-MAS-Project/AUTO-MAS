@@ -8,16 +8,20 @@ export const upgradeBackupToken = randomUUID()
 export function registerUpgradeBackupHandlers(
   window: () => BrowserWindow | null,
   endpoint: () => string,
-  ownsBackend: () => boolean
+  supportsUpgradeBackup: () => boolean
 ) {
-  let pending: UpgradeBackupSelection | null = null
+  let pending: { selection: UpgradeBackupSelection; directory: string | null } | null = null
   let moving = false
 
   function requireWindow(event: IpcMainInvokeEvent): BrowserWindow {
     const target = window()
-    if (!ownsBackend() || !target || !isApplicationWindowSender(event, target))
+    if (!target || !isApplicationWindowSender(event, target))
       throw new Error('不允许此窗口管理更新备份')
     return target
+  }
+
+  function requireUpgradeBackup(): void {
+    if (!supportsUpgradeBackup()) throw new Error('当前启动模式不支持更新备份')
   }
 
   async function request(body?: { directory: string | null; expected: string }) {
@@ -37,41 +41,48 @@ export function registerUpgradeBackupHandlers(
 
   ipcMain.handle('upgrade-backup:directory', event => {
     requireWindow(event)
-    return request()
+    return supportsUpgradeBackup() ? request() : null
   })
 
   ipcMain.handle('upgrade-backup:choose-directory', async (event, reset: boolean) => {
     const target = requireWindow(event)
+    requireUpgradeBackup()
     if (moving) throw new Error('正在迁移更新备份')
     pending = null
     const current = await request()
-    const selected = await dialog.showOpenDialog(target, {
-      defaultPath: reset === true ? current.defaultDirectory : current.resolvedDirectory,
-      properties: ['openDirectory'],
-    })
-    if (selected.canceled || !selected.filePaths[0]) return null
-    pending = {
+    let directory: string | null = null
+    if (reset !== true) {
+      const selected = await dialog.showOpenDialog(target, {
+        defaultPath: current.resolvedDirectory,
+        properties: ['openDirectory'],
+      })
+      if (selected.canceled || !selected.filePaths[0]) return null
+      directory = selected.filePaths[0]
+    }
+    const selection = {
       id: randomUUID(),
       current: current.resolvedDirectory,
-      target: selected.filePaths[0],
+      target: directory ?? current.defaultDirectory,
     }
-    return pending
+    pending = { selection, directory }
+    return selection
   })
 
   ipcMain.handle('upgrade-backup:cancel-directory', (event, id: unknown) => {
     requireWindow(event)
-    if (pending?.id === id) pending = null
+    if (pending?.selection.id === id) pending = null
   })
 
   ipcMain.handle('upgrade-backup:confirm-directory', async (event, id: unknown) => {
     requireWindow(event)
-    if (!pending || pending.id !== id || moving) throw new Error('备份目录选择已失效')
-    const selection = pending
+    requireUpgradeBackup()
+    if (!pending || pending.selection.id !== id || moving) throw new Error('备份目录选择已失效')
+    const { selection, directory } = pending
     pending = null
     moving = true
     try {
       return await request({
-        directory: selection.target,
+        directory,
         expected: selection.current,
       })
     } finally {

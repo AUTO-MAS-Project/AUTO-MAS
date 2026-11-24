@@ -20,10 +20,9 @@ const available = ref(false)
 
 onMounted(async () => {
   try {
-    const [config, current] = await Promise.all([
-      getConfig({ strict: true }),
-      window.electronAPI.getUpgradeBackupDirectory(),
-    ])
+    const current = await window.electronAPI.getUpgradeBackupDirectory()
+    if (!current) return
+    const config = await getConfig({ strict: true })
     enabled.value = config.upgradeBackup?.enabled ?? true
     directory.value = current
     available.value = true

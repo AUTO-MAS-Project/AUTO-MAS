@@ -91,6 +91,7 @@ class _BackupState(BaseModel):
     ready_version: ReleaseVersion | None = None
     attempts: list[_BackupAttempt] = Field(default_factory=list)
     selected_directory: str | None = None
+    use_default_directory: bool = False
     directory_cleanup: list[_DirectoryCleanup] = Field(default_factory=list)
 
 
@@ -188,11 +189,13 @@ def _check_zip(path: Path) -> None:
 
 
 def _pack_snapshot(snapshot: Path, archive: Path, *, new_only: bool = False) -> bool:
-    temporary = archive.with_suffix(".part")
-    temporary.unlink(missing_ok=True)
+    with NamedTemporaryFile(
+        prefix=".backup-pack-", suffix=".part", dir=archive.parent, delete=False
+    ) as file:
+        temporary = Path(file.name)
     try:
         with zipfile.ZipFile(
-            temporary, "x", compression=zipfile.ZIP_DEFLATED
+            temporary, "w", compression=zipfile.ZIP_DEFLATED
         ) as output:
             for item in snapshot.rglob("*"):
                 output.write(item, item.relative_to(snapshot).as_posix())
@@ -217,6 +220,26 @@ def _publish_move_file(temporary: Path, target: Path) -> bool:
     else:
         os.link(temporary, target)
     return True
+
+
+def _write_registration(
+    attempt: _BackupAttempt, registration: Path, *, new_only: bool = False
+) -> bool:
+    with NamedTemporaryFile(
+        prefix=".backup-register-", suffix=".tmp", dir=registration.parent, delete=False
+    ) as file:
+        temporary = Path(file.name)
+    try:
+        with temporary.open("wb") as file:
+            file.write(attempt.model_dump_json().encode("utf-8"))
+            file.flush()
+            os.fsync(file.fileno())
+        if new_only:
+            return _publish_move_file(temporary, registration)
+        temporary.replace(registration)
+        return True
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _copy_verified_archive(source: Path, target: Path) -> bool:
@@ -308,6 +331,11 @@ class UpgradeBackup:
             for name in _DATA_DIRECTORIES
         ):
             raise ValueError("自动备份目录不能位于备份源目录内或磁盘根目录")
+        if any(
+            re.fullmatch(r"\.[0-9a-f]{32}\.(?:snapshot|partial)", part, re.IGNORECASE)
+            for part in resolved.parts
+        ):
+            raise ValueError("自动备份目录不能位于升级备份暂存目录内")
         return resolved
 
     def prepare(
@@ -335,9 +363,12 @@ class UpgradeBackup:
             if self.state.data_version is None:
                 raise ValueError("升级备份迁移标记无效")
         try:
-            self.directory = self._resolve_directory(
-                self.state.selected_directory or preferences.directory
+            configured = (
+                None
+                if self.state.use_default_directory
+                else self.state.selected_directory or preferences.directory
             )
+            self.directory = self._resolve_directory(configured)
         except (OSError, ValueError) as error:
             self.prepared = True
             self.error = error
@@ -429,10 +460,7 @@ class UpgradeBackup:
                 _pack_snapshot(snapshot, archive)
                 self.outcome = "success"
             attempt.published = True
-            atomic_write(
-                self._registration_path(attempt),
-                attempt.model_dump_json().encode("utf-8"),
-            )
+            _write_registration(attempt, self._registration_path(attempt))
             self._save()
         except (OSError, ValueError, sqlite3.Error, zipfile.BadZipFile) as error:
             self.error = error
@@ -482,8 +510,7 @@ class UpgradeBackup:
             self._save()
             if self.using_migration_mark:
                 self.migration_mark.unlink(missing_ok=True)
-        if self.state.directory_cleanup and not self._finish_directory_cleanup():
-            return
+        self._finish_directory_cleanup()
         if (
             not self.enabled
             or self.downgrade
@@ -494,6 +521,9 @@ class UpgradeBackup:
 
         if self.attempt is not None:
             if not self.attempt.published:
+                # 已确认完整的快照可能只是暂时离线，保留后续重试机会。
+                if self.attempt.snapshot_ready:
+                    return
                 # 完整原件已不可用。保留尚存回退点，后续升级可建立新的备份。
                 self.attempt.settled = True
                 self._save()
@@ -515,6 +545,13 @@ class UpgradeBackup:
                 self._registration_path(item).unlink(missing_ok=True)
             self.state.attempts = [
                 item for item in self.state.attempts if item not in retired
+            ]
+            # 归档已轮换，没有可验证的目标副本时保留旧盘上的文件。
+            retired_ids = {item.id for item in retired}
+            self.state.directory_cleanup = [
+                entry
+                for entry in self.state.directory_cleanup
+                if entry.attempt.id not in retired_ids
             ]
             self._save()
 
@@ -600,37 +637,46 @@ class UpgradeBackup:
             return True
         if _is_redirected(self.directory):
             return False
+        remaining = [
+            entry for entry in cleanup if not self._remove_directory_copy(entry)
+        ]
+        if len(remaining) != len(cleanup):
+            updated = self.state.model_copy(update={"directory_cleanup": remaining})
+            try:
+                atomic_write(self.state_path, updated.model_dump_json().encode("utf-8"))
+            except OSError:
+                return False
+            self.state = updated
+        return not remaining
+
+    def _remove_directory_copy(self, entry: _DirectoryCleanup) -> bool:
         try:
-            for entry in cleanup:
-                source = Path(entry.source)
-                item = entry.attempt
-                if _is_redirected(source) or not source.is_dir():
+            source = Path(entry.source)
+            item = entry.attempt
+            if _is_redirected(source) or not source.is_dir():
+                return False
+            origin = source / item.filename
+            destination = self.directory / item.filename
+            snapshot = source / f".{item.id.hex}.snapshot"
+            if (
+                _is_redirected(destination)
+                or _is_redirected(origin)
+                or _is_redirected(snapshot)
+                or self.directory.resolve().is_relative_to(snapshot.resolve())
+                or file_digest(destination) != entry.digest
+            ):
+                return False
+            # 再次切回原目录时，保留当前正在使用的 ZIP 和归档登记。
+            if source != self.directory:
+                if origin.exists() and file_digest(origin) != entry.digest:
                     return False
-                origin = source / item.filename
-                destination = self.directory / item.filename
-                snapshot = source / f".{item.id.hex}.snapshot"
-                if (
-                    _is_redirected(destination)
-                    or _is_redirected(origin)
-                    or _is_redirected(snapshot)
-                    or file_digest(destination) != entry.digest
-                ):
-                    return False
-                if source != self.directory:
-                    if origin.exists() and file_digest(origin) != entry.digest:
-                        return False
-                    origin.unlink(missing_ok=True)
-                    (source / f".{item.id.hex}.archive.json").unlink(missing_ok=True)
-                if snapshot.is_dir():
-                    force_rmtree(snapshot)
-                    if snapshot.exists():
-                        return False
-            finished = self.state.model_copy(update={"directory_cleanup": []})
-            atomic_write(self.state_path, finished.model_dump_json().encode("utf-8"))
-            self.state = finished
+                origin.unlink(missing_ok=True)
+                (source / f".{item.id.hex}.archive.json").unlink(missing_ok=True)
+            if snapshot.is_dir():
+                force_rmtree(snapshot)
+            return not snapshot.exists()
         except OSError:
             return False
-        return True
 
     def move_directory(self, configured: str | None, *, expected: str) -> bool:
         """先验证并复制备份，再提交位置与归属，最后删除旧副本。"""
@@ -640,10 +686,9 @@ class UpgradeBackup:
                 raise ValueError("备份设置已变化，请重新选择目录")
             destination = self._resolve_directory(configured)
             changing = destination != self.directory
+            use_default = destination == self.default_directory
             if _is_redirected(self.directory) or _is_redirected(destination):
                 raise ValueError("升级备份目录被重定向")
-            if not self._finish_directory_cleanup():
-                raise OSError("上一次目录迁移尚未完成")
             self._load_registered_archives()
             owned = [
                 item
@@ -660,7 +705,10 @@ class UpgradeBackup:
             ]
             created: list[Path] = []
             moved: dict[UUID, _BackupAttempt] = {}
-            cleanup: list[_DirectoryCleanup] = []
+            cleanup = {
+                (Path(entry.source), entry.attempt.id): entry
+                for entry in self.state.directory_cleanup
+            }
             try:
                 destination.mkdir(exist_ok=True)
                 for item in owned:
@@ -705,28 +753,28 @@ class UpgradeBackup:
                             updated.directory,
                         ):
                             raise FileExistsError("目标目录包含不同的归档登记")
-                    else:
-                        atomic_write(
-                            registration, updated.model_dump_json().encode("utf-8")
-                        )
+                    elif _write_registration(updated, registration, new_only=True):
                         created.append(registration)
                     moved[item.id] = updated
-                    cleanup.append(
-                        _DirectoryCleanup(
-                            source=str(source),
-                            attempt=item,
-                            digest=file_digest(destination_zip),
-                        )
+                    cleanup[source, item.id] = _DirectoryCleanup(
+                        source=str(source),
+                        attempt=item,
+                        digest=file_digest(destination_zip),
                     )
-                if not moved and not changing:
-                    return True
+                if (
+                    not moved
+                    and not changing
+                    and not (use_default and not self.state.use_default_directory)
+                ):
+                    return self._finish_directory_cleanup()
                 updated_state = self.state.model_copy(
                     update={
-                        "selected_directory": str(destination),
+                        "selected_directory": None if use_default else str(destination),
+                        "use_default_directory": use_default,
                         "attempts": [
                             moved.get(item.id, item) for item in self.state.attempts
                         ],
-                        "directory_cleanup": cleanup,
+                        "directory_cleanup": list(cleanup.values()),
                     }
                 )
                 atomic_write(
