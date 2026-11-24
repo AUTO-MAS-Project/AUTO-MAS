@@ -1,17 +1,22 @@
-import { ASSET_CATEGORY_LIMITS } from './assetPackageService'
-import {
-  importAppearancePackage,
-  inspectAppearancePackage,
-  importMascotPackage,
-  inspectMascotPackage,
-} from './assetPackageProcess'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
-import { AppearanceError, getAppearance, getAppearanceRoot } from './appearanceService'
+import {
+  APPEARANCE_LIMITS,
+  AppearanceError,
+  getAppearance,
+  getAppearanceRoot,
+  importAppearancePackage,
+  inspectAppearancePackage,
+} from './appearanceService'
 
 import type { AppearanceCategory, MascotSummary } from '../../src/types/mascotPack'
-import { getMascot, getMascotRoot } from './mascotPackageService'
+import {
+  getMascot,
+  getMascotRoot,
+  importMascotPackage,
+  inspectMascotPackage,
+} from './mascotPackageService'
 
 // 与 src/types/appearance.ts 的 OnlineAppearance* 同形；主进程不能 import src/，在此自行声明。
 type AppearanceMode = 'light' | 'dark'
@@ -23,8 +28,8 @@ type OnlineAppearanceErrorCode =
   | 'CHECKSUM_MISMATCH'
   | 'EXPIRED'
   | 'UNSUPPORTED'
-type AppearanceImportResult = Awaited<ReturnType<typeof importAppearancePackage>>
-type AppearanceManifest = Awaited<ReturnType<typeof inspectAppearancePackage>>['manifest']
+type AppearanceImportResult = ReturnType<typeof importAppearancePackage>
+type AppearanceManifest = ReturnType<typeof inspectAppearancePackage>['manifest']
 
 export interface OnlineAppearanceInstalled {
   appearanceId: string
@@ -93,7 +98,7 @@ export interface OnlineAppearancePrepareResult {
   sha256?: string
   appearance?: OnlineAppearancePreview
   existing?: { id: string; name: string } | null
-  code?: OnlineAppearanceErrorCode | AppearanceImportResult['code']
+  code?: OnlineAppearanceErrorCode | 'INVALID_PACKAGE'
   error?: string
 }
 
@@ -404,7 +409,7 @@ export interface OnlineAppearanceService {
   list(query: OnlineAppearanceQuery): Promise<OnlineAppearanceListResult>
   detail(fileKey: unknown): Promise<OnlineAppearanceDetailResult>
   prepare(fileKey: unknown, versionNo: unknown): Promise<OnlineAppearancePrepareResult>
-  install(token: unknown, replace: boolean): Promise<OnlineAppearanceInstallResult>
+  install(token: unknown, replace: boolean): OnlineAppearanceInstallResult
   discard(token: unknown): { success: boolean }
   /** 取封面；versionNo 省略时取发布版本的封面。成功结果按 fileKey + 版本号缓存在内存里。 */
   cover(fileKey: unknown, versionNo?: unknown): Promise<OnlineAppearanceCoverResult>
@@ -710,7 +715,7 @@ export function createOnlineAppearanceService(
     expectedBytes: number,
     partPath: string
   ): Promise<{ bytes: number; sha256: string }> => {
-    const limit = ASSET_CATEGORY_LIMITS[kind].archiveBytes
+    const limit = APPEARANCE_LIMITS.archiveBytes
     const controller = new AbortController()
     let timedOut = false
     let timer: NodeJS.Timeout | undefined
@@ -734,10 +739,7 @@ export function createOnlineAppearanceService(
       if (response.status !== 200) throw statusError(response.status, '分享站上找不到这个版本')
       const declared = response.headers.get('content-length')
       if (declared !== null && /^\d+$/.test(declared.trim()) && Number(declared) > limit) {
-        throw new OnlineAppearanceError(
-          'TOO_LARGE',
-          `资源包超过 ${ASSET_CATEGORY_LIMITS[kind].archiveBytes / 1024 / 1024} MiB 上限`
-        )
+        throw new OnlineAppearanceError('TOO_LARGE', '外观包超过 16 MiB 上限')
       }
       if (!response.body) throw new OnlineAppearanceError('BAD_RESPONSE', '分享站返回了空响应')
       reader = response.body.getReader()
@@ -756,11 +758,7 @@ export function createOnlineAppearanceService(
         arm()
         if (!chunk.value || chunk.value.byteLength === 0) continue
         bytes += chunk.value.byteLength
-        if (bytes > limit)
-          throw new OnlineAppearanceError(
-            'TOO_LARGE',
-            `资源包超过 ${ASSET_CATEGORY_LIMITS[kind].archiveBytes / 1024 / 1024} MiB 上限`
-          )
+        if (bytes > limit) throw new OnlineAppearanceError('TOO_LARGE', '外观包超过 16 MiB 上限')
         if (bytes > expectedBytes) {
           throw new OnlineAppearanceError(
             'CHECKSUM_MISMATCH',
@@ -867,11 +865,8 @@ export function createOnlineAppearanceService(
       if (!version) {
         throw new OnlineAppearanceError('NOT_FOUND', '分享站上找不到这个版本')
       }
-      if (version.fileSize > ASSET_CATEGORY_LIMITS[kind].archiveBytes) {
-        throw new OnlineAppearanceError(
-          'TOO_LARGE',
-          `资源包超过 ${ASSET_CATEGORY_LIMITS[kind].archiveBytes / 1024 / 1024} MiB 上限`
-        )
+      if (version.fileSize > APPEARANCE_LIMITS.archiveBytes) {
+        throw new OnlineAppearanceError('TOO_LARGE', '外观包超过 16 MiB 上限')
       }
       const cacheDir = options.cacheDir()
       const token = crypto.randomUUID()
@@ -898,14 +893,14 @@ export function createOnlineAppearanceService(
         throw error
       }
 
-      let inspected: Awaited<ReturnType<typeof inspectPackage>>
+      let inspected: ReturnType<typeof inspectPackage>
       try {
-        inspected = await inspectPackage(zipPath)
+        inspected = inspectPackage(zipPath)
       } catch (error) {
         removeQuietly(zipPath)
         if (error instanceof AppearanceError) {
           logger.warn(`在线外观包无效: ${fileKey} 版本 ${version.versionNo}，${error.message}`)
-          return { success: false, code: error.code, error: error.message }
+          return { success: false, code: 'INVALID_PACKAGE', error: error.message }
         }
         throw error
       }
@@ -950,12 +945,10 @@ export function createOnlineAppearanceService(
   }
 
   /**
-   * 安装已校验的临时包；后台处理期间保留缓存，拒绝同一 token 重入。
+   * 安装已校验的临时包。全程同步执行，同一 token 的并发调用由事件循环串行化；
+   * `installing` 标记额外挡住将来改成异步后的重入。
    */
-  const install = async (
-    token: unknown,
-    replace: boolean
-  ): Promise<OnlineAppearanceInstallResult> => {
+  const install = (token: unknown, replace: boolean): OnlineAppearanceInstallResult => {
     purgeExpired()
     const entry = typeof token === 'string' ? cache.get(token) : undefined
     if (typeof token !== 'string' || !entry) {
@@ -966,20 +959,17 @@ export function createOnlineAppearanceService(
     }
     entry.installing = true
     try {
-      const hash = crypto.createHash('sha256')
-      let bytes = 0
+      let data: Buffer
       try {
-        for await (const chunk of fs.createReadStream(entry.path)) {
-          bytes += chunk.length
-          if (bytes > entry.fileSize) break
-          hash.update(chunk)
-        }
+        data = fs.readFileSync(entry.path)
       } catch {
         dropEntry(token)
         return { success: false, code: 'EXPIRED', error: '下载的外观包已过期，请重新下载' }
       }
-      if (bytes !== entry.fileSize || hash.digest('hex') !== entry.sha256) {
+      const actual = crypto.createHash('sha256').update(data).digest('hex')
+      if (data.length !== entry.fileSize || actual !== entry.sha256) {
         dropEntry(token)
+        logger.warn(`在线外观缓存文件被改动，已拒绝安装: ${entry.fileKey} 版本 ${entry.versionNo}`)
         return {
           success: false,
           code: 'CHECKSUM_MISMATCH',
@@ -990,8 +980,8 @@ export function createOnlineAppearanceService(
       const userDataPath = options.userDataPath()
       const result =
         kind === 'mascot'
-          ? await importMascotPackage(userDataPath, entry.path, replace)
-          : await importAppearancePackage(userDataPath, entry.path, replace)
+          ? importMascotPackage(userDataPath, entry.path, replace)
+          : importAppearancePackage(userDataPath, entry.path, replace)
       const resource =
         'mascot' in result ? result.mascot : 'appearance' in result ? result.appearance : undefined
       if (result.success && resource) {
@@ -1037,7 +1027,7 @@ export function createOnlineAppearanceService(
   }
 
   const discard = (token: unknown): { success: boolean } => {
-    if (typeof token === 'string' && !cache.get(token)?.installing) dropEntry(token)
+    if (typeof token === 'string') dropEntry(token)
     return { success: true }
   }
 

@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { describePackageError } from '@/utils/resourcePackageError'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { PictureOutlined } from '@ant-design/icons-vue'
+import { FileZipOutlined, PictureOutlined } from '@ant-design/icons-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
 
@@ -20,8 +19,8 @@ import {
   type InheritCoverState,
 } from '../myAppearance'
 import type { MyAppearanceStore } from '../useMyAppearances'
+import { formatAppearanceFileSize } from '../useOnlineAppearance'
 import type { ShareAccount } from '../useShareAccount'
-import AppearancePackagePicker from './AppearancePackagePicker.vue'
 import ThemeStoreAccount from './ThemeStoreAccount.vue'
 
 const props = defineProps<{
@@ -217,11 +216,10 @@ const pickPackage = async (): Promise<void> => {
     if (!result?.success || !result.appearance) {
       packageInfo.value = null
       zipPath.value = ''
-      inspectError.value = describePackageError(
-        result,
-        'core.themeStore.upload.invalidPackage',
-        props.categoryKey
-      )
+      inspectError.value =
+        props.categoryKey === 'mascot'
+          ? t('core.themeStore.upload.invalidPackage')
+          : result?.error || t('core.themeStore.upload.invalidPackage')
       return
     }
     zipPath.value = picked
@@ -400,14 +398,29 @@ watch(authorized, isAuthorized => {
         </a-select>
       </section>
 
-      <AppearancePackagePicker
-        :inspecting="inspecting"
-        :disabled="submitting"
-        :zip-path="zipPath"
-        :error="inspectError"
-        :package-info="packageInfo"
-        @pick="pickPackage"
-      />
+      <section class="upload-section">
+        <div class="upload-label">{{ t('core.themeStore.upload.package') }}</div>
+        <div class="upload-file-row">
+          <a-button :loading="inspecting" :disabled="submitting" @click="pickPackage">
+            <template #icon><FileZipOutlined /></template>
+            {{ zipPath ? t('core.themeStore.upload.repick') : t('core.themeStore.upload.pick') }}
+          </a-button>
+          <span v-if="zipPath" class="upload-file-name">
+            {{ fileName(zipPath) }} · {{ formatAppearanceFileSize(packageInfo?.fileSize ?? 0) }}
+          </span>
+        </div>
+        <a-alert v-if="inspectError" type="error" show-icon :message="inspectError" />
+        <div v-if="packageInfo" class="upload-package">
+          <span class="upload-package-id">ID {{ packageInfo.appearance.id }}</span>
+          <span v-if="packageInfo.appearance.mode">
+            {{
+              packageInfo.appearance.mode === 'dark'
+                ? t('core.setting.themeMode.dark')
+                : t('core.setting.themeMode.light')
+            }}
+          </span>
+        </div>
+      </section>
 
       <section v-if="packageInfo" class="upload-section">
         <div class="upload-label">{{ t('core.themeStore.upload.target') }}</div>
@@ -549,11 +562,24 @@ watch(authorized, isAuthorized => {
   font-weight: 600;
 }
 
-.upload-file-name {
+.upload-file-row,
+.upload-package {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.upload-file-name,
+.upload-package {
   min-width: 0;
   color: var(--ant-color-text-secondary);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.upload-package-id {
+  font-family: var(--font-monospace);
 }
 
 .upload-cover {

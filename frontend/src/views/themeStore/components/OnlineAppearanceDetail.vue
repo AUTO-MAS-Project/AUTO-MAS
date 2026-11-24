@@ -43,7 +43,6 @@ const {
   installing,
   retryDetail,
   selectVersion,
-  prepareSelected,
   install,
   backToList,
 } = props.store
@@ -158,7 +157,7 @@ const handleVersionChange = (value: SelectValue): void => {
         <div v-else-if="prepareError" class="online-preview-state">
           <a-result status="warning" :sub-title="prepareError">
             <template #extra>
-              <a-button @click="prepareSelected">
+              <a-button @click="install">
                 {{ t('core.themeStore.retry') }}
               </a-button>
             </template>
@@ -184,9 +183,7 @@ const handleVersionChange = (value: SelectValue): void => {
           <NoData :description="t('core.themeStore.noVersions')" />
         </div>
         <div v-else class="online-preview-state">
-          <a-button @click="prepareSelected">
-            {{ t('core.themeStore.downloadPreview') }}
-          </a-button>
+          <NoData :description="t('core.themeStore.noPreview')" />
         </div>
       </section>
 

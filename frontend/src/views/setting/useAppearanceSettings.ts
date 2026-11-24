@@ -1,4 +1,3 @@
-import { describePackageError } from '@/utils/resourcePackageError'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { computed, h, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
@@ -12,7 +11,10 @@ import type {
   InstalledAppearance,
   OnlineAppearanceInstallResult,
 } from '@/types/appearance'
-import { type OnlineAppearanceInstallOutcome } from '@/views/themeStore/useOnlineAppearance'
+import {
+  describeOnlineAppearanceError,
+  type OnlineAppearanceInstallOutcome,
+} from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
 import type { AppearanceCategory } from '@/types/mascotPack'
 import { saveConfig } from '@/utils/config'
@@ -189,7 +191,10 @@ export function useAppearanceSettings() {
     try {
       return await runAppearanceInstall(
         replace => importAppearance(zipPath, replace),
-        result => describePackageError(result, 'core.setting.basic.appearanceImportFailed')
+        result =>
+          result.code === 'INVALID_ANIMATION'
+            ? t('core.setting.basic.appearanceAnimationInvalid')
+            : result.error || t('core.setting.basic.appearanceImportFailed')
       )
     } finally {
       appearanceBusy.value = false
@@ -209,7 +214,7 @@ export function useAppearanceSettings() {
             ? (window.electronAPI.installOnlineAppearance?.(token, replace, category) ??
               Promise.resolve({ success: false, code: 'UNSUPPORTED' as const }))
             : installOnlineAppearance(token, replace),
-        result => describePackageError(result, 'core.themeStore.installFailed', category),
+        result => describeOnlineAppearanceError(result, 'core.themeStore.installFailed', category),
         category
       )
     } catch (error) {

@@ -6,6 +6,8 @@ import * as path from 'path'
 import {
   AppearanceError,
   getAppearance,
+  importAppearancePackage,
+  inspectAppearancePackage,
   isAppearanceGone,
   listAppearances,
   removeAppearance,
@@ -20,11 +22,7 @@ import {
   type OnlineAppearanceServiceOptions,
 } from '../services/onlineAppearanceService'
 import { clearAppearanceConfigIfCurrent } from '../utils/configFile'
-import {
-  importAppearancePackage,
-  inspectAppearancePackage,
-  inspectMascotPackage,
-} from '../services/assetPackageProcess'
+import { inspectMascotPackage } from '../services/mascotPackageService'
 import { broadcastMascotChange } from './mascotHandlers'
 
 const logger = getLogger('外观包')
@@ -152,7 +150,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     }
   })
 
-  ipcMain.handle('appearance:import', async (_event, zipPath: unknown, replace = false) => {
+  ipcMain.handle('appearance:import', (_event, zipPath: unknown, replace = false) => {
     if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
       return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 外观包' }
     }
@@ -164,7 +162,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
     } catch {
       return { success: false, code: 'INVALID_PACKAGE', error: '外观 ZIP 不存在' }
     }
-    const result = await importAppearancePackage(userDataPath(), resolved, replace === true)
+    const result = importAppearancePackage(userDataPath(), resolved, replace === true)
     if (result.success) {
       logger.info(`外观包已导入: ${result.appearance?.id ?? 'unknown'}`)
       if (result.appearance) forgetAppearanceSource(result.appearance.id)
@@ -227,12 +225,12 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
 
   ipcMain.handle(
     'appearance:online-install',
-    async (_event, token: unknown, replace: unknown = false, category: unknown) => {
+    (_event, token: unknown, replace: unknown = false, category: unknown) => {
       const service = serviceFor(category)
       if (!service) return INVALID_ARGUMENT
       if (typeof token !== 'string' || typeof replace !== 'boolean') return INVALID_ARGUMENT
       try {
-        const result = await service.install(token, replace)
+        const result = service.install(token, replace)
         if (result.success) {
           if (category === 'mascot') {
             options.onChanged?.()
@@ -269,52 +267,48 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
   )
 
   // ==================== 上传前预览 ====================
-  // 与导入共用后台校验，完成后清理临时展开目录；上传对话框据此显示外观摘要。
+  // 与导入同一套只读校验，不写任何目录；上传对话框据此显示外观摘要。
 
-  ipcMain.handle(
-    'appearance:inspect-local',
-    async (_event, zipPath: unknown, category: unknown) => {
-      if (category !== undefined && category !== 'theme' && category !== 'mascot')
-        return INVALID_ARGUMENT
-      if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
-        return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 外观包' }
-      }
-      const resolved = path.resolve(zipPath)
-      try {
-        const { manifest, previewUrl } = await (category === 'mascot'
-          ? inspectMascotPackage(resolved)
-          : inspectAppearancePackage(resolved))
-        const theme = 'tokens' in manifest ? manifest : null
-        const tokens = theme
-          ? Object.fromEntries(
-              Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
-            )
-          : undefined
-        return {
-          success: true,
-          fileSize: fs.statSync(resolved).size,
-          appearance: {
-            id: manifest.id,
-            name: manifest.name,
-            ...(manifest.description === undefined ? {} : { description: manifest.description }),
-            ...(theme ? { mode: theme.mode, tokens } : {}),
-            ...(previewUrl ? { previewUrl } : {}),
-          },
-        }
-      } catch (error) {
-        if (error instanceof AppearanceError) {
-          return { success: false, code: error.code, error: error.message }
-        }
-        const code = (error as NodeJS.ErrnoException | undefined)?.code
-        if (code === 'ENOENT') {
-          return { success: false, code: 'INVALID_PACKAGE', error: '外观 ZIP 不存在' }
-        }
-        const message = error instanceof Error ? error.message : String(error)
-        logger.warn(`读取本地外观包失败: ${message}`)
-        return { success: false, code: 'INVALID_PACKAGE', error: `无法读取外观包：${message}` }
-      }
+  ipcMain.handle('appearance:inspect-local', (_event, zipPath: unknown, category: unknown) => {
+    if (category !== undefined && category !== 'theme' && category !== 'mascot')
+      return INVALID_ARGUMENT
+    if (typeof zipPath !== 'string' || !zipPath.toLowerCase().endsWith('.zip')) {
+      return { success: false, code: 'INVALID_PACKAGE', error: '请选择 ZIP 外观包' }
     }
-  )
+    const resolved = path.resolve(zipPath)
+    try {
+      const { manifest, previewUrl } =
+        category === 'mascot' ? inspectMascotPackage(resolved) : inspectAppearancePackage(resolved)
+      const theme = 'tokens' in manifest ? manifest : null
+      const tokens = theme
+        ? Object.fromEntries(
+            Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
+          )
+        : undefined
+      return {
+        success: true,
+        fileSize: fs.statSync(resolved).size,
+        appearance: {
+          id: manifest.id,
+          name: manifest.name,
+          ...(manifest.description === undefined ? {} : { description: manifest.description }),
+          ...(theme ? { mode: theme.mode, tokens } : {}),
+          ...(previewUrl ? { previewUrl } : {}),
+        },
+      }
+    } catch (error) {
+      if (error instanceof AppearanceError) {
+        return { success: false, code: 'INVALID_PACKAGE', error: error.message }
+      }
+      const code = (error as NodeJS.ErrnoException | undefined)?.code
+      if (code === 'ENOENT') {
+        return { success: false, code: 'INVALID_PACKAGE', error: '外观 ZIP 不存在' }
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      logger.warn(`读取本地外观包失败: ${message}`)
+      return { success: false, code: 'INVALID_PACKAGE', error: `无法读取外观包：${message}` }
+    }
+  })
 
   // 上传对话框里预览另选的封面：只读、限 8 MiB、按文件头认 PNG / JPEG / WebP，与后端上传时的检查一致；
   // 后端上传前会再统一缩成 1280×800 以内的 WebP 封面。

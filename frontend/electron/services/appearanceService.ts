@@ -1,4 +1,3 @@
-import * as fs from 'fs'
 import * as path from 'path'
 import type { MascotDefinition as AppearanceMascot } from '../../src/types/mascotPack'
 import {
@@ -10,7 +9,6 @@ import {
   assertString,
   fail,
   type LoadedAssetPackage,
-  type PackageErrorCode,
 } from './assetPackageService'
 import { normalizeMascot, validateMascotAssets } from './mascotManifest'
 export {
@@ -92,7 +90,7 @@ interface InstalledAppearance extends AppearanceManifest {
 interface AppearanceImportResult {
   success: boolean
   appearance?: InstalledAppearance
-  code?: PackageErrorCode
+  code?: 'INVALID_PACKAGE' | 'INVALID_ANIMATION' | 'DUPLICATE_ID' | 'IMPORT_FAILED' | 'UNSUPPORTED'
   error?: string
   existing?: InstalledAppearance
 }
@@ -336,42 +334,31 @@ export const validateAppearanceManifest = normalizeManifest
 export const readAppearancePackage = (zipPath: string) => store.readArchive(zipPath)
 
 /** 与安装共用校验，只读预览，不写用户目录。 */
-export async function inspectAppearancePackage(zipPath: string): Promise<{
+export function inspectAppearancePackage(zipPath: string): {
   manifest: AppearanceManifest
   previewUrl?: string
-}> {
-  const pack = await store.readArchive(zipPath)
-  try {
-    const { manifest, files } = pack
-    const preview = files.find(file => file.path.toLowerCase() === manifest.preview?.toLowerCase())
-    return {
-      manifest,
-      ...(preview
-        ? {
-            previewUrl: `data:${preview.mime};base64,${fs.readFileSync(preview.source).toString('base64')}`,
-          }
-        : {}),
-    }
-  } finally {
-    await fs.promises.rm(pack.directory, { recursive: true, force: true })
+} {
+  const { manifest, files } = store.readArchive(zipPath)
+  const preview = files.find(file => file.path.toLowerCase() === manifest.preview?.toLowerCase())
+  return {
+    manifest,
+    ...(preview
+      ? { previewUrl: `data:${preview.mime};base64,${preview.data.toString('base64')}` }
+      : {}),
   }
 }
 
-export async function importAppearancePackage(
+export function importAppearancePackage(
   userDataPath: string,
   zipPath: string,
   replace = false
-): Promise<AppearanceImportResult> {
+): AppearanceImportResult {
   try {
-    const root = store.root(userDataPath)
-    const pack = await store.readArchive(zipPath, root)
-    let installed: ReturnType<typeof store.install>
-    try {
-      installed = store.install(userDataPath, pack, replace)
-    } finally {
-      await fs.promises.rm(pack.directory, { recursive: true, force: true })
-    }
-    const { item, existing, ...result } = installed
+    const { item, existing, ...result } = store.install(
+      userDataPath,
+      store.readArchive(zipPath),
+      replace
+    )
     return {
       ...result,
       ...(item ? { appearance: serializeAppearance(item) } : {}),
