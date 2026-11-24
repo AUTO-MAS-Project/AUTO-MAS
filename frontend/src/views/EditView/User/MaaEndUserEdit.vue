@@ -1,44 +1,14 @@
 <template>
-  <div class="user-edit-container">
-    <!-- 原生 GUI 会话遮罩（MXU 配置会话 / 查看会话，公用组件对齐 ok-ww / MAA） -->
-    <GuiSessionMask
-      :open="showMaaEndConfigMask"
-      :icon="SettingOutlined"
-      :title="maaEndConfigMaskTitle"
-      :description="`${maaEndConfigMaskDesc}\n${t('core.edit.clickSaveConfigurationWhen')}`"
-    >
-      <template #actions>
-        <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
-          {{ t('core.edit.saveConfiguration') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showMaaEndViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.maaendViewingTitle')"
-      :description="`${t('core.edit.maaendViewingDesc')}\n${t('core.edit.maaendViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="maaEndTaskId"
-          type="primary"
-          size="large"
-          :loading="stoppingMaaEndConfig"
-          @click="handleCloseMaaEndView"
-        >
-          {{ t('core.edit.maaendViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-
-    <MaaEndUserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      :user-id="userId"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell :surface="false" :max-width="1200">
+    <template #header>
+      <MaaEndUserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        :user-id="userId"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-spin :spinning="loading">
@@ -174,39 +144,74 @@
       </a-spin>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MaaEnd 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="MAAEND_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :script-desc="t('core.edit.maaendConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <!-- mas 备份为快速配置侧车、native 备份为 mxu 配置摘要，共用文件集插槽 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewFiles(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="f in previewFiles(raw)" :key="f.name">
-            <h4 class="maaend-preview-title">{{ f.label }}</h4>
-            <a-descriptions :column="1" size="small" bordered class="maaend-preview-box">
-              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- 原生 GUI 会话遮罩（MXU 配置会话 / 查看会话，公用组件对齐 ok-ww / MAA） -->
+      <GuiSessionMask
+        :open="showMaaEndConfigMask"
+        :icon="SettingOutlined"
+        :title="maaEndConfigMaskTitle"
+        :description="`${maaEndConfigMaskDesc}\n${t('core.edit.clickSaveConfigurationWhen')}`"
+      >
+        <template #actions>
+          <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
+            {{ t('core.edit.saveConfiguration') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showMaaEndViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.maaendViewingTitle')"
+        :description="`${t('core.edit.maaendViewingDesc')}\n${t('core.edit.maaendViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="maaEndTaskId"
+            type="primary"
+            size="large"
+            :loading="stoppingMaaEndConfig"
+            @click="handleCloseMaaEndView"
+          >
+            {{ t('core.edit.maaendViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MaaEnd 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="MAAEND_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :script-desc="t('core.edit.maaendConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <!-- mas 备份为快速配置侧车、native 备份为 mxu 配置摘要，共用文件集插槽 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewFiles(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="f in previewFiles(raw)" :key="f.name">
+              <h4 class="maaend-preview-title">{{ f.label }}</h4>
+              <a-descriptions :column="1" size="small" bordered class="maaend-preview-box">
+                <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell } from '@/components/ui'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -702,14 +707,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  padding-bottom: 24px;
-  max-width: 1200px;
-  margin: 0 auto;
-}
 .user-edit-content {
-  width: 100%;
-  min-width: 0;
+  padding-bottom: 24px;
 }
 .config-form {
   display: flex;

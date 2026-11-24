@@ -1,307 +1,315 @@
 <template>
-  <ScriptEditHeader script-type="Okww" :title="t('core.edit.editScript')" @cancel="handleCancel" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="Okww"
+        :title="t('core.edit.editScript')"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="t('core.edit.okWwScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="blue" class="type-tag">ok-ww</a-tag>
-      </template>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-card
+        :title="t('core.edit.okWwScriptConfiguration')"
+        :loading="pageLoading"
+        class="config-card"
+      >
+        <template #extra>
+          <a-tag color="blue" class="type-tag">ok-ww</a-tag>
+        </template>
 
-      <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.tellsOkWwScript')"
-                    variant="form"
-                  />
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  :placeholder="t('core.edit.enterScriptName')"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.okWwPath')"
-                    :hint="t('core.edit.pickDirectoryHoldingOk4')"
-                    variant="form"
-                  />
-                </template>
-                <PathPickerField
-                  v-model="formData.path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickDirectoryHoldingOk2')"
-                  :pick-label="t('core.edit.pickDirectory')"
-                  :pick-disabled="isDiscoveringOkww || isSaving"
-                  @pick="selectRootPath"
-                >
-                  <template #before-pick>
-                    <a-button
-                      type="primary"
-                      size="large"
-                      class="auto-import-button"
-                      :loading="isDiscoveringOkww"
-                      :disabled="isSaving"
-                      @click="discoverRootPath"
-                    >
-                      <template #icon>
-                        <ImportOutlined />
-                      </template>
-                      {{ t('core.edit.import') }}
-                    </a-button>
-                  </template>
-                </PathPickerField>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
-
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
-          </div>
-          <OkwwGameControlFields
-            v-model="okwwConfig.Game.AccountSwitchMethod"
-            v-model:game-enabled="okwwConfig.Game.Enabled"
-            class="game-control-row"
-            @save="handleChange('Game', 'AccountSwitchMethod', $event)"
-            @save-enabled="handleChange('Game', 'Enabled', $event)"
-          />
-
-          <a-row :gutter="24" class="game-control-row">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.updateAutomaticallyBeforeLaunching')"
-                    :hint="t('core.edit.beforeLaunchingGameRun')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="okwwConfig.Game.IfAutoUpdate"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @change="handleChange('Game', 'IfAutoUpdate', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-                <span
-                  v-if="okwwConfig.Game.Type === 'Client' && !boundGameLauncher"
-                  class="control-hint"
-                >
-                  {{ t('core.edit.autoUpdateNeedsLauncher') }}
-                </span>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-row :gutter="24" class="game-control-row">
-            <a-col :span="12">
-              <a-button
-                size="large"
-                :disabled="
-                  !okwwConfig.Game.Enabled || gamePathValidation.status !== 'valid' || isSaving
-                "
-                @click="handleCheckUpdate"
-              >
-                <template #icon>
-                  <ThunderboltOutlined />
-                </template>
-                {{ t('core.edit.checkUpdates') }}
-              </a-button>
-            </a-col>
-            <a-col :span="12">
-              <span class="label-hint">
-                {{ t('core.edit.masChecksOfficialVersion') }}
-              </span>
-            </a-col>
-          </a-row>
-
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <div class="launch-type-label">
+        <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <a-row :gutter="24">
+              <a-col :span="8">
+                <a-form-item name="name">
+                  <template #label>
                     <FieldLabelWithHint
-                      :text="t('core.edit.launchType')"
-                      :hint="t('core.edit.launchTypeHint')"
+                      :text="t('core.edit.scriptName')"
+                      :hint="t('core.edit.tellsOkWwScript')"
                       variant="form"
                     />
-                    <a-radio-group
-                      :value="okwwConfig.Game.Type"
-                      class="launch-type-toggle"
-                      size="small"
-                      button-style="solid"
-                      @change="handleLaunchTypeChange($event.target.value)"
-                      :disabled="!okwwConfig.Game.Enabled"
-                    >
-                      <a-radio-button value="Client">
-                        {{ t('core.edit.launchDirectly') }}
-                      </a-radio-button>
-                      <a-radio-button value="Launcher">
-                        {{ t('core.edit.launchViaLauncher') }}
-                      </a-radio-button>
-                    </a-radio-group>
-                  </div>
-                </template>
-                <BoundGamePathField />
-                <a-alert
-                  v-if="gamePathValidation.status !== 'unknown'"
-                  :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
-                  :message="gamePathValidation.message"
-                  show-icon
-                  class="path-validation-alert"
-                />
-                <div class="derived-client-row">
-                  <span class="label-hint">
-                    {{ t('core.edit.gameClientPathLabel') }}
-                    <a-tooltip
-                      v-if="okwwConfig.Game.Type === 'Launcher'"
-                      :title="t('core.edit.clientPathOptionalHint')"
-                    >
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="formData.name"
+                    :placeholder="t('core.edit.enterScriptName')"
+                    size="large"
+                    class="modern-input"
+                    @blur="handleChange('Info', 'Name', formData.name)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="16">
+                <a-form-item name="path" :rules="rules.path">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.okWwPath')"
+                      :hint="t('core.edit.pickDirectoryHoldingOk4')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="formData.path"
+                    mode="folder"
+                    :placeholder="t('core.edit.pickDirectoryHoldingOk2')"
+                    :pick-label="t('core.edit.pickDirectory')"
+                    :pick-disabled="isDiscoveringOkww || isSaving"
+                    @pick="selectRootPath"
+                  >
+                    <template #before-pick>
+                      <a-button
+                        type="primary"
+                        size="large"
+                        class="auto-import-button"
+                        :loading="isDiscoveringOkww"
+                        :disabled="isSaving"
+                        @click="discoverRootPath"
+                      >
+                        <template #icon>
+                          <ImportOutlined />
+                        </template>
+                        {{ t('core.edit.import') }}
+                      </a-button>
+                    </template>
+                  </PathPickerField>
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
+
+          <SectionCard variant="plain" :title="t('core.edit.gameConfiguration')">
+            <OkwwGameControlFields
+              v-model="okwwConfig.Game.AccountSwitchMethod"
+              v-model:game-enabled="okwwConfig.Game.Enabled"
+              class="game-control-row"
+              @save="handleChange('Game', 'AccountSwitchMethod', $event)"
+              @save-enabled="handleChange('Game', 'Enabled', $event)"
+            />
+
+            <a-row :gutter="24" class="game-control-row">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.updateAutomaticallyBeforeLaunching')"
+                      :hint="t('core.edit.beforeLaunchingGameRun')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-select
+                    v-model:value="okwwConfig.Game.IfAutoUpdate"
+                    size="large"
+                    class="modern-input"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    @change="handleChange('Game', 'IfAutoUpdate', $event)"
+                  >
+                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
+                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
+                  </a-select>
+                  <span
+                    v-if="okwwConfig.Game.Type === 'Client' && !boundGameLauncher"
+                    class="control-hint"
+                  >
+                    {{ t('core.edit.autoUpdateNeedsLauncher') }}
                   </span>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24" class="game-control-row">
+              <a-col :span="12">
+                <a-button
+                  size="large"
+                  :disabled="
+                    !okwwConfig.Game.Enabled || gamePathValidation.status !== 'valid' || isSaving
+                  "
+                  @click="handleCheckUpdate"
+                >
+                  <template #icon>
+                    <ThunderboltOutlined />
+                  </template>
+                  {{ t('core.edit.checkUpdates') }}
+                </a-button>
+              </a-col>
+              <a-col :span="12">
+                <span class="label-hint">
+                  {{ t('core.edit.masChecksOfficialVersion') }}
+                </span>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <div class="launch-type-label">
+                      <FieldLabelWithHint
+                        :text="t('core.edit.launchType')"
+                        :hint="t('core.edit.launchTypeHint')"
+                        variant="form"
+                      />
+                      <a-radio-group
+                        :value="okwwConfig.Game.Type"
+                        class="launch-type-toggle"
+                        size="small"
+                        button-style="solid"
+                        @change="handleLaunchTypeChange($event.target.value)"
+                        :disabled="!okwwConfig.Game.Enabled"
+                      >
+                        <a-radio-button value="Client">
+                          {{ t('core.edit.launchDirectly') }}
+                        </a-radio-button>
+                        <a-radio-button value="Launcher">
+                          {{ t('core.edit.launchViaLauncher') }}
+                        </a-radio-button>
+                      </a-radio-group>
+                    </div>
+                  </template>
                   <BoundGamePathField />
-                </div>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.launchArguments')"
-                    :hint="t('core.edit.gameLaunchArgumentsNot2')"
-                    variant="form"
+                  <a-alert
+                    v-if="gamePathValidation.status !== 'unknown'"
+                    :type="gamePathValidation.status === 'valid' ? 'success' : 'error'"
+                    :message="gamePathValidation.message"
+                    show-icon
+                    class="path-validation-alert"
                   />
-                </template>
-                <a-input
-                  v-model:value="okwwConfig.Game.Arguments"
-                  :placeholder="t('core.edit.enterGameLaunchArguments')"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @blur="handleChange('Game', 'Arguments', okwwConfig.Game.Arguments)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.startupWait')"
-                    :hint="t('core.edit.howLongWaitAfter')"
-                    variant="form"
+                  <div class="derived-client-row">
+                    <span class="label-hint">
+                      {{ t('core.edit.gameClientPathLabel') }}
+                      <a-tooltip
+                        v-if="okwwConfig.Game.Type === 'Launcher'"
+                        :title="t('core.edit.clientPathOptionalHint')"
+                      >
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                    <BoundGamePathField />
+                  </div>
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.launchArguments')"
+                      :hint="t('core.edit.gameLaunchArgumentsNot2')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="okwwConfig.Game.Arguments"
+                    :placeholder="t('core.edit.enterGameLaunchArguments')"
+                    size="large"
+                    class="modern-input"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    @blur="handleChange('Game', 'Arguments', okwwConfig.Game.Arguments)"
                   />
-                </template>
-                <a-input-number
-                  v-model:value="okwwConfig.Game.WaitTime"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  :disabled="!okwwConfig.Game.Enabled"
-                  @blur="handleChange('Game', 'WaitTime', okwwConfig.Game.WaitTime)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.startupWait')"
+                      :hint="t('core.edit.howLongWaitAfter')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="okwwConfig.Game.WaitTime"
+                    :min="0"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    :disabled="!okwwConfig.Game.Enabled"
+                    @blur="handleChange('Game', 'WaitTime', okwwConfig.Game.WaitTime)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runConfiguration') }}</h3>
+          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
+            <ScriptRunLimitsSection
+              v-model:hard-time-limit="okwwConfig.Run.HardTimeLimit"
+              v-model:daily-limit="okwwConfig.Run.ProxyTimesLimit"
+              v-model:retry-limit="okwwConfig.Run.RunTimesLimit"
+              v-model:timeout="okwwConfig.Run.RunTimeLimit"
+              :retry-hint="t('core.edit.giveUpAfterThis')"
+              :timeout-hint="t('core.edit.logThatStaysUnchanged')"
+              @save="key => handleChange('Run', key, okwwConfig.Run[key])"
+            />
+          </SectionCard>
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+
+    <template #overlay>
+      <a-modal
+        v-model:open="updateModal.open"
+        :title="
+          updateModal.running
+            ? t('core.edit.okwwUpdateProgress')
+            : t('core.edit.okwwCheckUpdateTitle')
+        "
+        :confirm-loading="updateModal.starting"
+        :mask-closable="!updateModal.running"
+        :footer="updateModal.running ? null : undefined"
+        @ok="startUpdate"
+        @cancel="handleUpdateModalCancel"
+      >
+        <template v-if="!updateModal.running">
+          <a-form layout="vertical">
+            <a-form-item :label="t('core.edit.pickUserWhoseServer')">
+              <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
+                <a-select-option
+                  v-for="user in updateModal.users"
+                  :key="user.uid"
+                  :value="user.uid"
+                >
+                  {{ user.name }}（{{ user.resource }}）
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+            <a-alert type="info" show-icon :message="t('core.edit.wutheringWavesWillBe')" />
+          </a-form>
+        </template>
+        <template v-else>
+          <div class="update-log-area">
+            <pre class="update-log-content">
+              {{ updateModal.log || t('core.edit.wutheringWavesUpdateConnecting') }}
+            </pre>
           </div>
-          <ScriptRunLimitsSection
-            v-model:hard-time-limit="okwwConfig.Run.HardTimeLimit"
-            v-model:daily-limit="okwwConfig.Run.ProxyTimesLimit"
-            v-model:retry-limit="okwwConfig.Run.RunTimesLimit"
-            v-model:timeout="okwwConfig.Run.RunTimeLimit"
-            :retry-hint="t('core.edit.giveUpAfterThis')"
-            :timeout-hint="t('core.edit.logThatStaysUnchanged')"
-            @save="key => handleChange('Run', key, okwwConfig.Run[key])"
-          />
-        </div>
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+        </template>
+      </a-modal>
 
-  <a-modal
-    v-model:open="updateModal.open"
-    :title="
-      updateModal.running ? t('core.edit.okwwUpdateProgress') : t('core.edit.okwwCheckUpdateTitle')
-    "
-    :confirm-loading="updateModal.starting"
-    :mask-closable="!updateModal.running"
-    :footer="updateModal.running ? null : undefined"
-    @ok="startUpdate"
-    @cancel="handleUpdateModalCancel"
-  >
-    <template v-if="!updateModal.running">
-      <a-form layout="vertical">
-        <a-form-item :label="t('core.edit.pickUserWhoseServer')">
-          <a-select v-model:value="updateModal.selectedUserId" style="width: 100%">
-            <a-select-option v-for="user in updateModal.users" :key="user.uid" :value="user.uid">
-              {{ user.name }}（{{ user.resource }}）
-            </a-select-option>
-          </a-select>
-        </a-form-item>
-        <a-alert type="info" show-icon :message="t('core.edit.wutheringWavesWillBe')" />
-      </a-form>
+      <a-modal
+        v-model:open="candidateModal.open"
+        :title="t('core.edit.pickImportPath')"
+        :confirm-loading="candidateModal.loading"
+        @ok="confirmCandidateSelection"
+        @cancel="closeCandidateModal"
+      >
+        <a-form layout="vertical">
+          <a-form-item :label="t('core.edit.severalUsablePathsWere')">
+            <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
+              <a-select-option
+                v-for="candidate in candidateModal.candidates"
+                :key="candidate.path"
+                :value="candidate.path"
+              >
+                {{ candidateDisplayLabel(candidate) }}
+              </a-select-option>
+            </a-select>
+          </a-form-item>
+        </a-form>
+      </a-modal>
     </template>
-    <template v-else>
-      <div class="update-log-area">
-        <pre class="update-log-content">
-          {{ updateModal.log || t('core.edit.wutheringWavesUpdateConnecting') }}
-        </pre>
-      </div>
-    </template>
-  </a-modal>
-
-  <a-modal
-    v-model:open="candidateModal.open"
-    :title="t('core.edit.pickImportPath')"
-    :confirm-loading="candidateModal.loading"
-    @ok="confirmCandidateSelection"
-    @cancel="closeCandidateModal"
-  >
-    <a-form layout="vertical">
-      <a-form-item :label="t('core.edit.severalUsablePathsWere')">
-        <a-select v-model:value="candidateModal.selectedPath" style="width: 100%">
-          <a-select-option
-            v-for="candidate in candidateModal.candidates"
-            :key="candidate.path"
-            :value="candidate.path"
-          >
-            {{ candidateDisplayLabel(candidate) }}
-          </a-select-option>
-        </a-select>
-      </a-form-item>
-    </a-form>
-  </a-modal>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
 
@@ -968,10 +976,6 @@ onUnmounted(() => {
 <style scoped src="@/styles/scriptEditForm.css"></style>
 
 <style scoped>
-.section-header {
-  border-bottom: 1px solid var(--ant-color-border-secondary);
-}
-
 .label-hint {
   font-size: 12px;
   font-weight: 400;
@@ -987,10 +991,6 @@ onUnmounted(() => {
   flex-shrink: 0;
   border-radius: 0;
   padding: 0 18px;
-}
-
-.path-button {
-  flex-shrink: 0;
 }
 
 .path-validation-alert {
@@ -1010,24 +1010,6 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   margin-top: 8px;
-}
-
-.update-log-area {
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 12px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  background: var(--ant-color-bg-layout);
-}
-
-.update-log-content {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text);
 }
 
 .game-control-row {

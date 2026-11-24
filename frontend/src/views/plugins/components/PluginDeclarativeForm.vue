@@ -58,32 +58,31 @@ const emit = defineEmits<{
       "
       class="plugin-form-group"
     >
-      <div class="form-grid-24">
-        <PluginDeclarativeField
-          v-for="hint in group.hints"
-          :key="`${group.name}.${hint.field}`"
-          :group="group.name"
-          :namespace="namespace"
-          :disabled="disabled"
-          :hint="hint"
-          :value="values[group.name]?.[hint.field || '']"
-          :options="options(group.name, hint)"
-          :loading="
-            hint.state === 'busy' ||
-            activeFields?.includes(`${group.name}.${hint.field}`) ||
-            runningKey === `${group.name}.${hint.field}`
-          "
-          @update:value="emit('update:value', group.name, hint.field || '', $event)"
-          @action="emit('action', group.name, hint, $event)"
-        />
-        <ApiRetryAlert
-          v-for="hint in group.hints.filter(item => item.endpoint)"
-          :key="`error-${hint.field}`"
-          :error="stateFor(group.name, hint)?.error.value"
-          :loading="stateFor(group.name, hint)?.loading.value"
-          @retry="stateFor(group.name, hint)?.execute()"
-        />
-      </div>
+      <PluginDeclarativeField
+        v-for="hint in group.hints"
+        :key="`${group.name}.${hint.field}`"
+        :group="group.name"
+        :namespace="namespace"
+        :disabled="disabled"
+        :hint="hint"
+        :value="values[group.name]?.[hint.field || '']"
+        :options="options(group.name, hint)"
+        :loading="
+          hint.state === 'busy' ||
+          activeFields?.includes(`${group.name}.${hint.field}`) ||
+          runningKey === `${group.name}.${hint.field}`
+        "
+        @update:value="emit('update:value', group.name, hint.field || '', $event)"
+        @action="emit('action', group.name, hint, $event)"
+      />
+      <ApiRetryAlert
+        v-for="hint in group.hints.filter(item => item.endpoint)"
+        :key="`error-${hint.field}`"
+        class="plugin-form-alert"
+        :error="stateFor(group.name, hint)?.error.value"
+        :loading="stateFor(group.name, hint)?.loading.value"
+        @retry="stateFor(group.name, hint)?.execute()"
+      />
     </SectionCard>
   </section>
 </template>
@@ -92,20 +91,8 @@ const emit = defineEmits<{
 .plugin-form-group + .plugin-form-group {
   margin-top: 24px;
 }
-.form-grid-24 {
-  display: grid;
-  grid-template-columns: repeat(24, minmax(0, 1fr));
-  gap: 16px;
-}
-.form-grid-24 :deep(.form-grid-24__item) {
-  grid-column: span var(--field-span, 12);
-}
-@media (max-width: 768px) {
-  .form-grid-24 :deep(.form-grid-24__item) {
-    grid-column: span 24;
-  }
-}
-.plugin-form :deep(.ant-divider) {
-  margin: 8px 0 16px;
+
+.plugin-form-alert {
+  margin-top: 12px;
 }
 </style>

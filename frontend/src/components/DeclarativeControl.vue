@@ -105,7 +105,6 @@ const selectOption = (key: string | number) => {
     <a-button
       v-else-if="kind === 'button'"
       class="declarative-control__button"
-      block
       size="large"
       :disabled="disabled"
       :loading="loading"
@@ -119,7 +118,7 @@ const selectOption = (key: string | number) => {
       :trigger="['click']"
       :disabled="disabled || loading || !options.length"
     >
-      <a-button block size="large" :disabled="disabled || !options.length" :loading="loading">
+      <a-button size="large" :disabled="disabled || !options.length" :loading="loading">
         {{ label || t('core.common.confirm') }} <DownOutlined />
       </a-button>
       <template #overlay>
@@ -208,3 +207,23 @@ const selectOption = (key: string | number) => {
     />
   </div>
 </template>
+
+<style scoped>
+.declarative-control:not(
+  .declarative-control--toggle-button,
+  .declarative-control--button,
+  .declarative-control--dropdown-button
+),
+.declarative-control > :is(.ant-input-number, .ant-picker, .ant-select) {
+  width: 100%;
+}
+
+.path-input-group {
+  display: flex;
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+}
+</style>

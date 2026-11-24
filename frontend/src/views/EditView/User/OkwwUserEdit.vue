@@ -1,62 +1,29 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="okww"
-      :user-id="userId"
-      :config-label="t('core.edit.configureOkww')"
-      :config-loading="okwwConfigLoading"
-      :config-active="showOkwwConfigMask"
-      :config-disabled="configActionsDisabled"
-      @config="handleOkwwConfig"
-      @cancel="handleCancel"
-    />
-
-    <GuiSessionMask
-      :open="showOkwwConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.okWwSetupProgress')"
-      :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
-    >
-      <template #actions>
-        <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-          {{ t('core.edit.saveSettings') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showOkwwViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.okwwViewingTitle')"
-      :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="okwwTaskId"
-          type="primary"
-          size="large"
-          :loading="stoppingOkwwConfig"
-          @click="handleCloseOkwwView"
-        >
-          {{ t('core.edit.okwwViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="okww"
+        :user-id="userId"
+        :config-label="t('core.edit.configureOkww')"
+        :config-loading="okwwConfigLoading"
+        :config-active="showOkwwConfigMask"
+        :config-disabled="configActionsDisabled"
+        @config="handleOkwwConfig"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <UserAccountHeading
-              :user-name="formData.userName"
-              :options="{ isEdit, logoSrc: accountIcon }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-            </div>
-
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -131,7 +98,7 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
         </a-form>
       </a-card>
 
@@ -214,37 +181,71 @@
       </a-card>
     </ConfigLockPanel>
 
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="OKWW_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewFiles(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="f in previewFiles(raw)" :key="f.name">
-            <h4 class="okww-preview-title">{{ f.label }}</h4>
-            <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
-              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <GuiSessionMask
+        :open="showOkwwConfigMask"
+        :icon="SettingOutlined"
+        :title="t('core.edit.okWwSetupProgress')"
+        :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
+      >
+        <template #actions>
+          <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
+            {{ t('core.edit.saveSettings') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showOkwwViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.okwwViewingTitle')"
+        :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="okwwTaskId"
+            type="primary"
+            size="large"
+            :loading="stoppingOkwwConfig"
+            @click="handleCloseOkwwView"
+          >
+            {{ t('core.edit.okwwViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="OKWW_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewFiles(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="f in previewFiles(raw)" :key="f.name">
+              <h4 class="okww-preview-title">{{ f.label }}</h4>
+              <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
+                <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
@@ -680,10 +681,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;

@@ -1,92 +1,55 @@
 <template>
-  <UserEditHeader
-    :script-id="scriptId"
-    :script-name="scriptName"
-    :is-edit="isEdit"
-    script-edit-segment="general"
-    :user-id="userId"
-    :config-label="t('core.edit.generalConfiguration')"
-    :config-loading="generalConfigLoading"
-    :config-active="showGeneralConfigMask"
-    :config-disabled="configLocked"
-    @config="handleGeneralConfig()"
-    @cancel="handleCancel"
-  />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="general"
+        :user-id="userId"
+        :config-label="t('core.edit.generalConfiguration')"
+        :config-loading="generalConfigLoading"
+        :config-active="showGeneralConfigMask"
+        :config-disabled="configLocked"
+        @config="handleGeneralConfig()"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
-  <teleport to="body">
-    <div v-if="showGeneralConfigMask" class="maa-config-mask">
-      <div class="mask-content">
-        <div class="mask-icon">
-          <EyeOutlined
-            v-if="generalSessionViewOnly"
-            :style="{ fontSize: '48px', color: '#1890ff' }"
-          />
-          <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
-        </div>
-        <template v-if="generalSessionViewOnly">
-          <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
-          <p class="mask-description">
-            {{ t('core.edit.generalViewingDesc') }}
-            <br />
-            {{ t('core.edit.generalViewingDesc2') }}
-          </p>
-        </template>
-        <template v-else>
-          <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
-          <p class="mask-description">
-            {{ t('core.edit.generalConfigurationThisUser') }}
-            <br />
-            {{ t('core.edit.clickSaveConfigurationWhen2') }}
-          </p>
-        </template>
-        <div class="mask-actions">
-          <a-button
-            v-if="generalTaskId"
-            type="primary"
-            size="large"
-            @click="handleSaveGeneralConfig"
-          >
-            {{
-              generalSessionViewOnly
-                ? t('core.edit.generalViewClose')
-                : t('core.edit.saveConfiguration')
-            }}
-          </a-button>
-        </div>
-      </div>
-    </div>
-  </teleport>
-
-  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-    <a-card class="config-card">
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+      <a-card class="config-card">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <!-- 基本信息 -->
           <UserAccountHeading
             :user-name="formData.userName"
             :options="{ isEdit, logoSrc: accountIcon }"
           />
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-            <div class="section-header-actions">
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <template #actions>
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('core.edit.configRestoreTitle') }}
               </a-button>
-            </div>
-          </div>
-          <UserBasicInfoFields
-            v-model:user-name="formData.userName"
-            v-model:status="formData.Info.Status"
-            v-model:remained-day="formData.Info.RemainedDay"
-            v-model:notes="formData.Info.Notes"
-            :disabled="loading"
-            @save-name="handleFieldSave('userName', formData.userName)"
-            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
-            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
-          />
+            </template>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="loading"
+              @save-name="handleFieldSave('userName', formData.userName)"
+              @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+              @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
+          </SectionCard>
+
           <a-row :gutter="24">
             <a-col :span="24">
               <GeneralUserConfigurationSection
@@ -100,41 +63,89 @@
               />
             </a-col>
           </a-row>
+
+          <!-- 额外脚本 -->
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
+
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
+
+    <template #overlay>
+      <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
+      <teleport to="body">
+        <div v-if="showGeneralConfigMask" class="maa-config-mask">
+          <div class="mask-content">
+            <div class="mask-icon">
+              <EyeOutlined
+                v-if="generalSessionViewOnly"
+                :style="{ fontSize: '48px', color: '#1890ff' }"
+              />
+              <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
+            </div>
+            <template v-if="generalSessionViewOnly">
+              <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
+              <p class="mask-description">
+                {{ t('core.edit.generalViewingDesc') }}
+                <br />
+                {{ t('core.edit.generalViewingDesc2') }}
+              </p>
+            </template>
+            <template v-else>
+              <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
+              <p class="mask-description">
+                {{ t('core.edit.generalConfigurationThisUser') }}
+                <br />
+                {{ t('core.edit.clickSaveConfigurationWhen2') }}
+              </p>
+            </template>
+            <div class="mask-actions">
+              <a-button
+                v-if="generalTaskId"
+                type="primary"
+                size="large"
+                @click="handleSaveGeneralConfig"
+              >
+                {{
+                  generalSessionViewOnly
+                    ? t('core.edit.generalViewClose')
+                    : t('core.edit.saveConfiguration')
+                }}
+              </a-button>
+            </div>
+          </div>
         </div>
+      </teleport>
 
-        <!-- 额外脚本 -->
-        <ExtraScriptSection
-          v-model:form-data="formData"
-          :loading="loading"
-          @save="handleFieldSave"
-        />
-
-        <UserNotifyConfig
-          v-model="formData.Notify"
-          :loading="loading"
-          :script-id="scriptId"
-          :user-id="userId"
-          @save="handleFieldSave"
-        />
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
-
-  <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
-  <ConfigRestoreSection
-    v-model:open="restoreOpen"
-    :disabled="configLocked"
-    :script-name="GENERAL_DISPLAY_NAME"
-    :targets="restoreTargets"
-    :api="restoreApi"
-    :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
-    :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
-    :on-restored="handleRestored"
-    :on-detail="handleRestoreView"
-  />
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="GENERAL_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      />
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/AUTO-MAS.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -735,39 +746,6 @@ onUnmounted(() => {
 <style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
-.form-section {
-  margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
-.switch-description {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
-.save-button {
-  background: var(--ant-color-primary);
-  border-color: var(--ant-color-primary);
-}
-
-.save-button:hover {
-  background: var(--ant-color-primary-hover);
-  border-color: var(--ant-color-primary-hover);
-}
-
-.float-button {
-  width: 60px;
-  height: 60px;
-}
-
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */
 .maa-config-mask {
   position: fixed;
