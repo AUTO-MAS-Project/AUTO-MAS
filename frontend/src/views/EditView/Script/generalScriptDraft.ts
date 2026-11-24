@@ -15,7 +15,13 @@ export const createGeneralScriptDraft = (): GeneralScriptConfig => ({
     Name: '',
     RootPath: '.',
   },
-  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimeLimit: 10, RunTimesLimit: 3 },
+  Run: {
+    ExecutionSession: 'main',
+    HardTimeLimit: 120,
+    ProxyTimesLimit: 0,
+    RunTimeLimit: 10,
+    RunTimesLimit: 3,
+  },
   Script: {
     Arguments: '',
     ConfigPath: '.',

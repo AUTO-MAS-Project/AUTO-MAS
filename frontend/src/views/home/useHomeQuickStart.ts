@@ -16,7 +16,7 @@ import {
 } from '@/views/home/homeQuickStartTasks'
 import { useHomeGreetingStore } from '@/stores/homeGreeting'
 import { useSchedulerStore } from '@/stores/scheduler'
-import { useTaskApi } from '@/composables/useTaskApi'
+import { TaskStartCancelled, useTaskApi } from '@/composables/useTaskApi'
 
 export const useHomeQuickStart = () => {
   const logger = window.electronAPI.getLogger('首页')
@@ -154,10 +154,16 @@ export const useHomeQuickStart = () => {
         options: schedulerTaskOptions.value,
         fallbackLabel: t('core.home.quickStart.fallbackLabel'),
         failureReason: t('core.home.quickStart.startFailed'),
-        startTask: async taskId =>
-          startTask(await configuredTaskRequest(taskId, selectedHomeMode.value), {
-            source: 'home',
-          }),
+        startTask: async taskId => {
+          try {
+            return await startTask(await configuredTaskRequest(taskId, selectedHomeMode.value), {
+              source: 'home',
+            })
+          } catch (error) {
+            if (error instanceof TaskStartCancelled) return null
+            throw error
+          }
+        },
         onTaskStarted: result => {
           trackStartedTask({
             taskId: result.taskId,

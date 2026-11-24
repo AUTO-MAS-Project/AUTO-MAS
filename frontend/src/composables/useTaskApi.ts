@@ -1,3 +1,4 @@
+import { translate as t } from '@/i18n'
 import { configSessionRequest } from './useTaskOptions'
 import { TaskMode } from '@/api'
 import { observeFeature } from '@/utils/featureAnalytics'
@@ -29,6 +30,8 @@ function taskRequestError(error: unknown): Error {
   }
   return error instanceof Error ? error : new Error(String(error))
 }
+
+export class TaskStartCancelled extends Error {}
 
 export type TaskTargetKind = AnalyticsEventProps['task_start_result']['target_kind']
 
@@ -105,7 +108,25 @@ export async function requestTaskStart(
   let response: TaskCreateOut
   try {
     response = await Service.addTaskApiDispatchStartPost(request)
+    if (
+      executable &&
+      response.reason === 'desktop_session_disconnected' &&
+      window.electronAPI.desktopSessionConnectForTask
+    ) {
+      const connection = await window.electronAPI.desktopSessionConnectForTask()
+      if (connection === 'preview_unavailable') {
+        throw new Error(t('bootstrap.desktopSession.errors.preview_unavailable'))
+      }
+      if (connection === 'cancelled') throw new TaskStartCancelled()
+      if (connection === 'connected') {
+        response = await Service.addTaskApiDispatchStartPost({
+          ...request,
+          requireDesktopSession: true,
+        })
+      }
+    }
   } catch (error) {
+    if (error instanceof TaskStartCancelled) throw error
     resumeOperation?.finish({ ...resumeDimensions, request_outcome: 'failure' })
     nativeOperation?.finish({
       script_type: getAnalyticsScriptType(targetId),

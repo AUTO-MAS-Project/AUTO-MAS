@@ -3,7 +3,12 @@ import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
 import type { UpgradeBackupDirectory, UpgradeBackupSelection } from '@/types/upgradeBackup'
 import type {
+  DesktopSessionPendingRequest,
+  DesktopSessionPrompt,
+  DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionStartRequest,
+  DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -556,11 +561,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionCancelTaskConnect?: (id: number) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
+  desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
+  onDesktopSessionPrompt?: (callback: () => void) => () => void
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
-  desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
-  desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
+  desktopSessionPending?: () => Promise<DesktopSessionPendingRequest | null>
+  desktopSessionStart?: (request: DesktopSessionStartRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
   desktopSessionWindow?: (action: 'show' | 'hide') => void
   desktopSessionVolume?: (volume: number) => void

@@ -22,7 +22,7 @@ interface HomeTaskLaunchOutcome {
   failed: HomeTaskStartFailure[]
 }
 
-type StartTaskAction = (taskId: string) => Promise<TaskCreateOut>
+type StartTaskAction = (taskId: string) => Promise<TaskCreateOut | null>
 
 export const normalizeHomeQuickStartSelection = (value: unknown): string[] => {
   if (!Array.isArray(value)) return []
@@ -78,6 +78,7 @@ export const launchHomeTasks = async ({
     let startedResult: HomeTaskStartResult | undefined
     try {
       const response = await startTask(taskId)
+      if (!response) break
       if (response.code !== 200 || !response.taskId) {
         outcome.failed.push({
           taskLabel,

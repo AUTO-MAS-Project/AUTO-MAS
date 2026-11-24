@@ -1,4 +1,5 @@
 import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { TaskStartCancelled } from './useTaskApi'
 import type {
   DesktopMascotHostAPI,
   DesktopMascotMenuResult,
@@ -129,7 +130,7 @@ export function useDesktopMascotTaskActions(
       // 开始、完成及中止结果沿用共享任务事件，不按 HTTP 返回合成执行结果。
       return { success: true }
     } catch (error) {
-      if (disposed) return unavailable
+      if (disposed || error instanceof TaskStartCancelled) return unavailable
       const text =
         (error instanceof Error ? error.message : String(error)) ||
         t(`core.scheduler.toast.${action === 'start' ? 'startTaskFailed' : 'stopTaskFailed'}`)

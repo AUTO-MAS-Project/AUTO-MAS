@@ -364,75 +364,11 @@
           </a-row>
         </div>
 
-        <!-- 执行限制 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runLimits') }}</h3>
-          </div>
-          <a-row :gutter="16">
-            <a-col :span="12">
-              <ScriptRunLimitField
-                v-model="hsrConfig.Run.ProxyTimesLimit"
-                kind="daily"
-                :label="t('core.edit.runsPerDayThis')"
-                :hint="t('core.edit.k0MeansNoLimit')"
-                @change="handleChange('Run', 'ProxyTimesLimit', $event)"
-              />
-            </a-col>
-            <a-col :span="12">
-              <a-form-item :label="t('core.edit.maximumAttemptsFailedTask')">
-                <a-input-number
-                  v-model:value="hsrConfig.Run.RunTimesLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Run', 'RunTimesLimit', $event)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item :label="t('core.edit.dailyTaskTimeoutMinutes')">
-                <a-input-number
-                  v-model:value="hsrConfig.Run.DailyTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Run', 'DailyTimeLimit', $event)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-row :gutter="16">
-            <a-col :span="12">
-              <a-form-item :label="t('core.edit.weeklyTaskTimeoutMinutes')">
-                <a-input-number
-                  v-model:value="hsrConfig.Run.WeeklyTimeLimit"
-                  :min="1"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Run', 'WeeklyTimeLimit', $event)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <!-- 低性能兼容只作用于三月七，没填三月七路径时不渲染 -->
-          <a-row v-if="hsrConfig.Info.M7APath" :gutter="16">
-            <a-col :span="12">
-              <a-form-item :label="t('core.edit.enableLowPerformanceCompatibility')">
-                <a-switch
-                  v-model:checked="hsrConfig.Run.LowPerformanceMode"
-                  @change="handleChange('Run', 'LowPerformanceMode', $event)"
-                />
-                <div class="form-item-hint">
-                  {{ t('core.edit.appliesMarch7thDivergentUniverse') }}
-                </div>
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+        <HSRRunConfigSection
+          v-model:run="hsrConfig.Run"
+          :show-low-performance="!!hsrConfig.Info.M7APath"
+          @save="(key, value) => handleChange('Run', key, value)"
+        />
 
         <HSRProgramUpdateSettings
           :script-id="scriptId"
@@ -452,7 +388,7 @@
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import PathPickerField from '@/components/PathPickerField.vue'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import HSRRunConfigSection from './components/HSRRunConfigSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
