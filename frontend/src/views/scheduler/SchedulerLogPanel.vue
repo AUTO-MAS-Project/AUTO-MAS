@@ -53,16 +53,10 @@ import { useLogHighlight } from '@/composables/useLogHighlight'
 import { getDownloadParts, useDownloadLogStyle } from '@/composables/useDownloadLogStyle'
 import type { WSTaskPrefetchData } from '@/services/websocket/types'
 import { useTheme } from '@/composables/useTheme'
-import { configureLocalMonaco } from '@/utils/monaco'
+import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { useLocalStorage } from '@vueuse/core'
 import { message, theme } from 'ant-design-vue'
-import { computed, defineAsyncComponent, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
-
-// 刷新后运行日志可能先于空闲预热恢复；先完成本地配置，防止编辑器退回 CDN。
-const VueMonacoEditor = defineAsyncComponent(async () => {
-  await configureLocalMonaco()
-  return (await import('@guolao/vue-monaco-editor')).VueMonacoEditor
-})
+import { computed, nextTick, onUnmounted, ref, shallowRef, watch } from 'vue'
 
 const { t } = useI18n()
 
