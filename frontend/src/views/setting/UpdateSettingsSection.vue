@@ -157,11 +157,7 @@ const handleCheckUpdate = async () => {
 
   <!-- 更新来源：从哪条线路拿包，走哪条网络链路 -->
   <SectionCard :title="t('core.setting.others.sourceSection')" :icon="CloudDownloadOutlined">
-    <SettingRow
-      stacked
-      :label="t('core.setting.others.updateSource')"
-      :hint="t('core.setting.others.updateSourceTip')"
-    >
+    <SettingRow stacked :label="t('core.setting.others.updateSource')">
       <a-radio-group
         :value="settings.Update?.Source"
         class="source-cards"

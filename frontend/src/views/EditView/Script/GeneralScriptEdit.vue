@@ -25,11 +25,7 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.giveScriptNameYou')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.scriptName')" variant="form" />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -70,11 +66,7 @@
             <a-col :span="12">
               <a-form-item name="scriptPath" :rules="rules.scriptPath">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.mainProgramPath')"
-                    :hint="t('core.edit.pathScriptSMain')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.mainProgramPath')" variant="form" />
                 </template>
                 <PathPickerField
                   v-model="formData.scriptPath"
@@ -242,11 +234,7 @@
             <a-col :span="6">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.configurationFileType')"
-                    :hint="t('core.edit.scriptConfigurationFileType')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.configurationFileType')" variant="form" />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Script.ConfigPathMode"
@@ -263,7 +251,6 @@
                 <template #label>
                   <FieldLabelWithHint
                     :text="t('core.edit.whenConfigurationFileUpdated')"
-                    :hint="t('core.edit.updateScriptConfigurationFile')"
                     variant="form"
                   />
                 </template>
@@ -284,11 +271,7 @@
             <a-col :span="12">
               <a-form-item name="logPath" :rules="rules.logPath">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.logFilePath')"
-                    :hint="t('core.edit.pathFileScriptWrites')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.logFilePath')" variant="form" />
                 </template>
                 <PathPickerField
                   v-model="formData.logPath"
@@ -337,11 +320,7 @@
             <a-col :span="12">
               <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.logTimestampFormat')"
-                    :hint="t('core.edit.timestampFormatUsedScript')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.logTimestampFormat')" variant="form" />
                 </template>
                 <a-input
                   v-model:value="formData.logTimeFormat"
@@ -476,11 +455,7 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.launchMode')"
-                    :hint="t('core.edit.whichPlatformGameRuns')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.launchMode')" variant="form" />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Game.Type"
@@ -497,11 +472,7 @@
             <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.gamePath')"
-                    :hint="t('core.edit.pathGameExecutable')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.gamePath')" variant="form" />
                 </template>
                 <BoundGamePathField />
               </a-form-item>
@@ -511,11 +482,7 @@
             <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.url')"
-                    :hint="t('core.edit.urlCustomProtocol')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.url')" variant="form" />
                 </template>
                 <a-input-group class="path-input-group">
                   <a-input
@@ -534,11 +501,7 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.launchArguments')"
-                    :hint="t('core.edit.commandLineArgumentsUsed')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.launchArguments')" variant="form" />
                 </template>
                 <a-input
                   v-model:value="generalConfig.Game.Arguments"
@@ -554,7 +517,6 @@
                 <template #label>
                   <FieldLabelWithHint
                     :text="t('core.edit.waitAfterLaunchSeconds')"
-                    :hint="t('core.edit.howLongWaitAfter2')"
                     variant="form"
                   />
                 </template>
@@ -572,11 +534,7 @@
             <a-col :span="8">
               <a-form-item>
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.forceGameClose')"
-                    :hint="t('core.edit.whetherGameProcessForce')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.forceGameClose')" variant="form" />
                 </template>
                 <a-select
                   v-model:value="generalConfig.Game.IfForceClose"

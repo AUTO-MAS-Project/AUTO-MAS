@@ -20,11 +20,7 @@
             <a-col :span="8">
               <a-form-item name="name">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.tellsOkWwScript')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.scriptName')" variant="form" />
                 </template>
                 <a-input
                   v-model:value="formData.name"
@@ -38,11 +34,7 @@
             <a-col :span="16">
               <a-form-item name="path" :rules="rules.path">
                 <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.okWwPath')"
-                    :hint="t('core.edit.pickDirectoryHoldingOk4')"
-                    variant="form"
-                  />
+                  <FieldLabelWithHint :text="t('core.edit.okWwPath')" variant="form" />
                 </template>
                 <PathPickerField
                   v-model="formData.path"

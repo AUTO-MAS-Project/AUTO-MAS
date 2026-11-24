@@ -18,11 +18,7 @@
         <a-col :span="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
-              <FieldLabelWithHint
-                :text="t('core.comp.logTimestampStart')"
-                :hint="t('core.comp.logTimestampStartPosition')"
-                variant="form"
-              />
+              <FieldLabelWithHint :text="t('core.comp.logTimestampStart')" variant="form" />
             </template>
             <a-input-number
               v-model:value="formData.logTimeStart"
@@ -37,11 +33,7 @@
         <a-col :span="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
-              <FieldLabelWithHint
-                :text="t('core.comp.logTimestampEnd')"
-                :hint="t('core.comp.logTimestampEndPosition')"
-                variant="form"
-              />
+              <FieldLabelWithHint :text="t('core.comp.logTimestampEnd')" variant="form" />
             </template>
             <a-input-number
               v-model:value="formData.logTimeEnd"

@@ -102,7 +102,6 @@
                   <template #label>
                     <FieldLabelWithHint
                       :text="t('core.edit.bettergiCloseGameOnFinish')"
-                      :hint="t('core.edit.bettergiCloseGameOnFinishHint')"
                       variant="form"
                     />
                   </template>

@@ -24,11 +24,7 @@
               <a-col :span="8">
                 <a-form-item name="name">
                   <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.scriptName')"
-                      :hint="t('core.edit.zzzodScriptNameHint')"
-                      variant="form"
-                    />
+                    <FieldLabelWithHint :text="t('core.edit.scriptName')" variant="form" />
                   </template>
                   <a-input
                     v-model:value="formData.name"

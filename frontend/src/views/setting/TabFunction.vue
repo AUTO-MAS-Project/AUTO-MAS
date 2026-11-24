@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -13,12 +13,14 @@ import type { SettingChangeHandler } from './settingTypes'
 import { useVirtualDisplaySettings } from './useVirtualDisplaySettings'
 import { openExternalUrl } from '@/utils/openExternal'
 import { navigateTo } from '@/router'
+import AppModal from '@/components/ui/AppModal.vue'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import FailureReplaySettings from './components/FailureReplaySettings.vue'
 import VoiceSettings from './components/VoiceSettings.vue'
 
 const { t } = useI18n()
+const telemetryDetailOpen = ref(false)
 
 // 指向 releases 页而不是某一版安装包的直链：直链会随上游发版失效，而且点下去直接落一个 exe，
 // 用户没机会先看清自己在装什么。releases/latest 永远指向最新一版，页面上的 `-setup.exe` 就是它。
@@ -125,8 +127,11 @@ const handleVirtualDisplayModeChange = (value: unknown) => {
 
       <SettingRow
         :label="t('core.setting.func.telemetry')"
-        :hint="t('core.setting.func.telemetryTip')"
+        :description="t('core.setting.func.telemetrySummary')"
       >
+        <a-button type="link" size="small" @click="telemetryDetailOpen = true">
+          {{ t('core.setting.func.telemetryDetails') }}
+        </a-button>
         <a-switch
           :checked="settings.Function?.IfEnableTelemetry !== false"
           :aria-label="t('core.setting.func.telemetry')"
@@ -210,6 +215,7 @@ const handleVirtualDisplayModeChange = (value: unknown) => {
 
       <SettingRow
         :label="t('core.setting.display.enable')"
+        :description="t('core.setting.display.enableSummary')"
         :hint="t('core.setting.display.enableTip')"
       >
         <a-switch
@@ -315,12 +321,28 @@ const handleVirtualDisplayModeChange = (value: unknown) => {
         <span class="mystery-entry-label">{{ t('core.mystery.entry') }}</span>
       </a-button>
     </div>
+
+    <AppModal
+      v-model:open="telemetryDetailOpen"
+      size="md"
+      :title="t('core.setting.func.telemetry')"
+      footer="close"
+    >
+      <p class="telemetry-detail-text">{{ t('core.setting.func.telemetryTip') }}</p>
+    </AppModal>
   </div>
 </template>
 
 <style scoped>
 .retention-select {
   width: 220px;
+}
+
+.telemetry-detail-text {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  line-height: 1.75;
 }
 
 /* 行标签沿用 SettingRow 的 form 级排版，供富文本 ⓘ 的行使用 */

@@ -128,10 +128,7 @@ const handleLocaleChange = (value: unknown): void => {
         </a-button>
       </template>
 
-      <SettingRow
-        :label="t('core.setting.basic.themeMode')"
-        :hint="t('core.setting.basic.themeModeTip')"
-      >
+      <SettingRow :label="t('core.setting.basic.themeMode')">
         <a-segmented
           class="theme-mode-control"
           :value="themeMode"
@@ -142,12 +139,7 @@ const handleLocaleChange = (value: unknown): void => {
         />
       </SettingRow>
 
-      <SettingRow
-        class="theme-color-row"
-        :label="t('core.setting.basic.themeColor')"
-        :hint="t('core.setting.basic.themeColorTip')"
-        stacked
-      >
+      <SettingRow class="theme-color-row" :label="t('core.setting.basic.themeColor')" stacked>
         <div class="color-swatches" :aria-label="t('core.setting.basic.themeColor')">
           <a-button
             v-for="option in colorSwatches"
@@ -190,10 +182,7 @@ const handleLocaleChange = (value: unknown): void => {
         </a-select>
       </SettingRow>
 
-      <SettingRow
-        :label="t('core.setting.basic.interfaceLanguage')"
-        :hint="t('core.common.languageTip')"
-      >
+      <SettingRow :label="t('core.setting.basic.interfaceLanguage')">
         <a-select
           class="row-select language-select"
           :value="locale"
