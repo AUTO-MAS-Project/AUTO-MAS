@@ -294,6 +294,7 @@ export function useInitializationFlow() {
       state.progressIndeterminate = progress.indeterminate ?? progress.progress === undefined
     }
 
+    if (progress.runtimeStatus === 'retrying') state.messageKey = 'bootstrap.init.msg.autoRetry'
     if (previousStatus !== state.status || previousMessage !== state.message) {
       logger.info(`[${stepKey}] ${state.message || state.status}`)
     }

@@ -28,7 +28,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any
 
-from app.core import Community, Notify
+from app.core import Community, Notify, Startup
 from app.models.notification.community import community_notification_results
 from app.models.task import TaskMode, TaskTriggerReason
 from app.services import telemetry as _service_telemetry
@@ -238,25 +238,23 @@ class _MainTimer:
         self._wakeup_signature = signature
         logger.info(f"定时唤醒已同步：{len(times)} 个每周触发时间")
 
-    async def start(self):
+    async def start(self) -> None:
         """启动定时器"""
 
         if self.started:
             logger.warning("主业务定时器仅能启动一次，无法重复启动")
             return
 
-        if not self._startup_dispatched:
-            self._startup_dispatched = True
-            self.startup_task = asyncio.create_task(
-                self._run_loop_step(
-                    "启动队列检查", partial(self.timed_start, startup=True)
-                )
-            )
+        self.started = True
+        self.startup_task = asyncio.create_task(self._start_automatic_work())
+        logger.info("主业务定时器启动")
+
+    async def _start_automatic_work(self) -> None:
+        await Startup.wait()
         self.second_timer = asyncio.create_task(self.second_task())
         self.wakeup_timer = asyncio.create_task(self.wakeup_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
         self.calendar_timer = asyncio.create_task(self.calendar_task())
-        self.started = True
 
         if (
             Config.ToolsConfig.GameSign.Enabled
@@ -264,7 +262,11 @@ class _MainTimer:
         ):
             self.schedule_community_for_startup()
 
-        logger.info("主业务定时器启动")
+        if not self._startup_dispatched:
+            self._startup_dispatched = True
+            await self._run_loop_step(
+                "启动队列检查", partial(self.timed_start, startup=True)
+            )
 
     async def stop(self):
         """停止定时器"""

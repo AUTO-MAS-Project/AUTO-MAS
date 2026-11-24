@@ -164,6 +164,7 @@ export type RuntimeKnownCapability =
   | 'log.stream'
   | 'stdin.shutdown'
   | 'stdin.status'
+  | 'stdin.activate'
 
 export type RuntimeCapability = OpenUnion<RuntimeKnownCapability>
 
@@ -173,6 +174,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeKnownCapability[] = [
   'log.stream',
   'stdin.shutdown',
   'stdin.status',
+  'stdin.activate',
 ]
 
 /** 稳定的处置动作标识（errors.go: Remediation）。 */
@@ -878,7 +880,7 @@ export interface RuntimeWarningSummary {
 // ==================== 标准输入控制命令 ====================
 
 /** stdin 控制命令类型。`shutdown` 与 `status` 只对 `backend supervise` 有意义。 */
-export type RuntimeControlKind = 'cancel' | 'shutdown' | 'status'
+export type RuntimeControlKind = 'cancel' | 'shutdown' | 'status' | 'activate'
 
 /**
  * 一条 stdin 控制命令。

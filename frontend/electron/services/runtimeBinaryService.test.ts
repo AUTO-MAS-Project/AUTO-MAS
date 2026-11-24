@@ -169,6 +169,59 @@ afterEach(() => {
 // ==================== 同步 ====================
 
 describe('syncRuntimeBinary', () => {
+  it('外层下载计时结束而下载器仍在途时，不自动重试', async () => {
+    const releases: ((value: { success: false; error: string }) => void)[] = []
+    const outcome = await syncRuntimeBinary(
+      syncOptions({
+        sourceTimeoutMs: 5,
+        budgetMs: 500,
+        download: () =>
+          new Promise(resolve => {
+            releases.push(resolve)
+          }),
+      })
+    )
+    expect(releases.length).toBeGreaterThan(0)
+    expect(outcome.code).toBe(RUNTIME_BINARY_DOWNLOAD_FAILED)
+    expect(outcome.networkUnavailable).toBeUndefined()
+    for (const release of releases) release({ success: false, error: 'finished' })
+    await new Promise<void>(resolve => setImmediate(resolve))
+  })
+
+  it('透传下载器确认的网络失败，写盘失败与校验错误不冒充网络故障', async () => {
+    const networkFailure = await syncRuntimeBinary(
+      syncOptions({
+        download: async () => ({ success: false, error: 'reset', networkUnavailable: true }),
+      })
+    )
+    expect(networkFailure).toMatchObject({
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      networkUnavailable: true,
+    })
+    const writeFailure = await syncRuntimeBinary(
+      syncOptions({ download: async () => ({ success: false, error: 'access denied' }) })
+    )
+    expect(writeFailure.networkUnavailable).toBeUndefined()
+    const checksumFailure = await syncRuntimeBinary(
+      syncOptions({
+        download: createDownload(() => ({ success: true, content: 'wrong binary' })).download,
+      })
+    )
+    expect(checksumFailure.networkUnavailable).toBeUndefined()
+  })
+
+  it('可信校验清单的网络失败也能保留分类', async () => {
+    const outcome = await syncRuntimeBinary(
+      syncOptions({
+        fetchText: async () => ({ kind: 'failed', error: 'timeout', networkUnavailable: true }),
+      })
+    )
+    expect(outcome).toMatchObject({
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      networkUnavailable: true,
+    })
+  })
+
   it('版本较旧时先取可信清单，再下载线上最新版并替换', async () => {
     const { download, urls } = createDownload(() => ({ success: true, content: NEW_BINARY }))
     const sums = createSums()
