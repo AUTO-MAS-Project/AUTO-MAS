@@ -73,6 +73,7 @@ describe('native configuration session during scheduler migration', () => {
     const session = useNativeGuiSession({ loggerName: 'test', keys })
     await session.startSession('script')
     const saving = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
     await saving
     expect(mocks.status).not.toHaveBeenCalled()
     expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
@@ -83,12 +84,15 @@ describe('native configuration session during scheduler migration', () => {
     await session.startSession('script')
     mocks.success.mockClear()
     mocks.stop.mockImplementationOnce(async () => {
-      mocks.listeners.get(WS_TASK_NOTICE)?.({
-        data: { level: 'error', message: 'configuration write failed' },
-      })
+      setTimeout(() => {
+        mocks.listeners.get(WS_TASK_NOTICE)?.({
+          data: { level: 'error', message: 'configuration write failed' },
+        })
+      }, 10)
       return { code: 200 }
     })
     const failedSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
     await failedSave
     expect(mocks.error).toHaveBeenCalledWith('setupFailed')
     expect(mocks.info).not.toHaveBeenCalled()
@@ -96,6 +100,7 @@ describe('native configuration session during scheduler migration', () => {
 
     await session.startSession('script')
     const successfulSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
     await successfulSave
     expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
   })

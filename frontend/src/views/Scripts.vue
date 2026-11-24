@@ -319,6 +319,8 @@ const handleSaveConfigMask = () => {
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
+// 停止响应先到时，仍可接收已经发出的丢弃或失败通知。
+const DISCARD_FRAME_GRACE_MS = 300
 
 // 配置会话的连接记录（键为 scriptId）
 type ConfigSessionConnection = {
@@ -616,12 +618,13 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
   const connection = activeConnections.value.get(targetId)
   if (!connection) {
     message.error(t('core.scripts.toast.noSession'))
-    return false
+    return
   }
   const response = await stopNativeConfig(connection.taskId, 'save')
   if (response.code !== 200) {
     throw new Error(response.message || t('core.scripts.toast.saveFailedRaw', { label }))
   }
+  await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
   finishConfigSession(targetId, connection, clearState)
   if (!connection.discardedReason && !connection.failed) {
     message.info(t('core.edit.configurationSaveUnconfirmed'))

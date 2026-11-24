@@ -59,19 +59,26 @@ export function useNativeGuiSession(options: {
   let stoppingPromise: Promise<boolean> | null = null
   let savingPromise: Promise<void> | null = null
   let keepFailedSession = false
-  let discarded = false
+  let keepDiscardFrames = false
+  // 本次会话的改动是否已被后端丢弃（原因见后端 WSTaskConfigDiscardedData）
+  let discardedReason: string | null = null
   let sessionFailed = false
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
   const SESSION_WARNING_ADVANCE_MS = 30 * 1000
+  // 停止响应先到时，保留订阅以便显示已经发出的丢弃或失败原因。
+  const DISCARD_FRAME_GRACE_MS = 300
 
   let configTimeout: number | null = null
   let warningTimeout: number | null = null
 
-  const clearSession = () => {
-    subscriptionIds.value.forEach(unsubscribe)
-    subscriptionIds.value = []
+  // 保存期间关闭遮罩，保留旧会话的结果订阅直到通知宽限期结束。
+  const clearSession = (keepSubscriptions = false) => {
+    if (!keepSubscriptions) {
+      subscriptionIds.value.forEach(unsubscribe)
+      subscriptionIds.value = []
+    }
     taskId.value = null
     showConfigMask.value = false
     showViewMask.value = false
@@ -87,22 +94,25 @@ export function useNativeGuiSession(options: {
 
   const stopSession = (
     keepOnFailure = false,
+    keepSubscriptions = false,
     action: NativeConfigStopAction = 'close'
   ): Promise<boolean> => {
     // 页面退出须等启动请求交回任务 ID，再停止并归档，不能遗留迟到的会话。
     if (startingPromise) {
-      return startingPromise.then(() => stopSession(keepOnFailure, action))
+      return startingPromise.then(() => stopSession(keepOnFailure, keepSubscriptions, action))
     }
     if (stoppingPromise) {
       keepFailedSession ||= keepOnFailure
+      keepDiscardFrames ||= keepSubscriptions
       return stoppingPromise
     }
     const currentTaskId = taskId.value
     if (!currentTaskId) {
-      clearSession()
+      clearSession(keepDiscardFrames)
       return Promise.resolve(true)
     }
     keepFailedSession = keepOnFailure
+    keepDiscardFrames = keepSubscriptions
     stopping.value = true
     stoppingPromise = Promise.resolve().then(async () => {
       try {
@@ -110,7 +120,7 @@ export function useNativeGuiSession(options: {
         if (response.code !== 200) {
           throw new Error(response.message || t(keys.stopFailed))
         }
-        clearSession()
+        clearSession(keepDiscardFrames)
         return true
       } catch (e) {
         logger.error(e instanceof Error ? e.message : String(e))
@@ -120,6 +130,7 @@ export function useNativeGuiSession(options: {
       } finally {
         stopping.value = false
         stoppingPromise = null
+        if (taskId.value) keepDiscardFrames = false
       }
     })
     return stoppingPromise
@@ -133,7 +144,7 @@ export function useNativeGuiSession(options: {
     targetKind: TaskTargetKind = 'unknown',
     startOptions: { params?: TaskParams } = {}
   ): Promise<boolean> => {
-    // 同一页面只持有一条会话，等待上一条保存请求结束后再开启。
+    // 同一页面只持有一条会话；收尾帧窗口结束前也不覆盖旧订阅。
     if (startingPromise || taskId.value || stoppingPromise || savingPromise) {
       return Promise.resolve(false)
     }
@@ -141,8 +152,9 @@ export function useNativeGuiSession(options: {
     currentSessionViewOnly.value = viewOnly
     startingPromise = Promise.resolve().then(async () => {
       try {
-        discarded = false
+        discardedReason = null
         sessionFailed = false
+        keepDiscardFrames = false
         const response = await requestScriptConfigStart(
           startTaskId,
           viewOnly,
@@ -165,16 +177,19 @@ export function useNativeGuiSession(options: {
             void stopSession()
           }),
           subscribe({ id: response.taskId, type: WS_TASK_CONFIG_DISCARDED }, wsMessage => {
-            discarded = true
+            discardedReason = wsMessage.data.reason
             showConfigDiscardWarning(t, wsMessage.data.reason)
           }),
-          subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, clearSession),
+          subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
+            // 完成帧可能先于 HTTP 响应到达，保存中的丢弃订阅仍要留到宽限期结束。
+            clearSession(keepDiscardFrames)
+          }),
         ]
         message.success(viewOnly ? t(keys.viewOpened) : t(keys.opened))
         if (viewOnly) {
           // 查看会话：超时静默关闭，不提示也不触发「保存」
           configTimeout = window.setTimeout(
-            () => void stopSession(false, 'timeout'),
+            () => void stopSession(false, false, 'timeout'),
             SESSION_TIMEOUT_MS
           )
           return true
@@ -209,12 +224,17 @@ export function useNativeGuiSession(options: {
       return stopSession().then(() => {})
     }
     savingPromise = (async () => {
-      if (!(await stopSession(true, action))) {
+      if (!(await stopSession(true, true, action))) {
         message.error(t(keys.saveFailed))
         return
       }
-      if (!discarded && !sessionFailed) message.info(t('core.edit.configurationSaveUnconfirmed'))
+      await new Promise(resolve => window.setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
+      if (!discardedReason && !sessionFailed) {
+        message.info(t('core.edit.configurationSaveUnconfirmed'))
+      }
     })().finally(() => {
+      keepDiscardFrames = false
+      if (!taskId.value) clearSession()
       savingPromise = null
     })
     return savingPromise

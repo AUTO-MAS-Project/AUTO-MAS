@@ -26,7 +26,7 @@ export function useBettergiGuiSession() {
     startSession: session.startSession,
     saveSession: session.saveSession,
     stopSession: (keepOnFailure = false, action: NativeConfigStopAction = 'close') =>
-      session.stopSession(keepOnFailure, action),
+      session.stopSession(keepOnFailure, false, action),
     dispose: session.dispose,
   }
 }
