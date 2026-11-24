@@ -17,7 +17,20 @@ Before editing application UI source for **any** visual/UI change:
 
 ## Layout & Shared Primitives
 
-Treat pages as quiet, dense desktop operational tools — NO marketing heroes, decorative gradients, page-specific color/button systems, or unnecessary nested cards. Use 24px/32px page margins, 4px/8px spacing (`8/16/24/32`), type scale `12–24`, and `8px/12px` card/modal radius.
+Treat pages as quiet, dense desktop operational tools — NO marketing heroes, decorative gradients, page-specific color/button systems, or unnecessary nested cards. Use 24px/32px page margins, 4px/8px spacing (`8/16/24/32`), the type ramp below, and `8px/12px` card/modal radius.
+
+**Type ramp (derived, not a fixed range)**: `size_n = 14 × 1.2^n`, rounded to the nearest even px, line-height `size + 8`. Base 14 is the CJK desktop body minimum; ratio 1.2 suits dense tool UI and matches AntD's default ramp (so no theme override is needed). Use only these named levels; never fractional sizes, and never set sizes by eye.
+
+| Level | Size / line-height | Use |
+| --- | --- | --- |
+| caption | 12 / 20 | Hints, descriptions, meta |
+| body | 14 / 22 | Body, labels, menus, controls |
+| title-sm | 16 / 24 | Card / section titles (one level for both) |
+| title | 20 / 28 | Sub-page or modal titles |
+| page | 24 / 32 | Page header title |
+| display | 30 / 38 | Stat numbers and countdowns only, with `tabular-nums` |
+
+Separate hierarchy with weight (400/600) and text color before adding a new size. To change the ramp, change the base or ratio here and regenerate every level; do not patch individual values.
 
 | Need | Reuse first (`@/components/ui` & AntD 4) |
 | --- | --- |

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { QueueConfig_Cycle, QueueUpdateIn } from '@/api'
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { queueApi } from '@/composables/useQueueApi'
 import dayjs from 'dayjs'
 
@@ -11,7 +12,7 @@ const props = defineProps<{ queueId: string; cycle?: QueueConfig_Cycle | null }>
 const emit = defineEmits<{ refresh: [] }>()
 const { t } = useI18n()
 const interval = ref<number | null>(480)
-const saving = ref(false)
+const { isSaving: saving, enqueue: enqueueSave } = useSaveQueue()
 const { data: activeTriggers, refetch: refreshTriggers } = useActiveTriggers()
 const resetting = computed(
   () =>
@@ -32,19 +33,23 @@ watch(
   { immediate: true }
 )
 
-async function save(data: NonNullable<QueueUpdateIn['data']['Cycle']>) {
-  if (saving.value || (data.ResetTimer && resetting.value)) return
-  saving.value = true
-  try {
-    const response = await queueApi.updateQueue({ queueId: props.queueId, data: { Cycle: data } })
-    if (response.code !== 200) throw new Error(response.message)
-    if (data.ResetTimer) await refreshTriggers()
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    saving.value = false
-    emit('refresh')
-  }
+function save(data: NonNullable<QueueUpdateIn['data']['Cycle']>) {
+  if (data.ResetTimer && resetting.value) return Promise.resolve()
+  const key = data.ResetTimer ? undefined : 'Cycle.IntervalMinutes'
+  return enqueueSave(async () => {
+    try {
+      const response = await queueApi.updateQueue({
+        queueId: props.queueId,
+        data: { Cycle: data },
+      })
+      if (response.code !== 200) throw new Error(response.message)
+      if (data.ResetTimer) await refreshTriggers()
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error))
+    } finally {
+      emit('refresh')
+    }
+  }, key)
 }
 
 function saveInterval() {

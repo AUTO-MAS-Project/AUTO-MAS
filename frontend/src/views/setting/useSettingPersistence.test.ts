@@ -176,4 +176,30 @@ describe('settings persistence contract', () => {
     expect(message.error).toHaveBeenCalledTimes(2)
     expect(persistence.loading.value).toBe(false)
   })
+
+  it('serializes rapid setting updates and coalesces pending writes for the same field', async () => {
+    const settings = reactive<GlobalConfig>({
+      Function: { IfSilence: false, IfAllowSleep: false },
+    })
+    const firstGate = pending<OutBase>()
+    const write = vi
+      .spyOn(UpdateService, 'updateScriptApiSettingUpdatePost')
+      .mockReturnValueOnce(firstGate.promise)
+      .mockImplementation(() => reply(success))
+    const persistence = createPersistence(settings)
+
+    const p1 = persistence.handleSettingChange('Function', 'IfSilence', true)
+    const p2 = persistence.handleSettingChange('Function', 'IfAllowSleep', true)
+    const p3 = persistence.handleSettingChange('Function', 'IfAllowSleep', false)
+
+    expect(write).toHaveBeenCalledTimes(1)
+    firstGate.resolve(success)
+    await expect(Promise.all([p1, p2, p3])).resolves.toEqual([true, true, true])
+    expect(write.mock.calls.map(([request]) => request.data)).toEqual([
+      { Function: { IfSilence: true } },
+      { Function: { IfAllowSleep: false } },
+    ])
+    expect(settings.Function).toEqual({ IfSilence: true, IfAllowSleep: false })
+    expect(persistence.loading.value).toBe(false)
+  })
 })

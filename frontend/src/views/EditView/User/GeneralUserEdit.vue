@@ -178,14 +178,10 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
-const isInitializing = ref(true) // 标记是否正在初始化
-// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
-
-// 路由参数
+const isInitializing = ref(true)
 const scriptId = route.params.scriptId as string
-
 let userId = route.params.userId as string
+const { enqueue } = useSaveQueue()
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
@@ -309,19 +305,18 @@ const handleConfigModeChange = async (value: boolean | string) => {
   const previousMode = formData.Info.Base
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
   configModeSaving.value = true
-
   try {
-    const saved = await updateUser(scriptId, userId, {
-      Info: { Base: formData.Info.Base as 'shared' | 'independent' | 'native' },
+    await enqueue(async () => {
+      const saved = await updateUser(scriptId, userId, {
+        Info: { Base: formData.Info.Base as 'shared' | 'independent' | 'native' },
+      })
+      if (!saved) {
+        formData.Info.Base = previousMode
+        return
+      }
+      await loadUserData()
+      logger.info(`配置来源已切换为: ${formData.Info.Base}`)
     })
-
-    if (!saved) {
-      formData.Info.Base = previousMode
-      return
-    }
-
-    await loadUserData()
-    logger.info(`配置来源已切换为: ${formData.Info.Base}`)
   } finally {
     configModeSaving.value = false
   }
