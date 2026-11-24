@@ -1,6 +1,24 @@
 <template>
-  <AppPage layout="scroll" class="emulator-page">
-    <PageHeader :title="t('core.games.title')" />
+  <AppPage layout="fill" class="emulator-page">
+    <PageHeader :title="t('core.games.title')">
+      <template #actions>
+        <a-space size="middle">
+          <a-button size="large" :loading="searching" @click="search">
+            <template #icon><SearchOutlined /></template>
+            {{ t('core.games.discover') }}
+          </a-button>
+          <a-button
+            type="primary"
+            size="large"
+            :disabled="!api.types.value.length"
+            @click="editorOpen = true"
+          >
+            <template #icon><PlusOutlined /></template>
+            {{ t('core.games.add') }}
+          </a-button>
+        </a-space>
+      </template>
+    </PageHeader>
 
     <ApiRetryAlert
       :error="api.error.value ? String(api.error.value) : null"
@@ -16,48 +34,49 @@
       empty-size="lg"
       :min-height="320"
       overlay-loading
+      class="games-state"
     >
       <template #empty-action>
-        <a-space wrap>
-          <a-button :loading="searching" @click="search">
+        <a-space wrap size="middle">
+          <a-button size="large" :loading="searching" @click="search">
             <template #icon><SearchOutlined /></template>
             {{ t('core.games.discover') }}
           </a-button>
-          <a-button type="primary" :disabled="!api.types.value.length" @click="editorOpen = true">
+          <a-button
+            type="primary"
+            size="large"
+            :disabled="!api.types.value.length"
+            @click="editorOpen = true"
+          >
             <template #icon><PlusOutlined /></template>
             {{ t('core.games.add') }}
           </a-button>
         </a-space>
       </template>
 
-      <PageSurface :scrollable="false" class="emulator-tabs">
-        <a-tabs v-model:active-key="activeKey" type="editable-card" hide-add>
-          <a-tab-pane v-for="row in api.rows.value" :key="row.uid" :closable="false">
-            <template #tab>
-              <span class="tab-title" :title="row.document.info?.name ?? undefined">
-                {{ row.document.info?.name || t('core.emulator.unnamed') }}
-              </span>
-            </template>
-            <GameTargetPanel :game="row" />
-          </a-tab-pane>
-          <template #rightExtra>
-            <a-space wrap class="tab-extra-actions">
-              <a-button :loading="searching" @click="search">
-                <template #icon><SearchOutlined /></template>
-                {{ t('core.games.discover') }}
-              </a-button>
-              <a-button
-                type="primary"
-                :disabled="!api.types.value.length"
-                @click="editorOpen = true"
-              >
-                <template #icon><PlusOutlined /></template>
-                {{ t('core.games.add') }}
-              </a-button>
-            </a-space>
-          </template>
-        </a-tabs>
-      </PageSurface>
+      <div ref="shellHostRef" class="games-shell-host">
+        <PageSurface
+          :scrollable="false"
+          padding="none"
+          class="emulator-tabs games-shell"
+          :class="{ 'games-shell--narrow': isNarrow }"
+        >
+          <GameTargetRail
+            :rows="api.rows.value"
+            :active-key="activeKey"
+            :operations-by-target="operationsByTarget"
+            :narrow="isNarrow"
+            @select="uid => (activeKey = uid)"
+          />
+          <GameTargetPanel
+            v-if="activeRow"
+            :game="activeRow"
+            :active-operations="activeRowOperations"
+            :narrow="isNarrow"
+            @cancel="cancel"
+          />
+        </PageSurface>
+      </div>
     </StateView>
 
     <GameEditor
@@ -83,42 +102,32 @@
             </a-button>
           </a-list-item>
         </template>
-        <template #emptyText
-          ><NoData :description="t('core.games.noDiscovery')" size="sm"
-        /></template>
+        <template #emptyText>
+          <NoData :description="t('core.games.noDiscovery')" size="sm" />
+        </template>
       </a-list>
     </AppModal>
-    <a-alert
-      v-for="item in activeOperations"
-      :key="item.taskId"
-      type="info"
-      show-icon
-      class="operation-alert"
-      :message="t('core.games.operationRunning')"
-    >
-      <template #action>
-        <a-button size="small" :loading="item.cancelling" @click="cancel(item)">
-          {{ t('core.games.cancel') }}
-        </a-button>
-      </template>
-    </a-alert>
   </AppPage>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { AppModal, AppPage, NoData, PageHeader, PageSurface, StateView } from '@/components/ui'
 import type { ActiveTriggerField } from '@/api'
-import { gameDevices } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { buildTargetOperationsMap } from './gamePresentation'
 import GameEditor from './components/GameEditor.vue'
 import GameTargetPanel from './components/GameTargetPanel.vue'
+import GameTargetRail from './components/GameTargetRail.vue'
+
+/** 低于此内容宽度（对应主窗口约 1144px）时左栏自动收起为顶部切换栏。 */
+const NARROW_LAYOUT_BREAKPOINT = 920
 
 const { t } = useI18n()
 const api = useGamesApi()
@@ -130,20 +139,51 @@ const searching = ref(false)
 const foundOpen = ref(false)
 const importing = ref('')
 const found = ref<{ uid: string; name: string; path: string }[]>([])
-const activeOperations = computed(() => {
-  const targets = new Set(
-    api.rows.value.flatMap(row => [row.uid, ...gameDevices(row).map(device => device.uid)])
-  )
-  return (activeTriggers.value ?? []).filter(item => targets.has(item.configUid))
+const shellHostRef = ref<HTMLElement | null>(null)
+const isNarrow = ref(false)
+
+let resizeObserver: ResizeObserver | null = null
+
+watch(shellHostRef, host => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  if (!host) return
+  const updateWidth = (width: number) => {
+    if (width > 0) isNarrow.value = width < NARROW_LAYOUT_BREAKPOINT
+  }
+  updateWidth(host.clientWidth)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width ?? host.clientWidth
+      updateWidth(width)
+    })
+    resizeObserver.observe(host)
+  }
 })
-watch(
-  () =>
-    activeOperations.value
-      .map(item => item.taskId)
-      .sort()
-      .join(','),
-  () => void api.refresh()
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+})
+
+const operationsByTarget = computed(() =>
+  buildTargetOperationsMap(api.rows.value, activeTriggers.value)
 )
+
+const activeRow = computed(() => api.rows.value.find(row => row.uid === activeKey.value))
+
+const activeRowOperations = computed(() =>
+  activeRow.value ? (operationsByTarget.value.get(activeRow.value.uid) ?? []) : []
+)
+
+const allActiveOperationKey = computed(() =>
+  Array.from(operationsByTarget.value.values())
+    .flatMap(items => items.map(item => item.taskId))
+    .sort()
+    .join(',')
+)
+
+watch(allActiveOperationKey, () => void api.refresh())
 
 watch(
   api.rows,
@@ -198,19 +238,29 @@ async function cancel(field: ActiveTriggerField) {
   margin-bottom: 12px;
 }
 
-.emulator-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: var(--app-page-content-gap);
+.games-state {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.tab-title {
-  font-weight: 500;
+.games-shell-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
 }
 
-.tab-extra-actions {
-  margin-inline-start: 8px;
+.games-shell {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  overflow: hidden;
 }
 
-.operation-alert {
-  margin-top: 12px;
+.games-shell--narrow {
+  display: flex;
+  flex-direction: column;
 }
 </style>

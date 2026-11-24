@@ -1,20 +1,43 @@
 <template>
-  <a-space>
+  <a-space v-if="visiblePrimaryActions.length || moreActions.length" :size="6" wrap>
     <a-button
-      v-for="action in primaryActions.filter(shown)"
+      v-for="action in visiblePrimaryActions"
       :key="action"
-      type="link"
-      size="small"
+      :type="action === 'open' ? 'primary' : 'default'"
+      :ghost="action === 'open'"
+      :danger="action === 'close'"
+      size="middle"
+      class="row-action-btn"
+      :class="{ 'row-action-btn--narrow': narrow }"
       :aria-label="label(action)"
       :loading="running(action)"
       :disabled="!canRun(action)"
       @click="operate(action)"
-      >{{ label(action) }}</a-button
     >
+      <template #icon>
+        <PlayCircleOutlined v-if="action === 'open'" />
+        <PoweroffOutlined v-else-if="action === 'close'" />
+        <EyeOutlined v-else />
+      </template>
+      {{ label(action) }}
+    </a-button>
+
     <a-dropdown v-if="moreActions.length">
-      <a-button type="link" size="small" :loading="!!runningMenuAction"
-        >{{ runningMenuAction ? label(runningMenuAction) : t('core.games.more') }} <DownOutlined
-      /></a-button>
+      <a-button
+        size="middle"
+        class="row-action-btn"
+        :class="{ 'row-action-btn--narrow': narrow }"
+        :aria-label="narrow ? t('core.games.more') : undefined"
+        :loading="!!runningMenuAction"
+      >
+        <template v-if="narrow && !runningMenuAction">
+          <DownOutlined />
+        </template>
+        <template v-else>
+          {{ runningMenuAction ? label(runningMenuAction) : t('core.games.more') }}
+          <DownOutlined />
+        </template>
+      </a-button>
       <template #overlay>
         <a-menu @click="menuAction">
           <a-menu-item
@@ -30,6 +53,7 @@
       </template>
     </a-dropdown>
   </a-space>
+  <span v-else class="no-action-placeholder">—</span>
 </template>
 
 <script setup lang="ts">
@@ -37,13 +61,22 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { useConfirm } from '@/composables/useConfirm'
-import { DownOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import {
+  DownOutlined,
+  EyeOutlined,
+  LoadingOutlined,
+  PlayCircleOutlined,
+  PoweroffOutlined,
+} from '@ant-design/icons-vue'
 import type { GameRow, GameDeviceRow } from '@/types/games'
 import { gameActionHint } from '@/types/games'
 import { useGameTriggers } from '@/composables/useGameTriggers'
 import { useGamesApi } from '@/composables/useGamesApi'
 
-const props = defineProps<{ game: GameRow; device: GameDeviceRow }>()
+const props = withDefaults(
+  defineProps<{ game: GameRow; device: GameDeviceRow; narrow?: boolean }>(),
+  { narrow: false }
+)
 const emit = defineEmits<{ edit: [kind: 'settings' | 'connection' | 'options'] }>()
 const { t } = useI18n()
 const { confirm } = useConfirm()
@@ -63,6 +96,7 @@ type InstanceAction = (typeof primaryActions)[number] | (typeof instanceActions)
 type EditAction = (typeof editActions)[number]
 type Action = InstanceAction | EditAction
 
+const visiblePrimaryActions = computed(() => primaryActions.filter(shown))
 const moreActions = computed(() => [...instanceActions, ...editActions].filter(shown))
 const runningMenuAction = computed(() => instanceActions.find(running))
 
@@ -129,3 +163,17 @@ function menuAction({ key }: { key: string | number }) {
   void operate(action)
 }
 </script>
+
+<style scoped>
+.row-action-btn {
+  padding-inline: 10px;
+}
+
+.row-action-btn--narrow {
+  padding-inline: 7px;
+}
+
+.no-action-placeholder {
+  color: var(--ant-color-text-tertiary);
+}
+</style>

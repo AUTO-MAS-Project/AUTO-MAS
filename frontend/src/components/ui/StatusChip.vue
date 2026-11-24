@@ -5,7 +5,7 @@
  */
 withDefaults(
   defineProps<{
-    tone?: 'success' | 'warning' | 'error' | 'neutral'
+    tone?: 'success' | 'processing' | 'warning' | 'error' | 'neutral'
     /** 前置圆点，正常状态用它，纯文字标签可以关掉 */
     dot?: boolean
   }>(),
@@ -46,6 +46,12 @@ withDefaults(
   border-color: var(--ant-color-success-border);
   color: var(--ant-color-success);
   background: var(--ant-color-success-bg);
+}
+
+.ui-chip--processing {
+  border-color: var(--ant-color-primary-border);
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
 }
 
 .ui-chip--warning {
