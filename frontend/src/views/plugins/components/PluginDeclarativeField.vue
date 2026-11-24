@@ -2,23 +2,22 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComponentHint } from '@/api'
+import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
 import DeclarativeControl from '@/components/DeclarativeControl.vue'
-import { configurationFieldSpan } from '@/utils/declarativeLayout'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { apiErrorMessage } from '@/utils/apiResult'
 
-export type DeclarativeHint = ComponentHint
+export type { DeclarativeHint }
 const props = defineProps<{
   group: string
   namespace: string
   hint: DeclarativeHint
   value: unknown
-  options: Array<{ value: string; label: string }>
+  options: Required<DeclarativeOption>[]
   loading?: boolean
   disabled?: boolean
 }>()
-const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown] }>()
+const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
 const { t, te } = useI18n()
 const key = computed(
   () =>
@@ -34,6 +33,7 @@ const tip = computed(() =>
     ? t(`${key.value}.tip`)
     : ''
 )
+const isStacked = computed(() => props.hint.component === 'path' || Boolean(props.hint.multiple))
 const isAction = computed(() =>
   /* 判断当前控件是否为按钮类动作，以区分触发操作和普通编辑。 */ [
     'button',
@@ -47,10 +47,12 @@ const update = (value: unknown) =>
 const pick = async () => {
   // 按路径类型打开文件或目录选择器，将选中路径提交给表单，并展示选择失败原因。
   try {
+    const extensions = props.hint.path_extensions
+    const filters = extensions?.length ? [{ name: label.value, extensions }] : undefined
     const selected =
       props.hint.path_kind === 'folder'
         ? await window.electronAPI.selectFolder()
-        : (await window.electronAPI.selectFile())?.[0]
+        : (await window.electronAPI.selectFile(filters))?.[0]
     if (selected) emit('update:value', selected)
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.emulator.toast.filePickerUnavailable')))
@@ -59,21 +61,19 @@ const pick = async () => {
 </script>
 
 <template>
-  <div
-    class="plugin-field form-grid-24__item form-item-vertical"
-    :style="{ '--field-span': configurationFieldSpan(hint.component) }"
+  <SettingRow
+    :label="label"
+    :hint="tip || undefined"
+    :disabled="disabled || hint.editable === false"
+    :stacked="isStacked"
   >
-    <div class="form-label-wrapper">
-      <span class="form-label">{{ label }}</span>
-      <a-tooltip v-if="tip" :title="tip"><QuestionCircleOutlined class="help-icon" /></a-tooltip>
-    </div>
     <DeclarativeControl
       :component="hint.component"
       :label="label"
       :model-value="value"
       :disabled="disabled || hint.editable === false || loading"
       :loading="loading"
-      :secret="hint.secret"
+      :secret="Boolean(hint.secret || hint.masked)"
       :path-kind="hint.path_kind"
       :min="hint.min"
       :max="hint.max"
@@ -81,6 +81,7 @@ const pick = async () => {
       :options="options"
       @update:model-value="update"
       @pick="pick"
+      @blur="emit('blur')"
     />
-  </div>
+  </SettingRow>
 </template>
