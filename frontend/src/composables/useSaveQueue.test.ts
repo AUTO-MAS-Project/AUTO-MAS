@@ -12,7 +12,7 @@ const deferred = <T>() => {
 const flush = () => new Promise(resolve => setTimeout(resolve, 0))
 
 describe('useSaveQueue', () => {
-  it('merges pending saves with the same key and keeps the latest value', async () => {
+  it('merges pending saves with the same key, respects barriers, and isolates errors', async () => {
     const { enqueue, isSaving } = useSaveQueue()
     const first = deferred<string>()
     const second = deferred<string>()
@@ -45,17 +45,22 @@ describe('useSaveQueue', () => {
       sent.push('latest')
       return 'latest'
     }, 'Run.Limit')
-    const other = enqueue(async () => {
-      sent.push('other')
-      return 'other'
-    }, 'Run.Other')
+    const barrier = enqueue(async () => {
+      sent.push('barrier')
+      return 'barrier'
+    })
+    const afterBarrier = enqueue(async () => {
+      sent.push('after-barrier')
+      return 'after-barrier'
+    }, 'Run.Limit')
 
     gate.resolve()
     await blocker
     await expect(stale).resolves.toBe('latest')
     await expect(latest).resolves.toBe('latest')
-    await expect(other).resolves.toBe('other')
-    expect(sent).toEqual(['latest', 'other'])
+    await expect(barrier).resolves.toBe('barrier')
+    await expect(afterBarrier).resolves.toBe('after-barrier')
+    expect(sent).toEqual(['latest', 'barrier', 'after-barrier'])
 
     const runningGate = deferred<void>()
     const runningSent: string[] = []
@@ -82,5 +87,38 @@ describe('useSaveQueue', () => {
     await expect(failed).rejects.toThrow('boom')
     await expect(after).resolves.toBe('ok')
     expect(isSaving.value).toBe(false)
+  })
+
+  it('serializes writes globally across independent callers while keeping isSaving per caller', async () => {
+    const pageQueue = useSaveQueue()
+    const childQueue = useSaveQueue()
+    const gate = deferred<void>()
+    const order: string[] = []
+
+    const p1 = pageQueue.enqueue(async () => {
+      order.push('page-start')
+      await gate.promise
+      order.push('page-end')
+      return 'page'
+    }, 'Info.Name')
+
+    const p2 = childQueue.enqueue(async () => {
+      order.push('child-run')
+      return 'child'
+    }, 'Info.Name')
+
+    expect(pageQueue.isSaving.value).toBe(true)
+    expect(childQueue.isSaving.value).toBe(true)
+    expect(order).toEqual(['page-start'])
+
+    const idle = pageQueue.waitForIdle()
+    gate.resolve()
+    await expect(p1).resolves.toBe('page')
+    await expect(p2).resolves.toBe('child')
+    await idle
+
+    expect(order).toEqual(['page-start', 'page-end', 'child-run'])
+    expect(pageQueue.isSaving.value).toBe(false)
+    expect(childQueue.isSaving.value).toBe(false)
   })
 })

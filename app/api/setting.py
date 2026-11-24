@@ -41,6 +41,7 @@ from starlette.background import BackgroundTask
 
 import app.core.notify.bootstrap as notify_channels
 import app.models.config as _config_models
+from app.api._error_codes import config_error_code
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, Notify
 from app.models.config import Webhook as WebhookConfig
@@ -379,7 +380,9 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
             f"update_script失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=config_error_code(e),
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
     return OutBase()
 

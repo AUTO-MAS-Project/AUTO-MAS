@@ -86,6 +86,7 @@ import { Service } from '@/api'
 import { useGamesApi, checkedGameResponse, useGameBindingQuery } from '@/composables/useGamesApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { gameDevices, isDeletedDevice, type GameBindingValue } from '@/types/games'
 
@@ -126,13 +127,18 @@ const inheritedName = computed(
     games.rows.value.find(game => game.uid === query.data.value?.inherited?.game_id)?.document.info
       ?.name ?? t('core.games.noTarget')
 )
+const userSaveQueue = useSaveQueue()
 const save = useMutation({
   mutationKey: computed(() => ['game-binding-save', props.scriptId, userId.value]),
   scope: { id: `script-save:${props.scriptId}` },
   retry: false,
   mutationFn: async (value: GameBindingValue) => {
-    const ok = userId.value
-      ? await updateUser(props.scriptId, userId.value, { game: value })
+    const currentUserId = userId.value
+    const ok = currentUserId
+      ? await userSaveQueue.enqueue(
+          () => updateUser(props.scriptId, currentUserId, { game: value }),
+          'game'
+        )
       : await updateScript(props.scriptId, { game: value })
     if (!ok) throw new Error(t('core.games.saveFailed'))
   },
