@@ -87,3 +87,20 @@ dev:
               pip install -r requirements.txt
               python github_download_and_cnb_upload.py --cnb-token $CNB_TOKEN --github-token $GITHUB_TOKEN --run-id $RUN_ID --version-tag "$VERSION_TAG" --is-prerelease "$IS_PRERELEASE" --target-commitish dev --release-body "$RELEASE_BODY"
               echo api done!
+
+# 独立发版分支复用 GitHub 已签名产物，发行版关联正式版本分支。
+"release/**":
+  api_trigger_one:
+    - runner:
+        cpus: 1
+      docker:
+        image: python:3.11@sha256:70e8e937c1da72df1688e883a2108b0feff03381187fa78eca6d9b10df411320 # 3.11.16-trixie
+      imports:
+        - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
+      stages:
+        - name: API触发上传
+          script: |
+              echo run id: $RUN_ID
+              cd .github/workflows
+              pip install -r requirements.txt
+              python github_download_and_cnb_upload.py --cnb-token "$CNB_TOKEN" --github-token "$GITHUB_TOKEN" --run-id "$RUN_ID" --version-tag "$VERSION_TAG" --is-prerelease "$IS_PRERELEASE" --target-commitish "release/$VERSION_TAG" --release-body "$RELEASE_BODY"
