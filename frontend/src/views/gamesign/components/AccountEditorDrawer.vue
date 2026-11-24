@@ -46,9 +46,16 @@ const { loginTaygedo } = useTokenApi()
 const form = ref<AccountForm>(toAccountForm(null))
 const baseline = ref<AccountForm>(toAccountForm(null))
 
+/** 本次抽屉会话编号：打开或切账号时递增，用来丢弃迟到的回读结果 */
+let drawerSession = 0
+/** 本次会话里用户亲手改过的凭据字段：回读时只对齐基线，不覆盖输入 */
+let editedFields = new Set<CredentialField>()
+
 watch(
   () => [props.open, props.account?.uid] as const,
   () => {
+    drawerSession += 1
+    editedFields = new Set<CredentialField>()
     if (!props.open) return
     // 每次打开都从最新快照重新取基线，避免上次未保存的改动残留
     form.value = toAccountForm(props.account)
@@ -91,37 +98,61 @@ const {
 } = useQrLogin({
   getAccountId: () => qrAccountId.value,
   provider: () => qrProvider.value,
-  onSaved: () => {
+  onSaved: async () => {
     // 回调里的 credential 只是扫码票据（森空岛是短时 scan_code），不是账号组里的凭据，
     // 直接写进表单会把票据存成 Token，所以回读后端已保存的字段。
-    void reloadCredentialField(qrProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken')
+    // 这里必须等回读落地再返回：否则抽屉会先进入「已完成」态，用户接着手改同一项时
+    // 回读还在路上，落地就会覆盖刚输入的值。
+    await reloadCredentialField(qrProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken')
   },
   logger,
 })
 
 /**
- * 按账号 UID 回读服务端已保存的字段，只覆盖该字段的表单值与基线。
+ * 手填与清除都算「用户编辑过这个字段」。
+ *
+ * 标记之后，还在路上的扫码 / 账密回读就不能再覆盖输入，
+ * 否则用户刚清空或刚粘贴的值会被服务端旧值盖掉，点保存也看不出刚改过。
+ */
+const onFieldInput = (field: CredentialField, value: string) => {
+  form.value = { ...form.value, [field]: value }
+  editedFields.add(field)
+}
+
+/** 模板里按行绑定输入事件：柯里化后参数类型由 TS 推导，不用在模板写类型标注 */
+const onCredentialInput = (field: CredentialField) => (value: string) => onFieldInput(field, value)
+
+/**
+ * 按账号 UID 回读服务端已保存的字段。
  *
  * 扫码和账密登录都不经过本抽屉的保存动作，后端写完库后表单必须重新对齐，
  * 否则保存时会把回调参数（票据）当成新凭据提交，或整份覆盖掉后台刚轮换的凭据。
+ * 回读是异步的，落地前要过两道闸：这次抽屉会话是否还在，用户是否已经改过该字段。
  */
 const reloadCredentialField = async (field: CredentialField) => {
   const account = props.account
   const reload = props.onReload
   if (!account || !reload) return
+  const session = drawerSession
   const fresh = await reload(account.uid)
-  // 回读期间抽屉可能已切到别的账号，此时不能把结果写进新表单
+  // 抽屉已关闭或已切到别的账号，这次结果没有落点
+  if (session !== drawerSession) return
   if (!props.account || props.account.uid !== account.uid) return
   if (!fresh) return
   const value = toAccountForm(fresh)[field]
-  form.value = { ...form.value, [field]: value }
+  // 基线始终对齐服务端，保证「没改过就不提交」的判断成立
   baseline.value = { ...baseline.value, [field]: value }
+  // 用户在这段时间里动过该字段：保留输入，只更新基线
+  if (editedFields.has(field)) return
+  form.value = { ...form.value, [field]: value }
 }
 
 const startQrLogin = (field: CredentialField) => {
   if (!props.account) return
   qrProvider.value = field === 'SklandToken' ? 'skland' : 'miyoushe'
   qrAccountId.value = props.account.uid
+  // 用户主动发起扫码，等于要用服务端写入的凭据替换这一项，先撤掉手填标记
+  editedFields.delete(field)
   void startQr()
 }
 
@@ -133,6 +164,8 @@ const passwordLoading = ref(false)
 const openPasswordLogin = () => {
   passwordForm.value = { phone: '', password: '' }
   passwordVisible.value = true
+  // 同扫码：这次账密登录的结果就是要替换 TaygedoToken，先撤掉手填标记
+  editedFields.delete('TaygedoToken')
 }
 
 /**
@@ -182,7 +215,7 @@ const submitPasswordLogin = async () => {
 }
 
 const clearCredential = (field: CredentialField) => {
-  form.value = { ...form.value, [field]: '' }
+  onFieldInput(field, '')
 }
 
 const handleSave = () => {
@@ -251,10 +284,11 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <a-input-password
-          v-model:value="form[row.field]"
+          :value="form[row.field]"
           size="large"
           allow-clear
           :placeholder="t(row.placeholder)"
+          @update:value="onCredentialInput(row.field)"
         />
       </section>
 
