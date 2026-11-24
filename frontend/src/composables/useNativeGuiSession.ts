@@ -39,7 +39,6 @@ export function useNativeGuiSession(options: {
     opened: string
     viewOpened: string
     timeoutWarn: string
-    saved: string
     saveFailed: string
   }
 }) {
@@ -63,19 +62,18 @@ export function useNativeGuiSession(options: {
   let keepDiscardFrames = false
   // 本次会话的改动是否已被后端丢弃（原因见后端 WSTaskConfigDiscardedData）
   let discardedReason: string | null = null
+  let sessionFailed = false
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
   const SESSION_WARNING_ADVANCE_MS = 30 * 1000
-  // 停止响应返回后，再给后端已写出的 WebSocket 帧留一个回合，避免「已保存」
-  // 提示抢先于「改动被丢弃」弹窗（后端在停止响应前就发出了丢弃帧）
+  // 停止响应先到时，保留订阅以便显示已经发出的丢弃或失败原因。
   const DISCARD_FRAME_GRACE_MS = 300
 
   let configTimeout: number | null = null
   let warningTimeout: number | null = null
 
-  // keepSubscriptions=true 时保留订阅：丢弃帧先于停止响应发出，但到达顺序不保证，
-  // 保存流程要等完这一回合才能判断该不该提示「已保存」。
+  // 保存期间关闭遮罩，保留旧会话的结果订阅直到通知宽限期结束。
   const clearSession = (keepSubscriptions = false) => {
     if (!keepSubscriptions) {
       subscriptionIds.value.forEach(unsubscribe)
@@ -155,6 +153,7 @@ export function useNativeGuiSession(options: {
     startingPromise = Promise.resolve().then(async () => {
       try {
         discardedReason = null
+        sessionFailed = false
         keepDiscardFrames = false
         const response = await requestScriptConfigStart(
           startTaskId,
@@ -173,6 +172,7 @@ export function useNativeGuiSession(options: {
           subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
             if (wsMessage.data.level !== 'error') return
 
+            sessionFailed = true
             message.error(t(keys.setupFailed, { p0: wsMessage.data.message }))
             void stopSession()
           }),
@@ -229,8 +229,9 @@ export function useNativeGuiSession(options: {
         return
       }
       await new Promise(resolve => window.setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
-      // 改动已被丢弃时不再提示「已保存」——弹窗已经说明去向，两条提示互相矛盾。
-      if (!discardedReason) message.success(t(keys.saved))
+      if (!discardedReason && !sessionFailed) {
+        message.info(t('core.edit.configurationSaveUnconfirmed'))
+      }
     })().finally(() => {
       keepDiscardFrames = false
       if (!taskId.value) clearSession()

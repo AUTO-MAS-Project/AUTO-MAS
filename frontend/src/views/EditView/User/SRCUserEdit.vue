@@ -676,9 +676,7 @@ const handleSaveSRCConfig = async () => {
     if (response && response.code === 200) {
       closeSessionUi()
       if (!viewOnly) {
-        message.success(
-          t('core.edit.configurationUserP0Was', { p0: formData.Info?.Name || formData.userName })
-        )
+        message.info(t('core.edit.configurationSaveUnconfirmed'))
       }
     } else {
       message.error(response?.message || t('core.edit.couldNotSaveSrc'))

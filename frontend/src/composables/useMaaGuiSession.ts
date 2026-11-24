@@ -11,7 +11,6 @@ export function useMaaGuiSession() {
       opened: 'core.edit.maaSessionOpened',
       viewOpened: 'core.edit.maaViewOpened',
       timeoutWarn: 'core.edit.maaSessionTimeoutWarn',
-      saved: 'core.edit.configurationThisUserWas',
       saveFailed: 'core.edit.couldNotSaveMaa',
     },
   })

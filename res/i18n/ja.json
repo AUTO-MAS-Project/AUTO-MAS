@@ -942,6 +942,7 @@
   "core.edit.configurationManagement": "設定の管理方式",
   "core.edit.configurationName": "設定名",
   "core.edit.configurationSaved": "設定を保存しました",
+  "core.edit.configurationSaveUnconfirmed": "設定セッションを閉じました。保存結果は確認できませんでした。",
   "core.edit.configurationSessionTimedOut": "設定セッションがタイムアウトしたため、設定を自動保存しました",
   "core.edit.configurationSessionUserP0": "アカウント {p0} の設定セッションがタイムアウトしました",
   "core.edit.configurationSource": "設定ファイルの取得元",

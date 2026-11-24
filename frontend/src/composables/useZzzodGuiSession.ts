@@ -13,7 +13,6 @@ export function useZzzodGuiSession() {
       opened: 'core.edit.zzzodSessionOpened',
       viewOpened: 'core.edit.zzzodViewOpened',
       timeoutWarn: 'core.edit.zzzodSessionTimeoutWarn',
-      saved: 'core.edit.zzzodSettingsSaved',
       saveFailed: 'core.edit.zzzodSettingsSaveFailed',
     },
   })

@@ -942,6 +942,7 @@
   "core.edit.configurationManagement": "Configuration management",
   "core.edit.configurationName": "Configuration name",
   "core.edit.configurationSaved": "Configuration saved",
+  "core.edit.configurationSaveUnconfirmed": "Configuration session closed. Saving could not be confirmed.",
   "core.edit.configurationSessionTimedOut": "The configuration session timed out and was saved automatically",
   "core.edit.configurationSessionUserP0": "The configuration session for account {p0} timed out",
   "core.edit.configurationSource": "Configuration source",

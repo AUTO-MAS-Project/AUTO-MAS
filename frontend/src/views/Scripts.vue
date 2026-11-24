@@ -319,7 +319,7 @@ const handleSaveConfigMask = () => {
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
-// 丢弃帧由任务收尾过程发出，与停止响应分属两条链路：停止后等一个回合再判定改动是否生效
+// 停止响应先到时，仍可接收已经发出的丢弃或失败通知。
 const DISCARD_FRAME_GRACE_MS = 300
 
 // 配置会话的连接记录（键为 scriptId）
@@ -331,6 +331,7 @@ type ConfigSessionConnection = {
   discardedReason: string | null
   /** 丢弃提示是否已弹过：完成帧与停止响应都会走到会话结束，只提示一次 */
   discardWarned: boolean
+  failed: boolean
 }
 
 // WebSocket连接管理：scriptId -> ConfigSessionConnection
@@ -527,18 +528,18 @@ const clearConfigSession = (
 }
 
 // 结束一次配置会话：释放订阅与遮罩，必要时补一次「改动被丢弃」提示。
-// 返回改动是否生效（false 表示后端已丢弃，调用方不该再提示「已保存」）。
 const finishConfigSession = (
   targetId: string,
   connection: ConfigSessionConnection,
   clearState: () => void
 ) => {
-  clearConfigSession(targetId, connection.subscriptionIds, clearState)
+  if (activeConnections.value.get(targetId)?.taskId === connection.taskId) {
+    clearConfigSession(targetId, connection.subscriptionIds, clearState)
+  }
   if (connection.discardedReason && !connection.discardWarned) {
     connection.discardWarned = true
     showConfigDiscardWarning(t, connection.discardedReason)
   }
-  return connection.discardedReason === null
 }
 
 // 会话超时定时器挂在连接记录上，会话结束或页面卸载时一并清掉
@@ -582,11 +583,13 @@ const startConfigSession = async (
     taskId: response.taskId,
     discardedReason: null,
     discardWarned: false,
+    failed: false,
   }
   connection.subscriptionIds.push(
     subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
       const data = wsMessage.data as unknown as WSTaskNoticeData
       if (data.level === 'error') {
+        connection.failed = true
         message.error(t('core.scripts.toast.configFailed', { label, error: data.message }))
       }
     }),
@@ -615,15 +618,17 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
   const connection = activeConnections.value.get(targetId)
   if (!connection) {
     message.error(t('core.scripts.toast.noSession'))
-    return false
+    return
   }
   const response = await stopNativeConfig(connection.taskId, 'save')
   if (response.code !== 200) {
     throw new Error(response.message || t('core.scripts.toast.saveFailedRaw', { label }))
   }
-  // 丢弃帧先于停止响应写出，但到达顺序不保证，等一个回合再判定改动是否生效
   await new Promise(resolve => setTimeout(resolve, DISCARD_FRAME_GRACE_MS))
-  return finishConfigSession(targetId, connection, clearState)
+  finishConfigSession(targetId, connection, clearState)
+  if (!connection.discardedReason && !connection.failed) {
+    message.info(t('core.edit.configurationSaveUnconfirmed'))
+  }
 }
 
 // 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
@@ -660,8 +665,7 @@ const handleStartScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SR
 
 const handleSaveScriptConfig = async (script: ScriptListItem, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
-    const saved = await stopConfigSession(script.id, kind, clearConfigMask)
-    if (saved) message.success(t('core.scripts.toast.configSaved', { name: script.name }))
+    await stopConfigSession(script.id, kind, clearConfigMask)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存${kind}配置失败: ${errorMsg}`)
@@ -710,10 +714,7 @@ const handleStartMaaEndConfig = async (script: ScriptListItem) => {
 
 const handleSaveMaaEndConfig = async (script: ScriptListItem) => {
   try {
-    const saved = await stopConfigSession(script.id, 'MaaEnd', clearConfigMask)
-    if (saved) {
-      message.success(t('core.scripts.toast.configSaved', { name: script.name }))
-    }
+    await stopConfigSession(script.id, 'MaaEnd', clearConfigMask)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 MaaEnd 配置失败: ${errorMsg}`)
@@ -741,8 +742,7 @@ const handleStartOkwwConfig = async (script: ScriptListItem) => {
 
 const handleSaveOkwwConfig = async (script: ScriptListItem) => {
   try {
-    const saved = await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
-    if (saved) message.success(t('core.scripts.toast.okwwSaved', { name: script.name }))
+    await stopConfigSession(script.id, 'ok-ww', clearConfigMask)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 ok-ww 设置失败: ${errorMsg}`)

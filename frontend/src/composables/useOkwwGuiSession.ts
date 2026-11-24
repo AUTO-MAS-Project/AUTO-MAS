@@ -11,7 +11,6 @@ export function useOkwwGuiSession() {
       opened: 'core.edit.okwwSessionOpened',
       viewOpened: 'core.edit.okwwViewOpened',
       timeoutWarn: 'core.edit.okwwSessionTimeoutWarn',
-      saved: 'core.edit.okWwSettingsSaved',
       saveFailed: 'core.edit.couldNotSaveOk2',
     },
   })

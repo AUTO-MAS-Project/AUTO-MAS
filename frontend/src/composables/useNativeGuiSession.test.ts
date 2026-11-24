@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { useNativeGuiSession } from './useNativeGuiSession'
+import { WS_TASK_NOTICE } from '@/services/websocket/types'
 
 const mocks = vi.hoisted(() => ({
   success: vi.fn(),
+  info: vi.fn(),
   error: vi.fn(),
   warning: vi.fn(),
   start: vi.fn(),
   stop: vi.fn(),
   status: vi.fn(),
+  listeners: new Map<string, (frame: unknown) => void>(),
 }))
 vi.mock('ant-design-vue', () => ({ message: mocks }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
@@ -19,7 +22,13 @@ vi.mock('@/api/services/Service', () => ({
   Service: { getTaskStatusApiDispatchTaskTaskIdGet: mocks.status },
 }))
 vi.mock('@/composables/useWebSocket', () => ({
-  useWebSocket: () => ({ subscribe: () => 'id', unsubscribe: vi.fn() }),
+  useWebSocket: () => ({
+    subscribe: (request: { type: string }, listener: (frame: unknown) => void) => {
+      mocks.listeners.set(request.type, listener)
+      return request.type
+    },
+    unsubscribe: (type: string) => mocks.listeners.delete(type),
+  }),
 }))
 vi.mock('@/utils/configSessionDiscard', () => ({ showConfigDiscardWarning: vi.fn() }))
 
@@ -30,9 +39,7 @@ const keys = {
   opened: 'opened',
   viewOpened: 'viewOpened',
   timeoutWarn: 'timeoutWarn',
-  saved: 'saved',
   saveFailed: 'saveFailed',
-  saveUnknown: 'saveUnknown',
 }
 
 describe('native configuration session during scheduler migration', () => {
@@ -50,6 +57,7 @@ describe('native configuration session during scheduler migration', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.clearAllMocks()
+    mocks.listeners.clear()
   })
 
   it('uses the requirement-tree entry for a native session', async () => {
@@ -61,13 +69,39 @@ describe('native configuration session during scheduler migration', () => {
     await session.dispose()
   })
 
-  it('does not query a deferred plan result when saving a normal session', async () => {
+  it('reports that a stopped session has no confirmed save result', async () => {
     const session = useNativeGuiSession({ loggerName: 'test', keys })
     await session.startSession('script')
     const saving = session.saveSession()
     await vi.advanceTimersByTimeAsync(300)
     await saving
     expect(mocks.status).not.toHaveBeenCalled()
-    expect(mocks.success).toHaveBeenCalledWith('saved')
+    expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
+  })
+
+  it('keeps a failed save from reporting success and resets for the next session', async () => {
+    const session = useNativeGuiSession({ loggerName: 'test', keys })
+    await session.startSession('script')
+    mocks.success.mockClear()
+    mocks.stop.mockImplementationOnce(async () => {
+      setTimeout(() => {
+        mocks.listeners.get(WS_TASK_NOTICE)?.({
+          data: { level: 'error', message: 'configuration write failed' },
+        })
+      }, 10)
+      return { code: 200 }
+    })
+    const failedSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
+    await failedSave
+    expect(mocks.error).toHaveBeenCalledWith('setupFailed')
+    expect(mocks.info).not.toHaveBeenCalled()
+    expect(mocks.success).not.toHaveBeenCalled()
+
+    await session.startSession('script')
+    const successfulSave = session.saveSession()
+    await vi.advanceTimersByTimeAsync(300)
+    await successfulSave
+    expect(mocks.info).toHaveBeenCalledWith('core.edit.configurationSaveUnconfirmed')
   })
 })
