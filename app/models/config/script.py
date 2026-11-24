@@ -1551,6 +1551,7 @@ class SrcUserConfig(DomainEntry):
 
         Relic: Literal[
             "-",
+            "Cavern_of_Corrosion_Path_of_the_Secret_Actor",
             "Cavern_of_Corrosion_Path_of_Insight",
             "Cavern_of_Corrosion_Path_of_Possession",
             "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
