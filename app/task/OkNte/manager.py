@@ -20,6 +20,7 @@ import uuid
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
 import app.core.notify.report as _node_report
 from app.config import ConfigCollection, config_manager
@@ -38,6 +39,7 @@ from app.utils import io as _utils_io
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools.backup_archive import archive_native_backup
+from .tools.runtime import OkNteProcessManager
 
 logger = get_logger("OK-NTE 调度器")
 
@@ -68,6 +70,8 @@ class OkNteManager(ScriptManagerBase):
         self.user_config: ConfigCollection[OkNteUserConfig] | None = None
         self.game_manager: ProcessManager | None = None
         self.had_original_script_config = False
+        self._snapshot_prepared = False
+        self._script_exit_unconfirmed = False
         self.crashed = False
         self.plan_locks = []
 
@@ -177,7 +181,7 @@ class OkNteManager(ScriptManagerBase):
                 raise ValueError("ConfigPath未配置，请检查路径设置")
             self.script_config_path = script_config_path
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            self._recover_previous_run()
+            await self._recover_previous_run()
             if self.script_config_path.exists():
                 self.had_original_script_config = True
                 if self.script_config.Script.ConfigPathMode == "Folder":
@@ -189,6 +193,7 @@ class OkNteManager(ScriptManagerBase):
                 elif self.script_config.Script.ConfigPathMode == "File":
                     self.temp_path.mkdir(parents=True, exist_ok=True)
                     shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+            self._snapshot_prepared = True
 
             # 任务级一次性归档 ok-nte 原生配置（项目级池，指纹去重，失败不
             # 阻断任务）：原生配置物理上跨账号共享，只代表「本轮任务动手前」
@@ -199,13 +204,40 @@ class OkNteManager(ScriptManagerBase):
                     self.script_config_path, self.script_config.Script.ConfigPathMode
                 )
 
-    def _recover_previous_run(self) -> None:
-        """处置上次崩溃残留的原始配置快照。"""
+    async def _confirm_script_stopped(self, config: OkNteConfig) -> bool:
+        """配置目录可能由不同桌面会话共用，复核所有会话中的脚本进程。"""
+        try:
+            return await OkNteProcessManager(config).confirm_stopped(all_sessions=True)
+        except (OSError, ValueError) as e:
+            logger.opt(exception=True).warning(f"无法复核 OK-NTE 进程状态: {e}")
+            return False
+
+    async def _recover_previous_run(self) -> None:
+        """进程退出后处置上次遗留的原生配置快照。"""
+        if self.temp_path is None or not self.temp_path.exists():
+            return
+        config = self.script_config
+        if config is None or self.script_config_path is None:
+            raise RuntimeError("OK-NTE 配置快照路径未初始化")
+        if not await self._confirm_script_stopped(config):
+            raise RuntimeError("无法确认旧 OK-NTE 进程已退出，已保留原配置快照")
+
+        file_snapshot = self.temp_path / "config.temp"
+        if config.Script.ConfigPathMode == "File" and file_snapshot.is_file():
+            # 单文件旧快照没有注入指纹，保留备份供手动恢复，避免覆盖外部修改。
+            backup_dir = Path(
+                mkdtemp(prefix="Temp.unresolved.", dir=self.temp_path.parent)
+            )
+            shutil.copy2(file_snapshot, backup_dir / file_snapshot.name)
+            _utils_io.clear_native_config_snapshot(self.temp_path)
+            logger.warning(f"已保留 OK-NTE 原配置文件备份供手动恢复: {backup_dir}")
+            return
 
         result = _utils_io.recover_native_config(
             self.temp_path,
             self.script_config_path,
             expected_script_id=self.script_info.script_id,
+            preserve_on_mismatch=True,
         )
         if result == "restored":
             logger.info("已恢复上次中断前的 OK-NTE 原始配置")
@@ -215,17 +247,23 @@ class OkNteManager(ScriptManagerBase):
             )
         elif result == "skipped":
             logger.warning(
-                "检测到 OK-NTE 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+                "检测到 OK-NTE 原生配置在中断后被改动，已保留当前配置和旧快照"
             )
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
-            self.execution_mode in ("AutoProxy", "ScriptConfig")
+            self._snapshot_prepared
             and self.temp_path
             and self.temp_path.exists()
             and self.script_config_path
             and self.script_config
         ):
+            return
+        if not await self._confirm_script_stopped(self.script_config):
+            self._script_exit_unconfirmed = True
+            message = "无法确认旧 OK-NTE 进程已退出，已保留原配置快照"
+            logger.warning(message)
+            await self.script_info.append_log(f"\n{message}")
             return
         # 复原属于收尾清理, 失败不应掩盖任务本身的异常, 也不应中断后续解锁与回写
         try:
@@ -308,6 +346,15 @@ class OkNteManager(ScriptManagerBase):
                 continue
 
             await self.run_user_task(current_user, method)
+            if (
+                self.execution_mode == "AutoProxy"
+                and not await self._confirm_script_stopped(self.script_config)
+            ):
+                self._script_exit_unconfirmed = True
+                message = "无法确认旧 OK-NTE 进程已退出，已停止处理后续账号"
+                logger.warning(message)
+                await self.script_info.append_log(f"\n{message}")
+                break
 
     async def final_task(self):
         if self.maintenance_only:
@@ -329,7 +376,9 @@ class OkNteManager(ScriptManagerBase):
                 await self.script_info.set_state(status="异常")
                 return
 
-            if any(user.status == "异常" for user in self.script_info.user_list):
+            if self._script_exit_unconfirmed or any(
+                user.status == "异常" for user in self.script_info.user_list
+            ):
                 await self.script_info.set_state(status="异常")
             elif self.all_users_maintenance_skipped:
                 # 画面检测把全部用户判为维护跳过时（公告通道未覆盖的场景），

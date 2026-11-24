@@ -28,7 +28,7 @@ import psutil
 
 from app.models.config import OkNteConfig
 from app.task.pyappify_startup import open_launcher_logs, wait_for_launcher_process
-from app.utils import ProcessInfo, ProcessManager, get_logger
+from app.utils import ProcessInfo, ProcessManager, get_logger, process
 from app.utils.common.process.operations import iter_processes
 
 logger = get_logger("OK-NTE 运行入口")
@@ -213,3 +213,18 @@ class OkNteProcessManager(ProcessManager):
         if track_exe:
             paths.append(Path(track_exe))
         return list(dict.fromkeys(paths))
+
+    async def confirm_stopped(self, *, all_sessions: bool = False) -> bool:
+        """按路径确认启动器、本体和配置的追踪目标已退出。"""
+        stopped = True
+        for exe in self.cleanup_executables():
+            try:
+                if not await process.is_process_stopped(exe, all_sessions=all_sessions):
+                    stopped = False
+                    logger.warning(f"无法确认 OK-NTE 进程已退出: {exe}")
+            except Exception as e:
+                stopped = False
+                logger.opt(exception=True).warning(
+                    f"复核 OK-NTE 进程退出状态失败: {exe}: {e}"
+                )
+        return stopped

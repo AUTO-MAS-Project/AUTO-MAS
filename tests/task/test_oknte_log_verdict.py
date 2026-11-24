@@ -114,7 +114,7 @@ async def test_startup_error_is_kept_in_history_without_runtime_logs(
 
     worker = tmp_path / "data/apps/ok-nte/working/ok-nte.exe"
 
-    async def stop_process(exe):
+    async def stop_process(exe, *, all_sessions=False):
         return stopped or exe != worker
 
     monkeypatch.setattr(proxy_module.OkNteProcessManager, "kill", AsyncMock())

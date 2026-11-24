@@ -1489,19 +1489,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         if self.script_config.Game.Enabled and self.script_config.Game.Type == "Client":
             await self._kill_launcher_process(use_script_fallback=False)
 
-        # 进程管理器会释放句柄，按路径复核可发现仍在运行或路径不可读的同名进程。
-        stopped = True
-        for exe in executables:
-            try:
-                if not await process.is_process_stopped(exe):
-                    stopped = False
-                    logger.warning(f"无法确认 OK-NTE 进程已退出: {exe}")
-            except Exception as e:
-                stopped = False
-                logger.opt(exception=True).warning(
-                    f"复核 OK-NTE 进程退出状态失败: {exe}: {e}"
-                )
-        return stopped
+        return await self.oknte_process_manager.confirm_stopped()
 
     async def _kill_launcher_process(self, *, use_script_fallback: bool) -> None:
         try:
