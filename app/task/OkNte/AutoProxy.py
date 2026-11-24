@@ -92,6 +92,7 @@ from .tools.launcher_start import (
     detect_game_maintenance_text,
     launcher_process_paths,
 )
+from .tools.native_config import mark_config_injected
 from .tools.runtime import OkNteProcessManager, runtime_dir
 
 logger = get_logger("OK-NTE 自动代理")
@@ -518,6 +519,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         target = self.script_config.Script.ConfigPath
         if target is None:
             return False
+        temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
+        snapshot = _utils_io.read_native_config_snapshot(
+            temp, expected_script_id=self.script_info.script_id
+        )
+        if snapshot is not None and not snapshot.original_exists:
+            return False
         if self.script_config.Script.ConfigPathMode == "File":
             return target.is_file()
         with suppress(OSError):
@@ -533,15 +540,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         )
 
     def _oknte_source_config_dir(self, mas_config_dir: Path) -> Path | None:
+        temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         candidates = [
             self._oknte_legacy_mas_config_dir(),
-            Path.cwd() / "data" / self.script_info.script_id / "Temp",
+            temp,
             self.script_config_path,
             runtime_dir(self.script_root_path) / "configs",
             self.script_root_path / "configs",
         ]
         for config_dir in candidates:
-            if not config_dir.is_dir():
+            if not config_dir.is_dir() or (
+                config_dir == temp and not any(temp.iterdir())
+            ):
                 continue
             with suppress(OSError):
                 if config_dir.resolve() == mas_config_dir.resolve():
@@ -578,6 +588,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await process.kill_process(self.script_exe_path)
+        if not await self.oknte_process_manager.confirm_stopped(all_sessions=True):
+            raise RuntimeError("无法确认旧 OK-NTE 进程已退出，已停止下发配置")
 
         temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         folder_mode = self.script_config.Script.ConfigPathMode == "Folder"
@@ -614,12 +626,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 raise ValueError("所选计划不是 OkNte 计划表")
             apply_plan(target_dir, OkNtePlanKey.model_validate(plan.get_current_key()))
         self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
-        if folder_mode:
-            _utils_io.mark_native_config_injected(
-                temp,
-                self.script_config_path,
-                script_id=self.script_info.script_id,
-            )
+        mark_config_injected(
+            temp,
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+            folder_mode=folder_mode,
+        )
         logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
     def _apply_oknte_quick_config(self) -> None:

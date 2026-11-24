@@ -41,6 +41,7 @@ from .tools.backup_archive import (
     ensure_quick_config_dir,
     mas_config_dir,
 )
+from .tools.native_config import mark_config_injected
 from .tools.runtime import OkNteProcessManager
 
 logger = get_logger("OK-NTE 脚本设置")
@@ -138,6 +139,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
         logger.info(f"开始配置 OK-NTE GUI: 设置账号 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
+        if not await self.oknte_process_manager.confirm_stopped(all_sessions=True):
+            raise RuntimeError("无法确认旧 OK-NTE 进程已退出，已停止下发配置")
 
         # 下发前归档 MAS 账号配置（下发源；指纹去重，失败不阻断会话）——
         # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录。
@@ -161,10 +164,11 @@ class ScriptConfigTask(TaskExecuteBase):
 
         if self.script_config.Script.ConfigPathMode == "Folder":
             _utils_io.swap_in_dir(self.mas_config_dir, self.script_config_path)
-            _utils_io.mark_native_config_injected(
+            mark_config_injected(
                 Path.cwd() / f"data/{self.script_info.script_id}/Temp",
                 self.script_config_path,
                 script_id=self.script_info.script_id,
+                folder_mode=True,
             )
         elif self.script_config.Script.ConfigPathMode == "File":
             src_file = self.mas_config_dir / self.script_config_path.name
@@ -175,6 +179,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 )
                 shutil.copy(src_file, tmp_file)
                 tmp_file.replace(self.script_config_path)
+                mark_config_injected(
+                    Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                    self.script_config_path,
+                    script_id=self.script_info.script_id,
+                    folder_mode=False,
+                )
 
         logger.success(f"OK-NTE GUI 配置已加载: {self.cur_user_item.user_id}")
 
