@@ -817,6 +817,11 @@ export function pluginSettingsGroups<THint = unknown>(
   )
 }
 
+/** 后端按同类 Group 聚合成列；插件表单按分组分行，再应用 transpose。 */
+export function pluginSettingsTables(ui?: PluginConfigUi) {
+  return (ui?.tables ?? []).map(table => ({ ...table, rows: table.columns, columns: table.rows }))
+}
+
 /** 确定没有可见设置才隐藏；读失败时仍给入口，由设置页显示失败与重试。 */
 export const showSettingsEntry = (visibility: SettingsVisibility) =>
   visibility === 'visible' || visibility === 'unknown'
