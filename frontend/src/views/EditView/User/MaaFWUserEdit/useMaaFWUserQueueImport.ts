@@ -3,7 +3,7 @@ import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useUserApi } from '@/composables/useUserApi'
 import type { MaaFWUserConfig } from '@/types/script'
-import type { MaaFWUserQueueImportCandidate } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserQueueImportCandidate } from './sectionProps'
 import type { MaaFWTaskQueue } from './useMaaFWTaskQueue'
 import type { MaaFWUserIdHolder } from './useMaaFWUserPersistence'
 

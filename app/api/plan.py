@@ -35,7 +35,7 @@ import app.models.config as _config_models
 from app.api._error_codes import config_error_code
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
 from app.core import Config
-from app.models.schema import ConfigSnapshotOut, OutBase
+from app.models.schema import ConfigSnapshotOut, OutBase, UnavailableConfigItem
 from app.utils import get_logger
 
 OkwwPlanConfig = ConfigPayload[_config_models.OkwwPlanConfig]
@@ -49,8 +49,6 @@ UniversalPlanConfigInput = StrictConfigInput[_config_models.UniversalPlanConfig]
 
 BAAHPlanConfig = ConfigPayload[_config_models.BAAHPlanConfig]
 BAAHPlanConfigInput = StrictConfigInput[_config_models.BAAHPlanConfig]
-MSSPlanConfig = ConfigPayload[_config_models.MSSPlanConfig]
-MSSPlanConfigInput = StrictConfigInput[_config_models.MSSPlanConfig]
 MaaEndPlanConfig = ConfigPayload[_config_models.MaaEndPlanConfig]
 MaaEndPlanConfigInput = StrictConfigInput[_config_models.MaaEndPlanConfig]
 
@@ -69,7 +67,6 @@ class PlanIndexItem(BaseModel):
 PlanCreateType = Literal[
     "MaaEndPlan",
     "BAAHPlan",
-    "MSSPlan",
     "UniversalPlan",
     "OkNtePlan",
     "OkwwPlan",
@@ -80,7 +77,6 @@ type PlanConfigData = (
     SerializeAsAny[BaseModel]
     | MaaEndPlanConfig
     | BAAHPlanConfig
-    | MSSPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
     | OkwwPlanConfig
@@ -89,7 +85,6 @@ type PlanConfigDataInput = (
     SerializeAsAny[BaseModel]
     | MaaEndPlanConfigInput
     | BAAHPlanConfigInput
-    | MSSPlanConfigInput
     | UniversalPlanConfigInput
     | OkNtePlanConfigInput
     | OkwwPlanConfigInput
@@ -119,6 +114,10 @@ class PlanGetIn(BaseModel):
 class PlanGetOut(ConfigSnapshotOut):
     index: List[PlanIndexItem] = Field(..., description="计划索引列表")
     data: Dict[str, PlanConfigData] = Field(..., description="计划列表或单个计划数据")
+    unavailable: List[UnavailableConfigItem] = Field(
+        default_factory=list,
+        description="所属插件不可用的计划表，只在获取全部计划时给出；只能删除",
+    )
 
 
 class PlanUpdateIn(BaseModel):
@@ -226,6 +225,11 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     return PlanGetOut(
         index=index,
         data=data,
+        unavailable=(
+            [UnavailableConfigItem(**item) for item in Config.unavailable_plans()]
+            if plan.planId is None
+            else []
+        ),
         uiSources=[UUID(plan.planId) if plan.planId else Config.PlanConfig.uid],
     )
 

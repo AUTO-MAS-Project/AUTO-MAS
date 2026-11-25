@@ -7,6 +7,7 @@ import importlib.metadata as metadata
 import json
 import shutil
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from uuid import UUID
 
@@ -30,6 +31,8 @@ class InstallationRecord(BaseModel):
     healthy_plugins: list[str] = Field(default_factory=list)
     local_sources: dict[str, str] = Field(default_factory=dict)
     previous_record: UUID | None = None
+    # 为解开依赖一起升级的其他已装插件：规范化包名 → 新版本。
+    co_upgraded: dict[str, str] = Field(default_factory=dict)
 
 
 def distributions(directory: Path) -> dict[str, metadata.Distribution]:
@@ -37,10 +40,21 @@ def distributions(directory: Path) -> dict[str, metadata.Distribution]:
     from app.plugin.types import CORE_DISTRIBUTION_NAME
 
     return {
-        canonicalize_name(dist.name): dist
+        name: dist
         for dist in metadata.distributions(path=[str(directory)])
-        if canonicalize_name(dist.name) != canonicalize_name(CORE_DISTRIBUTION_NAME)
+        if (name := distribution_name(dist)) is not None
+        and name != canonicalize_name(CORE_DISTRIBUTION_NAME)
     }
+
+
+def distribution_name(dist: metadata.Distribution) -> str | None:
+    """规范化的发行名；缺 METADATA（读不了、残缺）的 dist-info 记一条警告后跳过。"""
+    if dist.name is None:
+        logger.warning(
+            "跳过缺少发行名称的元数据：{}", getattr(dist, "_path", "<unknown>")
+        )
+        return None
+    return canonicalize_name(dist.name)
 
 
 def read_installation() -> InstallationRecord | None:
@@ -367,8 +381,11 @@ async def apply_pending() -> bool:
     return True
 
 
-def finish_installation() -> None:
-    """在插件完成加载和启用后确认安装；故障保留旧环境供下次启动恢复。"""
+def finish_installation(held_back: Collection[str] = ()) -> None:
+    """在插件完成加载和启用后确认安装；故障保留旧环境供下次启动恢复。
+
+    ``held_back``：版本低于存量配置要求、这一轮有意不启用的插件，不按启用意图判断。
+    """
     from app.core import Config
     from app.plugin.types import PluginState
 
@@ -378,6 +395,8 @@ def finish_installation() -> None:
     if record is None or record.progress.state != "applying":
         return
     for name in {record.progress.pluginName, *record.healthy_plugins}:
+        if name in held_back:
+            continue
         plugin = Config.plugin_registry.by_name(name)
         # pre_enable 失败会保留 disabled；只有达到用户保存的启用意图才算新环境可用。
         if plugin is None or plugin.info.state != (

@@ -7,6 +7,7 @@ import type { MaaFWConfig_EmbeddedInput } from './MaaFWConfig_EmbeddedInput';
 import type { MaaFWConfig_GameInput } from './MaaFWConfig_GameInput';
 import type { MaaFWConfig_InfoInput } from './MaaFWConfig_InfoInput';
 import type { MaaFWConfig_plugin_gameInput } from './MaaFWConfig_plugin_gameInput';
+import type { MaaFWConfig_plugin_infoInput } from './MaaFWConfig_plugin_infoInput';
 import type { MaaFWConfig_RunInput } from './MaaFWConfig_RunInput';
 import type { MaaFWConfig_SelectionInput } from './MaaFWConfig_SelectionInput';
 import type { MaaFWConfig_TaskInput } from './MaaFWConfig_TaskInput';
@@ -16,6 +17,7 @@ export type MaaFWConfigInput = {
      * 游戏与设备
      */
     game?: (MaaFWConfig_plugin_gameInput | null);
+    info?: (MaaFWConfig_plugin_infoInput | null);
     Device?: (MaaFWConfig_DeviceInput | null);
     Embedded?: (MaaFWConfig_EmbeddedInput | null);
     Game?: (MaaFWConfig_GameInput | null);

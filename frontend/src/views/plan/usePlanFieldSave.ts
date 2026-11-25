@@ -1,6 +1,23 @@
 import type { PlanChangeOptions } from '@/utils/planTypeRegistry'
 import type { usePlanApi } from '@/composables/usePlanApi'
 
+// 辅助函数：根据路径构建嵌套对象
+// 例如 "Info.Name" -> { Info: { Name: value } }
+// 例如 "Monday.stages.stage_1" -> { Monday: { stages: { stage_1: value } } }
+export const buildNestedObject = (path: string, value: any): Record<string, any> => {
+  const keys = path.split('.')
+  const result: Record<string, any> = {}
+  let current = result
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    current[keys[i]] = {}
+    current = current[keys[i]]
+  }
+
+  current[keys[keys.length - 1]] = value
+  return result
+}
+
 /** 字段持久化与批次上下文由同一入口传递，页面继续拥有回读和草稿。 */
 export function usePlanFieldSave(
   update: ReturnType<typeof usePlanApi>['updatePlan'],

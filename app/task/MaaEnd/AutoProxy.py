@@ -49,16 +49,6 @@ from app.task.emulator_core import (
 )
 from app.task.failure_capture_core import FailureCapture
 from app.task.game import game_device_id
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model
-from app.task.MaaFW.tools.core.interface.task_config import (
-    build_task_option_maps,
-    normalize_task_options_by_task,
-)
-from app.task.MaaFW.tools.core.runner.run_plan import (
-    _build_pretask_plans,
-    _select_resource,
-)
-from app.task.MaaFW.tools.embedded.shell_instances import _Labels, _mxu_option_values
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -95,6 +85,15 @@ from .inventory_report import (
     inventory_resolve,
     load_reward_groups,
     merge_gain_entries,
+)
+from .mfw_parse import (
+    build_pretask_plans,
+    build_task_option_maps,
+    labels,
+    load_interface_model,
+    mxu_option_values,
+    normalize_task_options_by_task,
+    select_resource,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
@@ -654,7 +653,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             raise RuntimeError(
                 f"MaaEnd 控制器 {controller_name} 在当前资源中不存在，请重新配置 MaaEnd"
             )
-        resource = _select_resource(interface, "", controller)
+        resource = select_resource(interface, "", controller)
         skipped: list[str] = []
         # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
         setting_options = self.launcher_game_setting_options.copy()
@@ -679,11 +678,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "type": "select",
                 "value": "CN" if server == "官服" else server,
             }
-        values = _mxu_option_values(
+        values = mxu_option_values(
             setting_options,
             build_task_option_maps(interface)[task_name],
             "游戏启动设置",
-            _Labels(interface, None),
+            labels(interface, None),
             skipped,
         )
         if skipped:
@@ -697,7 +696,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_name=controller.name,
             resource_name=resource.name,
         )
-        plans = _build_pretask_plans(
+        plans = build_pretask_plans(
             base_dir=self.maaend_root_path,
             interface_model=interface,
             controller=controller,
@@ -1671,14 +1670,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     kill_game=False,
                 )
                 break
+            no_runnable_task = False
+            if self.emulator_manager is not None:
+                # 任务表只看 MAS 与 MaaEnd 配置，设备信息只影响连哪台设备和云终末地补的
+                # 启动游戏任务（不算业务任务）；一个都不跑就别先开模拟器。开机后照旧带
+                # 设备信息再写一次配置，任务表沿用这次生成的。
+                if self.task_dict is None:
+                    await self.set_maaend(None)
+                no_runnable_task = not self._has_runnable_task(cloud_adb)
             # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
                     await self.set_maaend(None)
-                    await self._start_game(
-                        preserve_running_game=keep_game_for_login_retry
-                    )
-                else:
+                    # 任务表在写入配置时已经定下；一个都不跑就别先拉起游戏。
+                    no_runnable_task = not self._has_runnable_task(cloud_adb)
+                    if not no_runnable_task:
+                        await self._start_game(
+                            preserve_running_game=keep_game_for_login_retry
+                        )
+                elif not no_runnable_task:
                     logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                     point(self, "start_game")
                     self.emulator_info = await self.emulator_manager.open(
@@ -1696,6 +1706,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     e,
                 )
                 continue
+            if no_runnable_task:
+                self.retryable = False
+                # 游戏还没拉起、模拟器也还没开，没有要关的游戏进程。
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置", kill_game=False
+                )
+                break
 
             account_id = str(self.cur_user_config.Info.Id).strip()
             if use_mas_account_switch and account_id:
@@ -1761,12 +1778,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if self.emulator_manager is not None:
                 await self.set_maaend(self.emulator_info)
 
-            if not any(
-                any(tasks.values())
-                for name, tasks in self.task_dict.items()
-                if not cloud_adb
-                or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
-            ):
+            if not self._has_runnable_task(cloud_adb):
                 self.retryable = False
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置"
@@ -1869,6 +1881,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if not self.retryable:
                     logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
+
+    def _has_runnable_task(self, cloud_adb: bool) -> bool:
+        """本轮任务表（``set_maaend`` 写配置时生成）里至少开着一个业务任务。
+
+        云终末地的启动游戏任务由 MAS 补进去，不算业务任务。
+        """
+        return any(
+            any(tasks.values())
+            for name, tasks in self.task_dict.items()
+            if not cloud_adb
+            or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
+        )
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None, *, kill_game: bool = True
@@ -2323,7 +2347,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return self.original_game_settings
         self.original_game_settings_read = True
 
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )

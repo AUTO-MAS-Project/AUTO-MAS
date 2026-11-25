@@ -17,11 +17,9 @@ from app.core.downloads import download_file
 from app.services import script_install
 from app.services.common.update import transport
 from app.services.common.update.transport import DownloadProgress
-from app.task.MaaFW.tools.core.project_update.projection_heal import RangeHTTPReader
-from app.task.MaaFW.tools.core.project_update.range_delta import RangeSpeedGuard
 from app.utils import get_logger
 from app.utils.common.zip_delta import MAX_PATCH_BYTES, apply_patch
-from app.utils.common.zip_range import rebuild_zip
+from app.utils.common.zip_range import RangeHTTPReader, RangeSpeedGuard, rebuild_zip
 
 logger = get_logger("MaaEnd 增量下载")
 MAX_INDEX_BYTES = 512 * 1024
