@@ -130,6 +130,16 @@ def plan_gates(
     if need_vue_size:
         gates.append(
             Gate(
+                id="VUE-BASELINE-CHECK",
+                title="Vue 尺寸基线脚本自检",
+                command=("node", "--test", "scripts/audit-baseline.check.mjs"),
+                cwd=frontend_dir,
+                forbid="禁止改基线脚本的判定口径来放行超限组件。",
+                fix="修复 scripts/audit-baseline.mjs 的契约实现后重跑该自检。",
+            )
+        )
+        gates.append(
+            Gate(
                 id="VUE-SIZE",
                 title="Vue 组件 500 行尺寸门禁",
                 command=("node", "scripts/audit-baseline.mjs", "--check", base_ref),
@@ -222,6 +232,47 @@ def plan_gates(
                 cwd=frontend_dir,
                 forbid="禁止只改中文漏翻 en-US/ja-JP，也禁止翻译驱动逻辑的中文字面量（如 '运行'）。",
                 fix="同步补齐三语词条后，在 frontend/ 下重跑 yarn audit:i18n --check。",
+            )
+        )
+
+    need_fe_test = run_all or _any_match(
+        changed_files,
+        lambda p: p.startswith("frontend/src/"),
+    )
+    if need_fe_test:
+        gates.append(
+            Gate(
+                id="FRONTEND-TEST",
+                title="前端单元测试",
+                command=("yarn", "test"),
+                cwd=frontend_dir,
+                forbid="禁止为了通过测试删掉断言或跳过用例；失败先确认是本次改动引入还是既有偶发。",
+                fix="按失败用例修复实现或补正期望值后在 frontend/ 下重跑 yarn test；既有偶发单跑该文件复核。",
+            )
+        )
+
+    need_backend_test = run_all or _any_match(
+        changed_files,
+        lambda p: p.startswith(("app/", "tests/")),
+    )
+    if need_backend_test:
+        gates.append(
+            Gate(
+                id="BACKEND-TEST",
+                title="后端单元测试",
+                command=(
+                    "uv",
+                    "run",
+                    "--no-sync",
+                    "python",
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "tests",
+                ),
+                cwd=repo_root,
+                forbid="禁止用 -k 只跑自己关心的用例充当全量结论，也不要改动无关测试来消错。",
+                fix="按失败用例修复实现后在仓库根目录重跑上述命令。",
             )
         )
 

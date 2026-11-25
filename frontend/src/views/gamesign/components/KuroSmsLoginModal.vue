@@ -8,7 +8,9 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { signflowApi, SignflowError } from '@/services/signflowApi'
+import { AppModal } from '@/components/ui'
+import { isPluginUnavailable, signflowApi } from '@/services/signflowApi'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 const props = defineProps<{
   open: boolean
@@ -32,6 +34,24 @@ const sending = ref(false)
 const submitting = ref(false)
 const notice = ref('')
 let generation = 0
+/**
+ * 一次短信登录从第一发「发送验证码」开始，到凭据落库或弹窗关闭结束。
+ * 用 settled 兜住多条出口（提交成功、重复关闭、帐号切换），保证只报一次终态。
+ */
+let loginOperation: ReturnType<typeof beginAnalyticsOperation<'community_login_finished'>> | null =
+  null
+let loginSettled = true
+const finishLogin = (outcome: 'saved' | 'failure' | 'expired' | 'cancelled' | 'unsupported') => {
+  if (loginSettled) return
+  loginSettled = true
+  loginOperation?.finish({ provider: 'kuro', stage: 'sms', outcome })
+  loginOperation = null
+}
+const beginLogin = () => {
+  if (!loginSettled) return
+  loginSettled = false
+  loginOperation = beginAnalyticsOperation('community_login_finished')
+}
 
 const phoneValid = computed(() => /^1[3-9]\d{9}$/.test(phone.value.trim()))
 const canSubmit = computed(() => /^\d{6}$/.test(code.value.trim()) && !!sessionId.value)
@@ -39,6 +59,8 @@ const canSubmit = computed(() => /^\d{6}$/.test(code.value.trim()) && !!sessionI
 const busy = computed(() => sending.value || submitting.value)
 
 const reset = () => {
+  // 换号或重新打开时上一条链路就此中断，不能留成永久未决
+  finishLogin('cancelled')
   generation += 1
   phone.value = ''
   code.value = ''
@@ -72,6 +94,7 @@ const send = async () => {
   if (!phoneValid.value || !props.accountUid || busy.value) return
   const current = ++generation
   const targetPhone = phone.value.trim()
+  beginLogin()
   sending.value = true
   notice.value = ''
   try {
@@ -93,7 +116,10 @@ const send = async () => {
   } catch (error) {
     if (current !== generation) return
     logger.error(`库街区短信发送失败: ${errorText(error)}`)
-    notice.value = errorText(error)
+    notice.value = isPluginUnavailable(error)
+      ? t('core.gamesign.sms.pluginUnavailable')
+      : errorText(error)
+    if (isPluginUnavailable(error)) finishLogin('unsupported')
   } finally {
     if (current === generation) sending.value = false
   }
@@ -106,15 +132,18 @@ const submit = async () => {
   try {
     const result = await signflowApi.submitTokenLoginCode(sessionId.value, code.value.trim())
     if (current !== generation) return
+    finishLogin('saved')
     message.success(result.message || t('core.gamesign.toast.tokenSaved'))
     emit('saved')
     emit('close')
     reset()
   } catch (error) {
     if (current !== generation) return
-    // 插件未启用时给出可读原因，而不是「登录失败」
-    notice.value =
-      error instanceof SignflowError && error.code === 400 ? error.message : errorText(error)
+    // 插件未启用时给出可读原因，而不是「登录失败」；
+    // 判定统一走 services 里的 isPluginUnavailable，不在各处比对业务码
+    const unsupported = isPluginUnavailable(error)
+    notice.value = unsupported ? t('core.gamesign.sms.pluginUnavailable') : errorText(error)
+    finishLogin(unsupported ? 'unsupported' : 'failure')
   } finally {
     if (current === generation) submitting.value = false
   }
@@ -122,12 +151,11 @@ const submit = async () => {
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="props.open"
     :title="t('core.gamesign.sms.title')"
     :width="400"
-    :footer="null"
-    centered
+    footer="none"
     @cancel="emit('close')"
   >
     <div class="sms-form">
@@ -164,7 +192,7 @@ const submit = async () => {
       </a-button>
       <a-alert v-if="notice" type="warning" show-icon :message="notice" />
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

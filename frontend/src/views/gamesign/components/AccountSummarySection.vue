@@ -115,7 +115,7 @@ const credentialSummary = computed(() => {
 .summary-sub {
   margin: 2px 0 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
   color: var(--ant-color-text-secondary);
 }
 
@@ -146,7 +146,7 @@ const credentialSummary = computed(() => {
   border-radius: 8px;
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
 }
 
@@ -173,15 +173,15 @@ const credentialSummary = computed(() => {
 
 .summary-tag {
   margin-inline-end: 0;
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 20px;
   padding: 0 4px;
 }
 
 .summary-detail {
   margin: 2px 0 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -210,7 +210,8 @@ const credentialSummary = computed(() => {
   margin: 0;
   padding: 16px;
   text-align: center;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--ant-color-text-tertiary);
   border: 1px dashed var(--ant-color-border);
   border-radius: 8px;

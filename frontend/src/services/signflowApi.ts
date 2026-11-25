@@ -19,14 +19,22 @@ export interface SignflowEnvelope {
   message: string
 }
 
-/** 插件未启用、路由缺失或业务校验失败时抛出，`code` 保留后端业务码 */
+/**
+ * 插件未启用、路由缺失或业务校验失败时抛出。
+ *
+ * `code` 只装后端信封里的业务码（拿不到信封时退回 HTTP 状态），
+ * `httpStatus` 单独记传输层状态码，两者不再挤在一个字段里：
+ * 否则 `code || response.status` 的写法会让业务码 0 被当成没给。
+ */
 export class SignflowError extends Error {
   readonly code: number
+  readonly httpStatus: number
 
-  constructor(message: string, code: number) {
+  constructor(message: string, code: number, httpStatus = 0) {
     super(message)
     this.name = 'SignflowError'
     this.code = code
+    this.httpStatus = httpStatus
   }
 }
 
@@ -187,12 +195,14 @@ async function request<T extends SignflowEnvelope>(path: string, body?: unknown)
           body: JSON.stringify(body),
         }
   let response: Response
+  let text: string
   try {
     response = await fetch(`${OpenAPI.BASE}${PLUGIN_ROOT}${path}`, init)
+    text = await response.text()
   } catch {
+    // 连接失败和读流中断都归到同一类：本地后端没起来或半路断开
     throw new SignflowError('本地服务未响应，请确认 AUTO-MAS 后端正在运行', 0)
   }
-  const text = await response.text()
   let payload: unknown = null
   if (text) {
     try {
@@ -205,13 +215,44 @@ async function request<T extends SignflowEnvelope>(path: string, body?: unknown)
   if (!envelope) {
     throw new SignflowError(
       response.ok ? '插件返回了无法识别的响应' : `插件请求失败（HTTP ${response.status}）`,
+      response.status,
       response.status
     )
   }
   if (!response.ok || envelope.code !== 200) {
-    throw new SignflowError(envelope.message || '插件请求失败', envelope.code || response.status)
+    throw new SignflowError(
+      envelope.message || '插件请求失败',
+      envelope.code ?? response.status,
+      response.status
+    )
   }
   return payload as T
+}
+
+/**
+ * 判断一次失败是否只是「附属插件没启用」，而不是真的出错。
+ *
+ * 后端三处来源，缺一不可：
+ * 1. 网关没挂载路由 → HTTP 404；
+ * 2. 宿主正在退出密封 → HTTP 503；
+ * 3. 核心插件取不到附属能力 → HTTP 200 + 业务码 400，message 为
+ *    `plugins/signflow/src/signflow/api.py` 里写死的「日常便笺插件未启用」
+ *    「抽卡记录插件未启用」「Token 获取插件未启用」。
+ *
+ * 第 3 条目前只能认文案：插件信封没有稳定字段区分「能力缺失」与「参数有误」。
+ * 文案集中在这里比对，调用方不再各自写中文子串；等插件信封补上状态位后
+ * 只需改这一处。
+ */
+const DISABLED_SERVICE_MESSAGES = [
+  '日常便笺插件未启用',
+  '抽卡记录插件未启用',
+  'Token 获取插件未启用',
+] as const
+
+export const isPluginUnavailable = (error: unknown): boolean => {
+  if (!(error instanceof SignflowError)) return false
+  if (error.httpStatus === 404 || error.httpStatus === 503) return true
+  return DISABLED_SERVICE_MESSAGES.some(item => error.message.includes(item))
 }
 
 /** SignFlow 用户可见入口：查询便笺、抽卡记录、凭据体检与刷新 */

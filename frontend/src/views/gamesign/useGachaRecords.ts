@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 import {
-  SignflowError,
+  isPluginUnavailable,
   signflowApi,
   type SignflowGachaPool,
   type SignflowGachaRecord,
@@ -11,13 +12,10 @@ import {
 /**
  * 抽卡记录页的状态与请求。
  *
- * 插件路由由宿主运行期挂载：未启用时网关给 404「插件未挂载接口」，
- * 服务缺失时插件自己给 400「……插件未启用」。这两种都要落到「插件未启用」提示，
- * 而不是当成读取失败，否则用户会以为凭据或网络坏了。
+ * 「插件未启用」的判定收在 `services/signflowApi.ts` 一处：
+ * 网关 404、宿主密封 503、插件自己回的 400 都要落到同一句提示，
+ * 否则用户会以为凭据或网络坏了。
  */
-const isPluginUnavailable = (error: unknown): boolean =>
-  error instanceof SignflowError &&
-  (error.code === 404 || (error.code === 400 && error.message.includes('未启用')))
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
@@ -36,6 +34,10 @@ export interface GachaFetchTarget {
   accountUid: string
   playerUid: string
 }
+
+/** 抽卡两类操作共用一个事件，靠 action 区分；终态口径与宿主其它请求一致 */
+type SignflowAction = 'gacha_query' | 'gacha_fetch'
+type SignflowOutcome = 'success' | 'failure' | 'cancelled' | 'unsupported'
 
 export function useGachaRecords() {
   const records = ref<SignflowGachaRecord[]>([])
@@ -74,9 +76,24 @@ export function useGachaRecords() {
     }
   }
 
+  /**
+   * 一次插件调用的旁观者。
+   *
+   * 早退分支也必须消费终态：代次过期说明结果已不属于当前筛选，记 cancelled；
+   * 插件未启用是能力缺失而非故障，记 unsupported，两者都不该混进失败率。
+   */
+  const observeSignflow = (action: SignflowAction) => {
+    const operation = beginAnalyticsOperation('signflow_requested')
+    return (outcome: SignflowOutcome) => operation.finish({ action, outcome })
+  }
+
   const query = async (filter: GachaQueryFilter): Promise<void> => {
+    const finish = observeSignflow('gacha_query')
     await probe()
-    if (unavailable.value) return
+    if (unavailable.value) {
+      finish('unsupported')
+      return
+    }
     const token = ++queryToken
     querying.value = true
     errorMessage.value = ''
@@ -89,19 +106,28 @@ export function useGachaRecords() {
         pageSize: pageSize.value,
       })
       // 连点「查询」或快速翻页时，只让最后一次请求落地
-      if (token !== queryToken) return
+      if (token !== queryToken) {
+        finish('cancelled')
+        return
+      }
       records.value = result.data
       pools.value = Array.isArray(result.pools) ? result.pools : []
       total.value = result.total
+      finish('success')
     } catch (error) {
-      if (token !== queryToken) return
+      if (token !== queryToken) {
+        finish('cancelled')
+        return
+      }
       if (isPluginUnavailable(error)) {
         unavailable.value = t('core.gamesign.gacha.pluginMissing')
+        finish('unsupported')
         return
       }
       errorMessage.value = errorText(error)
       records.value = []
       total.value = 0
+      finish('failure')
     } finally {
       if (token === queryToken) querying.value = false
     }
@@ -109,8 +135,12 @@ export function useGachaRecords() {
 
   /** 只在用户点「获取记录」时调一次；插件端不排定时任务 */
   const fetchRecords = async (target: GachaFetchTarget): Promise<void> => {
+    const finish = observeSignflow('gacha_fetch')
     await probe()
-    if (unavailable.value) return
+    if (unavailable.value) {
+      finish('unsupported')
+      return
+    }
     const token = ++fetchToken
     fetching.value = true
     errorMessage.value = ''
@@ -121,7 +151,13 @@ export function useGachaRecords() {
         playerUid: target.playerUid,
       })
       // 读取期间换了帐号或角色：这条结果已不属于当前筛选，别再按旧目标补一次查询
-      if (token !== fetchToken) return
+      if (token !== fetchToken) {
+        finish('cancelled')
+        return
+      }
+      // 读取成败只看插件有没有把记录取回来；warnings 里的部分失败仍算成功，
+      // 因为记录确实落库了，把它记成 failure 会让成功率凭空下降
+      finish('success')
       const warnings = Array.isArray(result.warnings) ? result.warnings : []
       if (warnings.length) {
         message.warning(t('core.gamesign.gacha.fetchWarnings', { warnings: warnings.join('；') }))
@@ -134,12 +170,17 @@ export function useGachaRecords() {
       page.value = 1
       await query({ game: target.game, playerUid: target.playerUid, pool: '' })
     } catch (error) {
-      if (token !== fetchToken) return
+      if (token !== fetchToken) {
+        finish('cancelled')
+        return
+      }
       if (isPluginUnavailable(error)) {
         unavailable.value = t('core.gamesign.gacha.pluginMissing')
+        finish('unsupported')
         return
       }
       errorMessage.value = errorText(error)
+      finish('failure')
     } finally {
       if (token === fetchToken) fetching.value = false
     }

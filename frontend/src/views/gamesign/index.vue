@@ -8,7 +8,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { PlusOutlined, SwapOutlined } from '@ant-design/icons-vue'
+import { CheckSquareOutlined, UsergroupAddOutlined } from '@ant-design/icons-vue'
 import type { ToolsConfig_GameSign } from '@/api'
 import { useToolsApi, type ToolsViewConfig } from '@/composables/useToolsApi'
 import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
@@ -18,7 +18,7 @@ import {
   WS_ID_GAME_SIGN,
   type WSGameSignResultData,
 } from '@/services/websocket/types'
-import { AppPage, PageHeader, PageSurface } from '@/components/ui'
+import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
 import AccountsPage from './AccountsPage.vue'
 import CommunityActivityView from './CommunityActivityView.vue'
 import GachaPage from './GachaPage.vue'
@@ -76,6 +76,8 @@ const editingConfig = reactive<ToolsViewConfig>({
 })
 
 const toolsLoaded = ref(false)
+/** 配置加载失败原因：失败时页面只剩空壳开关，必须给重试入口而不是静默留白 */
+const loadError = ref<string | null>(null)
 
 let gameSignSubscriptionId: string | null = null
 
@@ -153,6 +155,7 @@ const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPo
 
 // 加载配置
 const loadTools = async () => {
+  loadError.value = null
   try {
     const data = await getTools()
     if (!data.GameSign) {
@@ -174,7 +177,14 @@ const loadTools = async () => {
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载游戏社区配置失败: ${errorMsg}`)
+    loadError.value = errorMsg
   }
+}
+
+/** 重试加载：配置与帐号是两路请求，一起重来避免只恢复一半 */
+const handleRetryLoad = async () => {
+  await loadTools()
+  if (!loadError.value) await loadAccounts()
 }
 
 // 只提交当前 GameSign 字段，避免并发覆盖签到状态或其它工具配置。
@@ -191,9 +201,12 @@ const handleGameSignFieldChange = async <K extends GameSignFieldKey>(
 
   try {
     editingGameSign[key] = value
-    await updateTools({
-      GameSign: { [key]: value } as Partial<ToolsConfig_GameSign>,
-    })
+    // 开关是即时保存，成功提示会随每次点击弹一条；这里只保留失败提示，
+    // 避免连点几个开关就把页面刷满 toast。
+    await updateTools(
+      { GameSign: { [key]: value } as Partial<ToolsConfig_GameSign> },
+      { silent: true }
+    )
 
     if (toolsConfig.GameSign && key !== 'Status' && key !== 'Result') {
       toolsConfig.GameSign[key] = value
@@ -255,7 +268,7 @@ onUnmounted(() => {
     <PageHeader :title="t('core.gamesign.title')" :subtitle="t('core.gamesign.subtitle')">
       <template #actions>
         <a-button :disabled="loading" @click="goAccounts">
-          <template #icon><PlusOutlined /></template>
+          <template #icon><UsergroupAddOutlined /></template>
           {{ t('core.gamesign.nav.accounts') }}
         </a-button>
         <a-button
@@ -264,7 +277,7 @@ onUnmounted(() => {
           :disabled="loading || !editingConfig.GameSign?.Enabled"
           @click="runManualSign"
         >
-          <template #icon><SwapOutlined /></template>
+          <template #icon><CheckSquareOutlined /></template>
           {{ t('core.gamesign.section.signAll') }}
         </a-button>
       </template>
@@ -287,8 +300,15 @@ onUnmounted(() => {
       </nav>
 
       <div class="view-body">
+        <StateView
+          v-if="loadError"
+          :error="loadError"
+          empty
+          :min-height="240"
+          @retry="handleRetryLoad"
+        />
         <SignHomePage
-          v-if="activeView === 'sign' && editingConfig.GameSign"
+          v-else-if="activeView === 'sign' && editingConfig.GameSign"
           :config="editingConfig.GameSign"
           :result="signResult"
           :accounts="accounts"

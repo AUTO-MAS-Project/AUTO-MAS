@@ -85,8 +85,9 @@ Electron 主进程按 Aptabase 单事件协议向 `https://telemetry.auto-mas.to
 | `avd_root_added` | 自定义 AVD 安装导入 | `reason_kind` |
 | `game_sign_requested` | 手动签到触发与被占用拒绝 | `trigger_kind` |
 | `community_account_manage_finished` | 社区签到账号增删与启停 | `action` |
-| `community_login_finished` | 社区扫码登录终态（生成/扫码/保存） | `provider`、`stage` |
+| `community_login_finished` | 社区凭据获取终态（扫码生成/扫码确认/保存、短信、账密） | `provider`、`stage` |
 | `community_activity_requested` | 社区活动工具调用 | `operation_kind` |
+| `signflow_requested` | 附属插件请求：抽卡查询、抽卡读取与凭据刷新 | `action` |
 | `notification_test_finished` | 总体通知测试响应 | `test_kind`、`request_outcome` |
 | `notification_channel_changed` | 内置通知渠道启停保存 | `channel_kind`、`action` |
 | `notification_binding_finished` | QQ 扫码绑定、手动配置与解绑 | `channel_kind`、`action` |

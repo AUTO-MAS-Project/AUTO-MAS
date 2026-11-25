@@ -45,7 +45,21 @@ const accountUid = ref('')
 const playerUid = ref('')
 const pool = ref('')
 
-const gameLabel = (value: string) => t(`core.gamesign.gacha.gameNames.${value}`)
+/**
+ * 已知游戏标识 → 词条键。
+ *
+ * 不能拼 `t(\`...${value}\`)`：插件以后接通新游戏时，词表里没有对应键，
+ * 拼出来的 key 会被 vue-i18n 原样渲染成「core.gamesign.gacha.gameNames.xxx」。
+ * 未收录的标识回退显示插件给的原始值，至少不会露出内部键名。
+ */
+const GAME_LABEL_KEYS: Record<string, string> = {
+  arknights: 'core.gamesign.gacha.gameNames.arknights',
+}
+
+const gameLabel = (value: string) => {
+  const key = GAME_LABEL_KEYS[value]
+  return key ? t(key) : value
+}
 
 /** 清单拿不到（插件未启用）时也要能显示当前游戏的中文名，否则下拉里会露出原始 id */
 const gameOptions = computed(() =>
@@ -195,36 +209,46 @@ onMounted(async () => {
       </template>
     </a-alert>
 
+    <!-- 用 aria-labelledby 关联标签：a-select 不是 label 可绑定的原生控件，包在 label 里点了也不会聚焦 -->
     <section class="gacha-filter">
-      <label class="filter-item">
-        <span class="filter-label">{{ t('core.gamesign.gacha.gameLabel') }}</span>
+      <div class="filter-item">
+        <span id="gacha-filter-game" class="filter-label">
+          {{ t('core.gamesign.gacha.gameLabel') }}
+        </span>
         <a-select
           v-model:value="game"
           class="filter-control"
+          aria-labelledby="gacha-filter-game"
           :options="gameOptions"
           :disabled="unavailable !== '' || games.length === 0"
         />
-      </label>
-      <label class="filter-item">
-        <span class="filter-label">{{ t('core.gamesign.gacha.account') }}</span>
+      </div>
+      <div class="filter-item">
+        <span id="gacha-filter-account" class="filter-label">
+          {{ t('core.gamesign.gacha.account') }}
+        </span>
         <a-select
           v-model:value="accountUid"
           class="filter-control"
+          aria-labelledby="gacha-filter-account"
           :options="accountOptions"
           :disabled="unavailable !== '' || !hasSklandAccount"
           :placeholder="t('core.gamesign.gacha.selectAccount')"
         />
-      </label>
-      <label class="filter-item">
-        <span class="filter-label">{{ t('core.gamesign.gacha.playerUid') }}</span>
+      </div>
+      <div class="filter-item">
+        <span id="gacha-filter-uid" class="filter-label">
+          {{ t('core.gamesign.gacha.playerUid') }}
+        </span>
         <a-input
           v-model:value="playerUid"
           class="filter-control"
+          aria-labelledby="gacha-filter-uid"
           allow-clear
           :disabled="unavailable !== ''"
           :placeholder="t('core.gamesign.gacha.playerUidPlaceholder')"
         />
-      </label>
+      </div>
       <div class="filter-actions">
         <a-button :disabled="!canQuery" :loading="querying" @click="runQuery">
           <template #icon><SearchOutlined /></template>
@@ -246,16 +270,21 @@ onMounted(async () => {
     />
 
     <section v-if="pools.length" class="gacha-pools">
-      <span class="pool-hint">{{ t('core.gamesign.gacha.poolsTitle') }}</span>
-      <button
-        v-for="item in poolOptions"
-        :key="item.value || 'all'"
-        type="button"
-        :class="['pool-chip', pool === item.value ? 'is-active' : '']"
-        @click="selectPool(item.value)"
-      >
-        {{ item.label }}
-      </button>
+      <span id="gacha-pools-hint" class="pool-hint">
+        {{ t('core.gamesign.gacha.poolsTitle') }}
+      </span>
+      <div class="pool-chips" role="toolbar" aria-labelledby="gacha-pools-hint">
+        <button
+          v-for="item in poolOptions"
+          :key="item.value || 'all'"
+          type="button"
+          :class="['pool-chip', pool === item.value ? 'is-active' : '']"
+          :aria-pressed="pool === item.value"
+          @click="selectPool(item.value)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
     </section>
 
     <a-table
@@ -320,8 +349,8 @@ onMounted(async () => {
 
 .gacha-sub {
   margin: 0;
-  font-size: 13px;
-  line-height: 20px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--ant-color-text-secondary);
 }
 
@@ -344,8 +373,9 @@ onMounted(async () => {
 }
 
 .filter-label {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
+  line-height: 22px;
   color: var(--ant-color-text-secondary);
 }
 
@@ -362,12 +392,19 @@ onMounted(async () => {
 .gacha-pools {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
+  gap: 6px 12px;
+}
+
+.pool-chips {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 .pool-hint {
   font-size: 12px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
 }
 

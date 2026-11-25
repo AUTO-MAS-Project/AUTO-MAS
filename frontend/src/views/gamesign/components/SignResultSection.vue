@@ -116,11 +116,11 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
         <a-button
           size="small"
           :loading="loading"
-          :aria-label="t('core.devtools.refresh')"
+          :aria-label="t('core.gamesign.result.refresh')"
           @click="emit('refresh')"
         >
           <template #icon><ReloadOutlined /></template>
-          {{ t('core.devtools.refresh') }}
+          {{ t('core.gamesign.result.refresh') }}
         </a-button>
         <a-button type="primary" size="small" :loading="loading" @click="emit('sign')">
           {{ t('core.gamesign.section.signAll') }}

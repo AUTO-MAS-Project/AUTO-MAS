@@ -7,7 +7,7 @@ import {
   type CommunityActivityResourceOut,
   type CommunityActivityTaskOut,
 } from '@/api'
-import { SignflowError, signflowApi, type SignflowNoteSnapshot } from '@/services/signflowApi'
+import { isPluginUnavailable, signflowApi, type SignflowNoteSnapshot } from '@/services/signflowApi'
 import { parseSignResult } from './gameSignDisplay'
 
 type ActivityTask = CommunityActivityTaskOut & { period: string }
@@ -100,11 +100,6 @@ const fromPlugin = (note: SignflowNoteSnapshot): ActivitySnapshot => ({
   server: note.server ?? '',
   source: note.source ?? '',
 })
-
-/** 插件未启用时网关给 404，服务缺失时插件给 400 且文案含「未启用」 */
-const isPluginUnavailable = (error: unknown): boolean =>
-  error instanceof SignflowError &&
-  (error.code === 404 || (error.code === 400 && error.message.includes('未启用')))
 
 const responseMessage = (error: ApiError): string => {
   const body = error.body as { message?: unknown } | undefined

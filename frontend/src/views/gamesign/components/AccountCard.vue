@@ -158,15 +158,15 @@ const rows = computed(() =>
 
 .card-tag {
   margin-inline-end: 0;
-  font-size: 11px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 20px;
   padding: 0 4px;
 }
 
 .card-meta {
   margin: 2px 0 0;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
 }
 
@@ -188,7 +188,8 @@ const rows = computed(() =>
 }
 
 .cred-label {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--ant-color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;

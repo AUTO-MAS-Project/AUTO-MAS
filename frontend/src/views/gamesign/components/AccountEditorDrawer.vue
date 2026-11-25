@@ -9,6 +9,7 @@
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQrLogin, type QrLoginProvider } from '@/views/mystery/tokens/useQrLogin'
 import QrLoginModal from '@/views/mystery/tokens/QrLoginModal.vue'
@@ -42,6 +43,19 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('游戏社区')
+
+/**
+ * 抽屉要让开 Electron 的 32px 无边框标题栏。
+ *
+ * `appOverlays.css` 只给 modal 补了这条偏移，drawer 没有全局兜底，
+ * 不传就会从窗口最顶端开始画，标题栏压住抽屉标题。
+ * root-style 作用在 `.ant-drawer` 根节点上，遮罩与面板一起下移，
+ * 因此不需要为了避让而关掉遮罩。
+ */
+const drawerRootStyle: CSSProperties = {
+  top: '32px',
+  height: 'calc(100% - 32px)',
+}
 
 const form = ref<AccountForm>(toAccountForm(null))
 const baseline = ref<AccountForm>(toAccountForm(null))
@@ -200,6 +214,7 @@ onBeforeUnmount(() => {
     v-model:open="drawerOpen"
     :title="t('core.gamesign.edit.title', { name: accountName })"
     :width="520"
+    :root-style="drawerRootStyle"
     placement="right"
   >
     <div class="editor-body">

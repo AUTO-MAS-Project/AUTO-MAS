@@ -8,7 +8,9 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { CancelablePromise, OutBase } from '@/api'
+import { AppModal } from '@/components/ui'
 import { useTokenApi } from '@/views/mystery/tokens/useTokenApi'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 const props = defineProps<{
   open: boolean
@@ -27,6 +29,18 @@ const { loginTaygedo } = useTokenApi()
 const form = ref({ phone: '', password: '' })
 const loading = ref(false)
 let loginRequest: CancelablePromise<OutBase> | undefined
+/**
+ * 账密登录终态。
+ *
+ * 取消路径必须显式报 cancelled：用户关弹窗会取消请求，那条 reject 在业务上
+ * 已经被 finally 的身份比对丢掉，不能让它滑成 failure，否则失败率会虚高。
+ */
+let loginOperation: ReturnType<typeof beginAnalyticsOperation<'community_login_finished'>> | null =
+  null
+const finishLogin = (outcome: 'saved' | 'failure' | 'cancelled') => {
+  loginOperation?.finish({ provider: 'taygedo', stage: 'password', outcome })
+  loginOperation = null
+}
 
 watch(
   () => props.open,
@@ -43,6 +57,8 @@ watch(
  */
 const close = () => {
   loginRequest?.cancel()
+  // 请求还在途说明这次登录没走完，用户主动关闭记 cancelled
+  if (loginRequest) finishLogin('cancelled')
   loginRequest = undefined
   loading.value = false
   form.value = { phone: '', password: '' }
@@ -54,15 +70,18 @@ const submit = async () => {
   const password = form.value.password
   if (!phone || !password || !props.accountUid) return
   loading.value = true
+  loginOperation = beginAnalyticsOperation('community_login_finished')
   const request = loginTaygedo(props.accountUid, phone, password)
   loginRequest = request
   try {
     const response = await request
     if (loginRequest !== request) return
     if (response.code !== 200 || response.status !== 'success') {
+      finishLogin('failure')
       message.error(response.message || t('core.mystery.tokens.taygedoFailed'))
       return
     }
+    finishLogin('saved')
     message.success(t('core.gamesign.toast.tokenSaved'))
     close()
     emit('saved')
@@ -70,6 +89,7 @@ const submit = async () => {
     // 用户关闭弹窗会取消请求，这不是登录失败，迟到的 reject 直接丢弃
     if (loginRequest !== request) return
     logger.error(`塔吉多账密登录失败: ${error instanceof Error ? error.message : String(error)}`)
+    finishLogin('failure')
     message.error(t('core.mystery.tokens.taygedoFailed'))
   } finally {
     if (loginRequest === request) {
@@ -81,12 +101,11 @@ const submit = async () => {
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="props.open"
     :title="t('core.gamesign.login.taygedoTitle')"
     :width="380"
-    :footer="null"
-    centered
+    footer="none"
     @cancel="close"
   >
     <div class="password-form">
@@ -110,7 +129,7 @@ const submit = async () => {
         {{ t('core.gamesign.login.submit') }}
       </a-button>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

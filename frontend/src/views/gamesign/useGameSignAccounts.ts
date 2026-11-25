@@ -73,10 +73,15 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
     loading.value = true
     try {
       const next = await fetchAccountList()
-      if (!next) return
+      if (!next) {
+        // 业务码非 200 时不抛异常，只返回 null；完全静默会让页面留着上一次的帐号
+        message.error(t('core.gamesign.toast.loadAccountsFailed'))
+        return
+      }
       accounts.value = next
     } catch (error) {
       logger.error(`加载账号列表失败: ${error instanceof Error ? error.message : String(error)}`)
+      message.error(t('core.gamesign.toast.loadAccountsFailed'))
     } finally {
       loading.value = false
     }
@@ -96,6 +101,9 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       return next.find(item => item.uid === uid) ?? null
     } catch (error) {
       logger.error(`回读账号失败: ${error instanceof Error ? error.message : String(error)}`)
+      // 扫码 / 账密 / 短信都已经在后端落库，回读失败只影响界面显示，
+      // 但用户会以为绑定没生效，因此这里必须给一句可见提示。
+      message.error(t('core.gamesign.toast.loadAccountsFailed'))
       return null
     }
   }

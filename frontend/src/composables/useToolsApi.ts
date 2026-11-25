@@ -39,8 +39,14 @@ export function useToolsApi() {
 
   /**
    * 更新工具
+   *
+   * `silent` 用于「改一项就保存一项」的即时保存：每次点开关都弹一条「保存成功」太吵，
+   * 这类调用方只要失败时有提示，成功提示交给调用方自己按需给。
    */
-  const updateTools = async (data: ToolsConfigInput): Promise<void> => {
+  const updateTools = async (
+    data: ToolsConfigInput,
+    options: { silent?: boolean } = {}
+  ): Promise<void> => {
     loading.value = true
     try {
       const response = await Service.updateToolsApiToolsUpdatePost({ data })
@@ -48,7 +54,7 @@ export function useToolsApi() {
         throw new Error(response.message || '更新工具失败')
       }
       logger.info('工具更新成功')
-      message.success(t('core.misc.saved'))
+      if (!options.silent) message.success(t('core.misc.saved'))
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`更新工具失败: ${errorMsg}`)

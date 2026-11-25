@@ -1,6 +1,7 @@
 <!--
   凭据体检与自动续期。
-  插件下线时（404 / 400「未启用」）整块隐藏：这时候任何按钮都点不出结果，
+  插件下线时（网关 404 / 宿主密封 503 / 插件回「……插件未启用」）整块隐藏：
+  这时候任何按钮都点不出结果，
   摆在界面上只会让人以为功能坏了。
 -->
 <script setup lang="ts">
@@ -9,7 +10,8 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { StatusChip } from '@/components/ui'
-import { SignflowError, signflowApi, type SignflowTokenItem } from '@/services/signflowApi'
+import { isPluginUnavailable, signflowApi, type SignflowTokenItem } from '@/services/signflowApi'
+import { beginAnalyticsOperation } from '@/utils/analytics'
 
 const props = defineProps<{
   accountUid: string
@@ -28,10 +30,6 @@ const refreshing = ref(false)
 const errorMessage = ref('')
 /** 插件未启用/未解锁时整块不显示 */
 const unavailable = ref(false)
-
-const isPluginUnavailable = (error: unknown): boolean =>
-  error instanceof SignflowError &&
-  (error.code === 404 || (error.code === 400 && error.message.includes('未启用')))
 
 const loadStatus = async () => {
   if (!props.accountUid) return
@@ -69,10 +67,22 @@ const toneOf = (item: SignflowTokenItem): 'success' | 'warning' | 'neutral' => {
 const refresh = async () => {
   if (!props.accountUid) return
   const session = props.session
+  const operation = beginAnalyticsOperation('signflow_requested')
+  // 部分字段刷新失败仍算成功：剩下的问题由 toast 交给用户决定是否重登
+  let settled = false
+  const finish = (outcome: 'success' | 'failure' | 'cancelled' | 'unsupported') => {
+    if (settled) return
+    settled = true
+    operation.finish({ action: 'token_refresh', outcome })
+  }
   refreshing.value = true
   try {
     const result = await signflowApi.refreshToken(props.accountUid)
-    if (session !== props.session) return
+    if (session !== props.session) {
+      finish('cancelled')
+      return
+    }
+    finish('success')
     const failed = result.items.filter(item => !item.refreshed)
     if (failed.length) {
       message.warning(
@@ -89,12 +99,17 @@ const refresh = async () => {
     }
     await loadStatus()
   } catch (error) {
-    if (session !== props.session) return
+    if (session !== props.session) {
+      finish('cancelled')
+      return
+    }
     if (isPluginUnavailable(error)) {
       unavailable.value = true
+      finish('unsupported')
       return
     }
     message.error(error instanceof Error ? error.message : String(error))
+    finish('failure')
   } finally {
     if (session === props.session) refreshing.value = false
   }
@@ -176,12 +191,14 @@ watch(
 }
 
 .token-platform {
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   color: var(--ant-color-text);
 }
 
 .token-message {
   font-size: 12px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -191,6 +208,7 @@ watch(
 .token-empty {
   margin: 0;
   font-size: 12px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
 }
 </style>
