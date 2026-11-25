@@ -138,9 +138,11 @@ jobs:
         working-directory: frontend
         run: yarn test
 
-      - name: 准备插件发行包
+      - name: 准备后端测试环境与插件发行包
         if: steps.scope.outputs.run_frontend == 'true'
-        run: uv run --no-project python scripts/prepare_test_plugins.py
+        run: |
+          uv sync --locked
+          uv run --no-sync python scripts/prepare_test_plugins.py
 
       # 词表门禁：缺译、占位符差异、源码在用但没有的 key、死词条、模板硬编码中文，
       # 全部按 0 判定；口径见 frontend/scripts/i18n-audit.mjs。
