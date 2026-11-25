@@ -623,6 +623,8 @@ class AppConfig:
 
         async def prepare_plugin_upgrade() -> None:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
+            if "zzzod_adapter" in required:
+                await asyncio.to_thread(backup_legacy_zzzod_users, self.config_path)
             if prepare_runtime is not None:
                 await prepare_runtime()
             if required:
@@ -632,7 +634,6 @@ class AppConfig:
 
                 if "ZzzOd" not in Plugin.script_classes():
                     raise RuntimeError("当前 zzzod_adapter 没有登记专项托管类型")
-                await asyncio.to_thread(backup_legacy_zzzod_users, self.config_path)
             if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
 

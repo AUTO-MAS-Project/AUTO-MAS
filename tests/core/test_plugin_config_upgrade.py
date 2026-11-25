@@ -71,6 +71,63 @@ def test_zzzod_backup_only_archives_pre_plugin_index(tmp_path):
     assert backup.read_bytes() == original
 
 
+@pytest.mark.parametrize("version", ["v2.1", "v2.2"])
+def test_startup_preserves_zzzod_backup_when_package_is_unavailable(tmp_path, version):
+    """已有账号的用户在补装失败后仍有可用于回退的原始索引。"""
+    source_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            r"""
+import asyncio
+import sqlite3
+import sys
+from contextlib import closing
+from uuid import uuid4
+from unittest.mock import patch
+
+from app.core import Config
+from app.plugin.errors import PluginPrecheckError
+from app.utils import io
+
+sid, uid = str(uuid4()), str(uuid4())
+path = Config.config_path / "scripts.yaml"
+io.write_file(path, {
+    "order": [{"uid": sid, "type": "ZzzOdConfig"}],
+    "data": {sid: {"UserData": {
+        "order": [{"uid": uid, "type": "ZzzOdUserConfig"}],
+        "data": {uid: {"Info": {"Name": "原账号"}}},
+    }}},
+})
+original = path.read_bytes()
+version = sys.argv[1]
+with sqlite3.connect(Config.database_path) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES (?)", (version,))
+with patch("app.core.config.manager.install_adapter_plugins", side_effect=PluginPrecheckError("包源不可用")):
+    try:
+        asyncio.run(Config.check_data())
+    except PluginPrecheckError:
+        assert path.read_bytes() == original
+        assert (path.parent / "legacy-zzzod-plugin" / path.name).read_bytes() == original
+    else:
+        raise AssertionError("未触发补装失败")
+with closing(sqlite3.connect(Config.database_path)) as db:
+    assert db.execute("SELECT v FROM version").fetchone() == (version,)
+""",
+            version,
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONPATH": str(source_root), "PYTHONIOENCODING": "utf-8"},
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
     """转换 JSON/YAML 类型索引并保留身份、用户输入及原始备份，重复准备不覆盖备份。"""
