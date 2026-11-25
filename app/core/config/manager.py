@@ -226,7 +226,7 @@ class QueueItemNotFoundError(LookupError):
 
 
 class AppConfig:
-    VERSION = "v5.9.0-beta.1"
+    VERSION = "v5.10.0-beta.1"
 
     def __init__(self) -> None:
         # Runtime 的用户目录与源码目录分离：资源随源码更新，用户文件留在工作目录。

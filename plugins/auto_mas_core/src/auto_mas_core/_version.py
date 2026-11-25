@@ -1,3 +1,3 @@
 """由 scripts/changelog.py 生成，与宿主发行版本一致。"""
 
-__version__ = "5.9.0b1"
+__version__ = "5.10.0b1"

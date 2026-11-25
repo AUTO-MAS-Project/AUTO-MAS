@@ -1,7 +1,7 @@
 {
-    "version": "v5.9.0-beta.1",
+    "version": "v5.10.0-beta.1",
     "version_info": {
-        "未发布": {
+        "v5.10.0-beta.1": {
             "本次亮点": [
                 "【设置】新增插件管理并迁入完整 MAA 专项，统一下载及应用更新 by @DLmaster361"
             ],
