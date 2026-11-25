@@ -30,6 +30,31 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 变更
+
+- 【MFW】MFW、M9A、MSS 改为插件形式提供，升级后自动安装对应插件 (#2109) by @qiyinxi
+- 【调度】统一通用脚本与 MaaFW 脚本编辑页的卡片分组布局与行内开关条 (#2194) by @1w1w11w1
+- 【调度】统一 OkNte、HSR、Okww 与 MaaEnd 脚本编辑页的卡片分组布局与行内开关条 (#2193) by @1w1w11w1
+- 【调度】优化托管与账号编辑页布局、模拟器选择交互及次数步进控件 (#2179) by @1w1w11w1
+- 【调度】统一 SRC、BAAH、BetterGI、奇想盒与绝区零一条龙脚本编辑页的卡片分组布局与控件样式 (#2191) by @1w1w11w1
+- 【模拟器】游戏管理页改为左右分栏布局，设备列表置顶、配置默认收起并支持窄窗收起左栏 (#2166) by @ClozyA
+- 【设置】上传带菜单图标的主题时，需提供默认菜单图标 (#2178) by @jinghero
+
+### 修复
+
+- 【ok-nte】修复自更新中途被终止，并及时提示 OK-NTE、OK-WW 的脚本升级失败。 (#2162) by @AthenaHibou
+- 【调度】仅在专项支持时显示游戏目标和账号单独指定选项 (#2192) by @1w1w11w1
+- 【模拟器】修复 OK-NTE、OK-WW 和 MaaEnd 打开启动器后未进入游戏的问题 (#2161) by @AthenaHibou
+- 【设置】修复空密码的 Windows 本地账号无法直接连接桌面分身的问题（仅公测） (#2185) by @luo-luo-o
+- 【更新】修复升级或保存时配置被覆盖、托管启动设置丢失的问题 (#2198) by @1w1w11w1
+
+### 开发流程
+
+- 补充开发端口占用提示、AI 开发边界并精简 launch.json 模板 (#2183) by @1w1w11w1
+- 优化本地开发启动脚本、新增开发环境自检工具并统一开发文档 (#2182) by @1w1w11w1
+
 ## [v5.10.0-beta.1] - 2026-11-25
 
 ### 破坏性变更
@@ -922,6 +947,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.10.0-beta.1...dev
 [v5.10.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.9.0-beta.1...v5.10.0-beta.1
 [v5.9.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...v5.9.0-beta.1
 [v5.8.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0
