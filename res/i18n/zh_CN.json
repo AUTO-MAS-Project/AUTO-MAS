@@ -4986,6 +4986,8 @@
   "core.plugins.guard.uninstallTitle": "现在不能卸载「{name}」",
   "core.plugins.guard.inUse": "还有 {count} 个托管在用它。删掉这些托管后才能停用或卸载。",
   "core.plugins.guard.inUseList": "在用的托管",
+  "core.plugins.guard.cascadeInUse": "会一并停用的专项名下还有托管或计划表。删掉这些托管和计划表后才能停用或卸载。",
+  "core.plugins.guard.cascadeInUseList": "会一并停用的专项",
   "core.plugins.guard.goScripts": "去托管管理",
   "core.plugins.guard.usageLoading": "正在读取托管用量，读完前无法确认有没有托管在用它。",
   "core.plugins.guard.usageFailed": "托管用量读取失败，无法确认有没有托管在用它。",

@@ -5,6 +5,7 @@ import {
   LIFECYCLE_LABEL_KEYS,
   lifecycleAffected,
   lifecycleCascade,
+  lifecycleCascadeUsage,
   lifecycleDecision,
   type DisableScope,
   type InstalledPluginView,
@@ -26,11 +27,13 @@ const CONFIRM_TITLE_KEYS: Record<GuardedAction, string> = {
 }
 
 const isBlocked = (decision: LifecycleDecision) =>
-  decision.kind === 'blockedInUse' || decision.kind === 'blockedUnknown'
+  decision.kind === 'blockedInUse' ||
+  decision.kind === 'blockedCascade' ||
+  decision.kind === 'blockedUnknown'
 
 /**
  * 已安装页签的操作编排：启用、重载直接提交；停用、卸载先按 lifecycleDecision 拦截或确认。
- * 能对上托管类型的插件在判断前先重取一次用量。
+ * 能对上托管类型的插件、会连带停用下游专项的插件在判断前先重取一次用量。
  * 拦截弹层打开期间，用量重新读到后若已不再拦截，就关掉弹层接着走确认或直接执行。
  */
 export function useInstalledActions() {
@@ -38,13 +41,20 @@ export function useInstalledActions() {
   const { data, installation, lock, runLifecycle } = usePluginCenter()
   const guard = ref<LifecycleGuard | null>(null)
 
+  /** 本插件及连带范围里各专项的用量一起判断。 */
+  const decide = (view: InstalledPluginView, action: GuardedAction) =>
+    lifecycleDecision(
+      action,
+      view,
+      data.usageOf(view),
+      lifecycleCascadeUsage(action, view, data.installed.value, data.usageOf)
+    )
+
   const guardView = computed(
     () => (guard.value && data.installed.value.find(view => view.uid === guard.value?.uid)) || null
   )
   const guardDecision = computed<LifecycleDecision | null>(() =>
-    guard.value && guardView.value
-      ? lifecycleDecision(guard.value.action, guardView.value, data.usageOf(guardView.value))
-      : null
+    guard.value && guardView.value ? decide(guardView.value, guard.value.action) : null
   )
 
   /** 确认文案后面列出本插件及连带范围里各专项名下会一并删除的托管与计划表。 */
@@ -119,7 +129,7 @@ export function useInstalledActions() {
       if (!latest) return false
       target = latest
     }
-    return proceed(target, action, lifecycleDecision(action, target, data.usageOf(target)))
+    return proceed(target, action, decide(target, action))
   }
 
   const upgrade = (view: InstalledPluginView): Promise<boolean> =>
