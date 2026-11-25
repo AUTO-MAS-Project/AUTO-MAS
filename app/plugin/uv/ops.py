@@ -11,7 +11,6 @@ import importlib
 import importlib.metadata as importlib_metadata
 import json
 import os
-import platform
 import shutil
 import sys
 import tempfile
@@ -258,24 +257,9 @@ async def prepare_environment() -> None:
     pins = host_constraints()
     records = list(Config.plugin_registry.values())
     targets = plugin_targets(records, installed_path=target)
-    existing = {
-        canonicalize_name(dist.name): dist.version
-        for dist in importlib_metadata.distributions(path=[str(target)])
-        if canonicalize_name(dist.name) != canonicalize_name(CORE_DISTRIBUTION_NAME)
-    }
-    fingerprint = {
-        "core": Config.VERSION,
-        "python": platform.python_version(),
-        "platform": sys.platform,
-        "host": pins,
-        "plugins": targets,
-        "installed": existing,
-        "sources": {
-            item: (Path(item) / "pyproject.toml").read_text(encoding="utf-8")
-            for item in targets
-            if (Path(item) / "pyproject.toml").is_file()
-        },
-    }
+    fingerprint = environment.environment_fingerprint(
+        target, targets=targets, pins=pins
+    )
     marker = target.parent / "environment.json"
     if marker.is_file():
         try:
@@ -317,10 +301,7 @@ async def prepare_environment() -> None:
         # 源码覆盖只选择当前实现，不能顺带卸载被覆盖的发行包；源码移除后仍可回落。
         environment.preserve_local_packages(target, prepared)
 
-        installed = {
-            canonicalize_name(dist.name): dist
-            for dist in importlib_metadata.distributions(path=[str(prepared)])
-        }
+        installed = environment.distributions(prepared)
         retained = {
             canonicalize_name(Requirement(item).name)
             for item in targets
@@ -369,11 +350,7 @@ async def prepare_environment() -> None:
         importlib.invalidate_caches()
         importlib_metadata.MetadataPathFinder.invalidate_caches()
         fingerprint["plugins"] = plugin_targets(records, installed_path=target)
-        pending_marker = marker.with_suffix(".tmp")
-        pending_marker.write_text(
-            json.dumps(fingerprint, ensure_ascii=False), encoding="utf-8"
-        )
-        pending_marker.replace(marker)
+        environment.write_environment_fingerprint(target, fingerprint)
         shutil.rmtree(previous)
     importlib.invalidate_caches()
     logger.info("插件依赖准备完成，开始加载插件")
