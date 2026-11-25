@@ -248,6 +248,15 @@ class ConfigManager:
         if self._ui_listener is not None:
             self._publish_ui_commit(self._ui_sources(nodes))
 
+    def mark_persist_changed(self, node: ConfigNode) -> None:
+        """登记不经工作区提交的盘上内容变化（如删掉旁挂成员），让下一轮整轮保存写这个根。
+
+        整轮保存跳过修订号没变的根，只有提交了工作区的事务才推进修订号。
+        """
+        record = self._roots.get(node.root.uid)
+        if record is not None and record.node is node.root:
+            record.revision += 1
+
     def mark_ui_changed(self, node: ConfigNode) -> None:
         """记录工作区变化，随所属根事务提交或丢弃。"""
         if self._ui_listener is not None and (ctx := self.current) is not None:

@@ -548,6 +548,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 raise KeyError(uid)
             async with config_manager.transaction():
                 removed = self._unresolved.pop(uid)
+                config_manager.mark_persist_changed(self)
                 config_manager.mark_ui_changed(self)
         config_manager.schedule_debounced_save()
         return removed

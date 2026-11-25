@@ -258,3 +258,23 @@ async def test_member_unreadable_by_returned_plugin_stays_aside(tmp_path):
     await config_manager.flush()
     assert profile.saved() == profile.document
     assert profile.saved_targets() == profile.ids
+
+
+async def test_discarded_member_reaches_disk_without_exit_flush(tmp_path):
+    """删掉旁挂成员后，后台的防抖保存就要把它从盘上去掉，不能只等退出时的 flush。"""
+    profile = Profile(tmp_path)
+    scripts, _pointers = await profile.start_without_plugin()
+    await config_manager.flush()
+    gone = profile.ids[1]
+
+    await scripts.discard_unresolved(gone)
+    for _ in range(100):
+        if gone not in profile.saved()["data"]:
+            break
+        await asyncio.sleep(0.02)
+
+    saved = profile.saved()
+    assert gone not in saved["data"]
+    assert [item["uid"] for item in saved["order"]] == [
+        uid for uid in profile.ids if uid != gone
+    ]
