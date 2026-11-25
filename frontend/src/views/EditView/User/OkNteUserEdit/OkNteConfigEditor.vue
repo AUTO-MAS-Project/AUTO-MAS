@@ -35,86 +35,15 @@
                       :field="child"
                       class="nested-form-item"
                     >
-                      <a-switch
-                        v-if="child.type === 'bool'"
-                        :checked="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        @change="
-                          (val: boolean) =>
-                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
+                      <OkNteConfigFieldControl
+                        :field="child"
+                        :model-value="
+                          getNestedFieldValue(selectedConfigFilename, field.name, child)
                         "
-                      />
-
-                      <a-select
-                        v-else-if="child.type === 'select'"
-                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        style="width: 100%"
+                        :option-labels="optionLabels"
+                        :disabled="loading || saving"
                         @change="
-                          (val: string) =>
-                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
-                        "
-                      >
-                        <a-select-option v-for="opt in child.options || []" :key="opt" :value="opt">
-                          {{ getOptionLabel(opt) }}
-                        </a-select-option>
-                      </a-select>
-
-                      <a-select
-                        v-else-if="child.type === 'list'"
-                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        mode="multiple"
-                        style="width: 100%"
-                        :placeholder="t('core.edit.pleaseChoose')"
-                        @change="
-                          (val: string[]) =>
-                            setNestedFieldValue(selectedConfigFilename, field.name, child, val)
-                        "
-                      >
-                        <a-select-option v-for="opt in child.options || []" :key="opt" :value="opt">
-                          {{ getOptionLabel(opt) }}
-                        </a-select-option>
-                      </a-select>
-
-                      <a-input-number
-                        v-else-if="child.type === 'int'"
-                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        :min="child.min"
-                        :max="child.max"
-                        style="width: 100%"
-                        @change="
-                          (val: number | null) => {
-                            if (val !== null)
-                              setNestedFieldValue(selectedConfigFilename, field.name, child, val)
-                          }
-                        "
-                      />
-
-                      <a-input-number
-                        v-else-if="child.type === 'float'"
-                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        :min="child.min"
-                        :max="child.max"
-                        :step="child.step || 0.1"
-                        style="width: 100%"
-                        @change="
-                          (val: number | null) => {
-                            if (val !== null)
-                              setNestedFieldValue(selectedConfigFilename, field.name, child, val)
-                          }
-                        "
-                      />
-
-                      <a-input
-                        v-else
-                        :value="getNestedFieldValue(selectedConfigFilename, field.name, child)"
-                        style="width: 100%"
-                        @change="
-                          (e: Event) =>
-                            setNestedFieldValue(
-                              selectedConfigFilename,
-                              field.name,
-                              child,
-                              (e.target as HTMLInputElement).value
-                            )
+                          setNestedFieldValue(selectedConfigFilename, field.name, child, $event)
                         "
                       />
                     </OkNteConfigFormItem>
@@ -175,98 +104,13 @@
                   </div>
                 </template>
 
-                <!-- bool 类型：开关 -->
-                <a-switch
-                  v-else-if="field.type === 'bool'"
-                  :checked="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  @change="(val: boolean) => setFieldValue(selectedConfigFilename, field.name, val)"
-                />
-
-                <!-- select 类型：下拉选择 -->
-                <a-select
-                  v-else-if="field.type === 'select'"
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  style="width: 100%"
-                  @change="(val: string) => setFieldValue(selectedConfigFilename, field.name, val)"
-                >
-                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
-                    {{ getOptionLabel(opt) }}
-                  </a-select-option>
-                </a-select>
-
-                <!-- list 类型：多选 -->
-                <a-select
-                  v-else-if="field.type === 'list'"
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  mode="multiple"
-                  style="width: 100%"
-                  :placeholder="t('core.edit.pleaseChoose')"
-                  @change="
-                    (val: string[]) => setFieldValue(selectedConfigFilename, field.name, val)
-                  "
-                >
-                  <a-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
-                    {{ getOptionLabel(opt) }}
-                  </a-select-option>
-                </a-select>
-
-                <!-- int 类型：整数输入 -->
-                <a-input-number
-                  v-else-if="field.type === 'int'"
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  :min="field.min"
-                  :max="field.max"
-                  style="width: 100%"
-                  @change="
-                    (val: number | null) => {
-                      if (val !== null) setFieldValue(selectedConfigFilename, field.name, val)
-                    }
-                  "
-                />
-
-                <!-- float 类型：浮点数输入 -->
-                <a-input-number
-                  v-else-if="field.type === 'float'"
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  :min="field.min"
-                  :max="field.max"
-                  :step="field.step || 0.1"
-                  style="width: 100%"
-                  @change="
-                    (val: number | null) => {
-                      if (val !== null) setFieldValue(selectedConfigFilename, field.name, val)
-                    }
-                  "
-                />
-
-                <!-- hotkey 类型：快捷键输入 -->
-                <a-input
-                  v-else-if="field.type === 'hotkey'"
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  style="width: 100%"
-                  @change="
-                    (e: Event) =>
-                      setFieldValue(
-                        selectedConfigFilename,
-                        field.name,
-                        (e.target as HTMLInputElement).value
-                      )
-                  "
-                />
-
-                <!-- string 类型：文本输入 -->
-                <a-input
+                <OkNteConfigFieldControl
                   v-else
-                  :value="getFieldValue(selectedConfigFilename, field.name, field.value)"
-                  style="width: 100%"
-                  @change="
-                    (e: Event) =>
-                      setFieldValue(
-                        selectedConfigFilename,
-                        field.name,
-                        (e.target as HTMLInputElement).value
-                      )
-                  "
+                  :field="field"
+                  :model-value="getFieldValue(selectedConfigFilename, field.name, field.value)"
+                  :option-labels="optionLabels"
+                  :disabled="loading || saving"
+                  @change="setFieldValue(selectedConfigFilename, field.name, $event)"
                 />
               </OkNteConfigFormItem>
 
@@ -293,6 +137,7 @@ import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import OkNteConfigNavigation from './OkNteConfigNavigation.vue'
 import OkNteConfigFormItem from './OkNteConfigFormItem.vue'
+import OkNteConfigFieldControl from './OkNteConfigFieldControl.vue'
 import { OkNteSetupService as OknteService } from '@/composables/useAdapterSetupApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
@@ -376,10 +221,6 @@ const selectedConfig = computed(() => {
 const selectedConfigFilename = computed(() => selectedConfig.value?.filename || '')
 
 const hasChanges = computed(() => changedFiles.value.size > 0)
-
-const getOptionLabel = (value: string) => {
-  return optionLabels.value[value] || value
-}
 
 const getFieldValue = (filename: string, fieldName: string, fallback: any) => {
   if (localChanges.value[filename] && localChanges.value[filename][fieldName] !== undefined) {

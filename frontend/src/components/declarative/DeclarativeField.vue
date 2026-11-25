@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
 import DeclarativeControl from './DeclarativeControl.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SwitchTile } from '@/components/ui'
 import { apiErrorMessage } from '@/utils/apiResult'
 
 const props = withDefaults(
@@ -40,6 +41,11 @@ const tip = computed(() =>
     ? t(`${key.value}.tip`)
     : ''
 )
+const pathHint = computed(() =>
+  props.hint.component === 'path' && props.hint.path_must_exist
+    ? t('core.plugins.pathMustExistHint')
+    : ''
+)
 const isAction = computed(() =>
   /* 判断当前控件是否为按钮类动作，以区分触发操作和普通编辑。 */ [
     'button',
@@ -72,19 +78,19 @@ const pick = async () => {
     :aria-label="label"
     :title="tableCell ? tip || undefined : undefined"
   >
-    <div
-      class="declarative-field-body"
-      :class="{ 'switch-tile': tile, 'switch-tile--on': tile && value }"
-    >
-      <FieldLabelWithHint
-        v-if="!tableCell"
-        :text="label"
-        :hint="tip"
-        :title="tile ? label : undefined"
-        variant="form"
-      />
+    <SwitchTile
+      v-if="tile && !tableCell"
+      :title="label"
+      :description="tip || undefined"
+      :checked="Boolean(value)"
+      :disabled="disabled || hint.editable === false || loading"
+      :loading="loading"
+      @change="update"
+    />
+    <div v-else class="declarative-field-body">
+      <FieldLabelWithHint v-if="!tableCell" :text="label" :hint="tip" variant="form" />
       <DeclarativeControl
-        :compact="tableCell || tile"
+        :compact="tableCell"
         :component="hint.component"
         :label="label"
         :model-value="value"
@@ -107,6 +113,7 @@ const pick = async () => {
     </div>
     <p v-if="error" class="field-error" role="alert">{{ error }}</p>
     <p v-else-if="disabledReason" class="field-reason">{{ disabledReason }}</p>
+    <p v-else-if="pathHint" class="field-reason">{{ pathHint }}</p>
     <a-button v-if="retry" size="small" type="link" :loading="loading" @click="retry">
       {{ t('core.common.retry') }}
     </a-button>
@@ -124,25 +131,6 @@ const pick = async () => {
 }
 .declarative-field > .ant-btn {
   justify-self: start;
-}
-.switch-tile {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  height: 42px;
-  padding: 4px 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: var(--ant-border-radius);
-}
-.switch-tile--on {
-  border-color: var(--ant-color-primary-border);
-  background: var(--ant-color-primary-bg);
-}
-.switch-tile :deep(.field-label) {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
 }
 .field-error,
 .field-reason {
