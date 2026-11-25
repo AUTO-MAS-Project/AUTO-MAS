@@ -2,7 +2,7 @@
 
 宿主不再内置通用 MFW、M9A、MSS（见 [maafw-plugin-migration.md](maafw-plugin-migration.md)）。只用发行版时什么都不用做：配置里有这三类托管，宿主启动时会从 PyPI 装上并启用对应插件；新用户在插件中心装 `auto-mas-maafw-adapter`、`auto-mas-m9a-adapter`、`auto-mas-mss-adapter` 即可。
 
-本文写**要改插件包源码时**怎样把本地源码接进宿主、怎样确认装的是本地这份、怎样走一遍主路径和一次无害的真跑，以及怎样拿存量配置的副本演练升级。下面的命令和结果是 2026-11-22 在本分支实际跑通的（端口 36196，换成任何空闲端口都行）。
+本文写**要改插件包源码时**怎样把本地源码接进宿主、怎样确认装的是本地这份、怎样走一遍主路径，以及怎样拿存量配置的副本演练升级。下面的命令和结果是 2026-11-22 在本分支实际跑通的（端口 36196，换成任何空闲端口都行）；之后包和宿主都还在改，第 4、6、8 节的实测数据是当天的历史结果，没有重跑。
 
 涉及的包：
 
@@ -25,6 +25,8 @@ foreach ($p in 'auto-mas-maafw-interface', 'auto-mas-maafw-native', 'auto-mas-ma
     & $uv build --wheel "$src\packages\$p" --out-dir "$w\wheels"
 }
 ```
+
+只打三块库就够：专项和服务插件的 `pyproject.toml` 也把三块服务插件写成依赖，但宿主求解插件环境时把本地插件的源码目录本身当作求解目标，这几项依赖由本地源码满足，不去 PyPI 取。
 
 ## 2. 接入
 
@@ -66,9 +68,9 @@ Start-Process .\.venv\Scripts\python.exe -ArgumentList main.py -WorkingDirectory
 
 ## 4. 确认装的是本地这份
 
-`POST /api/plugin/list {}`：六个插件 `source=local`；版本号仍是 `0.1.0`（与 PyPI 上已发的同号）。
+`POST /api/plugin/list {}`：六个插件 `source=local`。九个包的版本号都是 `0.2.0`，与 PyPI 上已发的同号，但本地源码在 0.2.0 发布之后还有改动，版本号没有抬，所以**看版本号区分不了本地这份和 PyPI 那份**。
 
-三块库装在 `plugins\pypi\site-packages`。**本地 wheel 与 PyPI 上的同版本号时，uv 拿哪一份没有保证**，要比一次文件：
+三块库装在 `plugins\pypi\site-packages`。本地 wheel 与 PyPI 上的同版本号时，uv 拿哪一份没有保证，必须比一次文件：
 
 ```python
 import hashlib, pathlib
@@ -89,11 +91,13 @@ for mod, pkg in [
     print(mod, "与源码一致" if a == b else "不一致")
 ```
 
-2026-11-22 实测三块都与源码一致，装的是本地 wheel（`maafw_native` 的 `project_runtime.py` 本地版与 PyPI 0.1.0 不同，所以这次比对能区分两者）。不一致时清 uv 缓存（`uv cache clean <包名>`）、删 `plugins\pypi\environment.json` 再启动。
+比对只有在本地源码至少有一个文件与 PyPI 版不同时才能区分两者。2026-11-25 核对：积木仓库当前源码与 PyPI 上的 0.2.0 相比，`maafw_native` 有 5 个文件不同（例如 `versions.py`、`layout.py`），`maafw_interface` 有 10 个、`maafw_adapter_kit` 有 18 个文件不同，所以这次比对能区分。源码回到与发布时相同的状态时，比对就证明不了装的是哪一份。不一致时清 uv 缓存（`uv cache clean <包名>`）、删 `plugins\pypi\environment.json` 再启动。
+
+2026-11-22（当时版本号还是 `0.1.0`）实测三块都与源码一致，装的是本地 wheel。
 
 ## 5. 启用
 
-对插件注册项写 `info.enable`，只启用三个专项即可，三块积木按依赖一起启用：
+对插件注册项写 `info.enable`，只启用三个专项即可。专项的 `requires` 写的是带操作名的服务名（形如 `maafw.runner.v1.<操作>`、`maafw.agent_env.v1.<操作>`），宿主启用专项时按这些服务名找到提供它们的插件一起启用，三块服务插件就这样被连带启用：
 
 ```text
 POST /api/plugin_registry/get     {}   → data 的键是注册项 uid，info.plugin_name 是插件标识
@@ -121,30 +125,21 @@ POST /api/scripts/delete                   {"scriptId": ...}
 POST /api/scripts/maafw/agent-env/prepare  {"scriptId": ..., "path": "", "force": false}
 ```
 
-2026-11-22 的结果：
+2026-11-22 的结果（历史数据，之后没有重跑）：
 
 | 类型 | 项目 | 导入 | 预览 | 新账号默认队列 | 准备环境 |
 | --- | --- | --- | --- | --- | --- |
-| MaaFW | `D:\MAS\test\walkref\maabbb`（MAA_bbb v1.13.3） | 16.5 s | 36 个任务 | 14 个任务 | 21.6 s，isolated_venv |
-| M9A | `D:\MAS\test\walkref\m9a`（v4.9.0） | 30.3 s | 29 个任务 | 9 个任务 | 2.7 s，project_python |
-| MSS | `D:\MAS\test\mfw-src\StellaSora-v1.4.4` | 20.0 s | 15 个任务 | 空（这个版本没有 `default_check`，与内置时相同） | 2.6 s，project_python |
+| MaaFW | MAA_bbb v1.13.3 | 16.5 s | 36 个任务 | 14 个任务 | 21.6 s，isolated_venv |
+| M9A | M9A v4.9.0 | 30.3 s | 29 个任务 | 9 个任务 | 2.7 s，project_python |
+| MSS | StellaSora v1.4.4 源码 | 20.0 s | 15 个任务 | 空（这个版本没有 `default_check`，与内置时相同） | 2.6 s，project_python |
 
 - 复制托管：新托管当场有自己的副本 `data\mfw\<前 12 位>`，`Embedded.FollowSource` 为 false，预览正常。
 - 删除托管：副本当场删掉（0.15–0.45 s）。
 - 密码字段：项目里没有带 `password: true` 的输入项，要验证就把项目拷到 `$env:TEMP`，加一个 `type: input`、`inputs[].password: true` 的选项，并改掉 `name`、`github`、`mirrorchyan_rid`（同身份同版本的导入会并进已有谱系、沿用旧载荷）。写入账号快照后，`config\scripts.yaml` 里是 `mas-dpapi:` 前缀的密文，接口读回也是密文，盘上搜不到明文。
 
-## 7. 无害真跑
+## 7. 验证运行
 
-只用自己编的空白窗口程序，不拉真游戏、不开模拟器，不派发 ADB 控制器的托管。
-
-1. 编一个注册 `UnityWndClass`、标题由第一个参数给、客户区 1280×720 的小程序（Windows PowerShell 5.1 的 `Add-Type -OutputAssembly x.exe -OutputType WindowsApplication`，窗口过程用 `DefWindowProcW`；标题里的中文从参数传，别写进 C# 源码）。M9A 的 agent 要求 16:9，800×480 不行。每个托管各拷一份 exe（`win_process` 的占用锁按 exe 路径算）。
-2. 派发前确认桌面上没有类名 `UnityWndClass` 的窗口（ctypes `EnumWindows` + `GetClassNameW`）。
-3. 建游戏目标：`POST /api/games/create {"type": "win_process", "data": {"info": {"name": ..., "path": "<exe>", "wait_time": 30}}}`，取返回里的游戏 uid 和设备 uid。
-4. 改托管：`game: {game_id, device_id}`；`Device.Win32MouseMethod = 4`、`Win32KeyboardMethod = 4`（PostMessage，不抢鼠标键盘）；`Game.LaunchMode = "DirectExe"`；**`Game.Arguments` 写窗口标题**（加引号），MFW 由 MAS 启动游戏时用的是托管的 `Game.Arguments`，游戏目标里的「启动参数」不读；`Run.RunTimesLimit = 1`、`TaskTimeLimit = 1`（分钟）、`RunTimeLimit = 5`；`Update.AutoUpdateMode = "Off"`。窗口标题要匹配项目控制器的 `window_regex`：MAA_bbb 用「崩坏3 …」，M9A 用「Reverse: 1999 …」（M9A 的 PC 控制器只配国际服 / 港澳台资源，选「国际服（EN）」），MSS 用「StellaSora …」。
-5. 账号快照只留一个任务：MaaFW「领取邮箱奖励」、M9A「领取奖励」、MSS「领取邮箱奖励」。
-6. 派发：`POST /api/dispatch/start {"mode": "AutoProxy", "tasks": {"0": {"uid": "-", "children": {"0": {"uid": <scriptId>, "children": {"0": {"uid": <userId>}}}}}}}`，每 3 秒 `GET /api/dispatch/task/<taskId>` 看顶层 `status`。派发前设好停止条件：最多等 4 分钟，到点 `POST /api/dispatch/stop {"taskId": ...}`，再按进程树结束自己起的东西。
-
-2026-11-22 三种各跑一轮，都在 1–2 分钟内结束：拉起假程序 → 认出窗口 → 起 worker（`-m maafw_runner.core.runner.worker`，本地源码布局）→ 连上 Win32 控制器（PrintWindow / PostMessage）→ 起 agent → 任务在空白窗口上超时（MaaFW「单任务超时（限制 1 分钟）」）或认不出画面失败（M9A「停在 ReturnMain」、MSS「停在 通用_返回主页」）→ 账号日志最后一行「已关闭本次由 MAS 启动的游戏」→ 假程序退出、worker 和 agent 退出、游戏目标的 `deviceUsage` 清空。派发状态是 `error`（任务没完成，符合预期）。
+运行只用真实安装的游戏和真实设备验证，不用空白窗口程序或假的游戏目标代替。派发前先设好停止条件：托管的运行次数、单任务时限、总时限，以及到点 `POST /api/dispatch/stop {"taskId": ...}`。
 
 注意：M9A 的 agent 第一次启动会联网热更新约 11 个数据文件到副本里（项目自己的行为）；MSS 运行前会读一次星塔旅人公告页。
 
@@ -160,7 +155,7 @@ POST /api/scripts/maafw/agent-env/prepare  {"scriptId": ..., "path": "", "force"
 6. 再起一次，确认 `scripts.yaml` 和备份都不再变。
 7. 停后端，先删掉 `root\plugins` 下的联接（`(Get-Item <联接>).Delete()` 只删联接本身），再删副本目录。
 
-2026-11-22 用正式版配置演练的结果（10 个托管：7 个 MAA、1 个 MaaFW、1 个 M9A、1 个 HSR；7 个队列；2 个 MAA 计划表；没有 MSS）：
+2026-11-22 用正式版配置演练的结果（历史数据，之后没有重跑；10 个托管：7 个 MAA、1 个 MaaFW、1 个 M9A、1 个 HSR；7 个队列；2 个 MAA 计划表；没有 MSS）：
 
 - `legacy-maafw-plugin\scripts.yaml` 与原件逐字节相同；没有 MFW 族计划表，所以 `plans.yaml` 没备份。第二次启动 `scripts.yaml` 和备份都没变。
 - 三个专项是本地源码（`source=local`），三块库是本地 wheel；MAA 专项由宿主从 PyPI 补装（0.1.5）。没有旁挂，`unavailable` 为空。
@@ -188,7 +183,7 @@ Get-NetTCPConnection -LocalPort 36196 -State Listen -ErrorAction SilentlyContinu
 ## 10. 遇到问题先看这里
 
 - **安装报「插件 `xxx` 正在使用本地源码，请先移除该工程后再安装发行包」**：`plugins\` 下还留着联接，先 `-Unlink`。
-- **派发后「游戏窗口在 60s 内未就绪」**：窗口标题没匹配上控制器的 `window_regex`。标题要写进托管的 `Game.Arguments`，游戏目标的「启动参数」MFW 不用。
+- **在游戏目标上填的「启动参数」运行时不生效**：由 MAS 启动游戏时，MFW 只用托管的 `Game.Arguments`，游戏目标（`win_process`）上的「启动参数」「工作目录」不读，那两项只在游戏管理里点「打开」时用。见积木仓库 `docs/known-issues-0.2.0.md` 第 43 条。
 - **新发的包插件中心里找不到**：数据站插件目录还没收录。起后端前设 `AUTO_MAS_PLUGIN_EXTRA_PACKAGES=auto-mas-maafw-adapter,auto-mas-m9a-adapter,auto-mas-mss-adapter`，刷新目录时按包名从 PyPI 补进来。
 - 运行数据都在树根被忽略的 `config\ data\ debug\ history\ temp\ plugins\pypi\` 下。
 - 插件包自己的已知问题见积木仓库 `docs/known-issues-0.2.0.md`。

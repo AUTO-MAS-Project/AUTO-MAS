@@ -6,7 +6,7 @@
 
 .DESCRIPTION
 宿主已不内置 MaaFW / M9A / MSS，这三类托管由插件 maafw_adapter / m9a_adapter / mss_adapter
-接手。只用发行版的，宿主会从 PyPI 装（见 docs\mfw-plugins-local-integration.md 第 1 节）；
+接手。只用发行版的，宿主会从 PyPI 装（见 docs\mfw-plugins-local-integration.md 开头）；
 要改插件包源码时，用本脚本按「本地源码布局 + 库 wheel 目录」接入：
 
 1. 在本树 plugins\ 下给六个插件包各建一个目录联接（junction），宿主把 plugins\ 下
@@ -22,7 +22,7 @@
    UV_FIND_LINKS 会被盖掉，只有 UV_CONFIG_FILE 里的 find-links 会和命令行的合并。
    三块库（auto-mas-maafw-interface、auto-mas-maafw-native、auto-mas-maafw-adapter-kit）
    由此从 wheel 装进 plugins\pypi\site-packages。库的版本号和 PyPI 上已发的相同时，
-   uv 可能拿 PyPI 那份，装好后要按说明第 2 节核对一次。
+   uv 可能拿 PyPI 那份，装好后要按说明第 4 节核对一次。
 
 脚本可以重复执行：联接已指向同一目录就跳过，指向别处就只换联接（不碰目标目录），
 plugins\ 下同名的是普通目录或文件时报错退出、不做任何改动。uv.toml 内容没变就不重写。
