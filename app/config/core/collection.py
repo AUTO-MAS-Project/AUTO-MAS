@@ -890,12 +890,12 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     ) -> None:
         payload = payload or {}
         order = payload.get("order")
-        if not isinstance(order, list):
-            order = []
+        if order is not None and not isinstance(order, list):
+            raise TypeError(f"order 须为 list，收到 {type(order).__name__}")
         data_raw = payload.get("data")
-        data: dict[str, Any] = (
-            cast(dict[str, Any], data_raw) if isinstance(data_raw, dict) else {}
-        )
+        if data_raw is not None and not isinstance(data_raw, dict):
+            raise TypeError(f"data 须为 dict，收到 {type(data_raw).__name__}")
+        data = data_raw or {}
 
         # 清空冷态残留（写 effective / ws；外层 activate 已建工作区）
         object.__setattr__(self.effective, "order", [])
@@ -906,7 +906,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
         keep = self._keep_unknown_types and not regenerate_uuids
         errors: list[Exception] = []
-        for item in order:
+        for item in order or []:
             isolatable: tuple[UUID, str, dict[str, Any]] | None = None
             try:
                 if not isinstance(item, dict):
@@ -919,10 +919,14 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                         mode="json",
                         context=ExportContext(audience="persist"),
                     )
+                elif raw is None:
+                    payload = {}
                 elif isinstance(raw, dict):
                     payload = cast(dict[str, Any], raw)
                 else:
-                    payload = {}
+                    raise TypeError(
+                        f"data[{uid}] 须为 ConfigNode 或 dict，收到 {type(raw).__name__}"
+                    )
                 if keep:
                     self._load_order.append(uid)
                     if uid not in self._unresolved:

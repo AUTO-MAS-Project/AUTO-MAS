@@ -289,3 +289,64 @@ asyncio.run(run())
     assert f"配置读不了，原样保留：GeneralConfig {bad}" in text
     assert "WaitTime" in text
     assert secret not in text
+
+
+_QUEUE_UID = "a63ae3c5-4edd-4e21-bb35-a1ab009e8498"
+_QUEUE_ORDER = [{"uid": _QUEUE_UID, "type": "QueueConfig"}]
+
+
+@pytest.mark.parametrize(
+    ("filename", "payload", "field"),
+    [
+        ("setting.yaml", {"Function": False}, "Function"),
+        ("queues.yaml", {"order": {}, "data": {}}, "order"),
+        ("queues.yaml", {"order": _QUEUE_ORDER, "data": []}, "data"),
+        ("queues.yaml", {"order": _QUEUE_ORDER, "data": {_QUEUE_UID: 0}}, _QUEUE_UID),
+        (
+            "queues.yaml",
+            {"order": _QUEUE_ORDER, "data": {_QUEUE_UID: {"QueueItem": []}}},
+            "QueueItem",
+        ),
+    ],
+    ids=["group", "order", "data", "member", "nested-collection"],
+)
+def test_malformed_config_blocks_upgrade_and_preserves_file(
+    tmp_path, filename, payload, field
+):
+    code = f"""
+import asyncio
+import sqlite3
+from contextlib import closing
+
+from app.config import config_manager
+from app.config.errors import ConfigAggregateError
+from app.core import Config
+from app.utils import io
+
+path = Config.config_path / {filename!r}
+io.write_file(path, {payload!r})
+original = path.read_bytes()
+with closing(sqlite3.connect(Config.database_path)) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES ('v2.1')")
+    db.commit()
+
+async def run():
+    try:
+        await Config.check_data()
+    except (ConfigAggregateError, TypeError) as error:
+        assert {field!r} in str(error), error
+        assert isinstance(error, TypeError) or "TypeError" in str(error), error
+    else:
+        raise AssertionError("错型配置未阻断迁移")
+    assert path.read_bytes() == original
+    with closing(sqlite3.connect(Config.database_path)) as db:
+        assert db.execute("SELECT v FROM version").fetchone() == ("v2.1",)
+
+    # 退出时也会 flush，不能把部分激活结果覆盖到原配置。
+    await config_manager.flush()
+    assert path.read_bytes() == original
+
+asyncio.run(run())
+"""
+    _run_config_startup(tmp_path, code)

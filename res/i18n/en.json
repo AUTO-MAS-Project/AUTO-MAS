@@ -4735,6 +4735,7 @@
   "core.plugins.gameTypes": "Game types",
   "core.plugins.settingsPages": "Settings pages",
   "core.plugins.maskedPlaceholder": "Configured (leave blank to keep)",
+  "core.plugins.pathMustExistHint": "Path existence is verified on save",
   "core.plugins.addOption": "Add an option",
   "core.plugins.readOnly": "This setting is read-only",
   "core.plugins.settingsForm": "Plugin settings",

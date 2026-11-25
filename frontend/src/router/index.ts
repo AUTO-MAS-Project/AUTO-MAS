@@ -88,13 +88,6 @@ const routes = [
     meta: { title: '插件设置' },
   },
   {
-    path: '/plugins/:pluginId/:pageId',
-    name: 'PluginPage',
-    component: () =>
-      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
-    meta: { title: '插件设置' },
-  },
-  {
     path: '/tools',
     name: 'Tools',
     component: () => import('@/views/tools/index.vue'),
@@ -148,7 +141,6 @@ const routes = [
   },
   {
     path: '/games',
-    alias: '/emulators',
     name: 'Games',
     component: () => import('../views/games/index.vue'),
     meta: { title: '游戏管理' },

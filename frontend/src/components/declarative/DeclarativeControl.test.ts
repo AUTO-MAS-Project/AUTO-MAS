@@ -27,9 +27,9 @@ async function render(props: Props, ...controls: string[]) {
       name,
       defineComponent({
         inheritAttrs: false,
-        setup(_, { attrs, emit }) {
+        setup(_, { attrs, emit, slots }) {
           inputs[name]!.push({ attrs, emit })
-          return () => h('span', String(attrs.value ?? ''))
+          return () => h('span', slots.overlay?.() ?? String(attrs.value ?? ''))
         },
       })
     )
@@ -68,7 +68,7 @@ describe('声明式控件的读写契约', () => {
 
   it('表格开关提交布尔值，数字框按所在布局选择尺寸', async () => {
     const toggle = await render(
-      { component: 'toggle-button', compact: true, modelValue: true },
+      { component: 'switch', compact: true, modelValue: true },
       'a-switch'
     )
     const input = toggle.inputs['a-switch']![0]!
@@ -80,6 +80,18 @@ describe('声明式控件的读写契约', () => {
       expect(number.inputs['a-input-number']![0]!.attrs.size).toBe(compact ? 'middle' : 'large')
     }
   })
+
+  it.each(['bool', 'boolean', 'checkbox', 'toggle-button'])(
+    '旧组件名 %s 使用普通输入框',
+    async component => {
+      const { inputs, html } = await render(
+        { component, compact: true, modelValue: 'text' },
+        'a-input'
+      )
+      expect(inputs['a-input']?.[0]?.attrs.value).toBe('text')
+      expect(html).not.toContain('role="switch"')
+    }
+  )
 
   it('分段选择提交原始布尔值', async () => {
     const { inputs, update } = await render(
@@ -96,6 +108,26 @@ describe('声明式控件的读写契约', () => {
     const options = control.attrs.options as Array<{ label: string; value: number }>
     control.emit('update:value', options.find(o => o.label === 'No')!.value)
     expect(update).toHaveBeenCalledWith(false)
+  })
+
+  it('下拉动作保留所选项的值和类型，普通动作提交 true', async () => {
+    const dropdown = await render(
+      { component: 'dropdown-button', options: [{ value: 1 }, { value: '1' }] },
+      'a-dropdown',
+      'a-menu-item'
+    )
+    dropdown.inputs['a-menu-item']![1]!.emit('click')
+    expect(dropdown.update).toHaveBeenCalledWith('1')
+
+    const button = await render({ component: 'button' }, 'a-button')
+    button.inputs['a-button']![0]!.emit('click')
+    expect(button.update).toHaveBeenCalledWith(true)
+  })
+
+  it('引用字段使用选择框并提交选中引用', async () => {
+    const { inputs, update } = await render({ component: 'ref-select' }, 'a-select')
+    inputs['a-select']![0]!.emit('update:value', 'ref-id')
+    expect(update).toHaveBeenCalledWith('ref-id')
   })
 
   it('移动、移除和新增均保留选项类型及未改动选项的顺序', async () => {

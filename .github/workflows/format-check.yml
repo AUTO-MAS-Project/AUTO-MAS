@@ -30,66 +30,129 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: 识别改动范围
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "run_python=true" >> "$GITHUB_OUTPUT"
+            echo "run_frontend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          run_python="false"
+          run_frontend="false"
+          while IFS= read -r file; do
+            case "$file" in
+              *.py|*.md|pyproject.toml|uv.lock|.github/workflows/format-check.yml)
+                run_python="true"
+                ;;
+            esac
+            case "$file" in
+              frontend/*|res/*|scripts/prepare_test_plugins.py|tests/requirements-plugins.txt|.github/workflows/format-check.yml)
+                run_frontend="true"
+                ;;
+            esac
+          done <<< "$changed"
+          echo "run_python=$run_python" >> "$GITHUB_OUTPUT"
+          echo "run_frontend=$run_frontend" >> "$GITHUB_OUTPUT"
+          echo "scope: run_python=$run_python, run_frontend=$run_frontend"
+
       - name: 设置 uv
+        if: steps.scope.outputs.run_python == 'true' || steps.scope.outputs.run_frontend == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: 检查 Python 格式
+        if: steps.scope.outputs.run_python == 'true'
         run: |
-          uv sync --locked
+          uv sync --locked --only-group dev
           uv run --no-sync ruff format --check .
 
       - name: 设置 Node.js 环境
+        if: steps.scope.outputs.run_frontend == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
 
       - name: 检查组件尺寸
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
           node --test scripts/audit-baseline.check.mjs
           node scripts/audit-baseline.mjs --check "$BASE_SHA"
 
       - name: 设置 Yarn
+        id: yarn-cache
+        if: steps.scope.outputs.run_frontend == 'true'
+        working-directory: frontend
         run: |
           corepack enable
           corepack prepare yarn@4.18.1 --activate
+          echo "dir=$(yarn config get cacheFolder)" >> "$GITHUB_OUTPUT"
+
+      - name: 缓存 Yarn 依赖包
+        if: steps.scope.outputs.run_frontend == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: ${{ runner.os }}-yarn4-${{ hashFiles('frontend/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn4-
 
       - name: 安装前端依赖
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn install --immutable --mode=skip-build
 
       - name: 检查前端 Lint
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn lint
 
       - name: 检查前端类型
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn typecheck
 
+      - name: 检查 Electron 主进程类型
+        if: steps.scope.outputs.run_frontend == 'true'
+        working-directory: frontend
+        run: yarn build:main
+
       - name: 检查前端格式
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn format:check
 
       - name: 运行前端单元测试
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn test
 
-      - name: 准备插件发行包
-        run: uv run --no-sync python scripts/prepare_test_plugins.py
+      - name: 准备后端测试环境与插件发行包
+        if: steps.scope.outputs.run_frontend == 'true'
+        run: |
+          uv sync --locked
+          uv run --no-sync python scripts/prepare_test_plugins.py
 
       # 词表门禁：缺译、占位符差异、源码在用但没有的 key、死词条、模板硬编码中文，
       # 全部按 0 判定；口径见 frontend/scripts/i18n-audit.mjs。
       - name: 检查词表完整性
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: yarn audit:i18n --check
 
       # E2E 浏览器流程在本地运行；此处验证数据根隔离、发行插件及历史种子和启动参数。
       - name: 检查 E2E 基础设施契约
+        if: steps.scope.outputs.run_frontend == 'true'
         working-directory: frontend
         run: node --test e2e/harness.check.mjs

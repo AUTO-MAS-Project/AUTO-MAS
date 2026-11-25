@@ -4735,6 +4735,7 @@
   "core.plugins.gameTypes": "游戏类型",
   "core.plugins.settingsPages": "设置页面",
   "core.plugins.maskedPlaceholder": "已配置（留空保持不变）",
+  "core.plugins.pathMustExistHint": "保存时将校验路径是否存在",
   "core.plugins.addOption": "添加选项",
   "core.plugins.readOnly": "当前配置为只读",
   "core.plugins.settingsForm": "插件设置",

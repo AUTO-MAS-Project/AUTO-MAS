@@ -12,7 +12,6 @@ const screens: Record<string, AnalyticsScreen> = {
   // 更新页签暂归入插件中心，单列页面类别需同步扩展主进程白名单。
   PluginUpdates: 'plugins',
   PluginSettings: 'plugin_settings',
-  PluginPage: 'plugin_settings',
   Tools: 'tools',
   Initialization: 'initialization',
   Home: 'home',

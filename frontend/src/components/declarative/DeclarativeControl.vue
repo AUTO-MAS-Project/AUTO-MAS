@@ -4,7 +4,6 @@ import type { Dayjs } from 'dayjs'
 import { useI18n } from 'vue-i18n'
 import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
-import { isSwitchComponent } from './declarativeLayout'
 import DeclarativeOrderedSelect from './DeclarativeOrderedSelect.vue'
 import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
@@ -19,6 +18,8 @@ const props = withDefaults(
     loading?: boolean
     min?: number | null
     max?: number | null
+    precision?: number
+    step?: number
     options?: Option[]
     multiple?: boolean
     pathKind?: string | null
@@ -38,6 +39,8 @@ const props = withDefaults(
     loading: false,
     min: null,
     max: null,
+    precision: undefined,
+    step: undefined,
     options: () => /* 为未声明选项的控件提供独立空列表，避免组件实例共享可变默认值。 */ [],
     multiple: false,
     pathKind: null,
@@ -58,17 +61,18 @@ const maskedValue = computed(
   () => (props.masked || props.secret) && props.modelValue === '__AUTO_MAS_CONFIG_MASKED__'
 )
 const kind = computed(() => {
-  // 结合声明组件类型与实际字段值选择渲染控件，兼容布尔、引用选择和其他字段别名。
-  const component = props.component?.toLowerCase() ?? 'input'
+  // 声明的格式或部件可覆盖默认控件，引用字段复用选择框。
+  const component = props.component
   if (props.secret || props.masked) return 'password'
   if (component === 'textarea' || props.widget === 'textarea') return 'textarea'
   if (component === 'time' || props.format === 'time') return 'time'
   if (component === 'datetime' || props.format === 'datetime') return 'datetime'
   if ((component === 'segmented' || props.widget === 'segmented') && props.options.length)
     return 'segmented'
-  if (isSwitchComponent(component)) return 'toggle-button'
   if (component === 'ref-select') return 'select'
-  return ['path', 'number', 'select', 'date', 'button', 'dropdown-button'].includes(component)
+  return ['switch', 'path', 'number', 'select', 'date', 'button', 'dropdown-button'].includes(
+    component
+  )
     ? component
     : 'input'
 })
@@ -92,15 +96,6 @@ const updateTime = (value: string | null) => {
     serializeConfigTime(`${date.format('YYYY-MM-DD')}T${value}:${date.format('ss')}`, original)
   )
 }
-const selectOption = (key: string | number) => {
-  // 根据下拉选择键找回声明中的原始值类型，再向上层提交。
-  const option = props.options.find(
-    item =>
-      /* 以字符串形式比较选项键，兼容下拉控件返回的数字或文本标识。 */ String(item.value) ===
-      String(key)
-  )
-  update(option?.value ?? key)
-}
 </script>
 
 <template>
@@ -109,7 +104,7 @@ const selectOption = (key: string | number) => {
     :class="[`declarative-control--${kind}`, { 'declarative-control--compact': compact }]"
   >
     <a-switch
-      v-if="compact && kind === 'toggle-button'"
+      v-if="compact && kind === 'switch'"
       :aria-label="label"
       :checked="Boolean(modelValue)"
       :disabled="disabled"
@@ -117,7 +112,7 @@ const selectOption = (key: string | number) => {
       @update:checked="update"
     />
     <SettingToggleButton
-      v-else-if="kind === 'toggle-button'"
+      v-else-if="kind === 'switch'"
       :model-value="Boolean(modelValue)"
       :disabled="disabled"
       :loading="loading"
@@ -143,8 +138,13 @@ const selectOption = (key: string | number) => {
         {{ label || t('core.common.confirm') }} <DownOutlined />
       </a-button>
       <template #overlay>
-        <a-menu @click="selectOption($event.key)">
-          <a-menu-item v-for="option in options" :key="String(option.value)">
+        <a-menu>
+          <!-- 直接派发声明值，避免菜单键把数字和同名字符串合并。 -->
+          <a-menu-item
+            v-for="(option, index) in options"
+            :key="index"
+            @click="update(option.value)"
+          >
             {{ option.label || String(option.value) }}
           </a-menu-item>
         </a-menu>
@@ -204,6 +204,8 @@ const selectOption = (key: string | number) => {
       :bordered="bordered"
       :min="min ?? undefined"
       :max="max ?? undefined"
+      :precision="precision"
+      :step="step"
       @update:value="update"
       @blur="emit('blur')"
     />
@@ -275,7 +277,7 @@ const selectOption = (key: string | number) => {
 
 <style scoped>
 .declarative-control:not(
-  .declarative-control--toggle-button,
+  .declarative-control--switch,
   .declarative-control--button,
   .declarative-control--dropdown-button
 ),

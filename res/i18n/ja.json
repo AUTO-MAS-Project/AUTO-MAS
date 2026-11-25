@@ -4748,6 +4748,7 @@
   "core.plugins.gameTypes": "ゲームの種類",
   "core.plugins.settingsPages": "設定ページ",
   "core.plugins.maskedPlaceholder": "設定済み（空欄で現在の値を保持）",
+  "core.plugins.pathMustExistHint": "保存時にパスの存在を確認します",
   "core.plugins.addOption": "選択肢を追加",
   "core.plugins.readOnly": "この設定は読み取り専用です",
   "core.plugins.settingsForm": "プラグイン設定",
