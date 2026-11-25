@@ -108,12 +108,6 @@ OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
 OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
 
 
-ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
-
-
-ZzzOdConfigInput = ConfigInput[_config_models.ZzzOdConfig]
-
-
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: str = Field(
@@ -127,7 +121,6 @@ class ScriptIndexItem(BaseModel):
                 "MaaFWConfig",
                 "HSRConfig",
                 "BetterGIConfig",
-                "ZzzOdConfig",
                 "BAAHConfig",
                 "MSSConfig",
             ]
@@ -157,13 +150,12 @@ class ScriptCreateIn(BaseModel):
                 "MaaFW",
                 "HSR",
                 "BetterGI",
-                "ZzzOd",
                 "BAAH",
                 "MSS",
             ]
         },
         default=...,
-        description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
+        description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该托管ID复制创建, 仅在复制创建时使用"
@@ -182,7 +174,6 @@ class ScriptCreateOut(OutBase):
         MaaFWConfig,
         HSRConfig,
         BetterGIConfig,
-        ZzzOdConfig,
         BAAHConfig,
         MSSConfig,
     ] = Field(..., description="托管配置数据")
@@ -208,7 +199,6 @@ class ScriptGetOut(ConfigSnapshotOut):
             MaaFWConfig,
             HSRConfig,
             BetterGIConfig,
-            ZzzOdConfig,
             BAAHConfig,
             MSSConfig,
         ],
@@ -235,7 +225,6 @@ class ScriptUpdateIn(BaseModel):
         MaaFWConfigInput,
         HSRConfigInput,
         BetterGIConfigInput,
-        ZzzOdConfigInput,
         BAAHConfigInput,
         MSSConfigInput,
     ] = Field(..., description="托管更新数据")

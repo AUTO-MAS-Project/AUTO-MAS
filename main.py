@@ -303,8 +303,6 @@ def main():
             read_unity_display_type,
             read_unity_resolution,
         )
-        from app.task.ZzzOd.config_context import ZzzOdContext
-        from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     with startup_stage("后端/专项能力绑定"):
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
@@ -319,14 +317,7 @@ def main():
             )
         with startup_stage("后端/专项能力绑定/构建能力注册表"):
             script_capabilities = build_builtin_script_capabilities(
-                maaend=maaend_config_service,
-                zzzod=ZzzOdRecovery(
-                    ZzzOdContext(
-                        Config.ScriptConfig,
-                        flush=Config.flush,
-                        add_user=Config.add_user,
-                    )
-                ),
+                maaend=maaend_config_service
             )
 
         for entry_type, handler in script_capabilities.config_handlers:

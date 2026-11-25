@@ -26,11 +26,10 @@ from app.utils.common.startup_timing import startup_stage
 
 if TYPE_CHECKING:
     from app.task.MaaEnd.api_service import MaaEndConfigService
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
 
 def build_builtin_script_capabilities(
-    *, maaend: MaaEndConfigService, zzzod: ZzzOdRecovery
+    *, maaend: MaaEndConfigService
 ) -> ScriptCapabilities:
     """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
     with startup_stage("后端/专项注册导入/BAAH.registration"):
@@ -51,14 +50,10 @@ def build_builtin_script_capabilities(
         from app.task.OkNte.registration import REGISTRATION as oknte
     with startup_stage("后端/专项注册导入/Okww.registration"):
         from app.task.Okww.registration import REGISTRATION as okww
-    with startup_stage("后端/专项注册导入/ZzzOd.registration"):
-        from app.task.ZzzOd.registration import registration as zzzod_registration
-
     capabilities = build_script_capabilities(
         (
             maaend_registration(maaend=maaend),
             bettergi,
-            zzzod_registration(zzzod=zzzod),
             maafw,
             okww,
             general,

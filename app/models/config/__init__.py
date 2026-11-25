@@ -47,7 +47,6 @@ CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
     "BetterGI": BetterGIConfig,
-    "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
     "MSS": MSSConfig,
 }

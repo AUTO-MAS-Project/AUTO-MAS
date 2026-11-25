@@ -13,7 +13,6 @@ from app.models.config import (
     OkNteConfig,
     OkwwConfig,
     UserConfigType,
-    ZzzOdConfig,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import execute_script_task
@@ -59,7 +58,6 @@ type ProxyScriptConfigType = (
     | OkNteConfig
     | GeneralConfig
     | BetterGIConfig
-    | ZzzOdConfig
     | BAAHConfig
 )
 

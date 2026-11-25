@@ -23,19 +23,12 @@ def bind_script_handlers() -> None:
         read_unity_display_type,
         read_unity_resolution,
     )
-    from app.task.ZzzOd.config_context import ZzzOdContext
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     capabilities = build_builtin_script_capabilities(
         maaend=MaaEndConfigService(
             scripts=Config.ScriptConfig,
             read_resolution=read_unity_resolution,
             read_display_type=read_unity_display_type,
-        ),
-        zzzod=ZzzOdRecovery(
-            ZzzOdContext(
-                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
-            )
         ),
     )
     for entry_type, handler in capabilities.config_handlers:

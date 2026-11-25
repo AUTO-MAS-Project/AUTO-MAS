@@ -17,7 +17,6 @@ from app.task.MaaEnd.inventory_report import inventory_resolve
 from app.task.MaaEnd.push_log import maaend_resolve
 from app.task.OkNte.push_log import oknte_resolve
 from app.task.Okww.push_log import okww_resolve
-from app.task.ZzzOd.push_log import make_zzzod_resolve
 from app.utils.common import host as common_host
 from app.utils.common import startup as common_startup
 from app.utils.common import update_native as common_update
@@ -64,7 +63,6 @@ oknte_processor: PostProcessor = oknte_resolve
 baah_processor: PostProcessor = baah_resolve
 maaend_processor: PostProcessor = maaend_resolve
 inventory_processor: PostProcessor = inventory_resolve
-zzzod_processor: PostProcessor = make_zzzod_resolve(set(), {})
 file_lock_windows: FileLockAPI = windows_file_lock
 file_lock_posix: FileLockAPI = posix_file_lock
 file_lock_unsupported: FileLockAPI = unsupported_file_lock

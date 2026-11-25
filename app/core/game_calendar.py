@@ -30,13 +30,13 @@ SCRIPT_CALENDAR_GAMES = {
         "MaaEnd": "endfield",
         "HSR": "starrail",
         "BetterGI": "genshin",
-        "ZzzOd": "zenless",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
         "M9A": "reverse1999",
         "BAAH": "bluearchive",
         "MSS": "stellasora",
     }.items()
+    if script in CLASS_BOOK
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}
 

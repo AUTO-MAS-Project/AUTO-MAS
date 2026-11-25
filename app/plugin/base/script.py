@@ -45,6 +45,9 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    desktop_session_check: Callable[[ScriptEntry], bool] | None = None
+    # 仅公共建号入口应用，载入存量账号及内部建号仍使用配置模型的缺省值。
+    new_user_defaults: Callable[[], dict[str, Any]] | None = None
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

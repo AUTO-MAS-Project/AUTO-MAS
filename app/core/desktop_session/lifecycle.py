@@ -34,10 +34,16 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
-        ZzzOdConfig,
+        ScriptEntry,
     )
     from app.utils import IS_ELEVATED
 
+    if isinstance(config, ScriptEntry):
+        from app.core import Plugin
+
+        decl = Plugin.script_decl(config)
+        check = decl.desktop_session_check if decl is not None else None
+        return check is not None and check(config)
     if isinstance(config, GeneralConfig):
         return not config.Game.Enabled or config.Game.Type != "Emulator"
     if isinstance(config, MaaEndConfig):
@@ -91,7 +97,7 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         return (
             not config.Run.UseAdmin or IS_ELEVATED
         ) and not config.Update.TakeoverEnabled
-    return isinstance(config, ZzzOdConfig) and IS_ELEVATED
+    return False
 
 
 def supports_task(config: object) -> bool:

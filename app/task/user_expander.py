@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import UUID
@@ -16,6 +17,8 @@ from app.task.lifecycle import TaskBase
 from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from app.task.game import BoundEmulator, GameSession
     from app.task.history_core import TaskHistorySession
     from app.task.mode_worker import ModeWorker
@@ -94,7 +97,11 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
             raise ValueError(reason)
         # 游戏接入位置：取得托管锁后、派发用户前订阅游戏/设备；资源由真实提供方负责。
         await self.prepare()
-        for user in self.script_info.users.values():
+        await self.dispatch_users(tuple(self.script_info.users.values()))
+
+    async def dispatch_users(self, users: tuple[TaskUserItem, ...]) -> None:
+        """默认逐个派发用户，支持专项在同一托管内划分分组。"""
+        for user in users:
             if self.task_info.info.status == "cancelled":
                 raise asyncio.CancelledError
             self.script_info.current.index = user.uid
@@ -167,6 +174,57 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                         await self.game_session.release_account()
                 finally:
                     await self._release_user_lock()
+
+    @asynccontextmanager
+    async def lock_user_group(
+        self, users: tuple[TaskUserItem, ...]
+    ) -> AsyncIterator[tuple[tuple[TaskUserItem, UserConfigType | UserEntry], ...]]:
+        """依同一轮实际运行锁住一个批次。遇到占用先释放已取得的票据，再等待。"""
+        remaining = dict.fromkeys(user.info.user_id for user in users)
+        if len(remaining) != len(users) or "default" in remaining:
+            raise ValueError("成组执行需要不同的真实用户配置")
+        last_wait_message = None
+        while True:
+            if self.task_info.info.status == "cancelled":
+                raise asyncio.CancelledError
+            async with AsyncExitStack() as stack:
+                locked = []
+                for user in users:
+                    if user.info.user_id not in remaining:
+                        continue
+                    entry = self.resolve_user(user)
+                    if entry is None:
+                        remaining.pop(user.info.user_id)
+                        await self.record_user_state(
+                            user, status="异常", reason="用户配置已删除或替换"
+                        )
+                        continue
+                    ticket = await entry.try_lock_x(cascade=True)
+                    if ticket is None:
+                        waiting = user
+                        break
+                    stack.push_async_callback(entry.unlock, ticket)
+                    if self.resolve_user(user) is not entry:
+                        remaining.pop(user.info.user_id)
+                        await self.record_user_state(
+                            user, status="异常", reason="用户配置已删除或替换"
+                        )
+                        continue
+                    if not self.can_run_user(entry):
+                        remaining.pop(user.info.user_id)
+                        await self.record_user_state(
+                            user, status="跳过", reason="用户已禁用或剩余天数不足"
+                        )
+                        continue
+                    locked.append((user, entry))
+                else:
+                    yield tuple(locked)
+                    return
+            message = f"等待成组运行的用户配置「{waiting.info.name}」释放锁。"
+            if message != last_wait_message:
+                await self.script_info.append_log(message + "\n")
+                last_wait_message = message
+            await asyncio.sleep(1)
 
     async def _release_user_lock(self) -> None:
         if self._user_ticket is not None:

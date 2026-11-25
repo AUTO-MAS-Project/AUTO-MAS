@@ -10,7 +10,6 @@ import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import maafwIcon from '@/assets/maafw.png'
 import mssIcon from '@/assets/mss.png'
-import zzzOdIcon from '@/assets/zzz-od.ico'
 
 export interface ScriptMetadata {
   logo: string
@@ -125,6 +124,7 @@ export const SCRIPT_METADATA = {
   MAA: SCRIPT_PLUGIN_METADATA.MAA,
   SRC: SCRIPT_PLUGIN_METADATA.SRC,
   Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
+  ZzzOd: SCRIPT_PLUGIN_METADATA.ZzzOd,
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -212,24 +212,6 @@ export const SCRIPT_METADATA = {
       titleKey: 'core.scripts.type.Okww',
       descriptionKey: 'core.scripts.create.typeDesc.Okww',
       keywords: ['okww', 'ok-ww', 'ok-script'],
-      group: 'specialized',
-    },
-  },
-  ZzzOd: {
-    logo: zzzOdIcon,
-    label: 'ZZZ-OD',
-    typeTagColor: 'volcano',
-    routeSuffix: 'zzzod',
-    routeTitles: {
-      script: '编辑ZZZ-OD脚本',
-      userAdd: '添加ZZZ-OD用户',
-      userEdit: '编辑ZZZ-OD用户',
-    },
-    createOrder: 10,
-    create: {
-      titleKey: 'core.scripts.type.ZzzOd',
-      descriptionKey: 'core.scripts.create.typeDesc.ZzzOd',
-      keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
       group: 'specialized',
     },
   },

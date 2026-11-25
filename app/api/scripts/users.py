@@ -106,12 +106,6 @@ OkwwUserConfig = ConfigPayload[_config_models.OkwwUserConfig]
 OkwwUserConfigInput = ConfigInput[_config_models.OkwwUserConfig]
 
 
-ZzzOdUserConfig = ConfigPayload[_config_models.ZzzOdUserConfig]
-
-
-ZzzOdUserConfigInput = ConfigInput[_config_models.ZzzOdUserConfig]
-
-
 class UserIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: str = Field(
@@ -125,7 +119,6 @@ class UserIndexItem(BaseModel):
                 "MaaFWUserConfig",
                 "HSRUserConfig",
                 "BetterGIUserConfig",
-                "ZzzOdUserConfig",
                 "BAAHUserConfig",
                 "MSSUserConfig",
             ]
@@ -163,7 +156,6 @@ class UserGetOut(ConfigSnapshotOut):
             MaaFWUserConfig,
             HSRUserConfig,
             BetterGIUserConfig,
-            ZzzOdUserConfig,
             BAAHUserConfig,
             MSSUserConfig,
         ],
@@ -182,7 +174,6 @@ class UserCreateOut(OutBase):
         MaaFWUserConfig,
         HSRUserConfig,
         BetterGIUserConfig,
-        ZzzOdUserConfig,
         BAAHUserConfig,
         MSSUserConfig,
     ] = Field(..., description="账号配置数据")
@@ -200,7 +191,6 @@ class UserUpdateIn(UserInBase):
         MaaFWUserConfigInput,
         HSRUserConfigInput,
         BetterGIUserConfigInput,
-        ZzzOdUserConfigInput,
         BAAHUserConfigInput,
         MSSUserConfigInput,
     ] = Field(..., description="账号更新数据")

@@ -20,11 +20,13 @@ _ADAPTER_PLUGINS = {
     "MaaPluginConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "ZzzOdConfig": ("zzzod_adapter", "auto-mas-zzzod-adapter"),
 }
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
     "ldplayer_adapter": Version("0.1.1"),
+    "zzzod_adapter": Version("0.1.1"),
 }
 
 
@@ -101,6 +103,25 @@ def backup_legacy_src_users(config_path: Path) -> None:
         document = _utils_io.read_dict_file(path)
         index = document.get("order", document.get("instances", []))
         if any(item["type"] == "SrcConfig" for item in index):
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            _utils_io.atomic_write(backup, path.read_bytes())
+
+
+def backup_legacy_zzzod_users(config_path: Path) -> None:
+    """在插件接手旧结构前保留索引原件，供回退旧版宿主时还原。"""
+    for name in ("scripts.yaml", "ScriptConfig.json"):
+        path = config_path / name
+        backup = config_path / "legacy-zzzod-plugin" / name
+        if backup.exists() or not path.is_file() or is_blank_file(path):
+            continue
+        document = _utils_io.read_dict_file(path)
+        index = document.get("order", document.get("instances", []))
+        entries = document.get("data", document)
+        if any(
+            item["type"] == "ZzzOdConfig"
+            and "users" not in entries.get(item["uid"], {})
+            for item in index
+        ):
             backup.parent.mkdir(parents=True, exist_ok=True)
             _utils_io.atomic_write(backup, path.read_bytes())
 

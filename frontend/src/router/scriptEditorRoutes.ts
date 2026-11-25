@@ -37,10 +37,6 @@ const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
     script: () => import('@/views/EditView/Script/BetterGIScriptEdit.vue'),
     user: () => import('@/views/EditView/User/BetterGIUserEdit.vue'),
   },
-  ZzzOd: {
-    script: () => import('@/views/EditView/Script/ZzzOdScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/ZzzOdUserEdit.vue'),
-  },
 }
 
 const PAGE_ROUTES = {

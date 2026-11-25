@@ -5,6 +5,7 @@ import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
 import maa from '@/views/maa/entry'
 import src from '@/views/src/entry'
 import whimbox from '@/views/whimbox/entry'
+import zzzod from '@/views/zzzod/entry'
 
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
@@ -27,7 +28,7 @@ export interface ScriptFrontendAdapter {
   }
 }
 
-const adapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
+const adapters: ScriptFrontendAdapter[] = [maa, whimbox, src, zzzod]
 
 export const SCRIPT_PLUGIN_EDITORS = Object.fromEntries(
   adapters.map(adapter => [adapter.type, adapter.editors])

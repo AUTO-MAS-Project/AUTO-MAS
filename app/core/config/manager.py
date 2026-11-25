@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 from app.config import ConfigCollection, ConfigEntry, NodeState, config_manager
 from app.core.config.plugin_upgrade import (
     backup_legacy_src_users,
+    backup_legacy_zzzod_users,
     install_adapter_plugin,
     install_adapter_plugins,
     prepare_plugin_documents,
@@ -108,8 +109,6 @@ from app.models.config import (
     UserConfigType,
     UserEntry,
     Webhook,
-    ZzzOdConfig,
-    ZzzOdUserConfig,
 )
 from app.models.schema import PlanComboxConsumer, ScriptStatusOverviewItem
 from app.models.script_access import entry_name, script_users
@@ -598,6 +597,8 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
+        if _utils_environment.install_zzzod_for_development():
+            required.setdefault("zzzod_adapter", "auto-mas-zzzod-adapter")
         if "src_adapter" in required:
             await asyncio.to_thread(backup_legacy_src_users, self.config_path)
         from app.core.config.game_upgrade import (
@@ -626,6 +627,12 @@ class AppConfig:
                 await prepare_runtime()
             if required:
                 await install_adapter_plugins(required)
+            if "zzzod_adapter" in required:
+                from app.core import Plugin
+
+                if "ZzzOd" not in Plugin.script_classes():
+                    raise RuntimeError("当前 zzzod_adapter 没有登记专项托管类型")
+                await asyncio.to_thread(backup_legacy_zzzod_users, self.config_path)
             if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
 
@@ -1222,7 +1229,6 @@ class AppConfig:
         | OkNteConfig
         | HSRConfig
         | BetterGIConfig
-        | ZzzOdConfig
         | BAAHConfig
         | MSSConfig,
     ]:
@@ -1369,7 +1375,9 @@ class AppConfig:
 
         script_config = self.ScriptConfig[uid]
         handler = self._get_script_config_handler(script_config)
-        if handler is not None and handler.prepare_script_removal is not None:
+        if isinstance(script_config, ScriptEntry):
+            await script_config.prepare_script_removal()
+        elif handler is not None and handler.prepare_script_removal is not None:
             await handler.prepare_script_removal(script_config)
 
         self.ScriptConfig.remove(uid)
@@ -1432,6 +1440,13 @@ class AppConfig:
         if isinstance(script, (GeneralConfig, HSRConfig)):
             return {"Info": {"Base": _utils_constants.BASE_NATIVE}}
 
+        if isinstance(script, ScriptEntry):
+            from app.core import Plugin
+
+            decl = Plugin.script_decl(script)
+            if decl is not None and decl.new_user_defaults is not None:
+                return decl.new_user_defaults()
+
         plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
@@ -1444,7 +1459,6 @@ class AppConfig:
                 OkwwConfig,
                 OkNteConfig,
                 BetterGIConfig,
-                ZzzOdConfig,
             ),
         ):
             return None
@@ -1468,7 +1482,6 @@ class AppConfig:
         | OkNteUserConfig
         | HSRUserConfig
         | BetterGIUserConfig
-        | ZzzOdUserConfig
         | BAAHUserConfig
         | MSSUserConfig,
     ]:
@@ -1537,9 +1550,11 @@ class AppConfig:
         from app.utils.common.config import restore as _utils_config_restore
 
         script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        if isinstance(script_config, ScriptEntry):
+            return script_config.create_restore_service(user_id, force=force)
         if self._restore_pool_resolver is None:
             raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
-        # [兼容旧专项] 插件通过自己的 API 构建恢复服务，宿主不再接收插件池表。
+        # 插件自行构建服务；旧专项仍由宿主装配的解析器选择池。
         pools = self._restore_pool_resolver(script_config)
         return _utils_config_restore.build_restore_service(
             _utils_config_restore.RestoreContext(
@@ -1778,7 +1793,9 @@ class AppConfig:
 
         handler = self._get_script_config_handler(script_config)
         cleanup = None
-        if handler is not None and handler.prepare_user_removal is not None:
+        if isinstance(script_config, ScriptEntry):
+            cleanup = script_config.prepare_user_removal(user_uid)
+        elif handler is not None and handler.prepare_user_removal is not None:
             cleanup = handler.prepare_user_removal(script_config, user_uid)
 
         script_users(script_config).remove(user_uid)

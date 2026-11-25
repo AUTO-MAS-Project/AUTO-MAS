@@ -172,6 +172,9 @@ test.describe('@config-mode-cards', () => {
     app,
     page,
   }) => {
+    const response = await page.request.get(`${backend}/api/scripts/types`)
+    const { types } = await response.json()
+    test.skip(!types.includes('ZzzOd'), '绝区零一条龙插件未启用')
     const { scriptId } = await post(page.request, '/api/scripts/add', { type: 'ZzzOd' })
     try {
       const first = await post(page.request, '/api/scripts/user/add', { scriptId })

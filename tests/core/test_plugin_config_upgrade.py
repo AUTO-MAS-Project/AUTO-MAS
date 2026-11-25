@@ -12,6 +12,7 @@ from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
     backup_legacy_src_users,
+    backup_legacy_zzzod_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -25,6 +26,7 @@ from app.utils import io as config_io
     [
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("ZzzOdConfig", "zzzod_adapter", "auto-mas-zzzod-adapter"),
     ],
 )
 def test_upgrade_detects_only_collection_types(
@@ -52,6 +54,21 @@ def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
     )
     backup_legacy_src_users(tmp_path)
     assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
+
+
+def test_zzzod_backup_only_archives_pre_plugin_index(tmp_path):
+    path = tmp_path / "scripts.yaml"
+    backup = tmp_path / "legacy-zzzod-plugin" / path.name
+    sid = str(uuid4())
+    order = [{"uid": sid, "type": "ZzzOdConfig"}]
+    config_io.write_file(path, {"order": order, "data": {sid: {"users": {}}}})
+    backup_legacy_zzzod_users(tmp_path)
+    assert not backup.exists()
+
+    config_io.write_file(path, {"order": order, "data": {sid: {"UserData": {}}}})
+    original = path.read_bytes()
+    backup_legacy_zzzod_users(tmp_path)
+    assert backup.read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])
