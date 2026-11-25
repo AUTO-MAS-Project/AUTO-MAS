@@ -219,6 +219,40 @@ async def test_busy_lifecycle_leaves_running_work_and_service_available(
 
 
 @pytest.mark.asyncio
+async def test_disable_gives_up_when_trigger_outlasts_drain_limit(
+    lifecycle_triggers, monkeypatch
+):
+    """配置触发器一直不收尾：停用在同一上限内以「插件系统忙」拒绝，插件照常接单、触发器不受影响。"""
+    from app.core.plugin import manager as plugin_module
+
+    monkeypatch.setattr(plugin_module, "_PAUSE_DRAIN_TIMEOUT", 0.3)
+    manager, record, work, dispatcher, background = lifecycle_triggers
+    operation = dispatcher.write_trigger(
+        config_uid=work.uid, group="action", field="fixed", value=True
+    )
+    await work._started.wait()
+    plugin = record._plugin
+    async with asyncio.timeout(5):
+        with pytest.raises(PluginBusyError) as caught:
+            await manager.disable(record)
+    assert caught.value.message == "插件系统忙，请稍后重试"
+    assert record.info.state == PluginState.ENABLED
+    assert record._plugin is plugin
+    assert await manager.services.require("lifecycle_probe")() is plugin
+    assert dispatcher.trigger_result(operation).state == "running"
+    # 暂停已撤回：这个插件的配置操作照常受理。
+    second = CommandConfig.build()
+    await second.activate()
+    dispatcher.submit_trigger(second, group="action", field="run", value=True)
+    second._release.set()
+    work._release.set()
+    assert await background.get_group("config-triggers").drain(2)
+    assert dispatcher.trigger_result(operation).state == "succeeded"
+    await manager.disable(record)
+    assert record.info.state == PluginState.DISABLED
+
+
+@pytest.mark.asyncio
 async def test_duplicate_busy_failure_and_repeatable_result():
     """验证同一触发器去重、容量拒绝、失败记录以及完成结果可重复查询。"""
     background = BackgroundTaskRegistry()
