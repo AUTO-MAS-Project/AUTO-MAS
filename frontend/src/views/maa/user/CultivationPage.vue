@@ -28,7 +28,7 @@
       </a-space>
     </header>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="cultivation-body">
+    <ConfigLockPanel :script-id="scriptId" content-class="cultivation-body" game-binding="none">
       <!-- 后端运行提示（养成暂停/降级等原因说明） -->
       <a-alert
         v-if="formData?.Data?.CultivateNotice"
