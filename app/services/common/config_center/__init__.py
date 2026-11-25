@@ -824,6 +824,58 @@ class ConfigCenterClient:
             return "image/webp"
         return None
 
+    @classmethod
+    def _validate_default_menu_icon(
+        cls, archive: zipfile.ZipFile, menu_icons: object
+    ) -> None:
+        if not isinstance(menu_icons, dict):
+            raise ConfigCenterError("menuIcons 必须是对象", status_code=400)
+        if not menu_icons:
+            return
+
+        icon_path = menu_icons.get("default")
+        if not isinstance(icon_path, str) or not icon_path.strip():
+            raise ConfigCenterError(
+                "上传带菜单图标的主题时，请在 theme.json 中配置 menuIcons.default",
+                status_code=400,
+            )
+        icon_path = icon_path.strip()
+        if (
+            not icon_path.startswith("assets/")
+            or "\\" in icon_path
+            or any(part in ("", ".", "..") for part in icon_path.split("/"))
+        ):
+            raise ConfigCenterError("默认菜单图标必须位于 assets 目录", status_code=400)
+
+        icon_info = next(
+            (
+                entry
+                for entry in archive.infolist()
+                if not entry.is_dir() and entry.filename.lower() == icon_path.lower()
+            ),
+            None,
+        )
+        if icon_info is None:
+            raise ConfigCenterError(
+                f"主题包里缺少默认菜单图标: {icon_path}", status_code=400
+            )
+
+        expected_mime = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".webp": "image/webp",
+        }.get(Path(icon_path).suffix.lower())
+        with archive.open(icon_info) as icon:
+            if (
+                expected_mime is None
+                or cls._sniff_image(icon.read(12)) != expected_mime
+            ):
+                raise ConfigCenterError(
+                    "默认菜单图标须为与扩展名匹配的 PNG、JPEG 或 WebP 图片",
+                    status_code=400,
+                )
+
     @staticmethod
     def _detect_cover(data: bytes, source: str) -> Tuple[str, bytes, str]:
         """校验封面来源图并统一缩成商店用的封面, 返回 multipart 用的 (文件名, 内容, MIME)。
@@ -905,13 +957,19 @@ class ConfigCenterClient:
             raise invalid("选择的路径不是文件")
         if path.suffix.lower() != ".zip":
             raise invalid("请选择 ZIP 外观包")
-        if path.stat().st_size > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
-            raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
-            )
+        max_archive_bytes = APPEARANCE_MAX_ARCHIVE_BYTES[category_key]
+        too_large = f"外观包超过 {max_archive_bytes // 1024 // 1024} MB, 无法上传"
+        if path.stat().st_size > max_archive_bytes:
+            raise invalid(too_large)
 
         try:
-            with zipfile.ZipFile(path) as archive:
+            # 清单、图标和封面都从实际要上传的内容读取。
+            with path.open("rb") as source:
+                content = source.read(max_archive_bytes + 1)
+            if len(content) > max_archive_bytes:
+                raise invalid(too_large)
+
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
                 manifest_name = (
                     "mascot.json" if category_key == "mascot" else "theme.json"
                 )
@@ -940,6 +998,10 @@ class ConfigCenterClient:
                     manifest.get("mascot"), dict
                 ):
                     raise invalid("桌宠包缺少桌宠图片配置")
+                if category_key == "theme":
+                    cls._validate_default_menu_icon(
+                        archive, manifest.get("menuIcons", {})
+                    )
 
                 # 没指定封面时用包里 preview 指向的图；Electron 导入时路径不区分大小写，这里一致
                 preview_data: Optional[bytes] = None
@@ -990,13 +1052,6 @@ class ConfigCenterClient:
                 cover = cls._detect_cover(preview_data, "外观包的预览图")
             else:
                 raise invalid("请提供预览图（外观包里没有 preview）")
-
-        content = path.read_bytes()
-        # 校验和读取之间文件被换掉时，以实际读到的大小为准再挡一次
-        if len(content) > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
-            raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
-            )
 
         return appearance_id, content, cover
 
