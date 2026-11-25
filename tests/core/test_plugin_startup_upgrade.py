@@ -860,6 +860,115 @@ async def test_startup_fallback_keeps_installed_host_library(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("upgrading", ["fam-special", "fam-runner", "fam-agent-env"])
+async def test_market_update_lifts_mutually_capped_family_together(
+    isolated_app_paths, monkeypatch, tmp_path, upgrading
+):
+    """已装 0.2 一族彼此写 <0.3：市场里把其中一个更新到 0.3.0，别的被钉在 ==0.2.0 时
+    无解，要放开它们一起升到 0.3.0；升依赖方、升被依赖的服务插件（依赖它的专项还钉着
+    旧范围）都一样。"""
+    from email.parser import Parser
+
+    from app.plugin.runtime import discover, market_index
+
+    config = isolated_app_paths
+    source = tmp_path / "source"
+    (source / "plugins").mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="auto-mas"\nversion="5.9.0b1"\ndependencies=[]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "source_path", source)
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    site = ops.site_dir(activate=False)
+    monkeypatch.syspath_prepend(str(site))
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+
+    def plugin(name, version, *requires):
+        module = name.replace("-", "_")
+        return wheel(
+            wheels,
+            name=name,
+            version=version,
+            module=module,
+            plugin_id=module,
+            content=FAMILY_PLUGIN,
+            requires=["auto-mas-core>=5,<6", *requires],
+        )
+
+    # 0.2 一族彼此写 <0.3；专项挂在 runner 上，runner 挂在 agent-env 上。
+    for path in (
+        plugin("fam-agent-env", "0.2.0", "fam-runner>=0.2.0,<0.3"),
+        plugin("fam-runner", "0.2.0", "fam-agent-env>=0.2.0,<0.3"),
+        plugin("fam-special", "0.2.0", "fam-runner>=0.2.0,<0.3"),
+    ):
+        with ZipFile(path) as archive:
+            archive.extractall(site)
+    released = {
+        "fam-agent-env": plugin("fam-agent-env", "0.3.0"),
+        "fam-runner": plugin("fam-runner", "0.3.0", "fam-agent-env>=0.3.0,<0.4"),
+        "fam-special": plugin("fam-special", "0.3.0", "fam-runner>=0.3.0,<0.4"),
+    }
+    candidate = released[upgrading]
+    importlib.invalidate_caches()
+    await discover.refresh()
+    monkeypatch.setattr(precheck, "candidates", lambda: ["https://offline.test/simple"])
+    execute = precheck.ProcessRunner.run_process
+
+    async def offline(*args, **kwargs):
+        """只把包索引换成本地 wheel 目录，求解与安装都是真 uv。"""
+        args = list(args)
+        if "--index-url" in args:
+            index = args.index("--index-url")
+            args[index : index + 2] = ["--no-index", "--find-links", str(wheels)]
+        return await execute(*args, **kwargs)
+
+    monkeypatch.setattr(precheck.ProcessRunner, "run_process", offline)
+    with ZipFile(candidate) as archive:
+        declaration = Parser().parsestr(
+            archive.read(
+                next(
+                    path
+                    for path in archive.namelist()
+                    if path.endswith(".dist-info/METADATA")
+                )
+            ).decode()
+        )
+
+    async def fetch_metadata(*args, **kwargs):
+        """以真实 wheel 声明替代远端索引，保留安装入口的身份校验。"""
+        return declaration
+
+    monkeypatch.setattr(market_index, "fetch_metadata", fetch_metadata)
+    manager = _PluginManager()
+    modules = ("fam_runner", "fam_agent_env", "fam_special")
+    try:
+        result = await manager.install(
+            PluginMeta.build(
+                info={
+                    "package_name": upgrading,
+                    "plugin_name": upgrading.replace("-", "_"),
+                    "version": "0.3.0",
+                }
+            )
+        )
+        versions = _installed_versions(site)
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in modules:
+            sys.modules.pop(name, None)
+    assert not result.get("restart_required")
+    assert {name: versions[name] for name in released} == dict.fromkeys(
+        released, "0.3.0"
+    )
+
+
+@pytest.mark.asyncio
 async def test_minimum_missing_from_index_names_minimum_and_current(
     isolated_app_paths, monkeypatch, tmp_path
 ):
