@@ -29,6 +29,10 @@ from ..errors import PluginError, PluginPrecheckError
 
 logger = get_logger("插件 uv")
 
+# 这次启动没能补上宿主内置托管要的库时的（原因, 恢复办法），给用到它的托管报错用。
+# 只放错误类别和包名，不放路径、用户输入或原始报错。
+library_failure: tuple[str, str] | None = None
+
 # ── PyPI simple 镜像（顺序即优先级）──
 _MIRRORS: list[str] = [
     "https://mirrors.aliyun.com/pypi/simple/",
@@ -653,6 +657,150 @@ async def _solve_libraries(
     return result
 
 
+def _move_new_distributions(
+    target: Path, extra: Path, existing: Mapping[str, str]
+) -> str | None:
+    """把 ``extra`` 里新装的发行包文件移进 ``target``；只添不覆盖，返回拒绝原因或 None。
+
+    中途移动失败时撤掉已移入的文件再抛出，``target`` 回到原样。
+    """
+    from . import environment
+
+    moves: list[Path] = []
+    root = extra.resolve()
+    for name, distribution in environment.distributions(extra).items():
+        if name in existing:
+            if distribution.version == existing[name]:
+                continue
+            return f"补装会改动已装的 {name}"
+        if distribution.files is None:
+            return f"{name} 缺少文件清单"
+        for file in distribution.files:
+            source = Path(distribution.locate_file(file)).resolve()
+            if not source.is_file():
+                continue
+            relative = source.relative_to(root)
+            if (target / relative).exists():
+                return f"{name} 的文件和插件环境里已有的文件重名"
+            moves.append(relative)
+    moved: list[Path] = []
+    try:
+        for relative in moves:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            # 同盘改名；目标已存在时 Windows 上直接失败，不会覆盖。
+            (extra / relative).rename(destination)
+            moved.append(relative)
+    except BaseException:
+        for relative in moved:
+            (target / relative).unlink(missing_ok=True)
+        environment._remove_empty_parents(target, set(moved))
+        raise
+    importlib.invalidate_caches()
+    importlib_metadata.MetadataPathFinder.invalidate_caches()
+    return None
+
+
+async def _add_libraries(
+    target: Path, missing: list[str], replacing: str | None
+) -> None:
+    """往刚换入的插件环境里追加还缺的宿主库及其新依赖；已有发行包全钉在现版本不动。
+
+    换入的候选是安装那一刻按当时的配置建的，之后才加的托管要的库在这里按最新配置补上。
+    只往 ``target`` 里添新文件：旧环境仍在 ``.previous``，这次启动没确认成功时照常整目录
+    回滚。补不上不挡启动，原因记进 ``library_failure``，用到库的托管运行时带上它报错。
+    """
+    global library_failure
+
+    from app.core import Config
+
+    from . import environment
+    from .precheck import (
+        _requirement_name,
+        host_constraints,
+        host_dependencies,
+        plugin_targets,
+        resolve_environment,
+    )
+
+    logger.info(
+        "换入的插件环境里没有宿主内置托管要的库，按当前配置补装：{}",
+        "、".join(missing),
+    )
+    retry_online = "联网后重启 AUTO-MAS 会自动安装"
+    failure: tuple[str, str] | None = None
+    try:
+        host = host_constraints()
+        existing = {
+            name: dist.version
+            for name, dist in environment.distributions(target).items()
+        }
+        # 本地源码工程以目录参与求解；它们的发行副本不钉版本，免得和源码自相冲突。
+        local = [
+            item
+            for item in plugin_targets(
+                Config.plugin_registry.values(),
+                replacing=replacing,
+                installed_path=target,
+            )
+            if Path(item).is_dir()
+        ]
+        own = {name for item in local if (name := _requirement_name(item))}
+        kept = [
+            f"{name}=={version}"
+            for name, version in sorted(existing.items())
+            if name not in own
+        ]
+        with tempfile.TemporaryDirectory(
+            prefix=".libraries-", dir=target.parent
+        ) as temporary:
+            extra = Path(temporary) / "site-packages"
+            # 已装的包写成约束：求解时钉住，也不再输出和安装，只装缺的库和它新带来的依赖。
+            result = await resolve_environment(
+                targets=[*local, *missing],
+                core_version=Config.VERSION,
+                dependencies=host_dependencies(),
+                constraints=[*host, *kept],
+                destination=extra,
+                partial=True,
+            )
+            if not result.ok:
+                if result.incomplete:
+                    failure = ("部分镜像没有响应，其余判定依赖解不开", retry_online)
+                else:
+                    pinned = {
+                        canonicalize_name(Requirement(item).name) for item in host
+                    }
+                    involved = "、".join(
+                        f"{name}（主程序依赖）" if name in pinned else name
+                        for name in result.conflicts
+                    )
+                    failure = (
+                        "依赖解不开" + (f"，涉及 {involved}" if involved else ""),
+                        "稍后重启 AUTO-MAS 会再尝试安装，仍装不上请更新涉及的插件",
+                    )
+            elif extra.exists() and (
+                refused := _move_new_distributions(target, extra, existing)
+            ):
+                failure = (refused, "重启 AUTO-MAS 会再尝试安装")
+    except PluginPrecheckError:
+        logger.opt(exception=True).warning("补装宿主内置托管要的库时没连上镜像")
+        failure = ("网络不通或镜像没有响应", retry_online)
+    except Exception as error:  # noqa: BLE001
+        # 补装出错不能挡启动：旧环境的回滚只看安装记录和 .previous，这里不碰它们。
+        logger.opt(exception=True).warning("补装宿主内置托管要的库出错")
+        failure = (
+            f"补装出错，错误类型 {type(error).__name__}",
+            "重启 AUTO-MAS 会再尝试安装",
+        )
+    library_failure = failure
+    if failure is not None:
+        logger.warning(
+            "换入的插件环境里没能补上宿主内置托管要的库，先照常启动：{}；{}",
+            *failure,
+        )
+
+
 async def prepare_environment(
     minimums: Mapping[str, Version] | None = None,
     libraries: Sequence[str] = (),
@@ -685,8 +833,8 @@ async def prepare_environment(
     sys.path[:] = [item for item in sys.path if item != str(target.resolve())]
     installation = environment.read_installation()
     if await environment.apply_pending():
-        # 候选环境在安装时已带上当时要的库；之后才加的托管要的库，这一轮不重建环境
-        # （旧环境要留作回滚），换入确认后的下一次启动补装。
+        # 候选环境在安装时已带上当时要的库；之后才加的托管要的库，按最新配置往换入的
+        # 环境里追加（不重建：旧环境要留作回滚）。已有时不求解、不联网。
         _, missing = _library_targets(
             libraries,
             {
@@ -695,9 +843,10 @@ async def prepare_environment(
             },
         )
         if missing:
-            logger.warning(
-                "换入的插件环境里没有宿主内置托管要的库，下次启动补装：{}",
-                "、".join(missing),
+            await _add_libraries(
+                target,
+                missing,
+                installation.progress.packageName if installation else None,
             )
         return
     if installation is not None and installation.progress.state != "succeeded":
