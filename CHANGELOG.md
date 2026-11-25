@@ -30,7 +30,11 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
-## [未发布]
+## [v5.10.0-beta.1] - 2026-11-25
+
+### 破坏性变更
+
+- 【公测升级提醒】本次公测引入了插件系统，改动范围较大。从旧版本升级后，可能出现配置丢失、部分专项托管无法启动或运行失败等问题。建议日常使用的用户继续使用 v5.9.0 正式版。如果你愿意参与公测，请在升级前备份现有配置。（仅公测）
 
 ### 本次亮点
 
@@ -918,7 +922,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.9.0-beta.1...dev
+[v5.10.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.9.0-beta.1...v5.10.0-beta.1
 [v5.9.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.8.0...v5.9.0-beta.1
 [v5.8.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.7.0...v5.8.0
 [v5.7.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...v5.7.0
