@@ -89,14 +89,14 @@ TOKEN_EXPIRE_MARGIN = timedelta(seconds=30)
 # 完整校验（资源声明、图片格式、光标尺寸等）由 Electron 在上传对话框里先做过一遍。
 APPEARANCE_MAX_ARCHIVE_BYTES = {"theme": 100 * 1024 * 1024, "mascot": 50 * 1024 * 1024}
 APPEARANCE_MAX_MANIFEST_BYTES = 256 * 1024
+# 默认菜单图标复用上传封面的源图上限，限制解码时的内存开销。
+APPEARANCE_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+APPEARANCE_MAX_IMAGE_PIXELS = 40_000_000
 APPEARANCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 # 外观封面（主题商店列表里的预览图）上限，与 Electron 主进程取封面时的上限一致
 COVER_MAX_BYTES = 2 * 1024 * 1024
-# 封面来源图（包内 preview 或另选的图片）上限，与外观包单个文件上限一致；
 # 实际作者包的预览图常有 2–3 MB，上传前统一缩成商店用的小图，列表翻页才不至于动辄几十 MB。
-COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
 COVER_MAX_SIZE = (1280, 800)
-COVER_MAX_SOURCE_PIXELS = 40_000_000
 COVER_WEBP_QUALITY = (85, 70)
 # 外观包体积远大于通用脚本配置，上传给更长的超时
 UPLOAD_TIMEOUT = 120.0
@@ -824,9 +824,9 @@ class ConfigCenterClient:
             return "image/webp"
         return None
 
-    @classmethod
+    @staticmethod
     def _validate_default_menu_icon(
-        cls, archive: zipfile.ZipFile, menu_icons: object
+        archive: zipfile.ZipFile, menu_icons: object
     ) -> None:
         if not isinstance(menu_icons, dict):
             raise ConfigCenterError("menuIcons 必须是对象", status_code=400)
@@ -859,22 +859,34 @@ class ConfigCenterClient:
             raise ConfigCenterError(
                 f"主题包里缺少默认菜单图标: {icon_path}", status_code=400
             )
+        if icon_info.file_size > APPEARANCE_MAX_IMAGE_BYTES:
+            raise ConfigCenterError(
+                f"默认菜单图标超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB",
+                status_code=400,
+            )
 
-        expected_mime = {
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".webp": "image/webp",
+        expected_format = {
+            ".png": "PNG",
+            ".jpg": "JPEG",
+            ".jpeg": "JPEG",
+            ".webp": "WEBP",
         }.get(Path(icon_path).suffix.lower())
-        with archive.open(icon_info) as icon:
-            if (
-                expected_mime is None
-                or cls._sniff_image(icon.read(12)) != expected_mime
+        if expected_format is None:
+            raise ConfigCenterError(
+                "默认菜单图标只支持 PNG、JPEG 或 WebP 图片", status_code=400
+            )
+        try:
+            with (
+                archive.open(icon_info) as icon,
+                Image.open(icon, formats=[expected_format]) as image,
             ):
-                raise ConfigCenterError(
-                    "默认菜单图标须为与扩展名匹配的 PNG、JPEG 或 WebP 图片",
-                    status_code=400,
-                )
+                if image.width * image.height > APPEARANCE_MAX_IMAGE_PIXELS:
+                    raise ConfigCenterError("默认菜单图标尺寸过大", status_code=400)
+                image.load()
+        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            raise ConfigCenterError(
+                "默认菜单图标无法解码，请检查图片内容和扩展名", status_code=400
+            ) from error
 
     @staticmethod
     def _detect_cover(data: bytes, source: str) -> Tuple[str, bytes, str]:
@@ -887,9 +899,9 @@ class ConfigCenterClient:
             ConfigCenterError: 体积超限、格式不对或无法解码, status_code 为 400。
         """
 
-        if len(data) > COVER_SOURCE_MAX_BYTES:
+        if len(data) > APPEARANCE_MAX_IMAGE_BYTES:
             raise ConfigCenterError(
-                f"{source}超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB",
+                f"{source}超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB",
                 status_code=400,
             )
         if ConfigCenterClient._sniff_image(data) is None:
@@ -900,7 +912,7 @@ class ConfigCenterClient:
         try:
             with Image.open(io.BytesIO(data)) as image:
                 # 先看尺寸再解码，挡住小文件解出巨图的情况
-                if image.width * image.height > COVER_MAX_SOURCE_PIXELS:
+                if image.width * image.height > APPEARANCE_MAX_IMAGE_PIXELS:
                     raise ConfigCenterError(f"{source}尺寸过大", status_code=400)
                 image = ImageOps.exif_transpose(image)
                 image = image.convert(
@@ -959,15 +971,16 @@ class ConfigCenterClient:
             raise invalid("请选择 ZIP 外观包")
         max_archive_bytes = APPEARANCE_MAX_ARCHIVE_BYTES[category_key]
         too_large = f"外观包超过 {max_archive_bytes // 1024 // 1024} MB, 无法上传"
-        if path.stat().st_size > max_archive_bytes:
-            raise invalid(too_large)
 
         try:
             # 清单、图标和封面都从实际要上传的内容读取。
             with path.open("rb") as source:
-                content = source.read(max_archive_bytes + 1)
-            if len(content) > max_archive_bytes:
-                raise invalid(too_large)
+                archive_size = os.fstat(source.fileno()).st_size
+                if archive_size > max_archive_bytes:
+                    raise invalid(too_large)
+                content = source.read(archive_size + 1)
+                if len(content) != archive_size:
+                    raise invalid("读取时外观包发生变化，请重新选择后上传")
 
             with zipfile.ZipFile(io.BytesIO(content)) as archive:
                 manifest_name = (
@@ -1025,9 +1038,9 @@ class ConfigCenterClient:
                     )
                     if preview_info is None:
                         raise invalid(f"外观包里缺少预览图: {preview}")
-                    if preview_info.file_size > COVER_SOURCE_MAX_BYTES:
+                    if preview_info.file_size > APPEARANCE_MAX_IMAGE_BYTES:
                         raise invalid(
-                            f"外观包的预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB"
+                            f"外观包的预览图超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB"
                         )
                     preview_data = archive.read(preview_info)
         except ConfigCenterError:
@@ -1043,9 +1056,9 @@ class ConfigCenterClient:
                 cover_file = Path(cover_path)
                 if not cover_file.is_file():
                     raise invalid("预览图不存在或不是文件")
-                if cover_file.stat().st_size > COVER_SOURCE_MAX_BYTES:
+                if cover_file.stat().st_size > APPEARANCE_MAX_IMAGE_BYTES:
                     raise invalid(
-                        f"预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB"
+                        f"预览图超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB"
                     )
                 cover = cls._detect_cover(cover_file.read_bytes(), "预览图")
             elif preview_data is not None:
