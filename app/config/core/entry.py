@@ -616,8 +616,8 @@ class ConfigEntry(ConfigNode):
                     TypeError(f"{cname} 须为 dict，收到 {type(nested).__name__}")
                 )
                 continue
-            if isinstance(nested, dict):
-                col._pending_payload = cast(dict[str, Any], nested)
+            if nested is not None:
+                col._pending_payload = nested
             try:
                 await col.activate(regenerate_uuids=regenerate_uuids)
             except Exception as exc:  # noqa: BLE001

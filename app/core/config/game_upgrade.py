@@ -251,7 +251,7 @@ def migrate_game_documents(
         uid = str(uid)
         if uid in games["data"]:
             existing = games["data"][uid]
-            if kind == "client" or existing.get("info", {}).get("path") != path:
+            if existing.get("info", {}).get("path") != path:
                 raise ValueError(f"游戏迁移目标冲突：{uid}")
             return uid
         games["order"].append({"uid": uid, "type": tag})

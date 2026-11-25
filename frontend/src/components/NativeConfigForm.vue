@@ -104,7 +104,8 @@ function optionsFor(field: NativeConfigField) {
   }))
 }
 function saveString(name: string) {
-  const value = drafts[name] ?? String(props.values[name] ?? '')
+  if (!(name in drafts)) return
+  const value = drafts[name]!
   delete drafts[name]
   emit('change', name, value)
 }
