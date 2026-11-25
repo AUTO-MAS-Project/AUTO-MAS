@@ -599,6 +599,20 @@ def _library_targets(
     return targets, missing
 
 
+def _kept_libraries(
+    libraries: Sequence[str], existing: Mapping[str, str], *, upgrade: bool = False
+) -> list[str]:
+    """兜底求解时留住已装的宿主库：按现装版本钉住，``upgrade`` 时写成 ``>=现版本``
+    （和已装插件的联合升级一样不降级）；从没装上的不带，库装不上不挡启动。"""
+    kept = []
+    for text in libraries:
+        name = canonicalize_name(Requirement(text).name)
+        version = existing.get(name)
+        if version is not None:
+            kept.append(f"{name}>={version}" if upgrade else f"{name}=={version}")
+    return kept
+
+
 async def _solve_libraries(
     targets: list[str], missing: list[str], pins: list[str], prepared: Path
 ):
@@ -755,24 +769,65 @@ async def prepare_environment(
                     if previous.exists():
                         shutil.rmtree(previous)
                     return
+        # 兜底求解也带上已装的宿主库，不然重建的环境会把它移走；带上它无解时才不带。
+        kept = _kept_libraries(libraries, existing)
+        # 不带已装的宿主库才解开、库会被移出插件环境时，记下来提醒。
+        dropped: list[str] = []
         if result is None:
-            result = await resolve_environment(
-                targets=targets,
-                core_version=Config.VERSION,
-                dependencies=host_dependencies(),
-                constraints=pins,
-                destination=prepared,
-            )
+            # 带库求解失败时库都已装且满足：同样的目标刚解过，不再重复。
+            if kept and kept != pinned_libraries:
+                result = await resolve_environment(
+                    targets=[*targets, *kept],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+            if result is None or not result.ok:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=targets,
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+                if result.ok:
+                    dropped = kept
         if not result.ok:
             # 保留当前版本无解时，才允许联合升级；禁用包仍参与，不降级、不转远端源码包。
-            if prepared.exists():
-                shutil.rmtree(prepared)
-            result = await resolve_environment(
-                targets=plugin_targets(records, upgrade=True, installed_path=target),
-                core_version=Config.VERSION,
-                dependencies=host_dependencies(),
-                constraints=pins,
-                destination=prepared,
+            upgrade = plugin_targets(records, upgrade=True, installed_path=target)
+            kept_upgrade = _kept_libraries(libraries, existing, upgrade=True)
+            result = None
+            if kept_upgrade:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=[*upgrade, *kept_upgrade],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+            if result is None or not result.ok:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=upgrade,
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+                if result.ok:
+                    dropped = kept
+        if dropped:
+            logger.warning(
+                "带上已装的宿主内置托管要的库，插件依赖无解，只好不带它重建插件环境："
+                "{} 会被移出插件环境，用到它的内置托管（MaaEnd）运行时会报错，"
+                "下次启动再尝试装回",
+                "、".join(dropped),
             )
         if not result.ok:
             summary = conflict_summary(result)

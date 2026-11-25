@@ -824,6 +824,42 @@ async def test_install_keeps_host_library_for_builtin_managed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", ["pinned", "upgrade"])
+async def test_startup_fallback_keeps_installed_host_library(
+    isolated_app_paths, monkeypatch, tmp_path, fallback
+):
+    """启动前带库求解失败、走兜底重建插件环境时，已装的宿主库不能被移走。
+
+    pinned：库要的新版本索引里此刻拿不到，退回钉住已装插件的求解；
+    upgrade：已装插件的现版本索引里没有了，退回联合升级。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    wheels = tmp_path / "wheels"
+    installed = "0.1.0" if fallback == "pinned" else "0.2.0"
+    library = wheel(
+        wheels,
+        name="auto-mas-maafw-interface",
+        version=installed,
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    if fallback == "upgrade":
+        (wheels / "fam_unrelated-1.0-py3-none-any.whl").unlink()
+    importlib.invalidate_caches()
+    try:
+        await ops.prepare_environment(libraries=["auto-mas-maafw-interface>=0.2.0"])
+        versions = _installed_versions(site)
+    finally:
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    assert versions["auto-mas-maafw-interface"] == installed
+    assert versions["fam-unrelated"] == ("1.0" if fallback == "pinned" else "2.0")
+    assert registry.by_name("fam_service") is not None
+
+
+@pytest.mark.asyncio
 async def test_minimum_missing_from_index_names_minimum_and_current(
     isolated_app_paths, monkeypatch, tmp_path
 ):
