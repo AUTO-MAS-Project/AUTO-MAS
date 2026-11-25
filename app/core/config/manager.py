@@ -597,7 +597,6 @@ class AppConfig:
             await asyncio.to_thread(
                 preserve_pre_upgrade, self.config_path, database_path=self.database_path
             )
-        await asyncio.to_thread(retire_baah_plans, self.config_path)
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
         if "src_adapter" in required:
@@ -722,6 +721,8 @@ class AppConfig:
                 prepared_documents=prepared,
                 entry_migrations=entry_migrations,
             )
+        # 先让中断的 JSON→YAML 迁移按原摘要结账，再停用旧计划；必须早于计划集合激活。
+        await asyncio.to_thread(retire_baah_plans, self.config_path)
         if self._m9a_managed is None:
             self._m9a_managed = await asyncio.to_thread(
                 normalize_m9a_managed_entries, self.config_path / "scripts.yaml"

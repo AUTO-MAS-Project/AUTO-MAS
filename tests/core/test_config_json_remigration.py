@@ -194,3 +194,69 @@ def test_old_json_import_skips_retired_baah_plans_without_changing_source():
         "data": {retained: {"Values": {"Revision": 7}}},
     }
     assert document == original
+
+
+def test_startup_resumes_prepared_plan_migration_before_retirement(tmp_path):
+    """旧迁移已换 YAML、归档 JSON 但未结账时，重启仍能完成并加载其他计划。"""
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import hashlib
+import sqlite3
+from unittest.mock import AsyncMock
+
+from app.core import Config
+from app.config import config_manager
+from app.core.config.upgrade import MIGRATION_RECORD
+from app.utils import io
+
+retired = '03051d8b-76d1-4e49-a8e1-0d63014e22e5'
+retained = 'a958557a-4a37-48f6-af9a-d0c8499f1a92'
+order = [{'uid': retired, 'type': 'BAAHPlanConfig'}, {'uid': retained, 'type': 'MSSPlanConfig'}]
+data = {retired: {'Info': {'Name': 'old BAAH'}}, retained: {'Info': {'Name': 'keep MSS'}}}
+source = Config.config_path / 'legacy-json' / 'PlanConfig.json'
+target = Config.config_path / 'plans.yaml'
+io.write_file(source, {'instances': order, **data})
+io.write_file(target, {'order': order, 'data': data})
+original_json, original_yaml = source.read_bytes(), target.read_bytes()
+io.write_file(Config.config_path / MIGRATION_RECORD, {
+    'version': 2,
+    'files': {'PlanConfig.json': {
+        'target': 'plans.yaml',
+        'source_sha256': hashlib.sha256(original_json).hexdigest(),
+        'target_sha256': hashlib.sha256(original_yaml).hexdigest(),
+        'state': 'prepared',
+    }},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute('CREATE TABLE version(v text)')
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    assert list(map(str, Config.PlanConfig.keys())) == [retained]
+    assert Config.PlanConfig[retained].Info.Name == 'keep MSS'
+    record = io.read_dict_file(Config.config_path / MIGRATION_RECORD)
+    assert record['complete'] and record['files']['PlanConfig.json']['state'] == 'complete'
+    assert source.read_bytes() == original_json
+    backups = list((Config.config_path / 'retired-baah-plans').glob('*/plans.yaml'))
+    assert len(backups) == 1 and backups[0].read_bytes() == original_yaml
+    await config_manager.flush()
+
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
