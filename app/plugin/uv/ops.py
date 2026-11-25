@@ -520,6 +520,7 @@ async def _solve_minimums(
         "、".join(f"{name}>={version}" for name, version in raised.items()),
     )
     try:
+        # 同族插件之间写了次版本上限，别的插件钉住时这一次常常无解，属预期内的重试。
         result = await resolve_environment(
             targets=_lift_minimums(targets, raised),
             core_version=Config.VERSION,
@@ -527,6 +528,7 @@ async def _solve_minimums(
             constraints=pins,
             destination=prepared,
             partial=True,
+            retry_note="只抬下限，接下来放开同族插件再求解",
         )
         if not result.ok:
             pinned = [

@@ -354,11 +354,15 @@ async def resolve_environment(
     constraints: Sequence[str] = (),
     python_version: str | None = None,
     partial: bool = False,
+    retry_note: str | None = None,
 ) -> CoreCompat:
     """联合求解后仅安装插件侧发行包，固定并排除主程序已有依赖与自带 SDK。
 
     部分镜像无解、其余镜像未完成时默认抛 ``PluginPrecheckError``；``partial=True`` 时
     改为返回 ``incomplete=True`` 的无解结果，由调用方决定是否换一组目标再试。
+
+    ``retry_note``：调用方预期可能无解、无解后会换一组目标再求解时给出（写进日志）；
+    这时镜像判定无解只记 INFO，别的失败照旧 WARNING。
     """
     version = to_pep440(core_version)
     with tempfile.TemporaryDirectory(prefix="auto-mas-resolve-") as temporary:
@@ -439,9 +443,18 @@ async def resolve_environment(
             if result.returncode != 0:
                 # 镜像未收录目标版本时继续尝试，不能提前判定永久冲突。
                 detail = str(result.stderr or result.stdout or "")
-                logger.warning("插件依赖解析失败（{}）：{}", mirror, detail[-2000:])
+                no_solution = result.returncode == 1 and "No solution found" in detail
+                if no_solution and retry_note:
+                    logger.info(
+                        "插件依赖解析无解（{}），{}：{}",
+                        mirror,
+                        retry_note,
+                        detail[-2000:],
+                    )
+                else:
+                    logger.warning("插件依赖解析失败（{}）：{}", mirror, detail[-2000:])
                 # uv 的无解诊断与执行错误分开；任一来源未完成时不能确认全体来源均无解。
-                if result.returncode == 1 and "No solution found" in detail:
+                if no_solution:
                     unsolvable = detail
                 else:
                     incomplete = True
