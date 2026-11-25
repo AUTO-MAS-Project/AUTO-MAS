@@ -19,6 +19,7 @@ from app.models.config import GeneralConfig, GeneralUserConfig, PluginRecord
 from app.models.config.game import GameEntry
 from app.models.task import TaskScriptItem
 from app.plugin.base.game import GameControl
+from app.plugin.calls import CallGate
 from app.task.game import GameSession
 from app.task.general.registration import build_config_handler
 
@@ -195,3 +196,39 @@ async def test_disabling_game_management_keeps_existing_bindings_clearable(
         assert saved.json()["code"] == 200, saved.json()
     assert script.game.game_id == "-"
     assert script.UserData[user_id].game.unavailable_reason == ""
+
+
+@pytest.mark.asyncio
+async def test_plugin_game_kind_narrows_binding_targets(binding_host, monkeypatch):
+    """插件按当前配置判定的游戏类型（ScriptTypeDecl.game_kind）收窄候选与保存校验。"""
+    client, scripts, emulator, native = binding_host
+    monkeypatch.setattr(
+        MaaPlugin,
+        "decl",
+        replace(
+            MaaPlugin.decl,
+            game_kinds=("emulator", "client"),
+            game_kind=lambda script, patch: "emulator",
+        ),
+    )
+    record = PluginRecord.build(info={"plugin_name": "maa_adapter"})
+    plugin = MaaPlugin(record=record)
+    await ScriptAdapterRuntime(plugin).system_enable()
+    monkeypatch.setitem(Plugin._calls, record.uid, CallGate())
+    await scripts.activate()
+    script_id = scripts.add(plugin.script_type)
+    await scripts.commit()
+
+    response = await binding_options(client, script_id)
+    options = {item["value"]: item["disabledReason"] for item in response["data"]}
+    assert options[emulator] is None
+    assert options[native]
+    assert await GameManager.validate_binding(
+        str(script_id), {"game": {"game_id": native}}
+    )
+    assert (
+        await GameManager.validate_binding(
+            str(script_id), {"game": {"game_id": emulator}}
+        )
+        is None
+    )
