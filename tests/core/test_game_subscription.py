@@ -586,6 +586,54 @@ async def test_plugin_pre_dispatch_failure_marks_waiting_accounts_failed(
 
 
 @pytest.mark.asyncio
+async def test_plugin_unconfirmed_writer_stops_following_scripts(
+    scheduler, monkeypatch
+):
+    """插件 L3 无法确认停写时与内置专项一样中止整个队列，后面的托管不再运行。"""
+    from app.models.config import UserEntry
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(self.script_info.info.name)
+            if self.script_info.info.name == "plugin":
+                raise FluxdownCancelUnconfirmed("daemon may still write")
+            self._entered = True
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager, scripts, _, _ = scheduler
+    binding = {"game_id": "-", "device_id": "-"}
+    sid, _ = await _plugin_script_world(scheduler, monkeypatch, Expander, binding)
+    following = scripts.add(
+        type(scripts[sid]), payload={"info": {"name": "following"}, "game": binding}
+    )
+    await scripts.commit()
+    scripts[following].users.add(UserEntry, payload={"info": {"name": "account"}})
+    await scripts[following].users.commit()
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY,
+        {
+            0: {
+                "uid": "-",
+                "children": {0: {"uid": str(sid)}, 1: {"uid": str(following)}},
+            }
+        },
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    assert isinstance(run.error, FluxdownCancelUnconfirmed)
+    assert run.task_info.status == "error"
+    assert entered == ["plugin"]
+    assert run.task_info.script_list[0].status == "异常"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("concurrent_execution", [False, True], ids=["gate", "device"])
 async def test_waiting_for_game_pushes_task_log_before_acquisition(
     monkeypatch, concurrent_execution

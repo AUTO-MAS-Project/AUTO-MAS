@@ -288,6 +288,9 @@ class ScriptExpander(TaskBase):
                     self._plugin = plugin
                     pre_dispatch_failed = False
                     await self._run_plugin(plugin)
+                    # L3 的异常由生命周期接住；停写未确认同旧专项一样中止整个队列。
+                    if isinstance(plugin.error, FluxdownCancelUnconfirmed):
+                        raise plugin.error
                     if self.cancelled:
                         raise asyncio.CancelledError
                 else:
