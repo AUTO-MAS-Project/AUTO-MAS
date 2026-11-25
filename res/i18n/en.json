@@ -4851,6 +4851,7 @@
   "core.games.discard": "Discard unsaved changes?",
   "core.games.accountBinding": "Custom emulator / client",
   "core.games.accountOverrideDesc": "Use the runtime environment below for this account without affecting other accounts.",
+  "core.games.bindingUnsupported": "The current settings do not support this game binding. Clear the existing binding.",
   "core.games.defaultBinding": "Emulator / Game Client",
   "core.games.inherit": "Follow script setting",
   "core.games.noTarget": "Not selected",

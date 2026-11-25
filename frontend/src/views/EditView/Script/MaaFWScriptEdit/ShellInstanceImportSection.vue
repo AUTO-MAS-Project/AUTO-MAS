@@ -1,5 +1,5 @@
 <template>
-  <MaaFWFormSection :title="t('core.edit.shellImportTitle')" compact>
+  <MaaFWFormSection :title="t('core.edit.shellImportTitle')" :icon="ImportOutlined" compact>
     <p class="shell-import-hint">
       {{ t('core.edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
     </p>
@@ -67,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import { ImportOutlined } from '@ant-design/icons-vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaFWShellInstanceItem } from '@/api'

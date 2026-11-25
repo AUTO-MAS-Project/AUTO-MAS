@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { TableHint } from '@/api'
 import { isSwitchComponent } from './declarativeLayout'
-import SectionCard from './ui/SectionCard.vue'
+import SectionCard from '@/components/ui/SectionCard.vue'
 
 export type DeclarativeTableHint = Pick<TableHint, 'rows' | 'columns'> &
   Partial<Pick<TableHint, 'key' | 'transpose'>>

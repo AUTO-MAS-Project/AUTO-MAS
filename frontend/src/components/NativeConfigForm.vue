@@ -15,30 +15,21 @@
             hints[field.name] ?? (field.disabled ? t('core.edit.okwwPlanManaged') : undefined)
           "
         >
-          <a-switch
-            v-if="field.type === 'bool'"
-            :checked="values[field.name] === true"
+          <DeclarativeControl
+            v-if="field.type === 'bool' || field.type === 'select'"
+            compact
+            :component="field.type"
+            :label="label(field.name)"
+            :model-value="field.type === 'bool' ? values[field.name] === true : values[field.name]"
             :disabled="disabled || field.disabled"
-            @change="(value: unknown) => emit('change', field.name, value)"
+            :options="optionsFor(field)"
+            @update:model-value="emit('change', field.name, $event)"
           />
           <NativeConfigCheckboxes
             v-else-if="field.type === 'multi_selection'"
             :value="values[field.name] as string[]"
             :disabled="disabled || field.disabled"
-            :options="(field.options ?? []).map(value => ({ value, label: optionLabel(value) }))"
-            @change="(value: unknown) => emit('change', field.name, value)"
-          />
-          <a-select
-            v-else-if="field.type === 'select'"
-            :value="values[field.name] as string | string[]"
-            :disabled="disabled || field.disabled"
-            style="width: 100%"
-            :options="
-              (field.options ?? []).map(value => ({
-                value,
-                label: optionLabel(value),
-              }))
-            "
+            :options="optionsFor(field)"
             @change="(value: unknown) => emit('change', field.name, value)"
           />
           <a-input-number
@@ -82,6 +73,7 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { DeclarativeControl } from '@/components/declarative'
 import NativeConfigCheckboxes from './NativeConfigCheckboxes.vue'
 import type { NativeConfigField } from '@/types/nativeConfig'
 const props = withDefaults(
@@ -108,8 +100,11 @@ const visibleFields = computed(() =>
 function label(name: string) {
   return props.labels[name] || t(`${props.labelPrefix}${name}`, name)
 }
-function optionLabel(value: string) {
-  return props.labels[value] || t(`${props.optionPrefix}${value}`, value)
+function optionsFor(field: NativeConfigField) {
+  return (field.options ?? []).map(value => ({
+    value,
+    label: props.labels[value] || t(`${props.optionPrefix}${value}`, value),
+  }))
 }
 function saveJson(name: string) {
   if (!(name in drafts)) return

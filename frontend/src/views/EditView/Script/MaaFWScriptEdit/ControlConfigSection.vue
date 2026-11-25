@@ -1,18 +1,15 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.controlConfiguration')">
-    <!-- 模拟器依次排：控制方式、模拟器、实例、游戏资源、包名、等待时间、特调插槽
-         besidePackageName（每个组件一格）、截图 / 输入策略表，格宽见脚本里的 adbCol。
-         其余控制器这一行只有控制方式 | 游戏资源两格，各占半行 -->
+  <MaaFWFormSection :title="t('core.edit.controlConfiguration')" :icon="ControlOutlined">
+    <!-- 模拟器的包名和等待时间之后，按专属页传来的顺序插入 besidePackageName 字段 -->
     <a-row :gutter="24" align="stretch" class="controller-resource-row">
-      <a-col v-bind="isAdbController ? adbCol('controller') : HALF_COL">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.controlMode') }}</span>
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Controller"
-            size="large"
             :placeholder="t('core.edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
@@ -32,8 +29,7 @@
           </a-select>
         </a-form-item>
       </a-col>
-      <template v-if="isAdbController"> </template>
-      <a-col v-bind="isAdbController ? adbCol('resource') : HALF_COL">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.pickMfwResourceLeave')">
@@ -45,7 +41,6 @@
           </template>
           <a-select
             v-model:value="maafwConfig.Info.Resource"
-            size="large"
             :placeholder="t('core.edit.automatic')"
             allow-clear
             :disabled="interfaceDependentDisabled"
@@ -58,7 +53,7 @@
         </a-form-item>
       </a-col>
       <template v-if="isAdbController">
-        <a-col v-bind="adbCol('packageName')">
+        <a-col :xs="24" :md="12">
           <a-form-item>
             <template #label>
               <a-tooltip :title="t('core.edit.mfwGamePackageNamePassed')">
@@ -71,13 +66,12 @@
             <a-input
               v-model:value="maafwConfig.Game.PackageName"
               :placeholder="t('core.edit.mfwGamePackageNamePlaceholder')"
-              size="large"
               allow-clear
               @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
             />
           </a-form-item>
         </a-col>
-        <a-col v-bind="adbCol('waitTime')">
+        <a-col :xs="24" :md="12">
           <a-form-item>
             <template #label>
               <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
@@ -91,7 +85,6 @@
               v-model:value="maafwConfig.Game.WaitTime"
               :min="0"
               :max="9999"
-              size="large"
               style="width: 100%"
               @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
             />
@@ -99,15 +92,11 @@
         </a-col>
         <!-- 专属页的字段每个各占一格（不叠在同一格里把旁边的策略表拉高）：页面传来格数，每格用
              <slot> 转发一次并带上下标，页面渲染第 index 格 -->
-        <a-col
-          v-for="index in besideIndexes"
-          :key="`beside-${index}`"
-          v-bind="adbCol(`beside${index}`)"
-        >
+        <a-col v-for="index in besideIndexes" :key="`beside-${index}`" :xs="24" :md="12">
           <slot name="besidePackageName" :index="index" />
         </a-col>
         <!-- 策略表：截图 / 输入两行，与同一行的表单项（标签 + 输入框）等高 -->
-        <a-col v-bind="adbCol('strategy')" class="control-strategy-col">
+        <a-col :xs="24" :md="12" class="control-strategy-col">
           <MaaFWControlStrategyTable :items="adbControlStrategyItems" />
         </a-col>
       </template>
@@ -133,7 +122,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { ControlOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWScriptControlSectionEmits, MaaFWScriptControlSectionProps } from './sectionProps'
 import MaaFWControlStrategyTable from './MaaFWControlStrategyTable.vue'
@@ -147,70 +136,10 @@ const props = defineProps<MaaFWScriptControlSectionProps>()
 
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
-const HALF_COL = { span: 12 } as const
-
-// 每行格数换成每格的栅格宽度
-const spansOf = (rows: number[]): number[] =>
-  rows.flatMap(size => Array<number>(size).fill(24 / size))
-
-// 宽屏每行最多三格，最后一行不留单格：余两格时最后一行两格（8 格 = 3 / 3 / 2），余一格时
-// 最后两行各两格（7 格 = 3 / 2 / 2）
-const wideRowSpans = (count: number): number[] => {
-  const rows: number[] = []
-  let rest = count
-  while (rest > 0) {
-    const size = rest === 4 ? 2 : Math.min(rest, 3)
-    rows.push(size)
-    rest -= size
-  }
-  return spansOf(rows)
-}
-
-// 中等宽度每行两格，单数格时最后一行三格（7 格 = 2 / 2 / 3，9 格 = 2 / 2 / 2 / 3），同样不留单格
-const mediumRowSpans = (count: number): number[] => {
-  const rows: number[] = []
-  let rest = count
-  while (rest > 0) {
-    const size = rest === 3 ? 3 : Math.min(rest, 2)
-    rows.push(size)
-    rest -= size
-  }
-  return spansOf(rows)
-}
-
-type AdbField =
-  | 'controller'
-  | 'resource'
-  | 'packageName'
-  | 'waitTime'
-  | `beside${number}`
-  | 'strategy'
-
 // besidePackageName 各格的下标：格数由页面传来（是 prop，变了 a-row 跟着更新）
 const besideIndexes = computed(() =>
   Array.from({ length: props.besidePackageNameCount ?? 0 }, (_, index) => index)
 )
-
-// 模拟器各格按模板顺序排
-const adbFields = (): AdbField[] => [
-  'controller',
-  'resource',
-  'packageName',
-  'waitTime',
-  ...besideIndexes.value.map((index): AdbField => `beside${index}`),
-  'strategy',
-]
-
-// 窄屏一列，中等宽度按 mediumRowSpans，宽屏按 wideRowSpans
-const adbCol = (field: AdbField) => {
-  const fields = adbFields()
-  const position = fields.indexOf(field)
-  return {
-    xs: 24,
-    md: mediumRowSpans(fields.length)[position],
-    xl: wideRowSpans(fields.length)[position],
-  }
-}
 </script>
 
 <style scoped src="./maafwSection.css"></style>

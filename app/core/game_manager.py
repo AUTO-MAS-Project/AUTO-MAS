@@ -13,7 +13,7 @@ from app.config.core.node import LockTicket
 from app.config.signals import CollectionChangeEvent
 from app.config.wire import config_contract
 from app.models.config.game import GameDeviceEntry, GameEntry
-from app.models.config.game_binding import GameBindingOwner
+from app.models.config.game_binding import GameBindingCapabilities, GameBindingOwner
 from app.models.config.plugin_emulator import EmulatorEntry
 from app.models.emulator import DeviceUpdateOptions
 from app.plugin.base.emulator import EmulatorControl
@@ -243,28 +243,40 @@ class _GameManager:
         )
 
     async def validate_binding(
-        self, script_id: str, patch: dict, *, owner=None, script=None
+        self,
+        script_id: str,
+        patch: dict,
+        *,
+        owner=None,
+        script=None,
+        capabilities: GameBindingCapabilities | None = None,
     ) -> str | None:
         from app.core import Config
-        from app.core.plugin import Plugin
-        from app.models.config.plugin_script import ScriptEntry
 
         if script is None:
             script = Config.ScriptConfig[script_id]
         binding = patch.get("game", {})
         uid = binding.get("game_id", (owner or script).game.game_id)
-        if uid == "-" and owner is not None:
-            uid = script.game.game_id
         if uid == "-":
-            return None
+            if owner is None or "game_id" in binding or script.game.game_id == "-":
+                return None
+            uid = script.game.game_id
+        if capabilities is None:
+            capabilities = Config.script_game_binding(
+                script, patch if owner is None else {}
+            )
+        if not capabilities.supported:
+            return "当前专项不支持绑定游戏目标" if binding else None
+        if owner is not None and not capabilities.account_override_supported:
+            if binding:
+                return "当前专项不支持账号单独指定游戏目标"
+            uid = script.game.game_id
+            if uid == "-":
+                return None
         game = Config.GameConfig.get(UUID(str(uid)))
         if game is None:
             return "所选游戏目标不存在"
-        if isinstance(script, ScriptEntry):
-            kinds = Plugin.script_game_kinds(script, patch)
-        else:
-            kinds = Config.script_game_kinds(script, patch)
-        if kinds and game.info.type not in kinds:
+        if capabilities.kinds and game.info.type not in capabilities.kinds:
             return "所选游戏目标类型与当前专项控制方式不兼容"
         if (
             isinstance(game._control, EmulatorControl)

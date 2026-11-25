@@ -112,6 +112,7 @@ from app.models.config import (
     ZzzOdConfig,
     ZzzOdUserConfig,
 )
+from app.models.config.game_binding import GameBindingCapabilities
 from app.models.schema import PlanComboxConsumer, ScriptStatusOverviewItem
 from app.models.script_access import entry_name, script_users
 from app.models.script_contracts import ScriptConfigHandler
@@ -1830,16 +1831,42 @@ class AppConfig:
         handler = self._get_script_config_handler(script)
         return handler is not None and handler.supports_mod_avd
 
-    def script_game_kinds(self, script: ConfigEntry, patch: dict) -> tuple[str, ...]:
+    def script_game_binding(
+        self, script: ConfigEntry, patch: dict
+    ) -> GameBindingCapabilities:
+        if isinstance(script, ScriptEntry):
+            from app.core import Plugin
+
+            decl = Plugin.script_decl(script)
+            if decl is None:
+                raise RuntimeError(f"专项插件未登记: {type(script).__name__}")
+            supported = decl.supports_game_binding is not False
+            return GameBindingCapabilities(
+                supported=supported,
+                account_override_supported=supported
+                and decl.supports_account_game_override,
+                # 插件声明了 game_kind 时按当前配置和保存补丁收窄，否则取静态 game_kinds。
+                kinds=Plugin.script_game_kinds(script, patch),
+            )
         handler = self._get_script_config_handler(script)
         if handler is None:
-            return ()
+            return GameBindingCapabilities()
+        if (
+            handler.supports_game_binding is not None
+            and not handler.supports_game_binding(script, patch)
+        ):
+            return GameBindingCapabilities(
+                supported=False, account_override_supported=False
+            )
         expected = (
             handler.expected_game_kind(script, patch)
             if handler.expected_game_kind is not None
             else None
         )
-        return (expected,) if expected is not None else handler.game_kinds
+        return GameBindingCapabilities(
+            account_override_supported=handler.supports_account_game_override,
+            kinds=(expected,) if expected is not None else handler.game_kinds,
+        )
 
     async def _initialize_script_config(self, script: ConfigEntry) -> None:
         handler = self._get_script_config_handler(script)

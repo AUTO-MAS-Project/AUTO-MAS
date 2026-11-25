@@ -14,7 +14,6 @@
     </template>
     <a-select
       v-model:value="maafwConfig.Run.LoginMode"
-      size="large"
       style="width: 100%"
       :options="loginModeOptions"
       @change="(value: string | number) => emit('change', 'Run', 'LoginMode', value)"

@@ -30,10 +30,16 @@ const { t } = useI18n()
 
 <template>
   <ScriptExecutionSessionField v-if="!hideExecutionSession" />
-  <ScriptHardTimeoutField v-model:value="hardTimeLimit" @save="emit('save', 'HardTimeLimit')" />
   <a-row :gutter="24">
     <slot name="before-limits" />
-    <a-col v-if="!hideDaily" :span="columnSpan ?? 8">
+    <a-col :xs="24" :md="columnSpan ?? 12">
+      <ScriptHardTimeoutField
+        v-model:value="hardTimeLimit"
+        full-width
+        @save="emit('save', 'HardTimeLimit')"
+      />
+    </a-col>
+    <a-col v-if="!hideDaily" :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="dailyLimit"
         kind="daily"
@@ -43,7 +49,7 @@ const { t } = useI18n()
         @save="emit('save', 'ProxyTimesLimit')"
       />
     </a-col>
-    <a-col :span="columnSpan ?? 8">
+    <a-col :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="retryLimit"
         kind="retry"
@@ -53,7 +59,7 @@ const { t } = useI18n()
         @save="emit('save', 'RunTimesLimit')"
       />
     </a-col>
-    <a-col :span="columnSpan ?? 8">
+    <a-col :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="timeout"
         kind="timeout"

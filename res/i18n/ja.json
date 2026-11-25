@@ -4851,6 +4851,7 @@
   "core.games.discard": "未保存の変更を破棄しますか？",
   "core.games.accountBinding": "エミュレーター / クライアントを個別指定",
   "core.games.accountOverrideDesc": "このアカウントの実行時のみ下の環境を使用し、他のアカウントには影響しません",
+  "core.games.bindingUnsupported": "現在の設定ではこのゲームの関連付けを使用できません。既存の関連付けを解除してください。",
   "core.games.defaultBinding": "エミュレーター / ゲームクライアント",
   "core.games.inherit": "管理設定に従う",
   "core.games.noTarget": "未選択",

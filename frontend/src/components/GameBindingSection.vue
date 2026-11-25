@@ -1,5 +1,5 @@
 <template>
-  <template v-if="visible">
+  <template v-if="routeVisible && (bindingSupported || hasBinding || !query.data.value)">
     <!-- 账号页形态：紧凑覆写开关，默认跟随托管不干扰表单 -->
     <div
       v-if="userId"
@@ -9,7 +9,7 @@
       <div class="override-header">
         <div class="override-meta">
           <div class="override-title">{{ t('core.games.accountBinding') }}</div>
-          <div v-if="!error" class="override-desc">
+          <div v-if="!error && !bindingWarning" class="override-desc">
             {{
               overrideEnabled
                 ? t('core.games.accountOverrideDesc')
@@ -43,9 +43,9 @@
       </a-alert>
       <div v-if="overrideEnabled" class="override-body">
         <a-alert
-          v-if="binding.unavailable_reason"
+          v-if="bindingWarning"
           type="warning"
-          :message="binding.unavailable_reason"
+          :message="bindingWarning"
           show-icon
           class="binding-alert"
         />
@@ -79,7 +79,7 @@
               <a-form-item :label="t('core.games.device')" class="compact-form-item">
                 <a-select
                   :value="binding.device_id"
-                  :disabled="binding.game_id === '-'"
+                  :disabled="!bindingSupported || binding.game_id === '-'"
                   @change="selectDevice"
                 >
                   <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
@@ -122,12 +122,18 @@
         </template>
       </a-alert>
       <a-alert
-        v-if="binding.unavailable_reason"
+        v-if="bindingWarning"
         type="warning"
-        :message="binding.unavailable_reason"
+        :message="bindingWarning"
         show-icon
         class="binding-alert"
-      />
+      >
+        <template #action>
+          <a-button size="small" :disabled="controlsDisabled" @click="resetBinding">
+            {{ t('core.edit.clear') }}
+          </a-button>
+        </template>
+      </a-alert>
       <a-form layout="vertical" :disabled="controlsDisabled">
         <a-row :gutter="24">
           <a-col :xs="24" :md="12">
@@ -159,7 +165,7 @@
             <a-form-item :label="t('core.games.device')" class="binding-form-item">
               <a-select
                 :value="binding.device_id"
-                :disabled="controlsDisabled || binding.game_id === '-'"
+                :disabled="controlsDisabled || !bindingSupported || binding.game_id === '-'"
                 @change="selectDevice"
               >
                 <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
@@ -216,7 +222,7 @@ const { updateUser } = useUserApi()
 const userId = computed(() =>
   typeof route.params.userId === 'string' ? route.params.userId : undefined
 )
-const visible = computed(
+const routeVisible = computed(
   () => route.meta.scriptPage !== 'userAdd' && !route.path.includes('/users/add/')
 )
 const { configLocked } = useScriptConfigLock(() =>
@@ -225,10 +231,10 @@ const { configLocked } = useScriptConfigLock(() =>
 const binding = ref<GameBindingValue>({ game_id: '-', device_id: '-' })
 const overrideDraftOpen = ref(false)
 const queryKey = computed(() => ['game-binding', props.scriptId, userId.value])
-const query = useGameBindingQuery(() => props.scriptId, userId, visible)
+const query = useGameBindingQuery(() => props.scriptId, userId, routeVisible)
 const options = useConfigQuery({
   queryKey: computed(() => ['game-binding-options', props.scriptId, userId.value]),
-  enabled: computed(() => visible.value && !!props.scriptId),
+  enabled: computed(() => routeVisible.value && !!props.scriptId),
   queryFn: async () =>
     checkedGameResponse(
       await Service.gameBindingOptionsApiGamesBindingOptionsPost({
@@ -237,6 +243,19 @@ const options = useConfigQuery({
       })
     ),
 })
+const bindingSupported = computed(
+  () =>
+    options.data.value?.supported !== false &&
+    (!userId.value || options.data.value?.accountOverrideSupported !== false)
+)
+const hasBinding = computed(
+  () => binding.value.game_id !== '-' || !!binding.value.unavailable_reason
+)
+const bindingWarning = computed(
+  () =>
+    binding.value.unavailable_reason ||
+    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '')
+)
 const selected = computed(() => games.rows.value.find(game => game.uid === binding.value.game_id))
 const devices = computed(() => (selected.value ? gameDevices(selected.value) : []))
 const inheritedName = computed(
@@ -263,12 +282,7 @@ const save = useMutation({
 })
 const saving = save.isPending
 const controlsDisabled = computed(() => configLocked.value || saving.value || query.isPending.value)
-const overrideEnabled = computed(
-  () =>
-    overrideDraftOpen.value ||
-    binding.value.game_id !== '-' ||
-    Boolean(binding.value.unavailable_reason)
-)
+const overrideEnabled = computed(() => overrideDraftOpen.value || hasBinding.value)
 const error = computed(() => query.error.value ?? options.error.value ?? save.error.value)
 
 watch(
@@ -291,34 +305,27 @@ watch(
 )
 
 async function toggleOverride(checked: unknown) {
-  const next = Boolean(checked)
-  if (next) {
-    overrideDraftOpen.value = true
-    return
-  }
-  const previous = { ...binding.value }
-  const needsReset =
-    previous.game_id !== '-' || previous.device_id !== '-' || Boolean(previous.unavailable_reason)
-  overrideDraftOpen.value = false
-  if (!needsReset) return
-  binding.value = { game_id: '-', device_id: '-', unavailable_reason: undefined }
-  try {
-    await save.mutateAsync({ game_id: '-', device_id: '-' })
-  } catch {
-    // 写入失败时恢复原绑定状态，避免 UI 与服务端不一致导致无法重试关闭。
-    binding.value = previous
-  }
+  overrideDraftOpen.value = Boolean(checked)
+  if (!checked && (hasBinding.value || binding.value.device_id !== '-')) await resetBinding()
+}
+
+async function resetBinding() {
+  await save.mutateAsync({ game_id: '-', device_id: '-' }).catch(() => {})
 }
 
 async function selectTarget(value: unknown) {
   if (typeof value !== 'string') return
+  if (value === '-') {
+    await resetBinding()
+    return
+  }
   const target = games.rows.value.find(game => game.uid === value)
   const device =
     target?.type.kind === 'client'
       ? (gameDevices(target).find(device => !isDeletedDevice(device.document))?.uid ?? '-')
       : '-'
   binding.value = { game_id: value, device_id: device }
-  if (value !== '-') overrideDraftOpen.value = false
+  overrideDraftOpen.value = false
   await save.mutateAsync({ ...binding.value }).catch(() => {})
 }
 

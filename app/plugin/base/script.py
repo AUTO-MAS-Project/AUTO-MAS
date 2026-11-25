@@ -50,6 +50,9 @@ class ScriptTypeDecl:
     game_kind: Callable[[ScriptEntry, dict[str, Any]], str | None] | None = None
     # 这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持。
     desktop_session: Callable[[ScriptEntry], bool] | None = None
+    # None 沿用旧插件的绑定能力，game_kinds 为空时不限制目标类型。
+    supports_game_binding: bool | None = None
+    supports_account_game_override: bool = True
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

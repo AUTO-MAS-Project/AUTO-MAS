@@ -1,10 +1,10 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.basicInfo')">
+  <MaaFWFormSection :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
     <a-row :gutter="24">
       <!-- 还没导入、引导卡片在显示时目录字段不出现：选目录的按钮与说明只留卡片那一套，
-           名称独占一行；导入后字段里显示副本路径 -->
-      <a-col :span="guideOwnsImport ? 24 : 8">
+           导入后字段显示副本路径 -->
+      <a-col :xs="24" :md="12">
         <a-form-item name="name">
           <template #label>
             <span class="form-label">{{ t('core.edit.scriptName') }}</span>
@@ -12,13 +12,12 @@
           <a-input
             v-model:value="formData.name"
             :placeholder="t('core.edit.enterScriptName')"
-            size="large"
             class="modern-input"
             @blur="emit('change', 'Info', 'Name', formData.name)"
           />
         </a-form-item>
       </a-col>
-      <a-col v-if="!guideOwnsImport" :span="16">
+      <a-col v-if="!guideOwnsImport" :xs="24" :md="12">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
             <a-tooltip :title="directoryHint">
@@ -34,14 +33,12 @@
             <a-input
               :value="displayedPath"
               :placeholder="sourcePlaceholder || t('core.edit.pickActualMfwProject')"
-              size="large"
               class="path-input"
               readonly
               aria-readonly="true"
             />
             <a-tooltip :title="directoryLocked ? t('core.edit.maafwDirectoryLockedHint') : ''">
               <a-button
-                size="large"
                 class="path-button"
                 :disabled="directoryLocked || interfaceLoading || updateApplying || embeddedBusy"
                 @click="emit('select-path')"
@@ -132,7 +129,6 @@
       <p v-if="previewError" class="interface-guide-error">{{ previewError }}</p>
       <a-button
         type="primary"
-        size="large"
         :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
         @click="emit('preview-interface')"
       >
@@ -149,7 +145,6 @@
       <a-button
         v-if="!embeddedBusy"
         type="primary"
-        size="large"
         :disabled="interfaceLoading || updateApplying"
         @click="emit('select-path')"
       >
@@ -172,28 +167,17 @@
         {{ importError || previewError }}
       </p>
     </div>
-    <!-- 跟随来源目录（开发者模式）：项目导入之后才有意义，平时用不到，放在本节最后。
-         源码形态的项目始终跟随，开关锁在开着（状态行在目录字段下面） -->
+    <!-- 导入后才显示跟随开关；源码形态强制开启，状态行仍在目录字段下面 -->
     <div v-if="directoryLocked" class="follow-source">
-      <div class="follow-source-head">
-        <a-switch
-          :checked="followSource"
-          size="small"
-          :disabled="sourceForm || interfaceLoading || updateApplying || embeddedBusy"
-          @change="handleFollowSourceChange"
-        />
-        <!-- 说明只在问号里（源码形态换成源码形态那句），开关下面不留说明行 -->
-        <a-tooltip
-          :title="
-            sourceForm ? t('core.edit.maafwSourceFormHint') : t('core.edit.maafwFollowSourceHint')
-          "
-        >
-          <span class="form-label">
-            {{ t('core.edit.maafwFollowSource') }}
-            <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-          </span>
-        </a-tooltip>
-      </div>
+      <SwitchTile
+        :checked="followSource"
+        :title="t('core.edit.maafwFollowSource')"
+        :description="
+          sourceForm ? t('core.edit.maafwSourceFormHint') : t('core.edit.maafwFollowSourceHint')
+        "
+        :disabled="sourceForm || interfaceLoading || updateApplying || embeddedBusy"
+        @change="handleFollowSourceChange"
+      />
       <MaaFWFollowSourceStatus
         v-if="followSource && !sourceForm"
         :embedded-status="embeddedStatus"
@@ -210,7 +194,9 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import { SwitchTile } from '@/components/ui'
 import {
+  AppstoreOutlined,
   FolderOpenOutlined,
   InboxOutlined,
   QuestionCircleOutlined,
@@ -318,12 +304,6 @@ const interfaceStatsText = computed(() =>
   margin-top: 16px;
 }
 
-.follow-source-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* 源码形态的状态行紧跟目录字段：收掉表单项的下距，与字段贴近 */
 .follow-source-top {
   margin: -8px 0 16px;
@@ -352,8 +332,8 @@ const interfaceStatsText = computed(() =>
 /* 左边项目名与一行计数，右边运行环境面板；各自按内容高，顶边对齐 */
 .interface-body {
   display: grid;
-  grid-template-columns: minmax(300px, 2fr) 3fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
   align-items: start;
   margin-top: 8px;
 }

@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, useId, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
-import DeclarativeTable, { type DeclarativeTableHint } from '@/components/DeclarativeTable.vue'
-import { fieldRuns, isWideField, tableColumnTypes } from '@/components/declarativeLayout'
+import { useDeclarativeOptions, type DeclarativeHint } from '@/composables/useDeclarativeOptions'
+import DeclarativeTable, { type DeclarativeTableHint } from './DeclarativeTable.vue'
+import { fieldRuns, isWideField, tableColumnTypes } from './declarativeLayout'
 import { SectionCard } from '@/components/ui'
-import PluginDeclarativeField, { type DeclarativeHint } from './PluginDeclarativeField.vue'
+import DeclarativeField from './DeclarativeField.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -175,7 +175,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           @update:value="(group, field, value) => emit('update:value', group, field, value)"
         >
           <template #cell="{ group, field, update }">
-            <PluginDeclarativeField
+            <DeclarativeField
               v-if="hintsByGroup.get(group)?.has(field)"
               v-bind="fieldBindings(group, hintsByGroup.get(group)!.get(field)!)"
               table-cell
@@ -189,7 +189,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
             :key="run.hints[0]?.field"
             :class="run.tiles ? 'declarative-switch-grid' : 'declarative-field-grid'"
           >
-            <PluginDeclarativeField
+            <DeclarativeField
               v-for="hint in run.hints"
               :key="hint.field"
               v-bind="fieldBindings(section.group.name, hint)"
