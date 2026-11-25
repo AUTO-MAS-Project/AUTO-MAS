@@ -49,9 +49,19 @@ def _module(name: str) -> ModuleType:
     try:
         return importlib.import_module(name)
     except ImportError as error:
-        raise RuntimeError(
+        raise RuntimeError(_missing_message()) from error
+
+
+def _missing_message() -> str:
+    """库不在时的提示；这次启动补装过但没成，带上原因和对应的恢复办法。"""
+    from app.plugin.uv import ops
+
+    if ops.library_failure is None:
+        return (
             "MaaEnd 启动游戏要用的 MFW 解析库还没装上，联网后重启 AUTO-MAS 会自动安装"
-        ) from error
+        )
+    reason, remedy = ops.library_failure
+    return f"MaaEnd 启动游戏要用的 MFW 解析库还没装上（这次启动补装没成：{reason}），{remedy}"
 
 
 def load_interface_model(base_dir: str | Path) -> MaaFWInterface:

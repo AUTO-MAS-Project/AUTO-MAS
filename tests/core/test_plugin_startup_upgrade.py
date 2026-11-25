@@ -126,9 +126,14 @@ def wheel(
                     "Metadata-Version: 2.1",
                     f"Name: {name}",
                     f"Version: {version}",
-                    f"Keywords: auto-mas-plugin, auto-mas-id:{plugin_id or 'startup_probe'}"
-                    if plugin_id is not None or module == "startup_probe"
-                    else "",
+                    # 不是插件时不写这行；写成空行会截断头部，后面的 Requires-Dist 就丢了。
+                    *(
+                        [
+                            f"Keywords: auto-mas-plugin, auto-mas-id:{plugin_id or 'startup_probe'}"
+                        ]
+                        if plugin_id is not None or module == "startup_probe"
+                        else []
+                    ),
                     *(f"Requires-Dist: {item}" for item in requires),
                     "",
                     "",
@@ -857,6 +862,148 @@ async def test_startup_fallback_keeps_installed_host_library(
     assert versions["auto-mas-maafw-interface"] == installed
     assert versions["fam-unrelated"] == ("1.0" if fallback == "pinned" else "2.0")
     assert registry.by_name("fam_service") is not None
+
+
+LIBRARY = "auto-mas-maafw-interface>=0.2.0"
+
+
+async def _pending_without_library(config, monkeypatch, tmp_path, *, available):
+    """装专项 0.2 等重启（此时配置里还没有 MaaEnd 托管，候选里没有解析库），
+    之后才建首条 MaaEnd 托管；``available`` 时索引里有解析库和它新带来的依赖。"""
+    registry, site = await _plugin_family(config, monkeypatch, tmp_path, stuck=False)
+    wheels = tmp_path / "wheels"
+    if available:
+        wheel(
+            wheels,
+            name="auto-mas-maafw-interface",
+            version="0.2.0",
+            module="maafw_interface_probe",
+            requires=["fam-interface-dep>=1"],
+        )
+        wheel(wheels, name="fam-interface-dep", version="1.0", module="fam_dep_probe")
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        assert await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    pending = _installed_versions(site.with_suffix(".pending"))
+    assert "auto-mas-maafw-interface" not in pending
+    return site, pending
+
+
+@pytest.mark.asyncio
+async def test_first_restart_adds_host_library_missing_from_pending(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """候选建好后才加 MaaEnd 托管：第一次重启换入候选时就把解析库补进去，
+    候选里原有的发行包版本一个不变，旧环境留作回滚，安装记录等加载后确认。"""
+    monkeypatch.setattr(ops, "library_failure", None)
+    site, pending = await _pending_without_library(
+        isolated_app_paths, monkeypatch, tmp_path, available=True
+    )
+    await ops.prepare_environment(libraries=[LIBRARY])
+    versions = _installed_versions(site)
+    assert {name: versions[name] for name in pending} == pending
+    assert versions["auto-mas-maafw-interface"] == "0.2.0"
+    assert versions["fam-interface-dep"] == "1.0"
+    assert set(versions) == {*pending, "auto-mas-maafw-interface", "fam-interface-dep"}
+    previous = site.with_suffix(".previous")
+    assert _installed_versions(previous)["fam-adapter-a"] == "0.1.0"
+    assert not site.with_suffix(".pending").exists()
+    assert environment.read_installation().progress.state == "applying"
+    assert ops.library_failure is None
+    # 这次启动没确认成功（例如加载中途退出）：下次启动照常整目录回滚到旧环境。
+    assert not await environment.apply_pending()
+    restored = _installed_versions(site)
+    assert restored["fam-adapter-a"] == "0.1.0"
+    assert "auto-mas-maafw-interface" not in restored
+    assert environment.read_installation().progress.state == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cause", ["unsolvable", "offline"])
+async def test_first_restart_without_library_still_starts_and_explains(
+    isolated_app_paths, monkeypatch, tmp_path, cause
+):
+    """补不上解析库时照常换入启动；原因记下来，MaaEnd 运行时报错带上原因和恢复办法。"""
+    from app.task.MaaEnd import mfw_parse
+
+    monkeypatch.setattr(ops, "library_failure", None)
+    site, pending = await _pending_without_library(
+        isolated_app_paths, monkeypatch, tmp_path, available=False
+    )
+    if cause == "offline":
+
+        async def offline(**kwargs):
+            raise PluginPrecheckError("兼容性检查未完成，请检查网络或稍后重试")
+
+        monkeypatch.setattr(precheck, "resolve_environment", offline)
+    await ops.prepare_environment(libraries=[LIBRARY])
+    assert _installed_versions(site) == pending
+    assert site.with_suffix(".previous").is_dir()
+    assert environment.read_installation().progress.state == "applying"
+    with pytest.raises(RuntimeError) as raised:
+        mfw_parse._module("maafw_interface_absent_probe")
+    message = str(raised.value)
+    if cause == "offline":
+        assert "网络不通或镜像没有响应" in message
+        assert "联网后重启 AUTO-MAS 会自动安装" in message
+    else:
+        assert "依赖解不开，涉及 auto-mas-maafw-interface" in message
+        assert "重启 AUTO-MAS 会再尝试安装" in message
+    assert str(tmp_path) not in message
+
+
+@pytest.mark.asyncio
+async def test_first_restart_skips_solving_when_pending_has_library(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """候选里本来就有解析库：换入时不求解、不联网。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    library = wheel(
+        tmp_path / "wheels",
+        name="auto-mas-maafw-interface",
+        version="0.2.0",
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    config_path = isolated_app_paths.config_path
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "scripts.yaml").write_text(
+        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
+        encoding="utf-8",
+    )
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        assert await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+
+    async def forbidden(**kwargs):
+        raise AssertionError("候选里已有解析库，不该求解")
+
+    monkeypatch.setattr(precheck, "resolve_environment", forbidden)
+    await ops.prepare_environment(libraries=[LIBRARY])
+    versions = _installed_versions(site)
+    assert versions["auto-mas-maafw-interface"] == "0.2.0"
+    assert versions["fam-adapter-a"] == "0.2.0"
 
 
 @pytest.mark.asyncio
