@@ -255,17 +255,15 @@ class _DesktopSessionLifecycle:
             return None
 
         from app.core import Config, TaskManager
-        from app.models.config.script import DesktopSessionRunFields
         from app.models.task import TaskMode
         from app.utils.common.process.session import desktop_process_target
 
         async with self.lock:
             script = Config.ScriptConfig.get(node.children[0].uid)
+            # 看字段在不在而不看基类：插件托管的配置类不继承宿主的 DesktopSessionRunFields，
+            # 与前端按 'ExecutionSession' in run 决定是否显示该设置的口径一致。
             run = getattr(script, "Run", None)
-            if (
-                not isinstance(run, DesktopSessionRunFields)
-                or run.ExecutionSession == "main"
-            ):
+            if getattr(run, "ExecutionSession", "main") == "main":
                 return None
             if not supports_task(script):
                 raise DesktopSessionConflict("当前托管配置不支持桌面分身")

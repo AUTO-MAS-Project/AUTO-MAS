@@ -646,6 +646,72 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio
+@pytest.mark.parametrize("declared", [True, False])
+async def test_manual_start_reads_plugin_execution_session(monkeypatch, declared):
+    """插件托管的配置类不继承宿主的运行设置类：Run 上声明了执行会话才按它选分身。"""
+    from typing import Literal
+    from uuid import uuid4
+
+    from pydantic import Field
+
+    from app.api.dispatch import TaskCreateIn, add_task
+    from app.core import Config, Plugin, TaskManager
+    from app.models.config import ConfigGroup, ScriptEntry
+    from app.utils.windows.desktop_session import native
+
+    class PluginScript(ScriptEntry):
+        class RunFields(ConfigGroup):
+            ProxyTimesLimit: int = 0
+            if declared:
+                ExecutionSession: Literal["main", "desktop"] = "main"
+
+        Run: RunFields = Field(default_factory=RunFields)
+
+    sid, task_id = uuid4(), uuid4()
+    entry = PluginScript.build(
+        payload={"Run": {"ExecutionSession": "desktop"} if declared else {}}
+    )
+    await entry.activate()
+    monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry})
+    monkeypatch.setattr(Plugin, "script_supports_desktop", lambda config: True)
+    service = lifecycle._DesktopSessionLifecycle()
+    monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
+    service.scope_state = (7, False)
+    monkeypatch.setattr(native, "child_session", lambda: 7)
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    seen = []
+
+    async def start(mode, tasks):
+        seen.append(session.desktop_process_target.get())
+        return task_id
+
+    monkeypatch.setattr(TaskManager, "start", start)
+    result = await add_task(
+        TaskCreateIn.model_validate(
+            {
+                "mode": "AutoProxy",
+                "tasks": {
+                    0: {
+                        "uid": "-",
+                        "children": {
+                            0: {"uid": str(sid), "children": {0: {"uid": str(uuid4())}}}
+                        },
+                    }
+                },
+                "requireDesktopSession": declared,
+            }
+        )
+    )
+    assert result.taskId == str(task_id)
+    assert [target.session_id if target else None for target in seen] == [
+        7 if declared else None
+    ]
+    assert service.task_ids == ({task_id} if declared else set())
+    assert session.desktop_process_target.get() is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
 async def test_desktop_close_separates_external_processes_and_blocks_new_tasks(
     monkeypatch,
 ):
