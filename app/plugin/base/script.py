@@ -45,6 +45,9 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    # None 沿用旧插件的绑定能力，game_kinds 为空时不限制目标类型。
+    supports_game_binding: bool | None = None
+    supports_account_game_override: bool = True
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

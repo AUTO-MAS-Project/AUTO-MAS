@@ -18,5 +18,7 @@ export type GameBindingOptionsOut = {
     message?: string;
     uiSources?: Array<string>;
     data?: Array<GameBindingOption>;
+    supported?: boolean;
+    accountOverrideSupported?: boolean;
 };
 
