@@ -193,7 +193,14 @@ class OkNteManager(ScriptManagerBase):
                     )
                 elif self.script_config.Script.ConfigPathMode == "File":
                     self.temp_path.mkdir(parents=True, exist_ok=True)
-                    shutil.copy(self.script_config_path, self.temp_path / "config.temp")
+                    backup_file = self.temp_path / "config.temp"
+                    shutil.copy(self.script_config_path, backup_file)
+                    _utils_io.write_native_config_snapshot(
+                        self.temp_path,
+                        script_id=self.script_info.script_id,
+                        original_exists=True,
+                        baseline=config_file_fingerprint(backup_file),
+                    )
             else:
                 # 即使原配置不存在，也在任何下发前记录基线；延后收尾时留下退出复核凭据。
                 self.temp_path.mkdir(parents=True, exist_ok=True)
@@ -241,29 +248,40 @@ class OkNteManager(ScriptManagerBase):
     def _recover_config_snapshot(
         self, snapshot_path: Path, live_path: Path, *, file_mode: bool
     ) -> None:
-        file_snapshot = snapshot_path / "config.temp"
-        if file_mode and not file_snapshot.is_file():
+        if file_mode:
+            file_snapshot = snapshot_path / "config.temp"
             snapshot = _utils_io.read_native_config_snapshot(
                 snapshot_path, expected_script_id=self.script_info.script_id
             )
             if (
                 snapshot is not None
-                and not snapshot.original_exists
-                and snapshot.injected is not None
-                and live_path.is_file()
-                and config_file_fingerprint(live_path) == snapshot.injected
+                and snapshot.fingerprint_version
+                == _utils_io.NATIVE_CONFIG_FINGERPRINT_VERSION
+                and (not snapshot.original_exists or file_snapshot.is_file())
             ):
-                live_path.unlink()
+                fingerprint = (
+                    config_file_fingerprint(live_path) if live_path.is_file() else None
+                )
+                if not live_path.exists() or (
+                    fingerprint is not None and snapshot.matches_injected(fingerprint)
+                ):
+                    if snapshot.original_exists:
+                        _utils_io.atomic_write(live_path, file_snapshot.read_bytes())
+                    elif fingerprint is not None:
+                        live_path.unlink()
+                    _utils_io.clear_native_config_snapshot(snapshot_path)
+                    return
+                if fingerprint == snapshot.baseline:
+                    _utils_io.clear_native_config_snapshot(snapshot_path)
+                    return
+            if file_snapshot.is_file():
+                # 旧快照或现场来源不明时保留原文件，避免覆盖外部修改。
+                backup_dir = Path(
+                    mkdtemp(prefix="Temp.unresolved.", dir=snapshot_path.parent)
+                )
+                shutil.copy2(file_snapshot, backup_dir / file_snapshot.name)
+                logger.warning(f"已保留 OK-NTE 原配置文件备份供手动恢复: {backup_dir}")
             _utils_io.clear_native_config_snapshot(snapshot_path)
-            return
-        if file_mode:
-            # 单文件旧快照没有注入指纹，保留备份供手动恢复，避免覆盖外部修改。
-            backup_dir = Path(
-                mkdtemp(prefix="Temp.unresolved.", dir=snapshot_path.parent)
-            )
-            shutil.copy2(file_snapshot, backup_dir / file_snapshot.name)
-            _utils_io.clear_native_config_snapshot(snapshot_path)
-            logger.warning(f"已保留 OK-NTE 原配置文件备份供手动恢复: {backup_dir}")
             return
 
         result = _utils_io.recover_native_config(

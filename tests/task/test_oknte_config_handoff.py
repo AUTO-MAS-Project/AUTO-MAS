@@ -14,9 +14,12 @@ from app.task.OkNte.AutoProxy import AutoProxyTask
 from app.task.OkNte.config_schema import DAILY_ROUTINE_TASK_FILE
 from app.task.OkNte.manager import OkNteManager
 from app.task.OkNte.ScriptConfig import ScriptConfigTask
-from app.task.OkNte.tools.native_config import mark_config_injected
+from app.task.OkNte.tools.native_config import (
+    config_file_fingerprint,
+    publish_staged_config,
+)
 from app.task.OkNte.tools.runtime import OkNteProcessManager
-from app.utils import process
+from app.utils import io, process
 from tests.config_support import activate_config
 from tests.support.scheduler import create_runtime_tree
 
@@ -27,6 +30,7 @@ from tests.support.scheduler import create_runtime_tree
     [
         ("Folder", True, False),
         ("Folder", False, False),
+        ("File", True, False),
         ("File", False, False),
         ("File", False, True),
     ],
@@ -77,10 +81,17 @@ async def test_residual_script_blocks_account_handoff_and_config_restore(
     manager = OkNteManager(script)
 
     async def dispatch(user, _task):
-        live_config.parent.mkdir(parents=True, exist_ok=True)
-        live_config.write_text(user.name, encoding="utf-8")
-        mark_config_injected(
-            snapshot, config_path, script_id=script_id, folder_mode=mode == "Folder"
+        staged_dir = tmp_path / user.name
+        staged_dir.mkdir()
+        staged_file = staged_dir / live_config.name
+        staged_file.write_text(user.name, encoding="utf-8")
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        publish_staged_config(
+            staged_dir if mode == "Folder" else staged_file,
+            config_path,
+            snapshot,
+            script_id=script_id,
+            folder_mode=mode == "Folder",
         )
         await user.set_state(status="异常")
 
@@ -110,7 +121,8 @@ async def test_residual_script_blocks_account_handoff_and_config_restore(
     assert live_config.read_text(encoding="utf-8") == "first"
     assert snapshot.is_dir()
     if original_exists:
-        assert (snapshot / "config.json").read_text(encoding="utf-8") == "original"
+        backup = snapshot / ("config.json" if mode == "Folder" else "config.temp")
+        assert backup.read_text(encoding="utf-8") == "original"
 
     next_manager = OkNteManager(script)
     monkeypatch.setattr(
@@ -315,3 +327,119 @@ async def test_first_config_publish_waits_for_plan_composition(
             ]
             == []
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "original_exists", "phase", "external_edit"),
+    [
+        ("Folder", True, "before", False),
+        ("Folder", False, "before", False),
+        ("Folder", True, "between-renames", True),
+        ("Folder", False, "after", False),
+        ("File", True, "before", False),
+        ("File", False, "before", False),
+        ("File", True, "after", False),
+        ("File", False, "after", True),
+    ],
+)
+async def test_next_account_config_can_be_recovered_after_interrupted_publish(
+    tmp_path, monkeypatch, mode, original_exists, phase, external_edit
+):
+    folder_mode = mode == "Folder"
+    launcher = tmp_path / "ok-nte.exe"
+    launcher.touch()
+    live = tmp_path / ("config" if folder_mode else "config.json")
+    live_file = live / "config.json" if folder_mode else live
+    script_id = str(uuid.uuid4())
+    _root, script, _user = await create_runtime_tree(script_id=script_id)
+    config = await activate_config(
+        OkNteConfig(
+            Info={"RootPath": tmp_path},
+            Script={"ScriptPath": launcher, "ConfigPath": live, "ConfigPathMode": mode},
+        )
+    )
+    snapshot = tmp_path / "Temp"
+    snapshot.mkdir()
+    backup = snapshot / ("config.json" if folder_mode else "config.temp")
+    if original_exists:
+        backup.write_text("native", encoding="utf-8")
+    baseline = (
+        (
+            io.dir_fingerprint(snapshot)
+            if folder_mode
+            else config_file_fingerprint(backup)
+        )
+        if original_exists
+        else ""
+    )
+    io.write_native_config_snapshot(
+        snapshot,
+        script_id=script_id,
+        original_exists=original_exists,
+        baseline=baseline,
+    )
+    first, second = tmp_path / "first", tmp_path / "second"
+    for staged in (first, second):
+        if folder_mode:
+            staged.mkdir()
+        (staged / "config.json" if folder_mode else staged).write_text(
+            staged.name, encoding="utf-8"
+        )
+    publish_staged_config(
+        first, live, snapshot, script_id=script_id, folder_mode=folder_mode
+    )
+
+    def replace_dir(staged, destination):
+        if phase == "between-renames":
+            destination.rename(destination.with_name(destination.name + ".automas-old"))
+        raise SystemExit("interrupted during directory publish")
+
+    real_replace = type(second).replace
+
+    def replace_file(path, destination):
+        if path == second and destination == live:
+            raise SystemExit("interrupted before file publish")
+        return real_replace(path, destination)
+
+    write_marker = io.write_native_config_snapshot
+
+    def interrupt_after_swap(*args, **kwargs):
+        if (
+            kwargs.get("pending_injected") is None
+            and live_file.read_text(encoding="utf-8") == "second"
+        ):
+            raise SystemExit("interrupted after publish")
+        return write_marker(*args, **kwargs)
+
+    if external_edit and phase == "between-renames":
+        live_file.write_text("external edit", encoding="utf-8")
+
+    with monkeypatch.context() as publishing:
+        if phase == "after":
+            publishing.setattr(io, "write_native_config_snapshot", interrupt_after_swap)
+        elif folder_mode:
+            publishing.setattr(io, "swap_in_dir", replace_dir)
+        else:
+            publishing.setattr(type(second), "replace", replace_file)
+        with pytest.raises(SystemExit, match="interrupted"):
+            publish_staged_config(
+                second, live, snapshot, script_id=script_id, folder_mode=folder_mode
+            )
+    if external_edit and phase == "after":
+        live_file.write_text("external edit", encoding="utf-8")
+
+    manager = OkNteManager(script)
+    manager.script_config = config
+    manager.script_config_path = live
+    manager.temp_path = snapshot
+    monkeypatch.setattr(process, "is_process_stopped", AsyncMock(return_value=True))
+    await manager._recover_previous_run()
+
+    if external_edit:
+        assert live_file.read_text(encoding="utf-8") == "external edit"
+    elif original_exists:
+        assert live_file.read_text(encoding="utf-8") == "native"
+    else:
+        assert not live.exists()
+    assert not snapshot.exists()
