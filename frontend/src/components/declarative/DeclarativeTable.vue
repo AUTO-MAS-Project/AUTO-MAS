@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { TableHint } from '@/api'
-import { isSwitchComponent } from './declarativeLayout'
 import SectionCard from '@/components/ui/SectionCard.vue'
 
 export type DeclarativeTableHint = Pick<TableHint, 'rows' | 'columns'> &
@@ -34,7 +33,7 @@ const columns = computed(() => [
   ...(props.table.transpose ? props.table.rows : props.table.columns).map(key => ({
     key,
     title: label(key, Boolean(props.table.transpose)),
-    ...(isSwitchComponent(props.columnTypes[key])
+    ...(props.columnTypes[key] === 'switch'
       ? { width: 84, align: 'center' as const }
       : props.columnTypes[key] === 'number'
         ? { width: 116 }

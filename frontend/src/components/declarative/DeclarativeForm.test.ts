@@ -1,36 +1,58 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, h } from 'vue'
+import { createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import Antd from 'ant-design-vue'
+import { PathKind } from '@/api'
 import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
 import DeclarativeForm from './DeclarativeForm.vue'
 
 /** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
 async function render(transpose: boolean, includeOptionsGroup = true) {
   const update = vi.fn()
+  const action = vi.fn()
   const edit = new Map<string, (value: string) => void>()
+  const selectAction = new Map<string, () => void>()
   const groups = [
     {
       name: 'alpha',
       hints: [
         { field: 'name' },
         { field: 'note' },
-        { field: 'on', component: 'bool' },
+        { field: 'on', component: 'switch' },
         { field: 'count', component: 'number' },
         { field: 'extra' },
         { field: 'enabled', component: 'switch' },
-        { field: 'locked', component: 'checkbox', editable: false },
-        { field: 'layout', component: 'boolean', widget: 'segmented', options: [{ value: false }] },
-        { field: 'single', component: 'boolean' },
+        { field: 'locked', component: 'switch', editable: false },
+        {
+          field: 'layout',
+          component: 'segmented',
+          widget: 'segmented',
+          options: [{ value: false }],
+        },
+        { field: 'single', component: 'switch' },
         { field: 'notes', widget: 'textarea' },
+        { field: 'exe', component: 'path', path_kind: PathKind.FILE, path_must_exist: true },
+        {
+          field: 'missing_dir',
+          component: 'path',
+          path_kind: PathKind.FOLDER,
+          path_must_exist: true,
+        },
       ],
     },
     { name: 'beta', hints: [{ field: 'name' }] },
     {
       name: 'other',
-      hints: [{ field: 'device', component: 'select', endpoint: '/api/plugin/options/games' }],
+      hints: [
+        { field: 'device', component: 'select', endpoint: '/api/plugin/options/games' },
+        {
+          field: 'refresh',
+          component: 'dropdown-button',
+          options: [{ value: true, label: 'Refresh now' }],
+        },
+      ],
     },
   ]
   const values = {
@@ -59,8 +81,13 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
           { key: 'invisible', rows: ['absent'], columns: ['beta'], transpose: false },
         ],
       }),
-      errors: { 'beta.name': 'save failed', 'alpha.enabled': 'invalid switch' },
+      errors: {
+        'beta.name': 'save failed',
+        'alpha.enabled': 'invalid switch',
+        'alpha.missing_dir': 'missing directory',
+      },
       'onUpdate:value': update,
+      onAction: action,
     })
   )
   app.use(Antd)
@@ -78,6 +105,23 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
       },
     })
   )
+  app.component(
+    'ADropdown',
+    defineComponent({
+      setup(_, { slots }) {
+        return () => slots.overlay?.()
+      },
+    })
+  )
+  app.component(
+    'AMenuItem',
+    defineComponent({
+      setup(_, { emit, slots }) {
+        selectAction.set(String(slots.default?.()[0]?.children), () => emit('click'))
+        return () => h('span', slots.default?.())
+      },
+    })
+  )
   let columns: Array<{ key: string; width?: number; align?: string }> = []
   app.mixin({
     created() {
@@ -89,7 +133,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
   })
   const html = await renderToString(app)
   client.clear()
-  return { html, edit, update, columns }
+  return { html, edit, update, action, selectAction, columns }
 }
 
 describe('插件声明式表格与字段反馈', () => {
@@ -145,13 +189,16 @@ describe('插件声明式表格与字段反馈', () => {
     const grids = html.split(/class="declarative-(?:field|switch)-grid"/)
     expect(grids[1]).toContain('value="outside"')
     expect(grids[2]!.match(/role="switch"/g)).toHaveLength(2)
-    expect(grids[2]).toContain('switch-tile--on')
+    expect(grids[2]).toContain('switch-tile--tile')
+    expect(grids[2]).toContain('aria-checked="true"')
     expect(grids[2]).toMatch(
       /enabled[\s\S]*invalid switch[\s\S]*locked[\s\S]*core.plugins.readOnly/
     )
     expect(grids[3]).toMatch(
       /ant-segmented[\s\S]*single[\s\S]*setting-toggle-button[\s\S]*textarea/
     )
+    expect(grids[3]).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
+    expect(grids[3]).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
   })
 
   it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {
@@ -179,5 +226,16 @@ describe('插件声明式表格与字段反馈', () => {
     expect(ordinary).toMatch(
       /device[\s\S]*role="alert"[^>]*>options unavailable<[\s\S]*core.common.retry/
     )
+  })
+
+  it('下拉动作携带分组和字段声明，走独立动作入口', async () => {
+    const { action, selectAction, update } = await render(false)
+    selectAction.get('Refresh now')!()
+    expect(action).toHaveBeenCalledWith(
+      'other',
+      expect.objectContaining({ field: 'refresh', component: 'dropdown-button' }),
+      true
+    )
+    expect(update).not.toHaveBeenCalled()
   })
 })

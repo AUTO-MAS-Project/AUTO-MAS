@@ -1,16 +1,10 @@
 import type { DeclarativeHint } from '@/composables/useDeclarativeOptions'
 import type { DeclarativeTableHint } from './DeclarativeTable.vue'
 
-const switches = new Set(['switch', 'bool', 'boolean', 'checkbox', 'toggle-button'])
-
-export function isSwitchComponent(component?: string | null) {
-  return switches.has(component?.toLowerCase() ?? '')
-}
-
 function isTileSwitch(hint: DeclarativeHint) {
   return (
-    isSwitchComponent(hint.component) &&
-    (!hint.widget || isSwitchComponent(hint.widget)) &&
+    hint.component === 'switch' &&
+    (!hint.widget || hint.widget === 'switch') &&
     !hint.secret &&
     !hint.masked &&
     hint.format !== 'time' &&
@@ -51,9 +45,7 @@ export function tableColumnTypes(
       ? table.columns.map(field => hintFor(column, field))
       : table.rows.map(group => hintFor(group, column))
     const kinds = new Set(
-      cells
-        .filter(hint => hint !== undefined)
-        .map(hint => (isSwitchComponent(hint.component) ? 'switch' : (hint.component ?? 'input')))
+      cells.filter(hint => hint !== undefined).map(hint => hint.component ?? 'input')
     )
     if (kinds.size === 1) types[column] = [...kinds][0]!
   }
