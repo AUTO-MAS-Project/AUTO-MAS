@@ -135,6 +135,35 @@ describe('插件安装的热加载与重启交接', () => {
     }
   )
 
+  it.each([
+    [true, '插件环境启动未完成，已保留原环境，请检查后重试'],
+    [false, '新插件环境加载失败，下次启动将恢复原环境'],
+  ])('新环境启动失败后显示后端记下的原因（恢复成功：%s）', async (recovered, expected) => {
+    const failed = (message: string) => ({
+      code: 200,
+      data: { ...progress('failed').data, message },
+    })
+    boundary.installation
+      .mockResolvedValueOnce({ code: 200, data: null })
+      .mockResolvedValueOnce(progress('waiting_restart'))
+      .mockResolvedValueOnce(failed('新插件环境加载失败，下次启动将恢复原环境'))
+      .mockResolvedValue(failed('插件环境启动未完成，已保留原环境，请检查后重试'))
+    boundary.restart
+      .mockResolvedValueOnce({ success: false })
+      .mockResolvedValue({ success: recovered })
+    const scope = effectScope()
+    try {
+      const api = scope.run(usePluginApi)!
+      await expect(api.runCommand('install', request)).rejects.toMatchObject({
+        message: expected,
+      })
+      expect(boundary.restart).toHaveBeenCalledTimes(2)
+      expect(boundary.finish).toHaveBeenCalledWith({ action: 'install', outcome: 'failure' })
+    } finally {
+      scope.stop()
+    }
+  })
+
   it('外部后端保留待重启结果，不误报安装成功', async () => {
     boundary.installation.mockResolvedValue(progress('waiting_restart'))
     boundary.manages.mockReturnValue(false)
@@ -237,6 +266,30 @@ describe('plugin commands and settings', () => {
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'enable', outcome })
     }
   )
+
+  it.each([
+    [
+      '已有插件安装等待重启或恢复，请先重启后端完成该操作',
+      '已有插件安装等待重启或恢复，请先重启后端完成该操作',
+    ],
+    [null, 'core.plugins.actionFailed'],
+  ])('命令失败时显示后端给的原因，没有原因时显示操作失败（%s）', async (reason, expected) => {
+    boundary.installation.mockResolvedValue({ code: 200, data: null })
+    vi.spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost').mockResolvedValue({
+      code: 200,
+      data: 'task',
+    })
+    vi.spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost').mockResolvedValue({
+      code: 200,
+      data: { state: BackgroundTaskState.FAILED, errorCode: 'PluginError', message: reason },
+    })
+    const settled = createApi()
+      .runCommand('install', { ...body, field: 'install' })
+      .catch(error => error)
+    await vi.runAllTimersAsync()
+    expect(await settled).toMatchObject({ message: expected })
+    expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'install', outcome: 'failure' })
+  })
 
   it('reports unknown after repeated query failures without resubmitting the command', async () => {
     // 轮询网络故障不能变成操作成功，也不能重复提交产生副作用的命令。
