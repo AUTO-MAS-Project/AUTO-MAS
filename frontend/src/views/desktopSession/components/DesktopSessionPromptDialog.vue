@@ -35,7 +35,7 @@ const closePrompt = computed(() => {
 
 function taskLabel(task: DesktopSessionPromptTarget): string {
   if (task.targetKind === 'unknown') return task.label
-  return `${text(task.targetKind === 'queue' ? 'queueLabel' : 'scriptLabel')} · ${task.label}`
+  return `${text(task.targetKind === 'queue' ? 'queueLabel' : 'scriptLabel')} · ${task.label}${task.reason ? ` — ${text('reasons.' + task.reason)}` : ''}`
 }
 
 async function readPrompt() {

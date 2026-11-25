@@ -19,14 +19,27 @@ from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
-def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
+def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin(monkeypatch):
     from whimbox_adapter.config import WhimboxConfig
 
-    from app.models.config import GeneralConfig
+    from app.models.config import BetterGIConfig, GeneralConfig, ZzzOdConfig
 
+    monkeypatch.setattr("app.utils.IS_ELEVATED", False)
+    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) == "admin_required"
+    bettergi = BetterGIConfig.model_validate({"Run": {"UseAdmin": True}})
+    assert lifecycle.task_unavailable_reason(bettergi) == "admin_required"
+    takeover = BetterGIConfig.model_validate(
+        {"Run": {"UseAdmin": True}, "Update": {"TakeoverEnabled": True}}
+    )
+    assert lifecycle.task_unavailable_reason(takeover) == "unsupported_config"
+    monkeypatch.setattr("app.utils.IS_ELEVATED", True)
+    assert lifecycle.task_unavailable_reason(bettergi) is None
+    assert lifecycle.task_unavailable_reason(takeover) == "unsupported_config"
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
-    assert lifecycle.supports_task(general)
-    assert not lifecycle.supports_task(WhimboxConfig.build())
+    assert lifecycle.task_unavailable_reason(general) is None
+    assert (
+        lifecycle.task_unavailable_reason(WhimboxConfig.build()) == "plugin_unavailable"
+    )
 
 
 @pytest.mark.parametrize(
@@ -60,7 +73,9 @@ def test_desktop_session_judges_mfw_project_by_its_controller(
     )
     config = MaaFWConfig.model_validate({"Info": {"Controller": controller}})
 
-    assert lifecycle.supports_task(config) is supported
+    assert lifecycle.task_unavailable_reason(config) == (
+        None if supported else "unsupported_config"
+    )
 
 
 @pytest.mark.asyncio
@@ -870,4 +885,4 @@ async def test_script_session_support_reads_resources_off_the_event_loop(
     monkeypatch.setattr(resource_loader, "load_maaend_controller_protocol", load)
     config = MaaEndConfig.build(payload={"Info": {"Path": str(tmp_path)}})
     await config.activate()
-    assert await lifecycle.query_task_support(config)
+    assert await lifecycle.query_task_reason(config) is None

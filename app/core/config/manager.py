@@ -1746,7 +1746,7 @@ class AppConfig:
             return next(
                 d.supports_mod_avd
                 for d in Plugin.script_types.values()
-                if isinstance(script, d.script_type)
+                if type(script) is d.script_type
             )
         handler = self._get_script_config_handler(script)
         return handler is not None and handler.supports_mod_avd
@@ -2708,10 +2708,15 @@ class AppConfig:
 
         logger.info("开始获取托管下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
+        types = {cls: name for name, cls in self.script_classes.items()}
         for uid, script in self.ScriptConfig.items():
+            script_type = type(script)
+            label = _utils_constants.TYPE_BOOK.get(
+                script_type.__name__, types.get(script_type, script_type.__name__)
+            )
             data.append(
                 {
-                    "label": f"{_utils_constants.TYPE_BOOK[type(script).__name__]} - {entry_name(script)}",
+                    "label": f"{label} - {entry_name(script)}",
                     "value": str(uid),
                 }
             )

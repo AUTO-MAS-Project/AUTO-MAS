@@ -15,6 +15,7 @@ export type ScriptIndexItem = {
      * 对应的游戏活动标识，无游戏归属时为空
      */
     activityGame?: (string | null);
+    desktopSessionReason?: ('admin_required' | 'unsupported_config' | 'plugin_unavailable' | null);
     /**
      * 查询单个托管时返回当前配置是否支持桌面分身
      */

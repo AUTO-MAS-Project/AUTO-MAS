@@ -262,9 +262,7 @@ class _GameManager:
             return "所选游戏目标不存在"
         if isinstance(script, ScriptEntry):
             declaration = next(
-                d
-                for d in Plugin.script_types.values()
-                if isinstance(script, d.script_type)
+                d for d in Plugin.script_types.values() if type(script) is d.script_type
             )
             kinds = declaration.game_kinds
         else:

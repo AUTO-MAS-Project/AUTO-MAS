@@ -304,7 +304,7 @@ class ScriptAdapterRuntime(_AdapterRuntime):
         return tuple(
             entry
             for entry in Config.ScriptConfig.values()
-            if isinstance(entry, self.script_type)
+            if type(entry) is self.script_type
         )
 
     def precheck_locks(self) -> None:
@@ -314,7 +314,7 @@ class ScriptAdapterRuntime(_AdapterRuntime):
 
         script_type = self.script_type
         for entry in Config.ScriptConfig.values():
-            if isinstance(entry, script_type) and entry.is_locked:
+            if type(entry) is script_type and entry.is_locked:
                 raise PluginPrecheckError(
                     f"脚本配置 {entry.uid} 已锁定，无法禁用/重载/卸载",
                     payload={

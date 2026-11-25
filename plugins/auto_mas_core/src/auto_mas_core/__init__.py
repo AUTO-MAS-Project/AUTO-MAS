@@ -47,6 +47,7 @@ from app.models.config import (
     ScriptEntry,
     UserEntry,
 )
+from app.models.config.script import DesktopSessionRunFields
 from app.models.config.tag import TagItem
 from app.models.schema import (
     DownloadRequest,
@@ -77,6 +78,7 @@ from app.plugin.base import (
 from app.plugin.base.client import ClientControl
 from app.plugin.base.extension import AdapterRuntime
 from app.plugin.base.game import GameRuntime
+from app.plugin.base.script import DesktopSessionCheckReason
 from app.plugin.errors import PluginError, PluginPrecheckError
 from app.plugin.http import plugin_route
 from app.plugin.services import ServiceResolver
@@ -130,6 +132,8 @@ if not TYPE_CHECKING:
 
 
 __all__ = [
+    "DesktopSessionCheckReason",
+    "DesktopSessionRunFields",
     "BackgroundTaskGroup",
     "BackgroundTaskHandle",
     "DownloadRequest",

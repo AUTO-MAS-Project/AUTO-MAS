@@ -66,10 +66,11 @@ export interface DesktopQueueResult {
   targetKind: 'queue' | 'script' | 'unknown'
   code: string
   label: string
+  reason?: 'admin_required' | 'unsupported_config' | 'plugin_unavailable' | null
   executionSession?: 'main'
 }
 
-export type DesktopSessionPromptTarget = Pick<DesktopQueueResult, 'label' | 'targetKind'>
+export type DesktopSessionPromptTarget = Pick<DesktopQueueResult, 'label' | 'targetKind' | 'reason'>
 
 export interface DesktopSessionCloseRisk {
   activeTasks: boolean

@@ -11,6 +11,7 @@ from uuid import UUID
 
 if TYPE_CHECKING:
     from app.models.schema import TaskSelectionNode
+    from app.plugin.base.script import DesktopSessionReason
     from app.utils.common.process.session import DesktopProcessTarget
 
 
@@ -24,7 +25,9 @@ CONTROL_HEADER = "x-mas-desktop-session"
 _CLOSE_RESERVATION_SECONDS = 180
 
 
-def _support_probe(config: object) -> bool | Callable[[], bool]:
+def _reason_probe(
+    config: object,
+) -> "DesktopSessionReason | None | Callable[[], DesktopSessionReason | None]":
     """同步读取能力参数，按需构造只读取上游资源的检查。"""
     from app.models.config import (
         BetterGIConfig,
@@ -34,25 +37,34 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
+        ScriptEntry,
         ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
 
+    if isinstance(config, ScriptEntry):
+        from app.core.plugin import Plugin
+
+        return Plugin.desktop_session_reason(config, IS_ELEVATED)
     if isinstance(config, GeneralConfig):
-        return not config.Game.Enabled or config.Game.Type != "Emulator"
+        if config.Game.Enabled and config.Game.Type == "Emulator":
+            return "unsupported_config"
+        return None
     if isinstance(config, MaaEndConfig):
         from app.task.MaaEnd.resource_loader import load_maaend_controller_protocol
 
         path = config.Info.Path
         if path is None:
-            return False
+            return "unsupported_config"
         controller = str(config.Game.ControllerType).strip()
 
-        def check_maaend() -> bool:
+        def check_maaend() -> "DesktopSessionReason | None":
             try:
-                return load_maaend_controller_protocol(path, controller) == "Win32"
+                if load_maaend_controller_protocol(path, controller) == "Win32":
+                    return None
             except (OSError, KeyError, ValueError):
-                return False
+                return "unsupported_config"
+            return "unsupported_config"
 
         return check_maaend
     if isinstance(config, MaaFWConfig):
@@ -71,7 +83,7 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         emulator_selected = game_is_emulator(config)
         resource = str(config.Info.Resource)
 
-        def check_maafw() -> bool:
+        def check_maafw() -> "DesktopSessionReason | None":
             try:
                 interface = MaaFWInterfaceService().load(root)
                 name, _ = resolve_run_selection(
@@ -80,29 +92,40 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
                     emulator_selected=emulator_selected,
                     configured_resource=resource,
                 )
-                return _select_controller(interface, name).type == "Win32"
+                if _select_controller(interface, name).type == "Win32":
+                    return None
             except (OSError, ValueError):
-                return False
+                return "unsupported_config"
+            return "unsupported_config"
 
         return check_maafw
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
-        return True
+        return None
     if isinstance(config, BetterGIConfig):
-        return (
-            not config.Run.UseAdmin or IS_ELEVATED
-        ) and not config.Update.TakeoverEnabled
-    return isinstance(config, ZzzOdConfig) and IS_ELEVATED
+        if config.Update.TakeoverEnabled:
+            return "unsupported_config"
+        return "admin_required" if config.Run.UseAdmin and not IS_ELEVATED else None
+    if isinstance(config, ZzzOdConfig):
+        return None if IS_ELEVATED else "admin_required"
+    return "unsupported_config"
 
 
-def supports_task(config: object) -> bool:
-    """校验托管是否可在桌面分身执行。"""
-    probe = _support_probe(config)
+def task_unavailable_reason(config):
+    probe = _reason_probe(config)
     return probe() if callable(probe) else probe
 
 
-async def query_task_support(config: object) -> bool:
+def require_task_support(config: object) -> None:
+    """在受理或持锁执行前核验分身能力，向请求或任务日志保留原因。"""
+    from app.core.task_manager import UnsupportedDesktopTask
+
+    if reason := task_unavailable_reason(config):
+        raise UnsupportedDesktopTask(f"当前托管无法在桌面分身执行（{reason}）", reason)
+
+
+async def query_task_reason(config: object):
     """给详情查询复用同一能力判断，把资源 I/O 放在工作线程。"""
-    probe = _support_probe(config)
+    probe = _reason_probe(config)
     return await asyncio.to_thread(probe) if callable(probe) else probe
 
 
@@ -292,9 +315,7 @@ class _DesktopSessionLifecycle:
                 or run.ExecutionSession == "main"
             ):
                 return None
-            if not supports_task(script):
-                raise DesktopSessionConflict("当前托管配置不支持桌面分身")
-
+            require_task_support(script)
             target = self._connected_target()
             self.prune_and_list_tasks()
             token = desktop_process_target.set(target)
@@ -369,8 +390,13 @@ class _DesktopSessionLifecycle:
                         )
                         if any(entry is None for entry in entries):
                             item["code"] = "dispatch_failed"
-                        elif any(not supports_task(entry) for entry in entries):
-                            item["code"] = "unsupported_target"
+                        else:
+                            for entry in entries:
+                                if reason := await query_task_reason(entry):
+                                    item.update(
+                                        code="unsupported_target", reason=reason
+                                    )
+                                    break
                         continue
                     node = (
                         {"uid": str(uid)}
@@ -391,8 +417,8 @@ class _DesktopSessionLifecycle:
                         self.task_ids.add(task_id)
                         self.admitted += 1
                     item["taskId"] = str(task_id)
-                except UnsupportedDesktopTask:
-                    item["code"] = "unsupported_target"
+                except UnsupportedDesktopTask as exc:
+                    item.update(code="unsupported_target", reason=exc.reason)
                 except (RuntimeError, ValueError) as exc:
                     logger.warning(f"任务 {uid} 派发失败: {exc}")
                     item["code"] = "dispatch_failed"

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
 from app.models.config.plan import PlanEntry
 from app.models.config.plugin_script import ScriptEntry, UserEntry
@@ -16,6 +16,10 @@ from .extension import _AdapterPlugin
 
 if TYPE_CHECKING:
     from .emulator import EmulatorExpect
+
+
+DesktopSessionCheckReason = Literal["admin_required", "unsupported_config"]
+DesktopSessionReason = Literal[DesktopSessionCheckReason, "plugin_unavailable"]
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,26 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    # 同步读取当前托管配置与宿主提权状态；None 表示可用。
+    desktop_session_check: (
+        Callable[[ScriptEntry, bool], DesktopSessionCheckReason | None] | None
+    ) = None
+
+    def desktop_session_reason(
+        self, config: ScriptEntry, elevated: bool
+    ) -> DesktopSessionReason | None:
+        """核验自动代理模式，并在调用门返回前拦截无效结果。"""
+        if (
+            self.desktop_session_check is None
+            or TaskMode.AUTO_PROXY not in self.supported_modes
+        ):
+            return "unsupported_config"
+        reason = self.desktop_session_check(config, elevated)
+        if reason is None or reason in get_args(DesktopSessionCheckReason):
+            return reason
+        if isinstance(reason, Coroutine):
+            reason.close()
+        raise ValueError("桌面分身能力检查须同步返回有效原因码或 None")
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):
@@ -78,6 +102,10 @@ class ScriptAdapterPlugin(_AdapterPlugin):
             self.decl.expect_builder
         ):
             raise ValueError("expect_builder 须为可调用或 None")
+        if self.decl.desktop_session_check is not None and not callable(
+            self.decl.desktop_session_check
+        ):
+            raise ValueError("desktop_session_check 须为可调用或 None")
         self._validate_decl()
 
     def _validate_decl(self) -> None:

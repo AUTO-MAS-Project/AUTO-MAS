@@ -32,6 +32,7 @@ Load this hub first, then load **only the minimum sub-skills** needed for the ta
 | Shared schema / config group canonical naming | `mas-schema-naming` |
 | Task trees, L1–L4 execution, `TaskBase`, scheduler locks/cancel, queue triggers | `mas-task-scheduler` |
 | Script adapters (MAA, SRC, MaaEnd, General, Okww, OkNte, HSR, BetterGI, BAAH, ZzzOd, Whimbox) | `mas-script-specialized-adapter` (+ `references/blackbox-boundary.md`) |
+| Script adapter Desktop Session support, saved execution session, or child-session process ownership | `mas-script-specialized-adapter` (+ `references/desktop-session.md`) and `mas-task-scheduler` |
 | Plan schedule types, `PlanConfig`, `PLAN_BOOK`, plan tables | `mas-plan-schedule` |
 | Game community sign-in (`app/tools/game_sign*`, Skland/Miyoushe/Kuro/Taygedo) | `mas-game-community` |
 | Observable user workflows, anonymous analytics | `mas-telemetry` |

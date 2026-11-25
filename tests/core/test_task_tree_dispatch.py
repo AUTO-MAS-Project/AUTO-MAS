@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -400,3 +401,197 @@ async def test_recovery_summary_reaches_current_task_completion(
         manager.get_task(uid)["current"]["recovery_summary"]
         == notices[0]["data"].message
     )
+
+
+@pytest.mark.asyncio
+async def test_desktop_queue_rechecks_plugin_before_admission(
+    scheduler, monkeypatch, tmp_path
+):
+    from dataclasses import replace
+
+    from auto_mas_core import (
+        AutoProxyWorker,
+        ConfigCollection,
+        DesktopSessionRunFields,
+        ScriptEntry,
+        ScriptTypeDecl,
+        UserEntry,
+        UserExpander,
+        collection,
+    )
+    from pydantic import Field
+
+    from app.api.info import get_script_combox
+    from app.api.queue import QueueSetInBase, add_item
+    from app.core import Plugin
+    from app.core.desktop_session.lifecycle import _DesktopSessionLifecycle
+    from app.models.config import PluginRecord
+    from app.plugin.calls import CallGate
+    from app.plugin.types import PluginState
+    from app.utils.common.process.session import DesktopProcessTarget
+
+    class ProbeUser(UserEntry):
+        pass
+
+    class BaseProbeScript(ScriptEntry):
+        class RunFields(DesktopSessionRunFields):
+            AllowDesktop: bool = True
+
+        users: ConfigCollection[ProbeUser] = collection(ProbeUser)
+        Run: RunFields = Field(default_factory=RunFields)
+
+    class ProbeScript(BaseProbeScript):
+        pass
+
+    class ProbeWorker(AutoProxyWorker):
+        async def main_logic(self):
+            await self.user_info.set_state(status="完成")
+
+    class ProbeExpander(UserExpander[ProbeScript]):
+        def build_worker(self, user, config):
+            return ProbeWorker(self, user, config)
+
+    def check_desktop_session(config, elevated):
+        if not elevated:
+            return "admin_required"
+        return None if config.Run.AllowDesktop else "unsupported_config"
+
+    manager, scripts, queues, builtin_id = scheduler
+    scripts.add_type(BaseProbeScript)
+    scripts.add_type(ProbeScript)
+    await scripts.commit()
+    sid = scripts.add(ProbeScript, payload={"info": {"name": "Probe"}})
+    await scripts.commit()
+    qid = queues.add(QueueConfig)
+    await queues.commit()
+    record = PluginRecord.build(
+        info={"plugin_name": "desktop_session_probe", "state": PluginState.ENABLED}
+    )
+    gate = CallGate()
+    decl = ScriptTypeDecl(
+        script_type=ProbeScript,
+        user_type=ProbeUser,
+        expander_class=ProbeExpander,
+        supported_modes=(TaskMode.AUTO_PROXY,),
+        desktop_session_check=check_desktop_session,
+    )
+    # 两个已启用的专项可复用配置基类，但各自声明运行能力。
+    base_record = PluginRecord.build(
+        info={"plugin_name": "base_probe", "state": PluginState.ENABLED}
+    )
+    base_decl = replace(decl, script_type=BaseProbeScript, desktop_session_check=None)
+    monkeypatch.setattr(
+        Plugin, "script_types", {base_record.uid: base_decl, record.uid: decl}
+    )
+    monkeypatch.setattr(Plugin, "script_classes", lambda: {"ProbeAdapter": ProbeScript})
+    monkeypatch.setattr(Plugin, "list_plugins", lambda: [base_record, record])
+    monkeypatch.setattr(
+        Plugin, "_calls", {base_record.uid: CallGate(), record.uid: gate}
+    )
+    monkeypatch.setattr("app.core.TaskManager", manager)
+
+    users = scripts[sid].users
+    user_id = users.add(ProbeUser)
+    await users.commit()
+    assert Plugin.trigger_owner(users[user_id]) == record.uid
+
+    options = await get_script_combox()
+    assert options.code == 200, options.message
+    assert {option.value: option.label for option in options.data}[str(sid)] == (
+        "ProbeAdapter - Probe"
+    )
+    item = await add_item(QueueSetInBase(queueId=str(qid)))
+    assert item.code == 200, item.message
+    queue_item = queues[qid].QueueItem[item.queueItemId]
+    snapshot = queue_item.model_dump(context={"audience": "api"})
+    script_hint = next(
+        hint for hint in snapshot["ui"]["hints"]["Info"] if hint["field"] == "ScriptId"
+    )
+    labels = {option["value"]: option.get("label") for option in script_hint["options"]}
+    assert labels[str(builtin_id)] == "script"
+    assert labels[str(sid)] == "Probe"
+    queue_item.Info.ScriptId = sid
+    await queue_item.commit()
+
+    service = _DesktopSessionLifecycle()
+    monkeypatch.setattr(
+        service,
+        "_connected_target",
+        lambda: DesktopProcessTarget(7, tmp_path, tmp_path),
+    )
+    monkeypatch.setattr("app.utils.IS_ELEVATED", True)
+    entries = await service.dispatch_queues(
+        [qid, sid], preview_only=True, main_session_queue_ids=set()
+    )
+    assert all(not entry["code"] for entry in entries)
+    monkeypatch.setitem(
+        Plugin.script_types,
+        record.uid,
+        replace(decl, supported_modes=(TaskMode.SCRIPT_CONFIG,)),
+    )
+    entries = await service.dispatch_queues(
+        [qid, sid], preview_only=True, main_session_queue_ids=set()
+    )
+    assert [entry["reason"] for entry in entries] == ["unsupported_config"] * 2
+    monkeypatch.setitem(Plugin.script_types, record.uid, decl)
+    script = scripts[sid]
+    script.Run.AllowDesktop = False
+    await script.commit()
+    entries = await service.dispatch_queues(
+        [qid, sid], preview_only=False, main_session_queue_ids=set()
+    )
+    assert [(entry["taskId"], entry["reason"]) for entry in entries] == [
+        ("", "unsupported_config")
+    ] * 2
+    script.Run.AllowDesktop = True
+    await script.commit()
+    monkeypatch.setattr("app.utils.IS_ELEVATED", False)
+    entries = await service.dispatch_queues(
+        [qid, sid], preview_only=False, main_session_queue_ids=set()
+    )
+    assert [(entry["taskId"], entry["reason"]) for entry in entries] == [
+        ("", "admin_required")
+    ] * 2
+    # 错误的同步回调可能返回协程；拒绝该任务后插件仍须能正常卸载。
+    monkeypatch.setitem(
+        Plugin.script_types,
+        record.uid,
+        replace(decl, desktop_session_check=lambda *_: asyncio.sleep(0)),
+    )
+    entries = await service.dispatch_queues(
+        [qid], preview_only=True, main_session_queue_ids=set()
+    )
+    assert entries[0]["reason"] == "plugin_unavailable"
+    await asyncio.wait_for(gate.drain(), timeout=1)
+    monkeypatch.setitem(Plugin.script_types, record.uid, decl)
+    gate.accepting = False
+    entries = await service.dispatch_queues(
+        [qid], preview_only=False, main_session_queue_ids=set()
+    )
+    assert entries[0]["reason"] == "plugin_unavailable"
+    assert not manager.task_handler
+
+    # 已受理的队列可能要等桌面或前面的托管，轮到当前项时配置已改变。
+    gate.accepting = True
+    monkeypatch.setattr("app.utils.IS_ELEVATED", True)
+    monkeypatch.setattr(manager, "plugin_expander", Plugin.resolve_script_expander)
+    ready = asyncio.Event()
+    monkeypatch.setattr("app.core.desktop_guard.ensure_desktop_available", ready.wait)
+    entries = await service.dispatch_queues(
+        [qid], preview_only=False, main_session_queue_ids=set()
+    )
+    run = manager.task_handler[UUID(entries[0]["taskId"])]
+    script.Run.AllowDesktop = False
+    await script.commit()
+    ready.set()
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.task_info.status == "error"
+    assert "unsupported_config" in run.task_info.script_list[0].log
+    script.Run.AllowDesktop = True
+    await script.commit()
+    entries = await service.dispatch_queues(
+        [qid], preview_only=False, main_session_queue_ids=set()
+    )
+    run = manager.task_handler[UUID(entries[0]["taskId"])]
+    await asyncio.wait_for(run.accomplish.wait(), 4)
+    assert run.task_info.status == "success", run.task_info.script_list[0].log

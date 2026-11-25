@@ -68,9 +68,15 @@ export async function fetchScriptExecutionSession(scriptId: string, signal: Abor
   if (response.code !== 200) throw new Error(response.message)
   const run = response.data[scriptId]?.Run
   const configurable = run != null && 'ExecutionSession' in run
+  const capability = response.index[0]
+  const supported = environmentSupported === true && capability?.desktopSessionSupported === true
+  const reason = environmentSupported
+    ? (capability?.desktopSessionReason ?? 'unsupported_config')
+    : 'environment_unavailable'
   return {
     configurable,
-    supported: environmentSupported === true && response.index[0]?.desktopSessionSupported === true,
+    reason: supported ? undefined : reason,
+    supported,
     value: configurable ? (run.ExecutionSession ?? 'main') : 'main',
     uiSources: response.uiSources,
   }

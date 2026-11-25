@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from app.config import LockTicket
 from app.core import Config, Notify, Publisher
+from app.core.desktop_session.lifecycle import require_task_support
 from app.core.ws import protocol
 from app.models.config import ScriptEntry
 from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
@@ -21,6 +22,7 @@ from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
 from app.task.script_update import ScriptRecoverySession
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -230,6 +232,8 @@ class ScriptExpander(TaskBase):
                         await asyncio.sleep(1)
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
+                    if isinstance(entry, ScriptEntry) and desktop_process_target.get():
+                        require_task_support(entry)
                     plugin = self.dispatcher.plugin_expander(script, entry)
                     if plugin is None:
                         # 旧 manager 自持递归锁，必须先归还探测锁，不能叠加持锁等待。
@@ -249,7 +253,7 @@ class ScriptExpander(TaskBase):
                     declaration = next(
                         d
                         for d in Plugin.script_types.values()
-                        if isinstance(entry, d.script_type)
+                        if type(entry) is d.script_type
                     )
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
@@ -274,6 +278,8 @@ class ScriptExpander(TaskBase):
 
                         async def after_lock(locked_config):
                             """在旧专项取得配置锁后复查并等待预下载，将任务参数和 URL 路径映射绑定到专项运行上下文。"""
+                            if desktop_process_target.get():
+                                require_task_support(locked_config)
                             self._game_session.config = locked_config
                             paths = await self._prefetch.prepare(script, locked_config)
                             await self._game_session.select()

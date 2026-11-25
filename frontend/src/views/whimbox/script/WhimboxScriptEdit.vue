@@ -73,7 +73,6 @@
               v-model:daily-limit="whimboxConfig.Run.ProxyTimesLimit"
               v-model:retry-limit="whimboxConfig.Run.RunTimesLimit"
               v-model:timeout="whimboxConfig.Run.RunTimeLimit"
-              hide-execution-session
               :column-span="6"
               :retry-hint="t('core.edit.whimboxRetryLimitHint')"
               :timeout-hint="t('core.edit.whimboxRunTimeoutHint')"

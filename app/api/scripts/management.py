@@ -46,6 +46,7 @@ from app.models.schema import (
     UserInBase,
 )
 from app.models.script_access import script_users
+from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
@@ -140,6 +141,7 @@ class ScriptIndexItem(BaseModel):
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
     )
 
+    desktopSessionReason: DesktopSessionReason | None = None
     desktopSessionSupported: bool | None = Field(
         default=None, description="查询单个托管时返回当前配置是否支持桌面分身"
     )
@@ -331,17 +333,18 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 for decl in Plugin.script_types.values()
             }
         )
+        reason = None
         desktop_session_supported = None
         if script.scriptId and index:
-            from app.core.desktop_session.lifecycle import query_task_support
+            from app.core.desktop_session.lifecycle import query_task_reason
 
-            desktop_session_supported = await query_task_support(
-                Config.ScriptConfig[script.scriptId]
-            )
+            reason = await query_task_reason(Config.ScriptConfig[script.scriptId])
+            desktop_session_supported = reason is None
         index = [
             ScriptIndexItem(
                 **item,
                 activityGame=activity_games.get(item["type"]),
+                desktopSessionReason=reason,
                 desktopSessionSupported=desktop_session_supported,
             )
             for item in index

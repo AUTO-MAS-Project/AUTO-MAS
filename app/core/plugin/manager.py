@@ -134,10 +134,8 @@ class _PluginManager:
                 if isinstance(node, (decl.game_class, decl.device_class)):
                     return uid
             for uid, decl in self.script_types.items():
-                types = (decl.script_type, decl.user_type)
-                if decl.plan_type is not None:
-                    types += (decl.plan_type,)
-                if isinstance(node, types):
+                # 账号可复用同一类型，由其所属托管确定插件。
+                if type(node) is decl.script_type or type(node) is decl.plan_type:
                     return uid
             node = node.parent
         return None
@@ -1287,10 +1285,30 @@ class _PluginManager:
             (
                 decl
                 for decl in self.script_types.values()
-                if isinstance(config, decl.script_type)
+                if type(config) is decl.script_type
             ),
             None,
         )
+
+    def desktop_session_reason(self, config, elevated: bool):
+        """在当前启用实例的调用门内查询分身能力。"""
+        for record in self.list_plugins():
+            decl = self.script_types.get(record.uid)
+            if decl is None or type(config) is not decl.script_type:
+                continue
+            gate = self._calls.get(record.uid)
+            if (
+                record.info.state != PluginState.ENABLED
+                or gate is None
+                or not gate.accepting
+            ):
+                break
+            try:
+                return gate.wrap(decl.desktop_session_reason)(config, elevated)
+            except Exception as error:
+                logger.opt(exception=True).warning(f"无法检查插件桌面分身能力: {error}")
+                break
+        return "plugin_unavailable"
 
     def script_classes(self):
         """返回已登记专项的创建标识和配置类，供通用配置管理使用。"""
@@ -1312,7 +1330,7 @@ class _PluginManager:
             if (
                 record.info.state == PluginState.ENABLED
                 and decl is not None
-                and isinstance(config, decl.script_type)
+                and type(config) is decl.script_type
             ):
                 if decl.prefetch_check is None:
                     return []
@@ -1348,7 +1366,7 @@ class _PluginManager:
             decl = self.script_types.get(record.uid)
             if record.info.state != PluginState.ENABLED or decl is None:
                 continue
-            if isinstance(config, decl.script_type):
+            if type(config) is decl.script_type:
                 if script.task_info.info.mode not in decl.supported_modes:
                     raise PluginPrecheckError("该插件不支持当前执行模式")
                 return decl.expander_class(script, config)

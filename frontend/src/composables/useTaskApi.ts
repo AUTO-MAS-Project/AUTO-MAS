@@ -150,6 +150,9 @@ export async function requestTaskStart(
     outcome: response.code === 200 && response.taskId ? 'accepted' : 'failure',
   })
   if (response.code === 200 && response.taskId) registerAcceptedTask(response.taskId, request.mode)
+  if (response.reason && response.reason !== 'desktop_session_disconnected') {
+    return { ...response, message: t(`bootstrap.desktopSession.reasons.${response.reason}`) }
+  }
   return response
 }
 
