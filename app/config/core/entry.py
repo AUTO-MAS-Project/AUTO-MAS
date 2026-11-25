@@ -611,6 +611,11 @@ class ConfigEntry(ConfigNode):
             if col.activation_state != NodeState.INACTIVE:
                 continue
             nested = payload.get(cname)
+            if nested is not None and not isinstance(nested, dict):
+                errors.append(
+                    TypeError(f"{cname} 须为 dict，收到 {type(nested).__name__}")
+                )
+                continue
             if isinstance(nested, dict):
                 col._pending_payload = cast(dict[str, Any], nested)
             try:
@@ -676,8 +681,15 @@ class ConfigEntry(ConfigNode):
         for gname in self._cfg_group_fields:
             group = cast(ConfigGroup, self.__dict__[gname])
             group_values = payload.get(gname)
-            if not isinstance(group_values, dict):
-                group_values = {}
+            if group_values is not None and not isinstance(group_values, dict):
+                error = TypeError(
+                    f"{gname} 须为 dict，收到 {type(group_values).__name__}"
+                )
+                if fail_fast:
+                    raise error
+                errors.append(error)
+                continue
+            group_values = group_values or {}
             for field_name, fld in type(group).model_fields.items():
                 if is_reactive_model_field(fld):
                     continue

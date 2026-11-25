@@ -630,6 +630,11 @@ class AppConfig:
             if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
 
+        async def activate_root(node: ConfigEntry | ConfigCollection) -> None:
+            # 启动期激活失败须回滚整根，避免防抖保存或退出 flush 覆盖原文件。
+            async with config_manager.transaction():
+                await node.activate(fast_init=True)
+
         prepare_plugins = prepare_plugin_upgrade
         if version not in {"v2.0", "v2.1", "v2.2"}:
             prepared_early = prepare_plugins is not None and version not in {
@@ -640,10 +645,10 @@ class AppConfig:
             }
             if prepared_early and prepare_plugins is not None:
                 # 最老的分目录配置升级也会创建专项成员，须先登记插件的冷类型。
-                await self.setting.activate(fast_init=True)
+                await activate_root(self.setting)
                 for registry in (self.plugin_registry, self.plugin_catalog):
                     if registry.activation_state == NodeState.INACTIVE:
-                        await registry.activate(fast_init=True)
+                        await activate_root(registry)
                 await prepare_plugins()
                 prepare_plugins = None
             await self._upgrade_legacy_data()
@@ -660,14 +665,14 @@ class AppConfig:
                     )
                     self._config_nodes["setting"] = self.setting
                     self.startup_notices = self.setting.startup_notices
-                    await self.setting.activate(fast_init=True)
+                    await activate_root(self.setting)
 
             if prepare_plugins is not None:
                 if self.setting.activation_state == NodeState.INACTIVE:
-                    await self.setting.activate(fast_init=True)
+                    await activate_root(self.setting)
                 for registry in (self.plugin_registry, self.plugin_catalog):
                     if registry.activation_state == NodeState.INACTIVE:
-                        await registry.activate(fast_init=True)
+                        await activate_root(registry)
                 await prepare_plugins()
                 prepare_plugins = None
 
@@ -727,10 +732,10 @@ class AppConfig:
                 self._config_nodes[key], self.config_path / new
             )
         if self.setting.activation_state == NodeState.INACTIVE:
-            await self.setting.activate(fast_init=True)
+            await activate_root(self.setting)
         for collection in (self.plugin_registry, self.plugin_catalog):
             if collection.activation_state == NodeState.INACTIVE:
-                await collection.activate(fast_init=True)
+                await activate_root(collection)
         if prepare_plugins is not None:
             await prepare_plugins()
         await migrate_games()
@@ -742,14 +747,14 @@ class AppConfig:
         device_removed.connect(GameManager.on_device_removed, weak=False)
         self.GameConfig.connect(GameEntry.on_add_devices, phase="both", kind="add")
         if self.GameConfig.activation_state == NodeState.INACTIVE:
-            await self.GameConfig.activate(fast_init=True)
+            await activate_root(self.GameConfig)
         for _old, _new, key in CONFIG_FILES:
             if key == "EmulatorConfig":
                 continue
             node = self._config_nodes[key]
             if node.activation_state == NodeState.INACTIVE:
                 with startup_stage(f"后端/配置/激活/{key}"):
-                    await node.activate(fast_init=True)
+                    await activate_root(node)
                 if key == "ScriptConfig":
                     self._script_configs_loaded = True
         with startup_stage("后端/配置/专项初始化与保存"):

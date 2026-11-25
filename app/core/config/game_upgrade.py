@@ -183,6 +183,15 @@ def _identity(path: str) -> str:
     return os.path.normcase(str(resolved))
 
 
+def _client_launch_identity(info: dict) -> tuple[list[str], bool | None, str | None]:
+    launcher = normalize_path_input(info.get("launch_path"))
+    return (
+        info.get("arguments", []),
+        info.get("launch_with_launcher"),
+        os.path.normcase(str(launcher)) if launcher is not None else None,
+    )
+
+
 def _hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -228,18 +237,21 @@ def migrate_game_documents(
         tag = PLUGINS[kind][2]
         path = info.get("path")
         canonical = _identity(path) if path else None
+        launch = _client_launch_identity(info) if kind == "client" else None
         for other_uid, other_kind, other in _entries(games):
+            other_info = other.get("info", {})
             if (
                 other_kind == tag
                 and canonical
-                and other.get("info", {}).get("path")
-                and _identity(other["info"]["path"]) == canonical
+                and other_info.get("path")
+                and _identity(other_info["path"]) == canonical
+                and (launch is None or _client_launch_identity(other_info) == launch)
             ):
                 return other_uid
         uid = str(uid)
         if uid in games["data"]:
             existing = games["data"][uid]
-            if existing.get("info", {}).get("path") != info.get("path"):
+            if kind == "client" or existing.get("info", {}).get("path") != path:
                 raise ValueError(f"游戏迁移目标冲突：{uid}")
             return uid
         games["order"].append({"uid": uid, "type": tag})
@@ -405,8 +417,8 @@ def migrate_game_documents(
                 }
                 diagnostics.append({"source": source, "reason": reason})
                 return
-            path = Path(info["path"])
-            uid = uuid5(NAMESPACE_URL, "auto-mas:client:" + _identity(str(path)))
+            identity = (_identity(info["path"]), *_client_launch_identity(info))
+            uid = uuid5(NAMESPACE_URL, "auto-mas:client:" + json.dumps(identity))
             game_uid = add_game(
                 "client",
                 uid,
