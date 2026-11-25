@@ -41,10 +41,11 @@ _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
     "ldplayer_adapter": Version("0.1.1"),
-    # 0.2 起专项要求宿主带托管生命周期钩子；0.1.x 在本宿主上不是受支持的组合。
-    "maafw_adapter": Version("0.2.0"),
-    "m9a_adapter": Version("0.2.0"),
-    "mss_adapter": Version("0.2.0"),
+    # 0.3 起插件之间只经宿主的服务调用；0.2.x 的专项直接导入的模块，在 0.3 的服务插件里
+    # 已经没有，两代不能混装，所以三个专项的下限提到 0.3.0。
+    "maafw_adapter": Version("0.3.0"),
+    "m9a_adapter": Version("0.3.0"),
+    "mss_adapter": Version("0.3.0"),
 }
 
 
