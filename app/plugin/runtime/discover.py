@@ -311,8 +311,10 @@ async def refresh(
                     drift = PluginCodeDrift.NEEDS_RELOAD
                 else:
                     drift = PluginCodeDrift.NORMAL
+                # 发现负责维护元数据，包括界面不允许编辑的多语言字段。
                 await existing.update(
-                    PluginRecord.build(info={**info, "code_drift": drift})
+                    PluginRecord.build(info={**info, "code_drift": drift}),
+                    check_visibility=False,
                 )
                 paths[name] = project_dir
         # 私有运行时路径不参与配置事务，只在整批元数据提交成功后替换。
