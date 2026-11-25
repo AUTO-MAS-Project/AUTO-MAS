@@ -1,27 +1,38 @@
 """按路径查询及终止进程；调用方提供目标，不读取应用配置。"""
 
 import asyncio
+import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
 
-from app.utils import get_logger, process_platform
+from app.utils import IS_WINDOWS, get_logger, process_platform
 
 from .session import matches_session, process_in_scope, restricted_session
 
 logger = get_logger("进程操作")
 
 
-def iter_processes(attributes: list[str]) -> Iterator[psutil.Process]:
+def iter_processes(
+    attributes: list[str], *, current_session_only: bool = False
+) -> Iterator[psutil.Process]:
     """枚举当前进程管理范围内的进程。"""
-    return processes_in_scope(psutil.process_iter(attributes))
+    return processes_in_scope(
+        psutil.process_iter(attributes), current_session_only=current_session_only
+    )
 
 
-def processes_in_scope(processes: Iterable[psutil.Process]) -> Iterator[psutil.Process]:
+def processes_in_scope(
+    processes: Iterable[psutil.Process], *, current_session_only: bool = False
+) -> Iterator[psutil.Process]:
     """在同一轮枚举内使用一致的会话范围。"""
     session_id = restricted_session()
+    if session_id is None and current_session_only and IS_WINDOWS:
+        from app.utils.windows.desktop_session.native import process_session
+
+        session_id = process_session(os.getpid())
     return (
         process for process in processes if matches_session(process.pid, session_id)
     )

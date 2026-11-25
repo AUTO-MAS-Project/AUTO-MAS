@@ -295,6 +295,8 @@ export function useInitializationFlow() {
     }
 
     if (progress.runtimeStatus === 'retrying') state.messageKey = 'bootstrap.init.msg.autoRetry'
+    else if (state.message === 'bootstrap.init.msg.backingUpUpgrade')
+      state.messageKey = state.message
     if (previousStatus !== state.status || previousMessage !== state.message) {
       logger.info(`[${stepKey}] ${state.message || state.status}`)
     }

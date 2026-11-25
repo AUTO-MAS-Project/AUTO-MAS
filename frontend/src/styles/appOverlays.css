@@ -67,3 +67,25 @@ body:has(.title-bar) .ant-modal-root .ant-modal-footer {
 .ant-modal-root .cultivate-settings-modal .ant-modal-content {
   height: 720px;
 }
+
+/* 统一 AppModal：支持独立滚动面板（scroll="none"）、全宽上限与全屏阻塞层。 */
+.ant-modal-root .ant-modal-wrap.app-modal-wrap--none-scroll .ant-modal-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ant-modal-root .ant-modal-wrap.app-modal-wrap--full .ant-modal {
+  max-width: 1400px;
+}
+
+body:has(.title-bar) .ant-modal-root:has(.app-modal-wrap--blocking) .ant-modal-wrap,
+body:has(.title-bar) .ant-modal-root:has(.app-modal-wrap--blocking) .ant-modal-mask {
+  top: 0;
+  height: 100%;
+}
+
+body:has(.title-bar) .ant-modal-root:has(.app-modal-wrap--blocking) .ant-modal-content {
+  max-height: calc(100vh - 32px);
+}

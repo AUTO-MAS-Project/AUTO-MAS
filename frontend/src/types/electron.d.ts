@@ -1,8 +1,14 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
+import type { UpgradeBackupDirectory, UpgradeBackupSelection } from '@/types/upgradeBackup'
 import type {
+  DesktopSessionPendingRequest,
+  DesktopSessionPrompt,
+  DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionStartRequest,
+  DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -447,6 +453,10 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
+  getUpgradeBackupDirectory: () => Promise<UpgradeBackupDirectory | null>
+  chooseUpgradeBackupDirectory: (reset: boolean) => Promise<UpgradeBackupSelection | null>
+  confirmUpgradeBackupDirectory: (id: string) => Promise<UpgradeBackupDirectory>
+  cancelUpgradeBackupDirectory: (id: string) => Promise<void>
   /** 不传 fromOffset 返回整份字符串；传了只返回该字节偏移之后的新增部分。 */
   getLogs: {
     (lines?: number, fileName?: string): Promise<string>
@@ -551,11 +561,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionCancelTaskConnect?: (id: number) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
+  desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
+  onDesktopSessionPrompt?: (callback: () => void) => () => void
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
-  desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
-  desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
+  desktopSessionPending?: () => Promise<DesktopSessionPendingRequest | null>
+  desktopSessionStart?: (request: DesktopSessionStartRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
   desktopSessionWindow?: (action: 'show' | 'hide') => void
   desktopSessionVolume?: (volume: number) => void

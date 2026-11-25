@@ -17,25 +17,24 @@
       </span>
       <span class="task-missing-tag">{{ t('core.edit.missingTaskTag') }}</span>
     </div>
-    <a-popconfirm
+    <ConfirmActionButton
+      risk="low"
+      tone="danger"
+      :danger="false"
+      type="text"
+      size="small"
       :title="t('core.edit.deleteThisTask2')"
       :ok-text="t('core.edit.ok')"
       :cancel-text="t('core.edit.cancel')"
       :disabled="disabled"
-      @confirm="emit('delete')"
+      :aria-label="t('core.edit.deleteThisTask')"
+      :confirm="() => emit('delete')"
+      @click.stop
     >
-      <a-button
-        type="text"
-        size="small"
-        :disabled="disabled"
-        :aria-label="t('core.edit.deleteThisTask')"
-        @click.stop
-      >
-        <template #icon>
-          <CloseOutlined />
-        </template>
-      </a-button>
-    </a-popconfirm>
+      <template #icon>
+        <CloseOutlined />
+      </template>
+    </ConfirmActionButton>
   </div>
   <button
     v-else
@@ -108,6 +107,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ConfirmActionButton } from '@/components/ui'
 import {
   CloseOutlined,
   DownOutlined,

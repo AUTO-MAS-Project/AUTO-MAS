@@ -138,6 +138,8 @@ export interface MaaFWUserTaskQueueSectionProps {
   effectiveResourceName: string
   /** 受管任务（按 entry）：右栏不给它们显示「运行日」，运行时也不受运行日影响 */
   managedTaskEntries?: ReadonlySet<string>
+  /** 任务删除正在落盘：锁定确认按钮，避免前一项未保存完就重复确认删除下一项 */
+  deletingTask?: boolean
 }
 
 export interface MaaFWUserTaskQueueSectionEmits {

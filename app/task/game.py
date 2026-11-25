@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.models.config.game_binding import GameBindingOwner
+from app.plugin.base.client import ClientControl
 from app.plugin.base.emulator import EmulatorControl
 from app.plugin.base.game import DeviceSubscribeError
 from app.utils import get_logger
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from app.config import LockTicket
+    from app.models.config.game import GameEntry
     from app.models.emulator import (
         DeviceInfo,
         DeviceRef,
@@ -33,6 +35,16 @@ logger = get_logger("游戏会话")
 current_game_session: ContextVar[GameSession | None] = ContextVar(
     "game_session", default=None
 )
+
+
+def _default_client_device(game: GameEntry) -> UUID:
+    """设备留空时，本地游戏只可隐式订阅唯一的设备。"""
+    candidates = [device.uid for device in game.devices.values() if not device.deleted]
+    if not candidates:
+        raise ValueError("所选本地游戏没有可用设备")
+    if len(candidates) != 1:
+        raise ValueError("所选本地游戏有多个设备，请指定要运行的设备")
+    return candidates[0]
 
 
 def selected_game_session() -> GameSession | None:
@@ -198,8 +210,11 @@ class GameSession:
             raise ValueError(binding.unavailable_reason)
         uid = binding.game_id if binding.game_id != "-" else None
         device_uid = binding.device_id if binding.device_id != "-" else None
-        if self.game_uid == uid and self.device_uid == device_uid:
-            return
+        if self.game_uid == uid:
+            if device_uid is None and isinstance(self.control, ClientControl):
+                device_uid = _default_client_device(self.control.config)
+            if self.device_uid == device_uid:
+                return
         await self.release()
         if uid is None:
             return
@@ -219,6 +234,8 @@ class GameSession:
         game = Config.GameConfig.get(uid)
         if game is None:
             raise ValueError("所选游戏目标已删除")
+        if device_uid is None and isinstance(self.control, ClientControl):
+            device_uid = _default_client_device(game)
         if device_uid is not None:
             device = game.devices.get(device_uid)
             if device is None:

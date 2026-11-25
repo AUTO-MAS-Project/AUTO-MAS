@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import { AppModal } from '@/components/ui'
 import PluginAvatar from '../components/PluginAvatar.vue'
 import type { InstalledPluginView, LifecycleDecision } from '../pluginCenterModel'
 import type { GuardedAction } from './useInstalledActions'
@@ -46,8 +47,14 @@ const goScripts = () => {
 </script>
 
 <template>
-  <a-modal :open="open" :width="420" :mask-closable="false" @cancel="emit('close')">
-    <template #title>
+  <AppModal
+    :open="open"
+    :width="420"
+    footer="custom"
+    :mask-closable="false"
+    @cancel="emit('close')"
+  >
+    <template #header>
       <span class="guard-title">
         <PluginAvatar v-if="view" :icon="view.icon" :size="32" />
         <span>{{ title }}</span>
@@ -92,7 +99,7 @@ const goScripts = () => {
         t('core.common.retry')
       }}</a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

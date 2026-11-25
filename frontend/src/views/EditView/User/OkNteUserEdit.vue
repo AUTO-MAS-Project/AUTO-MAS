@@ -1,68 +1,29 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="oknte"
-      :user-id="activeUserId"
-      :config-label="t('core.edit.configureOkNte')"
-      :config-loading="oknteConfigLoading"
-      :config-active="showOknteConfigMask"
-      :config-disabled="pageLoading || !activeUserId || configLocked"
-      @config="handleOkNteConfig"
-      @cancel="handleCancel"
-    />
-
-    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐一条龙） -->
-    <GuiSessionMask
-      :open="showOknteConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.okNteConfigurationProgress')"
-      :description="`${t('core.edit.okNteGuiConfiguration')}\n${t('core.edit.clickSaveConfigurationWhen2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="oknteWebsocketId"
-          type="primary"
-          size="large"
-          @click="handleSaveOkNteConfig"
-        >
-          {{ t('core.edit.saveConfiguration') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showOknteViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.oknteViewingTitle')"
-      :description="`${t('core.edit.oknteViewingDesc')}\n${t('core.edit.oknteViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="oknteWebsocketId"
-          type="primary"
-          size="large"
-          :loading="stoppingOknteConfig"
-          @click="handleCloseOknteView"
-        >
-          {{ t('core.edit.oknteViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="oknte"
+        :user-id="activeUserId"
+        :config-label="t('core.edit.configureOkNte')"
+        :config-loading="oknteConfigLoading"
+        :config-active="showOknteConfigMask"
+        :config-disabled="pageLoading || !activeUserId || configLocked"
+        @config="handleOkNteConfig"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <UserAccountHeading
-              :user-name="formData.userName"
-              :options="{ isEdit, logoSrc: accountIcon }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-            </div>
-
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -167,14 +128,15 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
         </a-form>
       </a-card>
 
       <OkNteTaskConfigSection
         v-model:task-index="formData.Task.TaskIndex"
         :options="oknteTaskOptions"
-        :startup-arguments="currentStartupArguments"
+        :script-id="scriptId"
+        :exit-on-finish="formData.Task.ExitOnFinish"
         :disabled="formData.Info.PlanMode !== 'Fixed'"
         :loading="pageLoading"
         @change="handleTaskIndexChange"
@@ -214,39 +176,79 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-nte 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="OKNTE_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :script-desc="t('core.edit.oknteConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <!-- ok-nte 备份摘要为文件集结构，用插槽完全接管预览区 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewFiles(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="f in previewFiles(raw)" :key="f.name">
-            <h4 class="oknte-preview-title">{{ f.label }}</h4>
-            <a-descriptions :column="1" size="small" bordered class="oknte-preview-box">
-              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐一条龙） -->
+      <GuiSessionMask
+        :open="showOknteConfigMask"
+        :icon="SettingOutlined"
+        :title="t('core.edit.okNteConfigurationProgress')"
+        :description="`${t('core.edit.okNteGuiConfiguration')}\n${t('core.edit.clickSaveConfigurationWhen2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="oknteWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveOkNteConfig"
+          >
+            {{ t('core.edit.saveConfiguration') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showOknteViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.oknteViewingTitle')"
+        :description="`${t('core.edit.oknteViewingDesc')}\n${t('core.edit.oknteViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="oknteWebsocketId"
+            type="primary"
+            size="large"
+            :loading="stoppingOknteConfig"
+            @click="handleCloseOknteView"
+          >
+            {{ t('core.edit.oknteViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-nte 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="OKNTE_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :script-desc="t('core.edit.oknteConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <!-- ok-nte 备份摘要为文件集结构，用插槽完全接管预览区 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewFiles(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="f in previewFiles(raw)" :key="f.name">
+              <h4 class="oknte-preview-title">{{ f.label }}</h4>
+              <a-descriptions :column="1" size="small" bordered class="oknte-preview-box">
+                <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-nte.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -254,7 +256,7 @@ import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -401,10 +403,6 @@ const formData = reactive<OkNteUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(
-  () => `-t ${formData.Info.PlanMode !== 'Fixed' ? 2 : formData.Task.TaskIndex || 2} -e`
-)
-
 const handleCancel = () => {
   void stopSession()
   router.push('/scripts')
@@ -464,24 +462,9 @@ const saveField = async (key: string, value: unknown) => {
   }, key)
 }
 
-const saveTaskConfig = async () => {
-  if (isInitializing.value || !userId) return
-  formData.Task.ExitOnFinish = true
-  await updateUser(scriptId, userId, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      ExitOnFinish: true,
-    },
-  })
-}
-
 const handleTaskIndexChange = async (value: number) => {
   formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
+  await saveField('Task.TaskIndex', value)
 }
 
 const handleOkNteConfig = async () => {
@@ -528,7 +511,6 @@ const loadUser = async () => {
       Notify: { ...getDefaultUserData().Notify, ...(data.Notify || {}) },
       Data: { ...getDefaultUserData().Data, ...(data.Data || {}) },
     })
-    formData.Task.ExitOnFinish = true
     const taskIndex = Number(formData.Task.TaskIndex)
     if (!Number.isFinite(taskIndex) || taskIndex < 1 || taskIndex > OKNTE_MAX_TASK_INDEX) {
       formData.Task.TaskIndex = 2
@@ -669,25 +651,9 @@ onUnmounted(() => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
 .form-label {
   display: flex;
   align-items: center;

@@ -22,20 +22,24 @@
         <div class="selected-task-meta">{{ selectedTaskMeta }}</div>
       </div>
       <!-- 删除放在标题行右侧的小按钮：右键菜单里也能删，这里不必是面板里最显眼的东西 -->
-      <a-popconfirm
+      <ConfirmActionButton
+        risk="low"
+        tone="danger"
+        type="text"
+        size="small"
+        class="delete-task-button"
         :title="t('core.edit.deleteThisTask2')"
         :ok-text="t('core.edit.ok')"
         :cancel-text="t('core.edit.cancel')"
         :disabled="disabled"
-        @confirm="emit('deleteSelectedTask')"
+        :loading="deleting"
+        :confirm="() => emit('deleteSelectedTask')"
       >
-        <a-button type="text" danger size="small" class="delete-task-button" :disabled="disabled">
-          <template #icon>
-            <DeleteOutlined />
-          </template>
-          {{ t('core.edit.queueTaskDelete') }}
-        </a-button>
-      </a-popconfirm>
+        <template #icon>
+          <DeleteOutlined />
+        </template>
+        {{ t('core.edit.queueTaskDelete') }}
+      </ConfirmActionButton>
     </div>
     <!-- 按选中的实例重建：搜索词与没提交的草稿不带到下一个任务 -->
     <MaaFWTaskOptionEditor
@@ -76,20 +80,24 @@
         </div>
         <div class="selected-task-meta">{{ t('core.edit.missingTaskHint') }}</div>
       </div>
-      <a-popconfirm
+      <ConfirmActionButton
+        risk="low"
+        tone="danger"
+        type="text"
+        size="small"
+        class="delete-task-button"
         :title="t('core.edit.deleteThisTask2')"
         :ok-text="t('core.edit.ok')"
         :cancel-text="t('core.edit.cancel')"
         :disabled="disabled"
-        @confirm="emit('deleteSelectedTask')"
+        :loading="deleting"
+        :confirm="() => emit('deleteSelectedTask')"
       >
-        <a-button type="text" danger size="small" class="delete-task-button" :disabled="disabled">
-          <template #icon>
-            <DeleteOutlined />
-          </template>
-          {{ t('core.edit.queueTaskDelete') }}
-        </a-button>
-      </a-popconfirm>
+        <template #icon>
+          <DeleteOutlined />
+        </template>
+        {{ t('core.edit.queueTaskDelete') }}
+      </ConfirmActionButton>
     </div>
     <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
       <div class="missing-task-settings-title">{{ t('core.edit.missingTaskSettings') }}</div>
@@ -107,6 +115,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ConfirmActionButton } from '@/components/ui'
 import { DeleteOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
@@ -138,6 +147,7 @@ const props = defineProps<{
   effectiveResourceName: string
   managedTaskEntries?: ReadonlySet<string>
   disabled: boolean
+  deleting?: boolean
 }>()
 
 const emit = defineEmits<{

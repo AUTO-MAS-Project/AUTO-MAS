@@ -18,7 +18,7 @@ from app.utils.windows.desktop_session.process_runner import (
 )
 from app.utils.windows.desktop_session.process_worker import main
 
-_MAINTENANCE_RETURN_CODE = 2
+MAINTENANCE_RETURN_CODE = 2
 _WORKER_MODULE = "app.task.desktop_session_worker"
 
 
@@ -35,7 +35,7 @@ async def run_desktop_action(
         on_log,
         worker_module=_WORKER_MODULE,
     )
-    if code == _MAINTENANCE_RETURN_CODE:
+    if code == MAINTENANCE_RETURN_CODE:
         raise GameMaintenanceDetected(stdout.decode("utf-8"))
     return code == 0
 
@@ -56,7 +56,7 @@ async def detect_desktop_maintenance(
 async def request_desktop_action(
     desktop: DesktopProcessTarget,
     action: str,
-    arguments: dict[str, str],
+    arguments: dict[str, str | bool | None],
     *,
     on_log: Callable[[str], None] | None = None,
     on_restart: Callable[[], Awaitable[None]] | None = None,
@@ -123,7 +123,6 @@ def run_action(pipe) -> None:
         ),
         "okww_switch_account": ("Okww.tools.account_switch", "account_switch"),
         "oknte_switch_account": ("OkNte.tools.account_switch", "account_switch"),
-        "okww_start_game": ("Okww.tools.launcher_start", "start_game_via_launcher"),
         "oknte_start_game": ("OkNte.tools.launcher_start", "start_game_via_launcher"),
         "oknte_wait_autoplay": ("OkNte.tools.launcher_start", "wait_autoplay_game"),
     }
@@ -171,6 +170,17 @@ def run_action(pipe) -> None:
             arguments["game_arguments"],
         )
         code = 0
+    elif action == "okww_start_game":
+        from app.task.Okww.tools.launcher_start import start_game_via_launcher
+
+        try:
+            pid = start_game_via_launcher(**arguments, on_log=on_log)
+        except GameMaintenanceDetected as error:
+            code = MAINTENANCE_RETURN_CODE
+            text = json.dumps(str(error))
+        else:
+            code = 0
+            text = json.dumps(pid)
     elif action == "maaend_launch":
         from app.task.MaaEnd.tools.launcher_start import start_game_via_launcher
 
@@ -178,6 +188,7 @@ def run_action(pipe) -> None:
         code = int(
             not start_game_via_launcher(
                 arguments["launcher_path"],
+                client_path=arguments.get("client_path"),
                 on_log=on_log,
                 on_error_screenshot=lambda path: screenshots.append(str(path)),
             )
@@ -300,7 +311,7 @@ def run_action(pipe) -> None:
             code = int(not operation(**arguments, on_log=on_log))
         except GameMaintenanceDetected as error:
             text = error.text
-            code = _MAINTENANCE_RETURN_CODE
+            code = MAINTENANCE_RETURN_CODE
     if text is not None:
         send(
             pipe,

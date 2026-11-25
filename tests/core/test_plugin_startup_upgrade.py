@@ -161,7 +161,8 @@ def wheel(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "mode", ["hot", "hot_reload", "restart", "failed_start", "hot_io_failure"]
+    "mode",
+    ["hot", "hot_reload", "hot_recover", "restart", "failed_start", "hot_io_failure"],
 )
 async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
     isolated_app_paths, monkeypatch, tmp_path, mode
@@ -195,7 +196,11 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
         version="1.0",
         module="startup_probe",
         requires=["auto-mas-core>=5,<6", "probe-shared>=1,<3"],
-        content="from app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n",
+        content=(
+            'raise ImportError("old host interface unavailable")\n'
+            if mode == "hot_recover"
+            else "from app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n"
+        ),
     )
     for path in (shared, existing):
         with ZipFile(path) as archive:
@@ -209,6 +214,7 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
                 "version": "1.0",
                 "source": "installed",
                 "state": "disabled",
+                "enabled": mode == "hot_recover",
             }
         },
     )
@@ -230,7 +236,7 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
         requires=["auto-mas-core>=5,<6", "probe-shared>=2,<3"],
         content="from probe_shared import ADDED\nfrom app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n",
     )
-    if mode == "hot_reload":
+    if mode in {"hot_reload", "hot_recover"}:
         candidate = wheel(
             wheels,
             name="startup-probe",
@@ -287,8 +293,16 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
         )
         manager = _PluginManager()
         previous_class = None
-        if mode == "hot_reload":
-            await manager.load(registry[uid])
+        if mode in {"hot_reload", "hot_recover"}:
+            if mode == "hot_recover":
+                from app.plugin.errors import PluginPrecheckError
+
+                registry[uid].info.import_name = "startup_probe"
+                with pytest.raises(PluginPrecheckError, match="startup_probe"):
+                    await manager.load(registry[uid])
+                assert registry[uid].info.state == "fault_load"
+            else:
+                await manager.load(registry[uid])
             previous_class = registry[uid]._plugin_cls
             meta = PluginMeta.build(
                 info={
@@ -326,16 +340,18 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
             assert bool(result.get("restart_required")) is (
                 mode in {"restart", "failed_start"}
             )
-        if mode in {"hot", "hot_reload"}:
+        if mode in {"hot", "hot_reload", "hot_recover"}:
             installed = importlib.import_module(
-                "startup_probe" if mode == "hot_reload" else "install_probe"
+                "install_probe" if mode == "hot" else "startup_probe"
             )
             assert installed.ADDED == "new API"
             assert importlib.metadata.version("probe-shared") == "2.0"
-            if mode == "hot_reload":
+            if mode in {"hot_reload", "hot_recover"}:
                 assert registry.by_name("startup_probe") is registry[uid]
                 assert registry[uid]._plugin_cls is not previous_class
                 assert registry[uid]._plugin_cls.MARKER == "new API"
+            if mode == "hot_recover":
+                assert registry[uid].info.state == "enabled"
             from app.plugin.uv.environment import read_installation
 
             assert read_installation().progress.state == "succeeded"

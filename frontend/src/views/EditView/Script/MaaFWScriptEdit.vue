@@ -1,163 +1,174 @@
 <template>
-  <ScriptEditHeader
-    script-type="MaaFW"
-    :title="pageTitle"
-    :doc-url="MAS_DOC_URLS.scripts"
-    :logo-src="headerLogo"
-    :logo-alt="metadata.label"
-    :logo-fallback-src="metadata.logo"
-    :cancel-disabled="shellImporting"
-    @cancel="handleCancel"
-  />
-
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag :color="metadata.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
-      </template>
-
-      <a-steps
-        v-if="isWizard"
-        size="small"
-        :current="currentStep"
-        :items="stepItems"
-        class="wizard-steps"
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="MaaFW"
+        :title="pageTitle"
+        :doc-url="MAS_DOC_URLS.scripts"
+        :logo-src="headerLogo"
+        :logo-alt="metadata.label"
+        :logo-fallback-src="metadata.logo"
+        :cancel-disabled="shellImporting"
+        @cancel="handleCancel"
       />
+    </template>
 
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <div v-show="!isWizard || currentStep === 0">
-          <BasicInfoSection
-            :maafw-config="maafwConfig"
-            :form-data="formData"
-            :rules="rules"
-            :preview-data="previewData"
-            :interface-loading="previewLoading"
-            :preview-project-title="previewProjectTitle"
-            :interface-stats="interfaceStats"
-            :update-applying="updateApplying"
-            :embedded-status="embeddedStatus"
-            :embedded-busy="embeddedBusy"
-            :import-percent="importPercent"
-            :import-message="importMessage"
-            :import-error="importError"
-            :preview-error="previewError"
-            :env-preparing="envPreparing"
-            :env-ready="envReady"
-            :env-failed="envFailed"
-            :env-message="envMessage"
-            :env-percent="envPercent"
-            :env-logs="envLogs"
-            :env-agents="envAgents"
-            :env-outcome="envOutcome"
-            :is-wizard="isWizard"
-            @change="handleChange"
-            @select-path="selectMaaFWPath"
-            @preview-interface="handlePreviewInterface"
-            @sync-source="syncFromSource"
-          />
-        </div>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
+        <template #extra>
+          <a-tag :color="metadata.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
+        </template>
 
-        <div v-show="!isWizard || currentStep === 1">
-          <ControlConfigSection
-            :script-id="scriptId"
-            :maafw-config="maafwConfig"
-            :preview-data="previewData"
-            :interface-loading="previewLoading"
-            :controller-options="controllerOptions"
-            :effective-controller-name="effectiveControllerName"
-            :effective-controller-type="effectiveControllerType"
-            :is-adb-controller="isAdbController"
-            :is-desktop-controller="isDesktopController"
-            :resource-options="resourceOptions"
-            :effective-resource-name="effectiveResourceName"
-            :adb-control-strategy-items="adbControlStrategyItems"
-            :interface-dependent-disabled="interfaceDependentDisabled"
-            @change="handleChange"
-            @controller-change="handleControllerChange"
-            @resource-change="handleResourceChangeWithPackage"
-            @select-launch-path="selectLaunchPath"
-            @select-launcher-path="selectLauncherPath"
-          />
-        </div>
+        <a-steps
+          v-if="isWizard"
+          size="small"
+          :current="currentStep"
+          :items="stepItems"
+          class="wizard-steps"
+        />
 
-        <div v-show="!isWizard || currentStep === 2">
-          <UpdateSettingsSection
-            :script-id="scriptId"
-            :maafw-config="maafwConfig"
-            :preview-data="previewData"
-            :is-auto-update-disabled="isAutoUpdateDisabled"
-            :update-checking="updateChecking"
-            :update-applying="updateApplying"
-            :update-error="updateError"
-            :update-result="updateResult"
-            :update-progress="updateProgress"
-            :cdk-prefilled="cdkPrefilled"
-            :update-source-options="updateSourceOptions"
-            :update-channel-options="updateChannelOptions"
-            @change="handleChange"
-            @check-update="runUpdateCheck"
-            @apply-update="runUpdateApply"
-          />
-        </div>
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <div v-show="!isWizard || currentStep === 0">
+            <BasicInfoSection
+              :maafw-config="maafwConfig"
+              :form-data="formData"
+              :rules="rules"
+              :preview-data="previewData"
+              :interface-loading="previewLoading"
+              :preview-project-title="previewProjectTitle"
+              :interface-stats="interfaceStats"
+              :update-applying="updateApplying"
+              :embedded-status="embeddedStatus"
+              :embedded-busy="embeddedBusy"
+              :import-percent="importPercent"
+              :import-message="importMessage"
+              :import-error="importError"
+              :preview-error="previewError"
+              :env-preparing="envPreparing"
+              :env-ready="envReady"
+              :env-failed="envFailed"
+              :env-message="envMessage"
+              :env-percent="envPercent"
+              :env-logs="envLogs"
+              :env-agents="envAgents"
+              :env-outcome="envOutcome"
+              :is-wizard="isWizard"
+              @change="handleChange"
+              @select-path="selectMaaFWPath"
+              @preview-interface="handlePreviewInterface"
+              @sync-source="syncFromSource"
+            />
+          </div>
 
-        <div v-show="!isWizard || currentStep === 3">
-          <RunConfigSection
-            :maafw-config="maafwConfig"
-            :daily-once-tasks="dailyOnceTasks"
-            :weekly-once-tasks="weeklyOnceTasks"
-            :monthly-once-tasks="monthlyOnceTasks"
-            :period-task-options="periodTaskOptions"
-            :interface-dependent-disabled="interfaceDependentDisabled"
-            @change="handleChange"
-            @period-task-change="handlePeriodTaskChange"
-          />
-        </div>
-      </a-form>
+          <div v-show="!isWizard || currentStep === 1">
+            <ControlConfigSection
+              :script-id="scriptId"
+              :maafw-config="maafwConfig"
+              :preview-data="previewData"
+              :interface-loading="previewLoading"
+              :controller-options="controllerOptions"
+              :effective-controller-name="effectiveControllerName"
+              :effective-controller-type="effectiveControllerType"
+              :is-adb-controller="isAdbController"
+              :is-desktop-controller="isDesktopController"
+              :resource-options="resourceOptions"
+              :effective-resource-name="effectiveResourceName"
+              :adb-control-strategy-items="adbControlStrategyItems"
+              :interface-dependent-disabled="interfaceDependentDisabled"
+              @change="handleChange"
+              @controller-change="handleControllerChange"
+              @resource-change="handleResourceChangeWithPackage"
+              @select-launch-path="selectLaunchPath"
+              @select-launcher-path="selectLauncherPath"
+            />
+          </div>
 
-      <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
-      <ShellInstanceImportSection
-        v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
-        v-model:selected-ids="selectedShellInstanceIds"
-        v-model:import-hotkeys="importShellHotkeys"
-        :instances="shellInstances"
-        :disabled="shellImporting"
-      />
+          <div v-show="!isWizard || currentStep === 2">
+            <UpdateSettingsSection
+              :script-id="scriptId"
+              :maafw-config="maafwConfig"
+              :preview-data="previewData"
+              :is-auto-update-disabled="isAutoUpdateDisabled"
+              :update-checking="updateChecking"
+              :update-applying="updateApplying"
+              :update-error="updateError"
+              :update-result="updateResult"
+              :update-progress="updateProgress"
+              :cdk-prefilled="cdkPrefilled"
+              :update-source-options="updateSourceOptions"
+              :update-channel-options="updateChannelOptions"
+              @change="handleChange"
+              @check-update="runUpdateCheck"
+              @apply-update="runUpdateApply"
+            />
+          </div>
 
-      <div v-if="isWizard" class="wizard-actions">
-        <a-button
-          v-if="currentStep > 0"
-          size="large"
+          <div v-show="!isWizard || currentStep === 3">
+            <RunConfigSection
+              :maafw-config="maafwConfig"
+              :daily-once-tasks="dailyOnceTasks"
+              :weekly-once-tasks="weeklyOnceTasks"
+              :monthly-once-tasks="monthlyOnceTasks"
+              :period-task-options="periodTaskOptions"
+              :interface-dependent-disabled="interfaceDependentDisabled"
+              @change="handleChange"
+              @period-task-change="handlePeriodTaskChange"
+            />
+          </div>
+        </a-form>
+
+        <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
+        <ShellInstanceImportSection
+          v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
+          v-model:selected-ids="selectedShellInstanceIds"
+          v-model:import-hotkeys="importShellHotkeys"
+          :instances="shellInstances"
           :disabled="shellImporting"
-          @click="currentStep -= 1"
-        >
-          {{ t('core.edit.previousStep') }}
-        </a-button>
-        <a-button
-          v-if="currentStep < stepItems.length - 1"
-          type="primary"
-          size="large"
-          :disabled="!canLeaveCurrentStep"
-          @click="currentStep += 1"
-        >
-          {{ t('core.edit.next') }}
-        </a-button>
-        <a-button
-          v-else
-          type="primary"
-          size="large"
-          :loading="shellImporting"
-          @click="handleFinishWizard"
-        >
-          {{ finishButtonLabel }}
-        </a-button>
-      </div>
-    </a-card>
-  </ConfigLockPanel>
+        />
+
+        <div v-if="isWizard" class="wizard-actions">
+          <a-button
+            v-if="currentStep > 0"
+            size="large"
+            :disabled="shellImporting"
+            @click="currentStep -= 1"
+          >
+            {{ t('core.edit.previousStep') }}
+          </a-button>
+          <a-button
+            v-if="currentStep < stepItems.length - 1"
+            type="primary"
+            size="large"
+            :disabled="!canLeaveCurrentStep"
+            @click="currentStep += 1"
+          >
+            {{ t('core.edit.next') }}
+          </a-button>
+          <a-button
+            v-else
+            type="primary"
+            size="large"
+            :loading="shellImporting"
+            @click="handleFinishWizard"
+          >
+            {{ finishButtonLabel }}
+          </a-button>
+        </div>
+      </a-card>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import { ConfigEditShell } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'

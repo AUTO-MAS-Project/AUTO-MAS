@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 
 /** 离开设置页时有未保存更改的确认：继续编辑、放弃并离开、保存并离开。 */
 defineProps<{ open: boolean; count: number; saving: boolean }>()
@@ -8,14 +9,12 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="open"
-    :title="t('core.edit.youHaveUnsavedChanges')"
-    :closable="!saving"
-    :mask-closable="!saving"
-    :keyboard="!saving"
     :width="416"
-    centered
+    :title="t('core.edit.youHaveUnsavedChanges')"
+    :submitting="saving"
+    footer="custom"
     @cancel="emit('stay')"
   >
     <p class="settings-leave-text">{{ t('core.plugins.unsavedCount', { count }) }}</p>
@@ -28,7 +27,7 @@ const { t } = useI18n()
         t('core.plugins.saveAndLeave')
       }}</a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

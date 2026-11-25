@@ -131,6 +131,8 @@ const handleLocaleChange = (value: unknown): void => {
       <SettingRow
         :label="t('core.setting.basic.themeMode')"
         :hint="t('core.setting.basic.themeModeTip')"
+        :disabled="themeColorDisabled"
+        :disabled-reason="t('core.setting.basic.appearanceControlledReason')"
       >
         <a-segmented
           class="theme-mode-control"
@@ -146,6 +148,8 @@ const handleLocaleChange = (value: unknown): void => {
         class="theme-color-row"
         :label="t('core.setting.basic.themeColor')"
         :hint="t('core.setting.basic.themeColorTip')"
+        :disabled="themeColorDisabled"
+        :disabled-reason="t('core.setting.basic.appearanceControlledReason')"
         stacked
       >
         <div class="color-swatches" :aria-label="t('core.setting.basic.themeColor')">

@@ -5,101 +5,27 @@ description: Define backend function design standards for Python services. Use w
 
 # MAS Function Design
 
-## Objective
-Design backend functions that are predictable, easy to trace, and easy to evolve.
+仅约束 AUTO-MAS 后端（`app/`）中容易踩坑的签名、异步、任务生命周期与配置变更规范；模块归属见 `mas-module-boundary`。禁止 `except Exception: pass` 静默吞错或把失败洗成成功（记日志不算吞异常理由）。
 
-## Core Principles
-1. Keep one primary responsibility per function.
-2. Make data flow explicit through inputs and return values.
-3. Minimize hidden side effects and shared mutable state.
-4. Keep error semantics stable and actionable.
-5. Match function placement with module boundary ownership.
+## 签名、职责与命名
 
-## Responsibility
-1. Keep a function focused on one decision unit or one orchestration step.
-2. Split when a function mixes domain decision and integration IO.
-3. Split when one function serves unrelated call paths.
-4. Keep thin wrappers thin; move real logic only when it creates real reuse.
-5. Do not extract a helper for logic that is easier to understand inline at the call site.
-6. For frequently edited task-configuration code, keep the mutation block in the owning orchestration function with a short purpose comment and blank lines around it.
-7. Do not split one linear task flow into `builder`/`loader` helpers unless the split removes real duplication or clarifies a true boundary.
-8. In AUTO-MAS task flows, keep config import/export, log monitoring, and end-state judgment as explicit orchestration steps; do not hide product-critical run criteria behind vague wrappers.
+- **关键字参数红线**：**布尔参数**以及 **超过 2 个参数**的调用必须使用关键字参数；仅 ≤2 个显而易见的简单参数可用位置参数。
+- **不造空壳抽象**：不要为只用一次或内联更清晰的逻辑抽 `builder`/`loader` 辅助函数；任务流中的配置导入/导出、日志监控与终态判定必须保持显式可读，禁止藏进含糊包装层。
+- **返回值与错误**：领域函数返回领域值（不返回 HTTP 响应模型）；省略合法时不传冲突类型的占位符；领域层抛带上下文（`script_id`/`user_id`/步骤）的领域异常，仅在 `app/api/` 边界转为安全响应。
+- **命名**：动词开头（`load_*`/`build_*`/`merge_*`/`send_*`/`check_*`/`prepare_*`/`finalize_*`），避免无范围词的 `handle`/`process`。
 
-## Signatures And Returns
-1. Use explicit named parameters for business-critical options.
-2. Avoid ambiguous boolean positional parameters.
-3. Group related data in typed models/dataclasses when argument count grows.
-4. Keep optional parameters truly optional with clear default meaning.
-5. Return one stable shape per function role.
-6. Return domain values, not transport-layer response objects.
-7. Prefer signatures that remain compatible with basic static type checking.
-8. If omission is a valid state, omit the argument or field instead of passing a typed placeholder that conflicts with the signature.
-9. Use positional arguments only for simple, obvious calls with at most two clear parameters.
-10. Use keyword arguments for boolean arguments and for calls with more than two parameters.
+## 异步、线程与任务生命周期（高危）
 
-## Error Handling
+1. **禁止线程池内延迟 import**：严禁将含模块延迟 `import` 的函数体丢进 `asyncio.to_thread` / `run_in_executor`——多线程并发冷导入同一包会触发 CPython 模块导入锁死锁或读到半初始化模块。必须在事件循环或启动期先完成导入，再传入已解析的可调用对象。
+2. **异步边界**：仅在需要 `await` IO 或异步协调原语时使用 `async`；长流程清理放 `finally`；避免在 async 热路径直接跑同步阻塞调用；任务派生留在编排层，不放进叶子工具函数。
+3. **`TaskBase` 生命周期**（联动 `mas-task-scheduler`）：
+   - 遵循 `main_task` / `final_task` / `on_crash` 契约；`main_task` 与 `final_task` 可正常抛错，**`on_crash` 必须保护自身不抛出未捕获异常**。
+   - 执行树子任务通过 `await self.spawn(...)` 同 Task 运行；应用级独立后台任务归 `BackgroundTaskManager`。
+   - 停止已启动的 `TaskBase` 使用 `await task.stop()` 并等待清理（不要假定存在 `.cancel()`）；等待超时不代表已停止。
 
-For validation, fallback, catch and retry decisions, load [mas-defensive-programming](../mas-defensive-programming/SKILL.md).
+## 配置变更流（必读 `../mas-data-model/references/config-framework.md`）
 
-1. Raise domain-meaningful exceptions at domain layers.
-2. Convert exceptions to API-safe output only at API boundary.
-3. Include enough context in errors for diagnosis (`script_id`, `user_id`, step).
-
-## Side Effects And Async
-1. Keep file IO, network, process, and global state operations explicit.
-2. Isolate side effects behind service/helper functions.
-3. In pure transformation functions, avoid logging and external calls.
-4. Do not mutate input objects unless the contract explicitly states mutation.
-5. Use `async` only when awaiting IO or async coordination primitives.
-6. Keep cancellation-safe cleanup in `finally` blocks for long-running flows.
-7. Avoid mixing sync blocking calls directly in async hot paths.
-8. Do not ship a function body containing module lazy imports to a thread pool (`asyncio.to_thread`/`run_in_executor`): resolve imports on the event loop or at startup, then pass the imported callables to the thread. Concurrent cold imports of one package from multiple worker threads can deadlock on CPython's per-module import locks or observe half-initialized modules.
-9. Keep task spawning in orchestrator-level functions, not leaf utilities.
-10. Trust existing base-layer guarantees instead of repeating their correction logic in every function.
-11. Prefer one clear wait/check block over several tiny sleeps, logs, or staged wrappers that express the same step.
-12. When success/failure depends on log text, log timestamps, and process exit together, keep that decision rule centralized and readable instead of scattering partial checks across helpers.
-13. Scheduling execution follows the source `TaskBase` contract (`main_task`, `final_task`, `on_crash`); existing `TaskExecuteBase` is a legacy compatibility path. Apply [mas-task-scheduler](../mas-task-scheduler/SKILL.md) for layer responsibilities and parent-owned locks; do not promote legacy-manager behavior into the new framework.
-14. `main_task` and `final_task` may raise normally, but `on_crash` must protect itself from uncaught exceptions.
-15. Await execution-tree children through `await self.spawn(...)`, directly running the child's complete lifecycle in the same Task. Independent application background work belongs to its background-task owner rather than the execution tree.
-16. Stop a started `TaskBase` through `await task.stop()` and wait for cleanup. Nested cancellation follows the direct await chain; do not assume TaskBase exposes `.cancel()`. Direct background-task cancellation follows the background manager's own API, and a wait timeout does not mean execution has stopped.
-
-## Configuration Mutation Flows
-For functions reading or modifying config state, use [the configuration framework reference](../mas-data-model/references/config-framework.md).
-
-1. Stage whole-field assignments or public collection operations, then await commit in the same Task and scope. Copy nested mutable values before editing; `append` or subscript mutation bypasses the framework.
-2. A commit batch is per-op atomic by default. Use an explicit short transaction for related operations; direct signal callbacks and direct awaits share it. Catch rollback-triggering errors outside the outer transaction; external IO is not rolled back.
-3. Independent tasks do not join inherited transactions. A parent holding the global gate cannot await a child that needs config submission; use same-Task calls for associated changes, or start independent work after the transaction.
-4. Use X-lock tickets for a task's protected live writes and release them in `finally`; no detached config copy and end-of-task whole-document writeback. Business locks and transaction lifetimes differ.
-5. Commit, persistence and export have separate return guarantees. `flush()` and manager export occur outside transactions. The framework deliberately holds the execution gate during synchronous atomic writes; ordinary integration refactors do not introduce concurrent save workers or thread offloading into that path.
-6. `activate(fast_init=True)` is an optional Entry initialization optimization. It shares one transaction across that Entry's field loop, rolls the whole attempt back on a field or Init-signal failure, then reruns the original per-field path from the first field. Do not reuse successful fast-attempt values, suppress repeated callbacks, or treat external IO as transactional.
-
-## Placement
-Follow [mas-module-boundary](../mas-module-boundary/SKILL.md) for backend layer ownership, core singleton organization, functional packages and dependency rules.
-
-## Naming
-1. Use verb-first names for actions (`load_*`, `build_*`, `merge_*`, `send_*`).
-2. Use `check_*` for validation returning status/result.
-3. Use `prepare_*` for pre-run setup.
-4. Use `finalize_*` or `cleanup_*` for teardown semantics.
-5. Avoid vague names like `handle` or `process` without scope words.
-
-## Refactor Triggers
-1. Function exceeds clear readability for one screenful of logic.
-2. Same decision branch appears in multiple places.
-3. Repeated parameter bundles travel together across call sites.
-4. Testing a public behavior requires heavy setup because business logic and IO are mixed. Check existing isolation seams before changing production structure solely for tests; follow [mas-testing](../mas-testing/SKILL.md).
-5. A dict/registry mapping can replace multiple near-identical branches without hiding the main flow.
-6. A proposed helper adds more lookup cost than it removes.
-
-## Review Checklist
-1. Function has one primary responsibility.
-2. Signature is explicit and stable for callers.
-3. Return shape is typed and consistent.
-4. Error behavior is clear and layered correctly.
-5. Side effects are visible and isolated.
-6. Placement follows `mas-module-boundary`.
-7. Shared schema semantics align with `mas-schema-naming`.
-8. One-off helpers were not extracted unless they created real reuse.
-9. Optional values and temporary placeholders remain type-safe under basic static analysis.
-10. Multi-argument and boolean-heavy calls use keyword arguments for readability and fewer ordering mistakes.
-11. Task classes preserve the documented `main_task`/`final_task`/`on_crash` lifecycle and nested cancellation behavior.
+- 拷贝嵌套可变对象后做**整字段赋值**或调公开集合方法，再在**同一 Task** 中 `await commit()`（原地 `append`/下标修改会绕过框架）。
+- 关联写操作放进短显式事务；独立子 Task 不继承事务，持有全局闸门时禁止 `await` 需要提交配置的子任务。
+- 写受保护实时配置时持有 X-lock 票据并在 `finally` 释放；`flush()` 与导出在事务外执行，不往同步原子落盘路径硬加并发写线程。
+- `activate(fast_init=True)` 失败整批回滚并重跑逐字段路径，禁止复用失败值或将外部 IO 当事务处理。

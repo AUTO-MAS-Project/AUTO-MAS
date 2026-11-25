@@ -34,6 +34,7 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
+from app.api._error_codes import config_error_code
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.models.schema import (
@@ -310,7 +311,9 @@ async def update_user(
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=config_error_code(e),
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
     return OutBase()
 

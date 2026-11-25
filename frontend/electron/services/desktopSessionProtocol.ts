@@ -7,6 +7,20 @@ export interface DesktopSessionCheck {
 
 export const MAX_DESKTOP_SESSION_TARGETS = 100
 
+export const DESKTOP_SESSION_CREDENTIAL_ERRORS: ReadonlySet<string> = new Set([
+  'password_required',
+  'password_invalid',
+  'credential_unreadable',
+  'account_mismatch',
+  'rdp_authentication_failed',
+])
+
+export type DesktopSessionConnectResult =
+  | 'connected'
+  | 'cancelled'
+  | 'failed'
+  | 'preview_unavailable'
+
 export const DESKTOP_SESSION_REPAIRS = [
   'child_enabled',
   'rdp_local_disabled',
@@ -22,6 +36,13 @@ export interface DesktopSessionRequest {
   resolution: '1080p' | 'primary'
   password?: string
 }
+
+export type DesktopSessionPendingRequest = Omit<DesktopSessionRequest, 'password'> & {
+  taskConnectId?: number
+  forTask: boolean
+}
+
+export type DesktopSessionStartRequest = DesktopSessionRequest & { taskConnectId?: number }
 
 export interface DesktopSessionSnapshot {
   state: 'idle' | 'checking' | 'blocked' | 'connecting' | 'connected' | 'disconnected'
@@ -47,6 +68,29 @@ export interface DesktopQueueResult {
   label: string
   executionSession?: 'main'
 }
+
+export type DesktopSessionPromptTarget = Pick<DesktopQueueResult, 'label' | 'targetKind'>
+
+export interface DesktopSessionCloseRisk {
+  activeTasks: boolean
+  unmanagedPrograms: boolean | null
+}
+
+export type DesktopSessionPromptContent =
+  | { kind: 'dispatch'; main: DesktopSessionPromptTarget[]; desktop: DesktopSessionPromptTarget[] }
+  | { kind: 'close' | 'close-adopted' | 'quit'; risk: DesktopSessionCloseRisk }
+  | { kind: 'takeover' | 'close-failed' }
+
+export type DesktopSessionPrompt = DesktopSessionPromptContent & { id: number }
+
+export type DesktopSessionPromptAction =
+  | 'cancel'
+  | 'acknowledge'
+  | 'split'
+  | 'desktop'
+  | 'takeover'
+  | 'disconnect'
+  | 'logoff'
 
 export interface DesktopSessionStartResult {
   code?: string

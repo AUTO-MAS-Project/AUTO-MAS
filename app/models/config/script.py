@@ -511,6 +511,14 @@ class MaaEndUserConfig(DomainEntry):
             return str(exc)
 
 
+class DesktopSessionRunFields(ConfigGroup):
+    """支持桌面分身的托管运行设置。"""
+
+    ExecutionSession: Literal["main", "desktop"] = Field(
+        default="main", description="单独启动托管时使用的 Windows 会话"
+    )
+
+
 class MaaEndConfig(DomainEntry):
     "MaaEnd配置"
 
@@ -607,7 +615,7 @@ class MaaEndConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         AccountSwitchMethod: Literal["MAS", "MAAEND"] = Field(
             default_factory=lambda: "MAAEND",
             description="账号切换方式（默认使用 MAAEND，MAS 为兼容入口）",
@@ -1038,7 +1046,7 @@ class HSRConfig(DomainEntry):
 
     Managed: ManagedFields = Field(default_factory=ManagedFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         DailyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 20,
             description="日常任务超时限制（分钟）",
@@ -1826,7 +1834,7 @@ class GeneralConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -2027,7 +2035,7 @@ class OkwwConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -2117,7 +2125,7 @@ class OkNteConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -2282,7 +2290,7 @@ class BetterGIConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         AccountSwitchMethod: Literal["BGI", "MAS"] = Field(
             default_factory=lambda: "MAS",
             description="账号切换方式（托管级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建托管取类默认 MAS；既有托管（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
@@ -2627,7 +2635,7 @@ class ZzzOdConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",

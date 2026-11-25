@@ -5,7 +5,7 @@
  */
 withDefaults(
   defineProps<{
-    tone?: 'success' | 'warning' | 'error' | 'neutral'
+    tone?: 'success' | 'warning' | 'error' | 'processing' | 'neutral'
     /** 前置圆点，正常状态用它，纯文字标签可以关掉 */
     dot?: boolean
   }>(),
@@ -58,6 +58,16 @@ withDefaults(
   border-color: var(--ant-color-error-border);
   color: var(--ant-color-error);
   background: var(--ant-color-error-bg);
+}
+
+.ui-chip--processing {
+  border-color: var(--ant-color-primary-border);
+  color: var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
+.ui-chip--processing .ui-chip-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentcolor 22%, transparent);
 }
 
 .ui-chip--neutral {

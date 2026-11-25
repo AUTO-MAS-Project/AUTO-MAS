@@ -19,6 +19,10 @@ export type ScriptIndexItem = {
      * 所属插件当前是否可用；插件托管的插件不在已启用状态时为 false
      */
     pluginAvailable?: boolean;
+    /**
+     * 查询单个托管时返回当前配置是否支持桌面分身
+     */
+    desktopSessionSupported?: (boolean | null);
 };
 export namespace ScriptIndexItem {
     /**

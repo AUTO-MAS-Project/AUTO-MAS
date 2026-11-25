@@ -11,6 +11,7 @@ const analytics = vi.hoisted(() => ({ getContext: vi.fn(), recordMainEvent: vi.f
 const host = vi.hoisted(() => ({
   report: vi.fn(),
   command: vi.fn(),
+  close: vi.fn(),
   connect: vi.fn(),
   exit: vi.fn(),
 }))
@@ -31,7 +32,7 @@ vi.mock('node:child_process', () => ({
     host.report.mockImplementation(report)
     const stdin = new Writable({
       write(chunk, _encoding, done) {
-        const { action, approvedRepairs } = JSON.parse(String(chunk))
+        const { action, approvedRepairs, logoff } = JSON.parse(String(chunk))
         host.command(action)
         if (action === 'connect') {
           report(host.connect() ?? { event: 'state', state: 'connected', sessionId: 7 })
@@ -51,7 +52,10 @@ vi.mock('node:child_process', () => ({
           })
           report({ event: 'repair_finished' })
         }
-        if (action === 'close') report({ event: 'state', state: 'idle' })
+        if (action === 'close') {
+          host.close(logoff)
+          report({ event: 'state', state: 'idle' })
+        }
         done()
       },
       final(done) {
@@ -83,6 +87,7 @@ it('closes a host that is still being prepared by the first check', async () => 
   try {
     await Promise.all([check, close])
     expect(host.command.mock.calls).toEqual([['close']])
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(false)
     expect(service.snapshot.state).toBe('idle')
   } finally {
     await service.close()
@@ -113,6 +118,27 @@ it('repairs only through the approved repair operation', async () => {
     expect(await service.repair(['child_enabled'])).toBeUndefined()
     expect(service.snapshot).toMatchObject({ state: 'idle', repairPlan: [] })
     expect(host.command.mock.calls.filter(([action]) => action === 'repair')).toEqual([['repair']])
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('waits for the matching native park reply before showing a prompt', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-prompt-'))
+  vi.stubGlobal('fetch', async (url: string) =>
+    new URL(url).pathname.endsWith('/describe')
+      ? Response.json({ python: 'python', root, source: root })
+      : Response.json({ updated: true })
+  )
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  try {
+    await service.check()
+    const first = service.parkForPrompt(1)
+    const next = service.parkForPrompt(2)
+    host.report({ event: 'prompt_parked', promptId: 1 })
+    host.report({ event: 'command_error', action: 'park_for_prompt', promptId: 2 })
+    await expect(Promise.all([first, next])).resolves.toEqual([true, false])
   } finally {
     await service.close()
     rmSync(root, { recursive: true, force: true })
@@ -187,6 +213,39 @@ it.each([
   }
 )
 
+it('stops tasks admitted by the backend before the first poll when the session disconnects', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-disconnected-stop-'))
+  let running = false
+  const stopped = vi.fn()
+  vi.stubGlobal('fetch', async (url: string) => {
+    switch (new URL(url).pathname) {
+      case '/internal/desktop-session/describe':
+        return Response.json({ python: 'python', root, source: root })
+      case '/internal/desktop-session/process-scope':
+        return Response.json({ updated: true })
+      case '/internal/desktop-session/state':
+        return Response.json({ idle: !running, admitted: Number(running) })
+      case '/internal/desktop-session/stop':
+        if (running) stopped()
+        running = false
+        return Response.json({ idle: true })
+      default:
+        throw new Error('Unexpected request')
+    }
+  })
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn())
+  try {
+    await service.start({ queueIds: [], mode: 'proxy', resolution: '1080p' }, 1n, [0, 0, 100, 100])
+    running = true
+    host.report({ event: 'state', state: 'disconnected' })
+    await vi.waitFor(() => expect(stopped).toHaveBeenCalledOnce(), { timeout: 2000 })
+    expect(running).toBe(false)
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 it('dispatches and stops tasks through the same main backend', async () => {
   const root = mkdtempSync(join(tmpdir(), 'mas-desktop-dispatch-'))
   const queueId = '00000000-0000-4000-8000-000000000001'
@@ -239,7 +298,8 @@ it('dispatches and stops tasks through the same main backend', async () => {
     ])
     expect(validateAnalyticsEvent(dispatchEvents[0], false)).toEqual(dispatchEvents[0])
     expect(validateAnalyticsEvent(dispatchEvents[0], true)).toBeNull()
-    await service.close()
+    await service.close({ logoff: true })
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(true)
     expect(requests).toContain('/internal/desktop-session/stop')
     expect(requests).not.toContain('/internal/desktop-session/handoff')
     expect(service.snapshot.executing).toBe(false)
@@ -279,6 +339,7 @@ it.each([
   { choice: 'split', dispatchedIds: ['desktop', 'emulator'], mainIds: ['emulator'] },
   { choice: 'desktop', dispatchedIds: ['desktop'] },
   { choice: 'cancel', dispatchedIds: [] },
+  { choice: null, dispatchedIds: [] },
 ] as const)(
   'waits for the mixed-session choice ($choice)',
   async ({ choice, dispatchedIds, ...expected }) => {
@@ -327,7 +388,7 @@ it.each([
           },
         }
       )
-      expect(result.code).toBeUndefined()
+      expect(result.code).toBe(choice === null ? 'prompt_unavailable' : undefined)
       expect(submissions).toEqual(
         dispatchedIds.length
           ? [
@@ -344,3 +405,77 @@ it.each([
     }
   }
 )
+
+it('checks again before automatically disconnecting after a desktop task finishes', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'mas-desktop-idle-close-'))
+  let idle = false
+  let admitted = 1
+  let unmanagedPrograms = true
+  let transientFailure = false
+  let checks = 0
+  let lostReplyFor: string | undefined
+  const released = new Set<string>()
+  vi.stubGlobal('fetch', async (url: string, options: RequestInit) => {
+    switch (new URL(url).pathname) {
+      case '/internal/desktop-session/describe':
+        return Response.json({ python: 'python', root, source: root })
+      case '/internal/desktop-session/process-scope':
+        return Response.json({ updated: true })
+      case '/internal/desktop-session/state':
+        return Response.json({ idle, admitted })
+      case '/internal/desktop-session/close-status': {
+        const { sessionId, mode, attemptId } = JSON.parse(String(options.body))
+        expect(sessionId).toBe(7)
+        expect(attemptId).toEqual(expect.any(String))
+        if (mode === 'release') {
+          released.add(attemptId)
+          return Response.json({ activeTasks: false, unmanagedPrograms: null, reserved: false })
+        }
+        expect(mode).toBe('idle')
+        checks++
+        if (transientFailure) {
+          transientFailure = false
+          lostReplyFor = attemptId
+          throw new Error('reply lost after reservation')
+        }
+        if (lostReplyFor) expect(released.has(lostReplyFor)).toBe(true)
+        return Response.json({
+          activeTasks: !idle,
+          unmanagedPrograms,
+          reserved: idle && !unmanagedPrograms,
+        })
+      }
+      default:
+        throw new Error(`Unexpected request to ${url}`)
+    }
+  })
+  const closeOnIdle = vi.fn(async () => {
+    const outcome = await service.close({ logoff: false, onlyIfIdle: true })
+    return outcome !== 'unverified'
+  })
+  const service = new DesktopSessionService(vi.fn(), vi.fn(), vi.fn(), closeOnIdle)
+  try {
+    await service.start({ queueIds: [], mode: 'proxy', resolution: '1080p' }, 1n, [0, 0, 100, 100])
+    await vi.waitFor(() => expect(service.snapshot.executing).toBe(true), { timeout: 2500 })
+    expect(closeOnIdle).not.toHaveBeenCalled()
+
+    idle = true
+    await vi.waitFor(() => expect(checks).toBe(1), { timeout: 2500 })
+    expect(host.close).not.toHaveBeenCalled()
+    expect(service.snapshot.state).toBe('connected')
+
+    admitted++
+    unmanagedPrograms = false
+    transientFailure = true
+    await vi.waitFor(() => expect(checks).toBe(2), { timeout: 2500 })
+    expect(lostReplyFor).toBeDefined()
+    expect(released).toContain(lostReplyFor)
+    expect(host.close).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(service.snapshot.state).toBe('idle'), { timeout: 5500 })
+    expect(checks).toBe(3)
+    expect(host.close).toHaveBeenCalledExactlyOnceWith(false)
+  } finally {
+    await service.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 10000)

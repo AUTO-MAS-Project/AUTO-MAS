@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, ref, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { BookOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import splitDocRaw from './docs/split-doc.md?raw'
 import regexDocRaw from './docs/regex-doc.md?raw'
 import expressionDocRaw from './docs/expression-doc.md?raw'
@@ -146,11 +147,13 @@ watch(
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     v-model:open="open"
     :title="t('core.edit.extractionPatternReference')"
-    width="1000px"
-    :footer="null"
+    :icon="BookOutlined"
+    :width="1000"
+    footer="none"
+    scroll="none"
     :body-style="{
       height: '65vh',
       minHeight: 0,
@@ -161,13 +164,6 @@ watch(
     :destroy-on-close="false"
     wrap-class-name="log-pattern-docs-modal"
   >
-    <template #title>
-      <span class="modal-title">
-        <BookOutlined />
-        {{ t('core.edit.extractionPatternReference') }}
-      </span>
-    </template>
-
     <a-tabs v-model:active-key="activeKey" size="small" class="docs-tabs">
       <a-tab-pane key="split" :tab="t('core.edit.stringSplittingGuide')" />
       <a-tab-pane key="regex" :tab="t('core.edit.regexGuide')" />
@@ -191,16 +187,10 @@ watch(
       </aside>
       <div ref="contentRef" class="docs-content markdown-content" v-html="renderedHtml"></div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>
-.modal-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .docs-tabs {
   flex-shrink: 0;
   margin-bottom: 8px;

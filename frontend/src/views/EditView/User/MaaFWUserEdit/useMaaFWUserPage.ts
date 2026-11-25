@@ -13,7 +13,8 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
@@ -416,15 +417,12 @@ export function useMaaFWUserPage({
   // 存完；只有存失败、或有校验不过的草稿时才弹确认，选「继续编辑」就留在本页。
   // 转圈、连点只算一次、放行后不再拦见 createMaaFWLeaveGuard。
   const confirmLeave = () =>
-    new Promise<boolean>(resolve => {
-      Modal.confirm({
-        title: t('core.edit.youHaveUnsavedChanges'),
-        content: t('core.edit.leaveWithoutSavingUnsaved'),
-        okText: t('core.edit.leave'),
-        cancelText: t('core.edit.keepEditing'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    openConfirm({
+      tone: 'warning',
+      title: t('core.edit.youHaveUnsavedChanges'),
+      description: t('core.edit.leaveWithoutSavingUnsaved'),
+      okText: t('core.edit.leave'),
+      cancelText: t('core.edit.keepEditing'),
     })
 
   const prepareLeave = async () => {

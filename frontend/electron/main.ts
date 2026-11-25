@@ -44,6 +44,7 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { registerUpgradeBackupHandlers } from './ipc/upgradeBackupHandlers'
 import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
@@ -115,6 +116,7 @@ import {
   getBackendOwnership,
 } from './services/instanceConfig'
 import { resolveRuntimeLaunchModeDetail } from './services/runtime'
+import { resolveUpgradeBackupVersion } from './services/backendService'
 import { setupStartupHardware, localStartupAttempt } from './services/startupHardware/monitor'
 import { startupProbeConfig, flushStartupHardwareLog } from './services/startupHardware/config'
 import AdmZip = require('adm-zip')
@@ -316,6 +318,7 @@ const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
   confirmBeforeClose: boolean
+  upgradeBackup?: { enabled?: boolean; directory?: string | null }
   lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
@@ -960,6 +963,7 @@ function createWindow() {
     typeof beginMainFeature<'renderer_responsiveness_changed'>
   > | null = null
   win.on('unresponsive', () => {
+    desktopSession?.setRendererResponsive(win, false)
     if (!responseIncident) {
       responseIncident = beginMainFeature('renderer_responsiveness_changed')
       beginMainFeature('renderer_responsiveness_changed').finish({
@@ -972,6 +976,7 @@ function createWindow() {
   })
 
   win.on('responsive', () => {
+    desktopSession?.setRendererResponsive(win, true)
     responseIncident?.finish({ state: 'responsive', outcome: 'success' })
     responseIncident = null
     logger.info('渲染进程已恢复响应')
@@ -2189,6 +2194,19 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
+    if (patch?.upgradeBackup) {
+      const { enabled } = patch.upgradeBackup
+      patch = {
+        ...patch,
+        upgradeBackup: {
+          ...loadConfig().upgradeBackup,
+          ...(typeof enabled === 'boolean' ? { enabled } : {}),
+        },
+      }
+    }
+    if (defaults?.upgradeBackup)
+      defaults = { ...defaults, upgradeBackup: loadConfig().upgradeBackup ?? { enabled: true } }
+
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
@@ -2478,6 +2496,11 @@ app.whenReady().then(async () => {
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerUpgradeBackupHandlers(
+    () => mainWindow,
+    getLocalApiEndpoint,
+    () => resolveUpgradeBackupVersion(resolveRuntimeLaunchModeDetail().mode) !== undefined
+  )
   registerAppUpdateHandlers({
     installRoot: updateRoot,
     updatesEnabled: desktopUpdatesEnabled,

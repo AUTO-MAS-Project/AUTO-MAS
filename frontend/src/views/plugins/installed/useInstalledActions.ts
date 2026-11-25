@@ -1,6 +1,6 @@
 import { computed, h, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import {
   LIFECYCLE_LABEL_KEYS,
   lifecycleAffected,
@@ -66,30 +66,26 @@ export function useInstalledActions() {
       ...scripts,
       ...(plans ? [t('core.plugins.disableAffectedPlans', { count: plans })] : []),
     ]
-    return () =>
-      h('div', [
-        h('p', text),
-        h('div', t('core.plugins.disableAffected')),
-        h(
-          'ul',
-          { style: 'margin: 4px 0 0; padding-left: 20px' },
-          items.map(item => h('li', item))
-        ),
-      ])
+    // openConfirm 的 description 只收字符串或 VNode：每次打开确认框现建一份。
+    return h('div', [
+      h('p', text),
+      h('div', t('core.plugins.disableAffected')),
+      h(
+        'ul',
+        { style: 'margin: 4px 0 0; padding-left: 20px' },
+        items.map(item => h('li', item))
+      ),
+    ])
   }
 
   const confirm = (view: InstalledPluginView, action: GuardedAction, scopes: DisableScope[]) =>
-    new Promise<boolean>(resolve => {
-      // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围；两者都列出连带删除的托管、计划表。
-      Modal.confirm({
-        title: t(CONFIRM_TITLE_KEYS[action]),
-        content: confirmContent(view, action, scopes),
-        okText: t(LIFECYCLE_LABEL_KEYS[action]),
-        okType: 'danger',
-        cancelText: t('core.common.cancel'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    // 沿用原有确认文案：卸载始终提示删除配置，停用列出后端给的影响范围；两者都列出连带删除的托管、计划表。
+    openConfirm({
+      tone: 'danger',
+      title: t(CONFIRM_TITLE_KEYS[action]),
+      description: confirmContent(view, action, scopes),
+      okText: t(LIFECYCLE_LABEL_KEYS[action]),
+      cancelText: t('core.common.cancel'),
     })
 
   const proceed = async (

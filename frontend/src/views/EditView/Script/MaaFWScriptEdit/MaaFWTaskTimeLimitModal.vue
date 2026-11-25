@@ -1,9 +1,11 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :title="t('core.edit.taskTimeLimitOverrides')"
     :width="560"
-    destroy-on-close
+    :ok-text="t('core.edit.taskTimeLimitSave')"
+    :cancel-text="t('core.common.cancel')"
+    @ok="handleSave"
     @cancel="emit('update:open', false)"
   >
     <div class="task-limit-modal">
@@ -39,30 +41,18 @@
         </div>
       </div>
     </div>
-    <template #footer>
-      <div class="task-limit-footer">
-        <a-button
-          type="link"
-          class="task-limit-reset-all"
-          :disabled="!anyChanged"
-          @click="resetAll"
-        >
-          {{ t('core.edit.taskTimeLimitRestoreAll') }}
-        </a-button>
-        <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('core.common.cancel') }}</a-button>
-          <a-button type="primary" @click="handleSave">
-            {{ t('core.edit.taskTimeLimitSave') }}
-          </a-button>
-        </a-space>
-      </div>
+    <template #footer-left>
+      <a-button type="link" class="task-limit-reset-all" :disabled="!anyChanged" @click="resetAll">
+        {{ t('core.edit.taskTimeLimitRestoreAll') }}
+      </a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import {
   taskLimitDraftToOverrides,
   type TaskTimeLimitDraft,
@@ -177,13 +167,6 @@ const handleSave = () => {
 
 .task-limit-input {
   width: 120px;
-}
-
-.task-limit-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 8px;
 }
 
 .task-limit-reset-all {

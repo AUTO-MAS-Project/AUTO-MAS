@@ -93,6 +93,7 @@
       "updateRuntime": "Runtime を更新"
     },
     "msg": {
+      "backingUpUpgrade": "更新前のデータをバックアップしています…",
       "execFailed": "実行に失敗しました",
       "autoRetry": "起動を再試行しています",
       "initDone": "初期設定が完了しました",

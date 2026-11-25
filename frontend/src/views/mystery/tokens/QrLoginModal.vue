@@ -1,13 +1,5 @@
 <template>
-  <a-modal
-    :open="open"
-    :title="modalTitle"
-    :footer="null"
-    :width="360"
-    :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
-    centered
-    @cancel="emit('cancel')"
-  >
+  <AppModal :open="open" :title="modalTitle" footer="none" :width="360" @cancel="emit('cancel')">
     <div class="qr-login-container">
       <!-- 二维码 -->
       <div
@@ -56,12 +48,13 @@
         </a-button>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,

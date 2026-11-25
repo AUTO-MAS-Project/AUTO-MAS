@@ -37,6 +37,17 @@ def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]
     return script_uid, script_config
 
 
+def preview_task_argument(script_id: str, task_index: int) -> str:
+    """Resolve the same task argument used when dispatching the account."""
+    from .tools.arguments import task_argument
+
+    _, script_config = _oknte_script_config(script_id)
+    root_path = script_config.Info.RootPath
+    if root_path is None:
+        raise ValueError("请设置 OK-NTE 脚本路径")
+    return task_argument(root_path, task_index)
+
+
 def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
     from app.task.OkNte.tools.backup_archive import ensure_quick_config_dir
 

@@ -2,23 +2,30 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComponentHint } from '@/api'
+import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
 import DeclarativeControl from '@/components/DeclarativeControl.vue'
-import { configurationFieldSpan } from '@/utils/declarativeLayout'
+import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { apiErrorMessage } from '@/utils/apiResult'
 
-export type DeclarativeHint = ComponentHint
-const props = defineProps<{
-  group: string
-  namespace: string
-  hint: DeclarativeHint
-  value: unknown
-  options: Array<{ value: string; label: string }>
-  loading?: boolean
-  disabled?: boolean
-}>()
-const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown] }>()
+export type { DeclarativeHint }
+const props = withDefaults(
+  defineProps<{
+    group: string
+    namespace: string
+    hint: DeclarativeHint
+    value: unknown
+    options: Required<DeclarativeOption>[]
+    loading?: boolean
+    disabled?: boolean
+    error?: string
+    disabledReason?: string
+    tile?: boolean
+    tableCell?: boolean
+    retry?: () => void
+  }>(),
+  { error: undefined, disabledReason: undefined, retry: undefined }
+)
+const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
 const { t, te } = useI18n()
 const key = computed(
   () =>
@@ -47,10 +54,12 @@ const update = (value: unknown) =>
 const pick = async () => {
   // 按路径类型打开文件或目录选择器，将选中路径提交给表单，并展示选择失败原因。
   try {
+    const extensions = props.hint.path_extensions
+    const filters = extensions?.length ? [{ name: label.value, extensions }] : undefined
     const selected =
       props.hint.path_kind === 'folder'
         ? await window.electronAPI.selectFolder()
-        : (await window.electronAPI.selectFile())?.[0]
+        : (await window.electronAPI.selectFile(filters))?.[0]
     if (selected) emit('update:value', selected)
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.emulator.toast.filePickerUnavailable')))
@@ -60,27 +69,90 @@ const pick = async () => {
 
 <template>
   <div
-    class="plugin-field form-grid-24__item form-item-vertical"
-    :style="{ '--field-span': configurationFieldSpan(hint.component) }"
+    class="declarative-field"
+    :aria-label="label"
+    :title="tableCell ? tip || undefined : undefined"
   >
-    <div class="form-label-wrapper">
-      <span class="form-label">{{ label }}</span>
-      <a-tooltip v-if="tip" :title="tip"><QuestionCircleOutlined class="help-icon" /></a-tooltip>
+    <div
+      class="declarative-field-body"
+      :class="{ 'switch-tile': tile, 'switch-tile--on': tile && value }"
+    >
+      <FieldLabelWithHint
+        v-if="!tableCell"
+        :text="label"
+        :hint="tip"
+        :title="tile ? label : undefined"
+        variant="form"
+      />
+      <DeclarativeControl
+        :compact="tableCell || tile"
+        :component="hint.component"
+        :label="label"
+        :model-value="value"
+        :disabled="disabled || hint.editable === false || loading"
+        :loading="loading"
+        :secret="hint.secret"
+        :masked="hint.masked"
+        :format="hint.format"
+        :widget="hint.widget"
+        :ordered="hint.ordered"
+        :path-kind="hint.path_kind"
+        :min="hint.min"
+        :max="hint.max"
+        :multiple="hint.multiple"
+        :options="options"
+        @update:model-value="update"
+        @pick="pick"
+        @blur="emit('blur')"
+      />
     </div>
-    <DeclarativeControl
-      :component="hint.component"
-      :label="label"
-      :model-value="value"
-      :disabled="disabled || hint.editable === false || loading"
-      :loading="loading"
-      :secret="hint.secret"
-      :path-kind="hint.path_kind"
-      :min="hint.min"
-      :max="hint.max"
-      :multiple="hint.multiple"
-      :options="options"
-      @update:model-value="update"
-      @pick="pick"
-    />
+    <p v-if="error" class="field-error" role="alert">{{ error }}</p>
+    <p v-else-if="disabledReason" class="field-reason">{{ disabledReason }}</p>
+    <a-button v-if="retry" size="small" type="link" :loading="loading" @click="retry">
+      {{ t('core.common.retry') }}
+    </a-button>
   </div>
 </template>
+
+<style scoped>
+.declarative-field,
+.declarative-field-body {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.declarative-field > .ant-btn {
+  justify-self: start;
+}
+.switch-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 42px;
+  padding: 4px 12px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius);
+}
+.switch-tile--on {
+  border-color: var(--ant-color-primary-border);
+  background: var(--ant-color-primary-bg);
+}
+.switch-tile :deep(.field-label) {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.field-error,
+.field-reason {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+.field-error {
+  color: var(--ant-color-error);
+}
+</style>

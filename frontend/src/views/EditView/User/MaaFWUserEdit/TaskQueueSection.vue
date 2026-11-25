@@ -107,7 +107,7 @@
                     :entry="queuedTask"
                     :selected="!globalPanelActive && selectedTaskId === queuedTask.id"
                     :skipped="taskSnapshot.taskChecked[queuedTask.id] === false"
-                    :disabled="interfaceDependentDisabled"
+                    :disabled="interfaceDependentDisabled || deletingTask"
                     :can-move-up="canMoveTaskByOffset(index, -1)"
                     :can-move-down="canMoveTaskByOffset(index, 1)"
                     :option-issue="checkboxIssueTaskIds.has(queuedTask.id)"
@@ -132,7 +132,11 @@
                     {{ t('core.edit.queueTaskRename') }}
                   </a-menu-item>
                 </template>
-                <a-menu-item key="delete" danger :disabled="interfaceDependentDisabled">
+                <a-menu-item
+                  key="delete"
+                  danger
+                  :disabled="interfaceDependentDisabled || deletingTask"
+                >
                   {{ t('core.edit.queueTaskDelete') }}
                 </a-menu-item>
               </a-menu>
@@ -167,6 +171,7 @@
           :effective-resource-name="effectiveResourceName"
           :managed-task-entries="managedTaskEntries"
           :disabled="interfaceDependentDisabled"
+          :deleting="deletingTask"
           @task-option-update="(taskId, payload) => emit('taskOptionUpdate', taskId, payload)"
           @weekdays-update="(taskId, weekdays) => emit('taskWeekdaysUpdate', taskId, weekdays)"
           @delete-selected-task="emit('deleteSelectedTask')"
@@ -404,18 +409,7 @@ const canDragTask = (event: {
     : event.draggedContext.futureIndex >= pretaskCount
 }
 
-const uniqueOptionNames = (optionGroups: string[][]) => {
-  const optionNames: string[] = []
-  const seen = new Set<string>()
-  for (const group of optionGroups) {
-    for (const optionName of group) {
-      if (seen.has(optionName)) continue
-      seen.add(optionName)
-      optionNames.push(optionName)
-    }
-  }
-  return optionNames
-}
+const uniqueOptionNames = (optionGroups: string[][]) => [...new Set(optionGroups.flat())]
 
 const getTaskOptionNames = (task: MaaFWTaskInfo) => {
   if (task.entry === 'MXU_PRETASK') {

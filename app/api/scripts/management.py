@@ -34,6 +34,7 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
+from app.api._error_codes import config_error_code
 from app.config.wire import ConfigInput, ConfigPayload, config_contract
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
@@ -121,6 +122,10 @@ class ScriptIndexItem(BaseModel):
     pluginAvailable: bool = Field(
         default=True,
         description="所属插件当前是否可用；插件托管的插件不在已启用状态时为 false",
+    )
+
+    desktopSessionSupported: bool | None = Field(
+        default=None, description="查询单个托管时返回当前配置是否支持桌面分身"
     )
 
 
@@ -321,6 +326,13 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 for decl in Plugin.script_types.values()
             }
         )
+        desktop_session_supported = None
+        if script.scriptId and index:
+            from app.core.desktop_session.lifecycle import query_task_support
+
+            desktop_session_supported = await query_task_support(
+                Config.ScriptConfig[script.scriptId]
+            )
         index = [
             ScriptIndexItem(
                 **item,
@@ -328,6 +340,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 pluginAvailable=_plugin_available(
                     Config.ScriptConfig[uuid.UUID(item["uid"])]
                 ),
+                desktopSessionSupported=desktop_session_supported,
             )
             for item in index
         ]
@@ -402,7 +415,9 @@ async def update_script(
             f"update_script失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=config_error_code(e),
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
     return OutBase()
 

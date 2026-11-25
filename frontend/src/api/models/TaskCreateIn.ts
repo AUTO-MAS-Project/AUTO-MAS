@@ -10,5 +10,9 @@ export type TaskCreateIn = {
      * 单入口任务要求树，顶层仅包含索引 0
      */
     tasks: Record<string, TaskSelectionNode>;
+    /**
+     * 本次只允许在桌面分身执行
+     */
+    requireDesktopSession?: boolean;
 };
 

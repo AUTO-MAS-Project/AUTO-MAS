@@ -7,6 +7,7 @@ import type { SettingChangeHandler } from './settingTypes'
 import ChangelogView from '@/components/ChangelogView.vue'
 import UpdateSettingsSection from '@/views/setting/UpdateSettingsSection.vue'
 import SectionCard from '@/components/ui/SectionCard.vue'
+import { AppModal } from '@/components/ui'
 import appIcon from '@/assets/AUTO-MAS.ico'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
@@ -170,17 +171,17 @@ const copyAllInfo = async () => {
     </div>
   </div>
 
-  <a-modal
+  <AppModal
     v-model:open="changelogVisible"
     :title="t('core.setting.others.changelogTitle', { version })"
     :width="800"
-    :footer="null"
+    footer="none"
     class="changelog-modal"
   >
     <div class="changelog-modal-body">
       <ChangelogView :data="currentChangelog" />
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

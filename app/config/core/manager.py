@@ -117,6 +117,7 @@ class RootRecord:
     node: ConfigNode
     path: Path
     revision: int = 0
+    persisted_revision: int = -1
 
 
 @dataclass(frozen=True)
@@ -1049,7 +1050,7 @@ class ConfigManager:
                             continue
                     elif failure.revision == record.revision:
                         continue
-                elif not full:
+                elif not full or record.persisted_revision == record.revision:
                     continue
             # 构造先登记、激活在后；未激活根没有可保存状态。
             if root.activation_state != NodeState.ACTIVE:
@@ -1077,6 +1078,7 @@ class ConfigManager:
                 self._record_save_failure(record, error, force=force)
                 errors.append(error)
             else:
+                record.persisted_revision = record.revision
                 with self._execution_condition:
                     recovered = self._save_failures.pop(root.uid, None)
                 if recovered is not None:

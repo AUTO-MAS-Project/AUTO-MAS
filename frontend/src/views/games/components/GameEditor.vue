@@ -1,207 +1,98 @@
 <template>
-  <component
-    :is="row ? 'section' : AntModal"
-    v-bind="row ? { class: 'config-section app-page-section' } : modalProps"
-    @ok="save"
-    @cancel="close"
+  <section
+    v-if="row"
+    class="config-section app-page-section"
+    :class="{ 'config-section--collapsed': !expanded }"
   >
-    <header v-if="row" class="section-header">
-      <h3>{{ t('core.edit.gameConfiguration') }}</h3>
-      <a-space wrap>
-        <a-tag v-if="locked" color="processing">{{ t('core.games.inUse') }}</a-tag>
-        <a-button v-if="dirty" size="small" :disabled="saving" @click="resetDraft">
+    <header class="config-header" @click="toggleExpanded">
+      <div class="config-header-title">
+        <span class="collapse-chevron" aria-hidden="true">
+          <DownOutlined v-if="expanded" />
+          <RightOutlined v-else />
+        </span>
+        <h3>{{ t('core.edit.gameConfiguration') }}</h3>
+        <span v-if="configSummary" class="config-summary">{{ configSummary }}</span>
+      </div>
+      <a-space wrap @click.stop>
+        <StatusChip v-if="locked" tone="processing">{{ t('core.games.inUse') }}</StatusChip>
+        <a-button v-if="dirty" :disabled="saving" @click="resetDraft">
           {{ t('core.emulator.cancel') }}
         </a-button>
-        <a-button
-          v-if="dirty"
-          type="primary"
-          size="small"
-          :disabled="locked"
-          :loading="saving"
-          @click="save"
-        >
+        <a-button v-if="dirty" type="primary" :disabled="locked" :loading="saving" @click="save">
           {{ t('core.emulator2.save') }}
         </a-button>
-        <slot name="actions" />
+        <a-button @click="toggleExpanded">
+          {{ t(expanded ? 'core.games.collapseEdit' : 'core.games.expandEdit') }}
+        </a-button>
       </a-space>
     </header>
 
-    <a-config-provider :component-disabled="locked || saving">
-      <a-descriptions bordered size="small" :column="row ? 2 : 1" class="config-form">
-        <a-descriptions-item :label="t('core.games.name')">
-          <a-input
-            v-model:value="draft.name"
-            :aria-label="t('core.games.name')"
-            size="small"
-            :bordered="false"
-          />
-        </a-descriptions-item>
-        <a-descriptions-item :label="t('core.games.adapter')">
-          <span v-if="row">{{ row.type.name }}</span>
-          <a-select
-            v-else
-            v-model:value="selectedType"
-            :options="types.map(item => ({ value: item.type, label: item.name }))"
-            :aria-label="t('core.games.adapter')"
-            size="small"
-            :bordered="false"
-            class="adapter-select"
-          />
-        </a-descriptions-item>
-        <a-descriptions-item
-          :label="t(selectedType === 'avd' ? 'core.games.installRoot' : 'core.games.executable')"
-          :span="row ? 2 : 1"
-        >
-          <a-input
-            v-model:value="draft.path"
-            readonly
-            size="small"
-            :bordered="false"
-            :placeholder="t('core.games.selectPath')"
-          >
-            <template #suffix>
-              <a-button
-                type="text"
-                size="small"
-                :aria-label="t('core.games.browse')"
-                @click="pickPath('path')"
-              >
-                <template #icon><FolderOpenOutlined /></template>
-              </a-button>
-            </template>
-          </a-input>
-        </a-descriptions-item>
-        <a-descriptions-item :label="t('core.games.waitTime')">
-          <a-input-number
-            v-model:value="draft.waitTime"
-            :min="1"
-            :max="9999"
-            size="small"
-            :bordered="false"
-          />
-        </a-descriptions-item>
-        <a-descriptions-item :label="t('core.games.concurrent')">
-          <a-switch v-model:checked="draft.concurrent" size="small" />
-        </a-descriptions-item>
-        <template v-if="clientType">
-          <a-descriptions-item :label="t('core.games.launcher')" :span="row ? 2 : 1">
-            <a-input
-              v-model:value="draft.launcher"
-              readonly
-              size="small"
-              :bordered="false"
-              :placeholder="t('core.games.optional')"
-            >
-              <template #suffix>
-                <a-button
-                  type="text"
-                  size="small"
-                  :aria-label="t('core.games.browse')"
-                  @click="pickPath('launcher')"
-                >
-                  <template #icon><FolderOpenOutlined /></template>
-                </a-button>
-              </template>
-            </a-input>
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.launchWithLauncher')">
-            <a-switch v-model:checked="draft.launchWithLauncher" size="small" />
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.forceClose')">
-            <a-switch v-model:checked="draft.forceClose" size="small" />
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.workingDirectory')" :span="row ? 2 : 1">
-            <a-input
-              v-model:value="draft.cwd"
-              readonly
-              size="small"
-              :bordered="false"
-              :placeholder="t('core.games.optional')"
-            >
-              <template #suffix>
-                <a-button
-                  type="text"
-                  size="small"
-                  :aria-label="t('core.games.browse')"
-                  @click="pickPath('cwd')"
-                >
-                  <template #icon><FolderOpenOutlined /></template>
-                </a-button>
-              </template>
-            </a-input>
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.arguments')" :span="row ? 2 : 1">
-            <a-textarea
-              v-model:value="draft.arguments"
-              :placeholder="t('core.games.oneArgumentPerLine')"
-              :auto-size="{ minRows: 1, maxRows: 4 }"
-              size="small"
-              :bordered="false"
-            />
-          </a-descriptions-item>
-        </template>
-        <a-descriptions-item
-          v-else-if="selectedType === 'general_emulator'"
-          :label="t('core.games.adbPath')"
-          :span="row ? 2 : 1"
-        >
-          <a-input
-            v-model:value="draft.adb"
-            readonly
-            size="small"
-            :bordered="false"
-            :placeholder="t('core.games.optional')"
-          >
-            <template #suffix>
-              <a-button
-                type="text"
-                size="small"
-                :aria-label="t('core.games.browse')"
-                @click="pickPath('adb')"
-              >
-                <template #icon><FolderOpenOutlined /></template>
-              </a-button>
-            </template>
-          </a-input>
-        </a-descriptions-item>
-        <template v-else-if="selectedType">
-          <a-descriptions-item v-if="selectedType !== 'avd'" :label="t('core.games.stableMode')">
-            <a-switch v-model:checked="draft.stable" size="small" />
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.configGuard')">
-            <a-switch v-model:checked="draft.guard" size="small" />
-          </a-descriptions-item>
-          <a-descriptions-item
-            v-if="selectedType === 'mumu'"
-            :label="t('core.games.forceBeforeLaunch')"
-          >
-            <a-switch v-model:checked="draft.forceBefore" size="small" />
-          </a-descriptions-item>
-          <a-descriptions-item :label="t('core.games.forceClose')">
-            <a-switch v-model:checked="draft.forceClose" size="small" />
-          </a-descriptions-item>
-        </template>
-      </a-descriptions>
+    <a-config-provider v-if="expanded" :component-disabled="locked || saving">
+      <div class="config-form-body">
+        <GameConfigFormFields
+          :draft="draft"
+          :selected-type="selectedType"
+          :client-type="clientType"
+          :types="types"
+          two-column
+          @pick-path="pickPath"
+        />
+      </div>
     </a-config-provider>
-  </component>
+  </section>
+
+  <AppModal
+    v-else
+    :open="open"
+    size="md"
+    :title="t('core.games.add')"
+    :submitting="saving"
+    :dirty="dirty"
+    :dirty-title="t('core.games.discard')"
+    dirty-description=""
+    :mask-closable="false"
+    @ok="save"
+    @cancel="emit('close')"
+  >
+    <a-config-provider :component-disabled="saving">
+      <GameConfigFormFields
+        :draft="draft"
+        :selected-type="selectedType"
+        :client-type="clientType"
+        :types="types"
+        show-adapter-select
+        @update:selected-type="value => (selectedType = value)"
+        @pick-path="pickPath"
+      />
+    </a-config-provider>
+  </AppModal>
 </template>
+
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal as AntModal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { DownOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { AppModal, StatusChip } from '@/components/ui'
 import { GameCreateIn, type GameTypeItem, type GameUpdateIn } from '@/api'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
-import { FolderOpenOutlined } from '@ant-design/icons-vue'
+import { formatTargetConfigSummary } from '../gamePresentation'
+import GameConfigFormFields, { type GameConfigDraft } from './GameConfigFormFields.vue'
 
 const props = defineProps<{ open: boolean; row?: GameRow; types: GameTypeItem[] }>()
-const emit = defineEmits<{ close: []; created: [uid: string] }>()
+const emit = defineEmits<{
+  close: []
+  created: [uid: string]
+  dirtyChange: [uid: string, dirty: boolean]
+}>()
 const { t } = useI18n()
 const api = useGamesApi()
 const selectedType = ref('')
 const saving = ref(false)
 const initial = ref('')
-const draft = reactive({
+const expanded = ref(false)
+const draft = reactive<GameConfigDraft>({
   name: '',
   path: '',
   launcher: '',
@@ -216,6 +107,7 @@ const draft = reactive({
   forceClose: false,
   launchWithLauncher: true,
 })
+
 const clientType = computed(
   () =>
     (props.row?.type ?? props.types.find(item => item.type === selectedType.value))?.kind ===
@@ -224,14 +116,13 @@ const clientType = computed(
 const locked = computed(
   () => !!props.row && gameActionHint(props.row, props.row.uid, 'save')?.editable !== true
 )
-const modalProps = computed(() => ({
-  open: props.open,
-  title: t('core.games.add'),
-  confirmLoading: saving.value,
-  maskClosable: false,
-}))
+const configSummary = computed(() => (props.row ? formatTargetConfigSummary(props.row, t) : ''))
 const snapshot = () => JSON.stringify({ type: selectedType.value, draft })
 const dirty = computed(() => initial.value !== snapshot())
+
+function toggleExpanded() {
+  expanded.value = !expanded.value
+}
 
 function resetDraft() {
   const info = props.row?.document.info
@@ -276,9 +167,12 @@ function resetDraft() {
 }
 
 watch(
-  () => props.open,
-  open => {
-    if (open) resetDraft()
+  () => [props.open, props.row?.uid] as const,
+  ([open]) => {
+    if (open) {
+      resetDraft()
+      expanded.value = false
+    }
   },
   { immediate: true }
 )
@@ -288,6 +182,16 @@ watch(
     if (props.open && !dirty.value) resetDraft()
   }
 )
+watch(
+  dirty,
+  value => {
+    if (props.row) emit('dirtyChange', props.row.uid, value)
+  },
+  { immediate: true }
+)
+onBeforeUnmount(() => {
+  if (props.row) emit('dirtyChange', props.row.uid, false)
+})
 
 async function pickPath(field: 'path' | 'launcher' | 'cwd' | 'adb') {
   try {
@@ -304,6 +208,7 @@ async function pickPath(field: 'path' | 'launcher' | 'cwd' | 'adb') {
     message.error(String(error))
   }
 }
+
 function payload(): GameUpdateIn['data'] {
   const common = {
     name: draft.name.trim(),
@@ -339,6 +244,7 @@ function payload(): GameUpdateIn['data'] {
     },
   }
 }
+
 async function save() {
   if (locked.value || saving.value || (props.row && !dirty.value)) return
   if (
@@ -370,39 +276,57 @@ async function save() {
     saving.value = false
   }
 }
-function close() {
-  if (!dirty.value) {
-    emit('close')
-    return
-  }
-  AntModal.confirm({ title: t('core.games.discard'), onOk: () => emit('close') })
-}
 </script>
 
 <style scoped>
 .config-section {
-  padding: var(--app-page-content-padding);
+  padding: 14px 16px;
 }
 
-.section-header {
-  gap: 8px;
+.config-section--collapsed {
+  padding: 11px 16px;
+}
+
+.config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  margin-bottom: 16px;
-  border-bottom-width: 1px;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.section-header h3 {
-  font-size: var(--app-page-card-title-size);
-  font-weight: var(--app-page-card-title-weight);
-  line-height: var(--app-page-card-title-line-height);
-}
-
-.config-form :deep(.ant-descriptions-item-label) {
-  white-space: nowrap;
-}
-
-.adapter-select {
+.config-header-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   min-width: 0;
-  width: 100%;
+}
+
+.collapse-chevron {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--ant-color-text-secondary);
+}
+
+.config-header-title h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+
+.config-summary {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.config-form-body {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 </style>

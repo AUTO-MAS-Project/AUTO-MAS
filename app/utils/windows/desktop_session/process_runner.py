@@ -8,11 +8,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextlib import closing, suppress
 from contextvars import ContextVar
 from pathlib import Path
+from typing import NamedTuple
 
 import pythoncom
 import win32api
 import win32con
 import win32event
+import win32job
 import win32pipe
 from pywintypes import error as Win32Error
 
@@ -30,6 +32,44 @@ from .launcher import (
 
 _action_lock = asyncio.Lock()
 _action_callback = ContextVar("desktop_action_callback", default=False)
+
+
+class _ExecutorScope(NamedTuple):
+    session_id: int
+    pid: int
+    worker: object
+    job_handle: int | None = None
+
+
+_executors: dict[int, _ExecutorScope] = {}
+
+
+def supervised_processes(session_id: int) -> set[int]:
+    """查询仍由分身执行器持有的 Job，包含启动器退出后的进程。"""
+    result = set()
+    for entry in tuple(_executors.values()):
+        if entry.session_id != session_id:
+            continue
+        if win32event.WaitForSingleObject(entry.worker, 0) != win32event.WAIT_TIMEOUT:
+            continue
+        result.add(entry.pid)
+        if entry.job_handle is not None:
+            with closing(
+                win32api.DuplicateHandle(
+                    entry.worker,
+                    entry.job_handle,
+                    win32api.GetCurrentProcess(),
+                    win32job.JOB_OBJECT_QUERY,
+                    False,
+                    0,
+                )
+            ) as job:
+                result.update(
+                    win32job.QueryInformationJobObject(
+                        job, win32job.JobObjectBasicProcessIdList
+                    )
+                )
+    return result
 
 
 async def _read(pipe, *, deadline: float | None = None) -> dict:
@@ -98,8 +138,10 @@ class DesktopProcess:
         interactive: bool = False,
         owned: bool = True,
         root_handle=None,
+        create_time: float | None = None,
     ) -> None:
         self.pid = pid
+        self.create_time = create_time
         self.owned = owned
         self._pipe = pipe
         self._worker = worker
@@ -191,6 +233,7 @@ class DesktopProcess:
                         _finish_worker, self._worker, self._root_handle
                     )
                 finally:
+                    _executors.pop(id(self._worker), None)
                     self._worker.Close()
 
     @property
@@ -410,17 +453,24 @@ async def _launch(
                     if error.winerror not in (231, 536) or time.monotonic() >= deadline:
                         raise
                     await asyncio.sleep(0.05)
-            worker_access = win32con.SYNCHRONIZE | win32con.PROCESS_TERMINATE
-            if stop_root_only:
-                worker_access |= win32con.PROCESS_DUP_HANDLE
+            worker_pid = client_pid(pipe, desktop.session_id)
             worker = win32api.OpenProcess(
-                worker_access,
+                win32con.SYNCHRONIZE
+                | win32con.PROCESS_TERMINATE
+                | win32con.PROCESS_DUP_HANDLE,
                 False,
-                client_pid(pipe, desktop.session_id),
+                worker_pid,
+            )
+            _executors[id(worker)] = _ExecutorScope(
+                desktop.session_id, worker_pid, worker
             )
             await _write(pipe, request, deadline=deadline)
             request_sent = True
             result = await _read(pipe, deadline=deadline)
+            if "jobHandle" in result:
+                _executors[id(worker)] = _ExecutorScope(
+                    desktop.session_id, worker_pid, worker, int(result["jobHandle"])
+                )
             if stop_root_only:
                 root_handle = win32api.DuplicateHandle(
                     worker,
@@ -448,6 +498,7 @@ async def _launch(
             interactive=request.get("interactive", False),
             owned=request.get("owned", True),
             root_handle=root_handle,
+            create_time=result.get("createTime"),
         )
         owned = True
         return process
@@ -474,4 +525,5 @@ async def _launch(
                         try:
                             await asyncio.to_thread(_finish_worker, worker, root_handle)
                         finally:
+                            _executors.pop(id(worker), None)
                             worker.Close()

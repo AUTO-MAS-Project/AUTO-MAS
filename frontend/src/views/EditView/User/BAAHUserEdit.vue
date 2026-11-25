@@ -1,42 +1,44 @@
 <template>
-  <UserEditHeader
-    :script-id="scriptId"
-    :script-name="scriptName"
-    :is-edit="isEdit"
-    script-edit-segment="baah"
-    :user-id="userId"
-    @cancel="handleCancel"
-  />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="baah"
+        :user-id="userId"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-    <a-card class="config-card">
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+      <a-card class="config-card">
+        <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
+          <!-- 基本信息 -->
           <UserAccountHeading
             :user-name="formData.userName"
             :options="{ isEdit, logoSrc: accountIcon }"
           />
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-            <div class="section-header-actions">
-              <a-button size="small" @click="openRestoreModal">
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <template #actions>
+              <a-button size="small" @click="restoreOpen = true">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('core.edit.configRestoreTitle') }}
               </a-button>
-            </div>
-          </div>
-          <UserBasicInfoFields
-            v-model:user-name="formData.userName"
-            v-model:status="formData.Info.Status"
-            v-model:remained-day="formData.Info.RemainedDay"
-            v-model:notes="formData.Info.Notes"
-            :disabled="loading"
-            @save-name="handleFieldSave('userName', formData.userName)"
-            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
-            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
-          />
+            </template>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="loading"
+              @save-name="handleFieldSave('userName', formData.userName)"
+              @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+              @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
+          </SectionCard>
+
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="configName">
@@ -180,96 +182,103 @@
               <a-alert type="info" show-icon :message="t('core.edit.baahConfigSourceHint')" />
             </a-col>
           </a-row>
-        </div>
 
-        <!-- 数据统计（只读，由本软件自动写入） -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.statistics') }}</h3>
+          <!-- 数据统计（只读，由本软件自动写入） -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>{{ t('core.edit.statistics') }}</h3>
+            </div>
+            <a-row :gutter="24">
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.baahLastProxyDate')"
+                      :hint="t('core.edit.baahDataReadOnlyHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
+                    readonly
+                    size="large"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="6">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.baahProxyTimes')"
+                      :hint="t('core.edit.baahDataReadOnlyHint')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
+                </a-form-item>
+              </a-col>
+            </a-row>
           </div>
-          <a-row :gutter="24">
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahLastProxyDate')"
-                    :hint="t('core.edit.baahDataReadOnlyHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input
-                  :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
-                  readonly
-                  size="large"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahProxyTimes')"
-                    :hint="t('core.edit.baahDataReadOnlyHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
 
-        <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+          <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
+        </a-form>
+      </a-card>
+    </ConfigLockPanel>
 
-  <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
-  <ConfigRestoreSection
-    v-model:open="restoreOpen"
-    :disabled="configLocked"
-    :script-name="BAAH_DISPLAY_NAME"
-    :targets="restoreTargets"
-    :api="restoreApi"
-    :user-desc="t('core.edit.baahConfigRestoreUserDesc')"
-    :script-desc="t('core.edit.baahConfigRestoreScriptDesc')"
-    :on-restored="handleRestored"
-  >
-    <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
-    <template #preview="{ raw }">
-      <NoData
-        v-if="!previewSections(raw).length"
-        :description="t('core.edit.configRestorePreviewEmpty')"
-      />
-      <div v-else>
-        <template v-for="s in previewSections(raw)" :key="s.name">
-          <h4 class="baah-preview-title">{{ s.label }}</h4>
-          <a-descriptions
-            v-if="s.rows && s.rows.length"
-            :column="1"
-            size="small"
-            bordered
-            class="baah-preview-box"
-          >
-            <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-              {{ row.value }}
-            </a-descriptions-item>
-          </a-descriptions>
-          <div v-for="g in s.groups ?? []" :key="`${s.name}-${g.name}`" class="baah-preview-group">
-            <div class="baah-preview-group-name">{{ g.name }}</div>
-            <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
-              <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
+    <template #overlay>
+      <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="BAAH_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.baahConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.baahConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+      >
+        <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="baah-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="baah-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+              <div
+                v-for="g in s.groups ?? []"
+                :key="`${s.name}-${g.name}`"
+                class="baah-preview-group"
+              >
+                <div class="baah-preview-group-name">{{ g.name }}</div>
+                <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
+                  <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
+                    {{ row.value }}
+                  </a-descriptions-item>
+                </a-descriptions>
+              </div>
+            </template>
           </div>
         </template>
-      </div>
+      </ConfigRestoreSection>
     </template>
-  </ConfigRestoreSection>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/baah.png'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -283,7 +292,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { CalendarOutlined, HistoryOutlined } from '@ant-design/icons-vue'
-import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import type { Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -295,6 +304,7 @@ import { BaahService, type ComboBoxItem } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn'
 import { navigateTo } from '@/router'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 
 const { t } = useI18n()
 
@@ -302,18 +312,16 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading, error: userApiError } = useUserApi()
+const { addUser, updateUser, getUsers, loading, error: userApiError } = useUserApi()
 const { getScript, error: scriptApiError } = useScriptApi()
 
-const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
 
 let userId = route.params.userId as string
+const { enqueue: enqueueSave } = useSaveQueue()
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
@@ -436,27 +444,18 @@ const handleGoToPlans = () => {
   navigateTo('/plans', { query: { planId: formData.Info.StageMode } })
 }
 
-// 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
-const handleFieldSave = async (key: string, value: any) => {
-  if (isInitializing.value || isSaving.value || !userId) return
-
-  isSaving.value = true
-  try {
-    let userData = buildFieldPatch(key, value)
-
-    // 特殊处理：userName 需要同步到 Info.Name
-    if (key === 'userName') {
-      userData = { Info: { Name: value } }
+// 即时保存单个字段变更（经实体串行队列按序落盘，不丢并发修改）
+const handleFieldSave = (key: string, value: any) => {
+  if (isInitializing.value || !userId) return
+  void enqueueSave(async () => {
+    try {
+      const userData = key === 'userName' ? { Info: { Name: value } } : buildFieldPatch(key, value)
+      if (!(await updateUser(scriptId, userId, userData))) return
+      logger.info(`用户配置已保存: ${key}`)
+    } catch (error) {
+      logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
     }
-
-    if (!(await updateUser(scriptId, userId, userData))) return
-    logger.info(`用户配置已保存: ${key}`)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  }, key)
 }
 
 // 加载脚本信息
@@ -578,10 +577,6 @@ const { restoreApi, ensureBackup } = useConfigBackupApi({
   logger,
 })
 
-const openRestoreModal = () => {
-  restoreOpen.value = true
-}
-
 // 预览响应原文（unknown）收敛为分区视图：泛用组件的 raw 插槽不带专项类型
 interface BAAHPreviewRow {
   key: string
@@ -640,12 +635,8 @@ onUnmounted(() => {
 <style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
-.form-section {
+div.form-section {
   margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
 }
 
 .section-header {
