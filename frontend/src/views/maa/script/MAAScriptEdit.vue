@@ -174,43 +174,27 @@
 
           <!-- 游戏更新 -->
           <SectionCard variant="card" :title="t('core.edit.gameUpdate')" :icon="CloudSyncOutlined">
-            <a-row :gutter="24" align="middle">
-              <a-col :xs="24" :md="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.checkGameUpdateBefore')"
-                      :hint="t('core.edit.beforeStartingMaaCompare')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-switch
-                    v-model:checked="maaConfig.Run.IfCheckGameUpdate"
-                    @change="
-                      (checked: boolean) => handleChange('Run', 'IfCheckGameUpdate', checked)
-                    "
-                  />
-                </a-form-item>
+            <a-row :gutter="[16, 12]" class="switch-tile-row">
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="maaConfig.Run.IfCheckGameUpdate"
+                  :title="t('core.edit.checkGameUpdateBefore')"
+                  :description="t('core.edit.beforeStartingMaaCompare')"
+                  @change="checked => handleChange('Run', 'IfCheckGameUpdate', checked)"
+                />
               </a-col>
-              <a-col :xs="24" :md="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.installGamePackageAutomatically')"
-                      :hint="t('core.edit.whenClientDetectedAs')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-switch
-                    v-model:checked="maaConfig.Run.IfAutoInstallGameApk"
-                    :disabled="!maaConfig.Run.IfCheckGameUpdate"
-                    @change="
-                      (checked: boolean) => handleChange('Run', 'IfAutoInstallGameApk', checked)
-                    "
-                  />
-                </a-form-item>
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="maaConfig.Run.IfAutoInstallGameApk"
+                  :title="t('core.edit.installGamePackageAutomatically')"
+                  :description="t('core.edit.whenClientDetectedAs')"
+                  :disabled="!maaConfig.Run.IfCheckGameUpdate"
+                  @change="checked => handleChange('Run', 'IfAutoInstallGameApk', checked)"
+                />
               </a-col>
-              <a-col :xs="24" :md="8">
+            </a-row>
+            <a-row :gutter="24">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -258,7 +242,7 @@ import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import { AppstoreOutlined, CloudSyncOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -432,6 +416,10 @@ const selectMAAPath = async () => {
 
 .notice-content p + p {
   margin-top: 4px;
+}
+
+.switch-tile-row {
+  margin-bottom: 16px;
 }
 
 .update-settings-surface {
