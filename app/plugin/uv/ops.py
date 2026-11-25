@@ -226,8 +226,13 @@ async def install(
     plugin_name: str,
     meta_id: UUID | None = None,
     dry_run: bool = False,
+    libraries: Sequence[str] = (),
 ) -> bool:
-    """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。"""
+    """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。
+
+    ``libraries``：宿主内置托管要的库（需求串），和已装插件一样留在重建后的环境里；
+    按需求原样求解，新插件要更高版本时可以一起升。
+    """
     from packaging.requirements import Requirement
 
     from app.core import Config
@@ -247,7 +252,8 @@ async def install(
     environment.ensure_writable()
     replacing = Requirement(package_spec).name
     pinned = plugin_targets(Config.plugin_registry.values(), replacing=replacing)
-    targets = [*pinned, package_spec]
+    # 宿主内置托管要的库不在注册表里，不带上的话重建环境会把它移走。
+    targets = [*pinned, *libraries, package_spec]
     sources = {
         str(project.resolve()): project.read_text(encoding="utf-8")
         for item in targets
@@ -283,7 +289,11 @@ async def install(
                 if prepared.exists():
                     shutil.rmtree(prepared)
                 result = await resolve_environment(
-                    targets=[*_release_pins(pinned, released), package_spec],
+                    targets=[
+                        *_release_pins(pinned, released),
+                        *libraries,
+                        package_spec,
+                    ],
                     core_version=Config.VERSION,
                     dependencies=host_dependencies(),
                     constraints=pins,
@@ -605,6 +615,20 @@ async def prepare_environment(
     sys.path[:] = [item for item in sys.path if item != str(target.resolve())]
     installation = environment.read_installation()
     if await environment.apply_pending():
+        # 候选环境在安装时已带上当时要的库；之后才加的托管要的库，这一轮不重建环境
+        # （旧环境要留作回滚），换入确认后的下一次启动补装。
+        _, missing = _library_targets(
+            libraries,
+            {
+                name: dist.version
+                for name, dist in environment.distributions(target).items()
+            },
+        )
+        if missing:
+            logger.warning(
+                "换入的插件环境里没有宿主内置托管要的库，下次启动补装：{}",
+                "、".join(missing),
+            )
         return
     if installation is not None and installation.progress.state != "succeeded":
         from app.plugin.runtime import discover

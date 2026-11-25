@@ -265,7 +265,7 @@ class _PluginManager:
             # 只发现元数据；旧插件及其依赖在联合升级完成前不能进入导入环境。
             await discover.refresh(installed_path=site)
             minimums = self._startup_minimums()
-            libraries = self._startup_libraries()
+            libraries = self._host_libraries()
             requirements: dict[str, Any] = {}
             if minimums:
                 # 存量配置要的专项低于下限时，在任何插件模块导入前连同同族一起升上来。
@@ -1357,10 +1357,15 @@ class _PluginManager:
                 )
                 # 装包可能按 Requires-Dist 连带装上别的插件，记下装包前已登记的名字。
                 before = {r.info.plugin_name for r in Config.plugin_registry.values()}
+                options: dict[str, Any] = {}
+                if libraries := self._host_libraries():
+                    # 重建环境时留住宿主内置托管要的库（例如 MaaEnd 用的 MFW 解析库）。
+                    options["libraries"] = libraries
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
+                    **options,
                 )
                 if restart_required:
                     return {"restart_required": True}
@@ -1769,15 +1774,18 @@ class _PluginManager:
             return {}
 
     @staticmethod
-    def _startup_libraries() -> list[str]:
-        """配置里的宿主内置托管要装进插件环境的库；读不了配置时按没有处理。"""
+    def _host_libraries() -> list[str]:
+        """配置里的宿主内置托管要留在插件环境里的库；读不了配置时按没有处理。
+
+        启动前准备环境和安装插件重建环境都从这里取，换入的候选环境是安装时建的。
+        """
         from app.core.config import Config
         from app.core.config.plugin_upgrade import required_host_libraries
 
         try:
             return required_host_libraries(Config.config_path)
         except Exception:
-            logger.exception("读取宿主内置托管要的库失败，本次启动不补装")
+            logger.exception("读取宿主内置托管要的库失败，这次准备插件环境不带上它们")
             return []
 
     def _below_minimum_family(self, minimums: dict[str, Version]) -> frozenset[str]:

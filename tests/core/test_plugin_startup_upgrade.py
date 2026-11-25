@@ -765,6 +765,65 @@ async def test_family_plugins_upgrade_together_and_unrelated_plugin_stays(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["hot", "restart"])
+async def test_install_keeps_host_library_for_builtin_managed(
+    isolated_app_paths, monkeypatch, tmp_path, mode
+):
+    """配置里有 MaaEnd 托管、环境里已有 MFW 解析库：装别的插件重建环境后库还在，
+    热发布与等重启换入的候选环境都一样。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    wheels = tmp_path / "wheels"
+    library = wheel(
+        wheels,
+        name="auto-mas-maafw-interface",
+        version="0.2.0",
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    wheel(
+        wheels,
+        name="fam-newcomer",
+        version="1.0",
+        module="fam_newcomer",
+        plugin_id="fam_newcomer",
+        content=FAMILY_PLUGIN,
+        requires=["auto-mas-core>=5,<6"],
+    )
+    config_path = isolated_app_paths.config_path
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "scripts.yaml").write_text(
+        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
+        encoding="utf-8",
+    )
+    manager = _PluginManager()
+    try:
+        if mode == "hot":
+            await manager.install(_upgrade_request("fam-newcomer"))
+            assert _installed_versions(site)["fam-newcomer"] == "1.0"
+        else:
+            await manager.load(registry.by_name("fam_service"))
+            assert await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+            ) == {"restart_required": True}
+            assert (
+                _installed_versions(site.with_suffix(".pending"))["fam-adapter-a"]
+                == "0.2.0"
+            )
+            await manager.shutdown()
+            assert await environment.apply_pending()
+        assert _installed_versions(site)["auto-mas-maafw-interface"] == "0.2.0"
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in (*FAMILY_MODULES, "fam_newcomer"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.asyncio
 async def test_family_still_unsolvable_after_release_changes_nothing(
     isolated_app_paths, monkeypatch, tmp_path
 ):
