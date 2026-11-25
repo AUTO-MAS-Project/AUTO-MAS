@@ -129,30 +129,16 @@
 
           <!-- 运行配置 -->
           <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
-            <ScriptHardTimeoutField
-              v-model:value="baahConfig.Run.HardTimeLimit"
-              @save="handleChange('Run', 'HardTimeLimit', baahConfig.Run.HardTimeLimit)"
+            <ScriptRunLimitsSection
+              v-model:hard-time-limit="baahConfig.Run.HardTimeLimit"
+              v-model:retry-limit="baahConfig.Run.RunTimesLimit"
+              v-model:timeout="baahConfig.Run.RunTimeLimit"
+              hide-execution-session
+              hide-daily
+              :retry-hint="t('core.edit.baahRunTimesLimitHint')"
+              :timeout-hint="t('core.edit.baahRunTimeLimitHint')"
+              @save="key => handleChange('Run', key, baahConfig.Run[key as keyof BAAHRunForm])"
             />
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <ScriptRunLimitField
-                  v-model="baahConfig.Run.RunTimesLimit"
-                  kind="retry"
-                  :label="t('core.edit.retryLimit2')"
-                  :hint="t('core.edit.baahRunTimesLimitHint')"
-                  @save="handleChange('Run', 'RunTimesLimit', baahConfig.Run.RunTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="8">
-                <ScriptRunLimitField
-                  v-model="baahConfig.Run.RunTimeLimit"
-                  kind="timeout"
-                  :label="t('core.edit.runTimeoutMinutes')"
-                  :hint="t('core.edit.baahRunTimeLimitHint')"
-                  @save="handleChange('Run', 'RunTimeLimit', baahConfig.Run.RunTimeLimit)"
-                />
-              </a-col>
-            </a-row>
           </SectionCard>
         </a-form>
       </a-card>
@@ -163,10 +149,9 @@
 <script setup lang="ts">
 import BAAHProgramUpdateSettings from './components/BAAHProgramUpdateSettings.vue'
 import type { BAAHConfig_Update } from '@/api'
-import ScriptRunLimitField from './components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import { ConfigEditShell, SectionCard } from '@/components/ui'

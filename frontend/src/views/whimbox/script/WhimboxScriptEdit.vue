@@ -68,38 +68,17 @@
           </SectionCard>
 
           <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
-            <ScriptHardTimeoutField
-              v-model:value="whimboxConfig.Run.HardTimeLimit"
-              @save="handleChange('Run', 'HardTimeLimit', whimboxConfig.Run.HardTimeLimit)"
-            />
-            <a-row :gutter="24">
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.ProxyTimesLimit"
-                  kind="daily"
-                  :label="t('core.edit.runsPerDay')"
-                  :hint="t('core.edit.k0MeansNoLimit')"
-                  @save="handleChange('Run', 'ProxyTimesLimit', whimboxConfig.Run.ProxyTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.RunTimesLimit"
-                  kind="retry"
-                  :label="t('core.edit.retryLimit2')"
-                  :hint="t('core.edit.whimboxRetryLimitHint')"
-                  @save="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.RunTimeLimit"
-                  kind="timeout"
-                  :label="t('core.edit.runTimeoutMinutes')"
-                  :hint="t('core.edit.whimboxRunTimeoutHint')"
-                  @save="handleChange('Run', 'RunTimeLimit', whimboxConfig.Run.RunTimeLimit)"
-                />
-              </a-col>
+            <ScriptRunLimitsSection
+              v-model:hard-time-limit="whimboxConfig.Run.HardTimeLimit"
+              v-model:daily-limit="whimboxConfig.Run.ProxyTimesLimit"
+              v-model:retry-limit="whimboxConfig.Run.RunTimesLimit"
+              v-model:timeout="whimboxConfig.Run.RunTimeLimit"
+              hide-execution-session
+              :column-span="6"
+              :retry-hint="t('core.edit.whimboxRetryLimitHint')"
+              :timeout-hint="t('core.edit.whimboxRunTimeoutHint')"
+              @save="key => handleChange('Run', key, whimboxConfig.Run[key])"
+            >
               <a-col :span="6">
                 <a-form-item>
                   <template #label>
@@ -120,7 +99,7 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-            </a-row>
+            </ScriptRunLimitsSection>
           </SectionCard>
           <WhimboxUpdateSettings
             v-model:update="whimboxConfig.Update"
@@ -134,11 +113,10 @@
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from '@/views/EditView/Script/components/ScriptRunLimitField.vue'
+import ScriptRunLimitsSection from '@/views/EditView/Script/components/ScriptRunLimitsSection.vue'
 import WhimboxUpdateSettings from './WhimboxUpdateSettings.vue'
 import type { WhimboxConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'

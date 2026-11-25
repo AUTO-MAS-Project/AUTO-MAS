@@ -89,14 +89,14 @@ TOKEN_EXPIRE_MARGIN = timedelta(seconds=30)
 # 完整校验（资源声明、图片格式、光标尺寸等）由 Electron 在上传对话框里先做过一遍。
 APPEARANCE_MAX_ARCHIVE_BYTES = {"theme": 100 * 1024 * 1024, "mascot": 50 * 1024 * 1024}
 APPEARANCE_MAX_MANIFEST_BYTES = 256 * 1024
+# 默认菜单图标复用上传封面的源图上限，限制解码时的内存开销。
+APPEARANCE_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+APPEARANCE_MAX_IMAGE_PIXELS = 40_000_000
 APPEARANCE_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 # 外观封面（主题商店列表里的预览图）上限，与 Electron 主进程取封面时的上限一致
 COVER_MAX_BYTES = 2 * 1024 * 1024
-# 封面来源图（包内 preview 或另选的图片）上限，与外观包单个文件上限一致；
 # 实际作者包的预览图常有 2–3 MB，上传前统一缩成商店用的小图，列表翻页才不至于动辄几十 MB。
-COVER_SOURCE_MAX_BYTES = 8 * 1024 * 1024
 COVER_MAX_SIZE = (1280, 800)
-COVER_MAX_SOURCE_PIXELS = 40_000_000
 COVER_WEBP_QUALITY = (85, 70)
 # 外观包体积远大于通用脚本配置，上传给更长的超时
 UPLOAD_TIMEOUT = 120.0
@@ -825,6 +825,70 @@ class ConfigCenterClient:
         return None
 
     @staticmethod
+    def _validate_default_menu_icon(
+        archive: zipfile.ZipFile, menu_icons: object
+    ) -> None:
+        if not isinstance(menu_icons, dict):
+            raise ConfigCenterError("menuIcons 必须是对象", status_code=400)
+        if not menu_icons:
+            return
+
+        icon_path = menu_icons.get("default")
+        if not isinstance(icon_path, str) or not icon_path.strip():
+            raise ConfigCenterError(
+                "上传带菜单图标的主题时，请在 theme.json 中配置 menuIcons.default",
+                status_code=400,
+            )
+        icon_path = icon_path.strip()
+        if (
+            not icon_path.startswith("assets/")
+            or "\\" in icon_path
+            or any(part in ("", ".", "..") for part in icon_path.split("/"))
+        ):
+            raise ConfigCenterError("默认菜单图标必须位于 assets 目录", status_code=400)
+
+        icon_info = next(
+            (
+                entry
+                for entry in archive.infolist()
+                if not entry.is_dir() and entry.filename.lower() == icon_path.lower()
+            ),
+            None,
+        )
+        if icon_info is None:
+            raise ConfigCenterError(
+                f"主题包里缺少默认菜单图标: {icon_path}", status_code=400
+            )
+        if icon_info.file_size > APPEARANCE_MAX_IMAGE_BYTES:
+            raise ConfigCenterError(
+                f"默认菜单图标超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB",
+                status_code=400,
+            )
+
+        expected_format = {
+            ".png": "PNG",
+            ".jpg": "JPEG",
+            ".jpeg": "JPEG",
+            ".webp": "WEBP",
+        }.get(Path(icon_path).suffix.lower())
+        if expected_format is None:
+            raise ConfigCenterError(
+                "默认菜单图标只支持 PNG、JPEG 或 WebP 图片", status_code=400
+            )
+        try:
+            with (
+                archive.open(icon_info) as icon,
+                Image.open(icon, formats=[expected_format]) as image,
+            ):
+                if image.width * image.height > APPEARANCE_MAX_IMAGE_PIXELS:
+                    raise ConfigCenterError("默认菜单图标尺寸过大", status_code=400)
+                image.load()
+        except (OSError, ValueError, Image.DecompressionBombError) as error:
+            raise ConfigCenterError(
+                "默认菜单图标无法解码，请检查图片内容和扩展名", status_code=400
+            ) from error
+
+    @staticmethod
     def _detect_cover(data: bytes, source: str) -> Tuple[str, bytes, str]:
         """校验封面来源图并统一缩成商店用的封面, 返回 multipart 用的 (文件名, 内容, MIME)。
 
@@ -835,9 +899,9 @@ class ConfigCenterClient:
             ConfigCenterError: 体积超限、格式不对或无法解码, status_code 为 400。
         """
 
-        if len(data) > COVER_SOURCE_MAX_BYTES:
+        if len(data) > APPEARANCE_MAX_IMAGE_BYTES:
             raise ConfigCenterError(
-                f"{source}超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB",
+                f"{source}超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB",
                 status_code=400,
             )
         if ConfigCenterClient._sniff_image(data) is None:
@@ -848,7 +912,7 @@ class ConfigCenterClient:
         try:
             with Image.open(io.BytesIO(data)) as image:
                 # 先看尺寸再解码，挡住小文件解出巨图的情况
-                if image.width * image.height > COVER_MAX_SOURCE_PIXELS:
+                if image.width * image.height > APPEARANCE_MAX_IMAGE_PIXELS:
                     raise ConfigCenterError(f"{source}尺寸过大", status_code=400)
                 image = ImageOps.exif_transpose(image)
                 image = image.convert(
@@ -905,13 +969,20 @@ class ConfigCenterClient:
             raise invalid("选择的路径不是文件")
         if path.suffix.lower() != ".zip":
             raise invalid("请选择 ZIP 外观包")
-        if path.stat().st_size > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
-            raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
-            )
+        max_archive_bytes = APPEARANCE_MAX_ARCHIVE_BYTES[category_key]
+        too_large = f"外观包超过 {max_archive_bytes // 1024 // 1024} MB, 无法上传"
 
         try:
-            with zipfile.ZipFile(path) as archive:
+            # 清单、图标和封面都从实际要上传的内容读取。
+            with path.open("rb") as source:
+                archive_size = os.fstat(source.fileno()).st_size
+                if archive_size > max_archive_bytes:
+                    raise invalid(too_large)
+                content = source.read(archive_size + 1)
+                if len(content) != archive_size:
+                    raise invalid("读取时外观包发生变化，请重新选择后上传")
+
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
                 manifest_name = (
                     "mascot.json" if category_key == "mascot" else "theme.json"
                 )
@@ -940,6 +1011,10 @@ class ConfigCenterClient:
                     manifest.get("mascot"), dict
                 ):
                     raise invalid("桌宠包缺少桌宠图片配置")
+                if category_key == "theme":
+                    cls._validate_default_menu_icon(
+                        archive, manifest.get("menuIcons", {})
+                    )
 
                 # 没指定封面时用包里 preview 指向的图；Electron 导入时路径不区分大小写，这里一致
                 preview_data: Optional[bytes] = None
@@ -963,9 +1038,9 @@ class ConfigCenterClient:
                     )
                     if preview_info is None:
                         raise invalid(f"外观包里缺少预览图: {preview}")
-                    if preview_info.file_size > COVER_SOURCE_MAX_BYTES:
+                    if preview_info.file_size > APPEARANCE_MAX_IMAGE_BYTES:
                         raise invalid(
-                            f"外观包的预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB"
+                            f"外观包的预览图超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB"
                         )
                     preview_data = archive.read(preview_info)
         except ConfigCenterError:
@@ -981,22 +1056,15 @@ class ConfigCenterClient:
                 cover_file = Path(cover_path)
                 if not cover_file.is_file():
                     raise invalid("预览图不存在或不是文件")
-                if cover_file.stat().st_size > COVER_SOURCE_MAX_BYTES:
+                if cover_file.stat().st_size > APPEARANCE_MAX_IMAGE_BYTES:
                     raise invalid(
-                        f"预览图超过 {COVER_SOURCE_MAX_BYTES // 1024 // 1024} MB"
+                        f"预览图超过 {APPEARANCE_MAX_IMAGE_BYTES // 1024 // 1024} MB"
                     )
                 cover = cls._detect_cover(cover_file.read_bytes(), "预览图")
             elif preview_data is not None:
                 cover = cls._detect_cover(preview_data, "外观包的预览图")
             else:
                 raise invalid("请提供预览图（外观包里没有 preview）")
-
-        content = path.read_bytes()
-        # 校验和读取之间文件被换掉时，以实际读到的大小为准再挡一次
-        if len(content) > APPEARANCE_MAX_ARCHIVE_BYTES[category_key]:
-            raise invalid(
-                f"外观包超过 {APPEARANCE_MAX_ARCHIVE_BYTES[category_key] // 1024 // 1024} MB, 无法上传"
-            )
 
         return appearance_id, content, cover
 

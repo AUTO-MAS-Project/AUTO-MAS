@@ -45,6 +45,7 @@ import { CalendarOutlined } from '@ant-design/icons-vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { navigateTo } from '@/router'
 import { usePlanApi } from '@/composables/usePlanApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 
@@ -109,13 +110,18 @@ watch(
   { immediate: true }
 )
 
+const { enqueue: enqueueUserSave } = useSaveQueue()
+
 async function selectPlan(value: unknown) {
   if (typeof value !== 'string' || value === selected.value) return
   const previous = selected.value
   selected.value = value
   busy.value = true
   try {
-    const saved = await updateUser(props.scriptId, props.userId, { Info: { PlanMode: value } })
+    const saved = await enqueueUserSave(
+      () => updateUser(props.scriptId, props.userId, { Info: { PlanMode: value } }),
+      'Info.PlanMode'
+    )
     if (saved) emit('change', value)
     else selected.value = previous
   } finally {

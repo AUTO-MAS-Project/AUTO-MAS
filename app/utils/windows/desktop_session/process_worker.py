@@ -57,7 +57,9 @@ def run(pipe) -> None:
         send(pipe, {"pid": os.getpid()})
         arguments = launch["arguments"]
         if action == "has_process_window":
-            code = int(not is_process_running(arguments["name"]))
+            code = int(
+                not is_process_running(arguments["name"], exe=arguments.get("exe"))
+            )
         else:
             # 子会话里没有桌面分身作用域, 这里的等待走本会话的进程扫描
             code = int(

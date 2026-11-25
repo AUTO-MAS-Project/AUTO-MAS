@@ -223,7 +223,13 @@ const handleVirtualDisplayModeChange = (value: unknown) => {
         />
       </SettingRow>
 
-      <SettingRow :label="t('core.setting.display.mode')" :hint="t('core.setting.display.modeTip')">
+      <SettingRow
+        :label="t('core.setting.display.mode')"
+        :hint="t('core.setting.display.modeTip')"
+        child
+        :disabled="!settings.Display?.IfEnableVirtualDisplay"
+        :disabled-reason="t('core.setting.display.enableRequiredReason')"
+      >
         <a-segmented
           :value="settings.Display?.VirtualDisplayMode"
           :options="virtualDisplayModeOptions"
