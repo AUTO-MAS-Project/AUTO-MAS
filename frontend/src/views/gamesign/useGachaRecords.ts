@@ -120,6 +120,8 @@ export function useGachaRecords() {
         accountUid: target.accountUid,
         playerUid: target.playerUid,
       })
+      // 读取期间换了帐号或角色：这条结果已不属于当前筛选，别再按旧目标补一次查询
+      if (token !== fetchToken) return
       const warnings = Array.isArray(result.warnings) ? result.warnings : []
       if (warnings.length) {
         message.warning(t('core.gamesign.gacha.fetchWarnings', { warnings: warnings.join('；') }))
@@ -153,6 +155,9 @@ export function useGachaRecords() {
     total.value = 0
     page.value = 1
     errorMessage.value = ''
+    // 作废旧请求编号后它们不会再清自己的加载态，这里必须一并收回，否则按钮会一直转圈
+    querying.value = false
+    fetching.value = false
   }
 
   /** 页面首屏只需要游戏清单，不必先查一次记录 */

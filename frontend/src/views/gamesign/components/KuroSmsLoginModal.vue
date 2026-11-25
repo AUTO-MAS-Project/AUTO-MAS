@@ -26,6 +26,8 @@ const logger = window.electronAPI.getLogger('游戏社区')
 const phone = ref('')
 const code = ref('')
 const sessionId = ref('')
+/** 已开会话对应的手机号；号码一改，旧会话里的验证码就作废 */
+const sessionPhone = ref('')
 const sending = ref(false)
 const submitting = ref(false)
 const notice = ref('')
@@ -33,12 +35,15 @@ let generation = 0
 
 const phoneValid = computed(() => /^1[3-9]\d{9}$/.test(phone.value.trim()))
 const canSubmit = computed(() => /^\d{6}$/.test(code.value.trim()) && !!sessionId.value)
+/** 发送与提交都占用插件侧的同一条会话，一次只让一个跑 */
+const busy = computed(() => sending.value || submitting.value)
 
 const reset = () => {
   generation += 1
   phone.value = ''
   code.value = ''
   sessionId.value = ''
+  sessionPhone.value = ''
   sending.value = false
   submitting.value = false
   notice.value = ''
@@ -51,20 +56,32 @@ watch(
   }
 )
 
+// 换号后旧会话仍绑着上一个号码，重发会往原号码发码，必须整条作废
+watch(phone, value => {
+  if (!sessionId.value || value.trim() === sessionPhone.value) return
+  sessionId.value = ''
+  sessionPhone.value = ''
+  code.value = ''
+  notice.value = ''
+})
+
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 
 const send = async () => {
-  if (!phoneValid.value || !props.accountUid) return
+  if (!phoneValid.value || !props.accountUid || busy.value) return
   const current = ++generation
+  const targetPhone = phone.value.trim()
   sending.value = true
   notice.value = ''
   try {
     const session = sessionId.value
       ? { sessionId: sessionId.value, captchaId: '' }
-      : await signflowApi.openTokenLogin(props.accountUid, phone.value.trim())
-    if (current !== generation) return
+      : await signflowApi.openTokenLogin(props.accountUid, targetPhone)
+    // 开会话期间用户改了号码：这条会话属于旧号码，不能再落到当前表单
+    if (current !== generation || phone.value.trim() !== targetPhone) return
     sessionId.value = session.sessionId
+    sessionPhone.value = targetPhone
     // automatic 需要插件侧配置云码；未配置时插件返回 sent=false 并说明要人工验证
     const result = await signflowApi.sendTokenLoginCode(session.sessionId, null, true)
     if (current !== generation) return
@@ -83,7 +100,7 @@ const send = async () => {
 }
 
 const submit = async () => {
-  if (!canSubmit.value) return
+  if (!canSubmit.value || busy.value) return
   const current = ++generation
   submitting.value = true
   try {
@@ -121,7 +138,13 @@ const submit = async () => {
         :maxlength="11"
         :placeholder="t('core.gamesign.sms.phonePlaceholder')"
       />
-      <a-button type="primary" block :loading="sending" :disabled="!phoneValid" @click="send">
+      <a-button
+        type="primary"
+        block
+        :loading="sending"
+        :disabled="!phoneValid || submitting"
+        @click="send"
+      >
         {{ sessionId ? t('core.gamesign.sms.resend') : t('core.gamesign.sms.send') }}
       </a-button>
       <a-input
@@ -130,7 +153,13 @@ const submit = async () => {
         :maxlength="6"
         :placeholder="t('core.gamesign.sms.codePlaceholder')"
       />
-      <a-button type="primary" block :loading="submitting" :disabled="!canSubmit" @click="submit">
+      <a-button
+        type="primary"
+        block
+        :loading="submitting"
+        :disabled="!canSubmit || sending"
+        @click="submit"
+      >
         {{ t('core.gamesign.login.submit') }}
       </a-button>
       <a-alert v-if="notice" type="warning" show-icon :message="notice" />
