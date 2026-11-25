@@ -87,7 +87,7 @@ def build_vscode_launch_config(dev_port: int) -> dict[str, object]:
         "version": "0.2.0",
         "configurations": [
             {
-                "name": "Dev: Electron（后端由 Runtime 托管，推荐）",
+                "name": "Dev: 全栈启动（Electron + Runtime）",
                 "type": "node-terminal",
                 "request": "launch",
                 "command": "yarn dev",
@@ -97,23 +97,9 @@ def build_vscode_launch_config(dev_port: int) -> dict[str, object]:
                     "AUTO_MAS_HTTP_PORT": port,
                 },
                 "autoAttachChildProcesses": False,
-                "presentation": {"group": "dev", "order": 1},
             },
             {
-                "name": "Dev: Frontend（Electron，连接独立后端）",
-                "type": "node-terminal",
-                "request": "launch",
-                "command": "yarn dev:frontend",
-                "cwd": "${workspaceFolder}/frontend",
-                "env": {
-                    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
-                    "AUTO_MAS_HTTP_PORT": port,
-                },
-                "autoAttachChildProcesses": False,
-                "presentation": {"group": "dev", "order": 2},
-            },
-            {
-                "name": "Dev: Backend（独立后端，可打断点）",
+                "name": "Dev: 后端断点调试（独立后端）",
                 "type": "debugpy",
                 "request": "launch",
                 "program": "${workspaceFolder}/main.py",
@@ -126,40 +112,6 @@ def build_vscode_launch_config(dev_port: int) -> dict[str, object]:
                     "PYTHONIOENCODING": "utf-8",
                     "PYTHONUNBUFFERED": "1",
                 },
-                "presentation": {"group": "web", "order": 1},
-            },
-            {
-                "name": "Dev: Web（浏览器前端，连接独立后端）",
-                "type": "node-terminal",
-                "request": "launch",
-                "command": "yarn web",
-                "cwd": "${workspaceFolder}/frontend",
-                "env": {
-                    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
-                    "AUTO_MAS_HTTP_PORT": port,
-                },
-                "autoAttachChildProcesses": False,
-                "presentation": {"group": "web", "order": 2},
-            },
-        ],
-        "compounds": [
-            {
-                "name": "Dev: 前后端调试（Electron）",
-                "configurations": [
-                    "Dev: Backend（独立后端，可打断点）",
-                    "Dev: Frontend（Electron，连接独立后端）",
-                ],
-                "stopAll": True,
-                "presentation": {"group": "dev", "order": 0},
-            },
-            {
-                "name": "Dev: 浏览器调试（后端可断点）",
-                "configurations": [
-                    "Dev: Backend（独立后端，可打断点）",
-                    "Dev: Web（浏览器前端，连接独立后端）",
-                ],
-                "stopAll": True,
-                "presentation": {"group": "web", "order": 1},
             },
         ],
     }

@@ -12,6 +12,7 @@
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
 - 开工就从最新的 `origin/dev` 拉分支（先 `git fetch`；fork 里是上游 `dev`），不要在旧的本地 `dev` 或旧分支上接着改——分支越旧，同步时越容易把这期间别人合入的改动整份盖掉。
 - 应用环境不再读取 `.env`：源码 Electron 与独立后端默认开发环境；打包 Electron 显式传入 `AUTO_MAS_ENV=production`。独立验证生产行为时也必须显式设置该变量；Runtime 托管状态与应用环境分别判断。
+- 本地开发边界：生产端固定 `36163`、开发端默认 `36164`（两者隔离共存，禁止触碰生产端进程）；AI 助手验证改动应走 `scripts/pr_check.py`、单元测试或自带临时端口与数据目录的隔离 `yarn e2e`，除非用户明确要求，不要在后台拉起常驻开发后端以免遗留幽灵进程（排查/清理当前仓库开发后端见 `scripts/dev_doctor.py`）。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
 - 选择验证方式或设计、新增、修改、审查测试前，必须加载 [.agents/skills/mas-testing/SKILL.md](.agents/skills/mas-testing/SKILL.md)，按可达行为和验证总成本复用检查、选择测试范围；仅运行已有测试不触发。
