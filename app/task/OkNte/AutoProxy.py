@@ -39,7 +39,7 @@ from app.models.notification import LocalNotice
 from app.models.schema import HistoryAggregationItem, HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
-from app.task.client import client_executable_path, client_launcher_path
+from app.task.client import ClientProcess, client_executable_path, client_launcher_path
 from app.task.proxy_helpers import (
     CONFIG_BASE_SHARED,
     push_dispatch_log,
@@ -55,7 +55,6 @@ from app.utils import (
     UTC4,
     LogMonitor,
     ProcessInfo,
-    ProcessManager,
     compile_log_signs,
     get_logger,
     is_process_alive,
@@ -300,7 +299,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         script_info: ScriptItem,
         script_config: OkNteConfig,
         user_config: ConfigCollection[OkNteUserConfig],
-        game_manager: ProcessManager | None,
+        game_manager: ClientProcess | None,
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -311,6 +310,7 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         self.script_config = script_config
         self.user_config = user_config
         self.game_manager = game_manager
+        self._launched_client: tuple[Path, float] | None = None
 
         self.cur_user_item: UserItem = self.script_info.user_list[
             self.script_info.current_index
@@ -389,9 +389,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "Client"
             and self.script_config.Game.LaunchBeforeTask
-            and self._resolve_launcher_path(use_script_fallback=False) is None
         ):
-            return "请设置异环启动器路径"
+            if client_executable_path(self.script_config) is None:
+                return "请绑定异环客户端，确认游戏可执行文件路径"
+            if self._resolve_launcher_path(use_script_fallback=False) is None:
+                return "请设置异环启动器路径"
         if (
             self.script_config.Game.Enabled
             and self.script_config.Game.Type == "URL"
@@ -735,18 +737,23 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         game_type = self.script_config.Game.Type
         await self._push_dispatch_log("正在准备由 MAS 启动游戏...")
 
-        if isinstance(self.game_manager, ProcessManager) and game_type == "Client":
+        if self.game_manager is not None and game_type == "Client":
+            self._launched_client = None
+            client_path = client_executable_path(self.script_config)
+            if client_path is None:
+                raise RuntimeError("请绑定异环客户端，确认游戏可执行文件路径")
+            client_exe = str(client_path)
             await self._push_dispatch_log(
                 f"正在检查异环客户端进程 ({_NTE_CLIENT_PROCESS})..."
             )
-            if await has_process_window(_NTE_CLIENT_PROCESS):
+            if await has_process_window(_NTE_CLIENT_PROCESS, exe=client_exe):
                 logger.info("检测到异环客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await self._push_dispatch_log("检测到客户端已在运行，跳过启动")
                 await self._note_launch_arguments_skipped()
                 return
 
             await self._push_dispatch_log("未检测到运行中的客户端，正在拉起启动器...")
-            launcher_path = self._resolve_launcher_path()
+            launcher_path = self._resolve_launcher_path(use_script_fallback=False)
             if launcher_path is None:
                 raise RuntimeError(
                     "未找到异环启动器路径，请重新选择游戏目录以定位 NTELauncher 启动器"
@@ -779,15 +786,11 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 logger.info(message)
                 await self._push_dispatch_log(message)
                 point(self, "start_game")
-                await self.game_manager.open_process(
-                    launcher_path,
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+                self._launched_client = (client_path, time.time())
+                await self.game_manager.open_launcher(launcher_path)
                 window_ready = bool(
                     await async_start_game_via_launcher(
-                        launcher_path, on_log=_push_launch_log
+                        launcher_path, client_path=client_path, on_log=_push_launch_log
                     )
                 )
             else:
@@ -801,7 +804,6 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                     message = f"检测到启动器 {launcher_path.name} 已在运行，重新拉起以静默启动"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                    await self.game_manager.kill()
                     for path in launcher_paths:
                         if not await process.kill_process(path, kill_tree=False):
                             raise RuntimeError(f"无法关闭启动器: {path.name}")
@@ -810,21 +812,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 # 优先带 /autoplay 静默拉起：启动器自行进游戏，省掉 OCR 找按钮点击
                 # 「开始游戏」这一整段交互（含更新/弹窗等分支）。
                 point(self, "start_game")
-                await self.game_manager.open_process(
-                    launcher_path,
-                    AUTOPLAY_ARG,
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+                self._launched_client = (client_path, time.time())
+                await self.game_manager.open_launcher(launcher_path, AUTOPLAY_ARG)
                 if await async_wait_autoplay_game(
-                    launcher_path, on_log=_push_launch_log
+                    launcher_path, client_path=client_path, on_log=_push_launch_log
                 ):
                     window_ready = True
                     message = f"{AUTOPLAY_ARG} 静默启动成功，跳过点击「开始游戏」"
                     logger.info(message)
                     await self._push_dispatch_log(message)
-                elif await has_process_window(_NTE_CLIENT_PROCESS):
+                elif await has_process_window(_NTE_CLIENT_PROCESS, exe=client_exe):
                     # 启动器等待结束后再次确认客户端窗口，覆盖刚起窗的情况。
                     window_ready = True
                     logger.info(f"{AUTOPLAY_ARG} 等待结束后检测到客户端窗口")
@@ -845,13 +842,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 else f"客户端进程已在运行，正在等待游戏完成启动（最多 {wait_time or 60}s）..."
             )
             # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
-            await wait_process_window_ready(
-                ProcessInfo(name=_NTE_CLIENT_PROCESS), wait_time
-            )
+            target = ProcessInfo(name=_NTE_CLIENT_PROCESS, exe=client_exe)
+            await wait_process_window_ready(target, wait_time)
             await self._push_dispatch_log("游戏启动完成")
             return
 
-        if isinstance(self.game_manager, ProcessManager) and game_type == "URL":
+        if self.game_manager is not None and game_type == "URL":
             await self._push_dispatch_log("正在通过 URL 协议启动游戏...")
             game_url = str(self.game_url or "").strip()
             game_process_name = str(self.game_process_name or "").strip()
@@ -1489,16 +1485,21 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.Game.Type
-        if isinstance(self.game_manager, ProcessManager):
+        if self.game_manager is not None:
             try:
                 point(self, "stop_game")
-                await self.game_manager.kill()
+                if self._launched_client is None:
+                    await self.game_manager.kill()
+                else:
+                    await self.game_manager.stop_launcher_client(*self._launched_client)
             except Exception as e:
                 logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
         try:
             if game_type == "Client":
                 # 明确关闭游戏时也清理启动器，包括由本体启动且未开启托管的情况。
-                await self._kill_launcher_process(use_script_fallback=True)
+                await self._kill_launcher_process(
+                    use_script_fallback=not self.script_config.Game.LaunchBeforeTask
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
