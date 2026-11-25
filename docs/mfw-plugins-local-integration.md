@@ -26,7 +26,7 @@ foreach ($p in 'auto-mas-maafw-interface', 'auto-mas-maafw-native', 'auto-mas-ma
 }
 ```
 
-只打三块库就够：专项和服务插件的 `pyproject.toml` 也把三块服务插件写成依赖，但宿主求解插件环境时把本地插件的源码目录本身当作求解目标，这几项依赖由本地源码满足，不去 PyPI 取。
+只打三块库就够：插件之间也有依赖——三个专项的 `pyproject.toml` 把三块服务插件写成依赖，服务插件里 `maafw_runner`、`maafw_project_update` 依赖 `maafw_agent_env`——但宿主求解插件环境时把本地插件的源码目录本身当作求解目标，这几项依赖由本地源码满足，不去 PyPI 取。三块库之间：专项和服务插件都依赖 interface 和 native，专项另依赖共用库；共用库按积木仓库当前源码（`cx/svc-close-20261124` 分支，提交 `78a6698` 起）只依赖 interface 和 native，PyPI 上的 0.2.0 则依赖 interface 和 `auto-mas-maafw-project-update`、不依赖 native。
 
 ## 2. 接入
 
@@ -183,7 +183,7 @@ Get-NetTCPConnection -LocalPort 36196 -State Listen -ErrorAction SilentlyContinu
 ## 10. 遇到问题先看这里
 
 - **安装报「插件 `xxx` 正在使用本地源码，请先移除该工程后再安装发行包」**：`plugins\` 下还留着联接，先 `-Unlink`。
-- **在游戏目标上填的「启动参数」运行时不生效**：由 MAS 启动游戏时，MFW 只用托管的 `Game.Arguments`，游戏目标（`win_process`）上的「启动参数」「工作目录」不读，那两项只在游戏管理里点「打开」时用。见积木仓库 `docs/known-issues-0.2.0.md` 第 43 条。
+- **在游戏目标上填的「启动参数」运行时不生效**：运行积木由 MAS 启动游戏（`DirectExe`）时，MFW 只用托管的 `Game.Arguments`，游戏目标（`win_process`）上的「启动参数」「工作目录」不读，那两项只在游戏管理里点「打开」时用。见积木仓库 `docs/known-issues-0.2.0.md` 第 43 条。
 - **新发的包插件中心里找不到**：数据站插件目录还没收录。起后端前设 `AUTO_MAS_PLUGIN_EXTRA_PACKAGES=auto-mas-maafw-adapter,auto-mas-m9a-adapter,auto-mas-mss-adapter`，刷新目录时按包名从 PyPI 补进来。
 - 运行数据都在树根被忽略的 `config\ data\ debug\ history\ temp\ plugins\pypi\` 下。
 - 插件包自己的已知问题见积木仓库 `docs/known-issues-0.2.0.md`。
