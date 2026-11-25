@@ -101,3 +101,10 @@ class ScriptConfigHandler:
     expected_game_kind: Callable[[ConfigEntry, dict[str, Any]], str | None] | None = (
         None
     )
+    supports_game_binding: Callable[[ConfigEntry, dict[str, Any]], bool] | None = None
+    supports_account_game_override: bool = True
+
+
+def game_management_enabled(script: Any, patch: dict[str, Any]) -> bool:
+    """读取存量专项的 MAS 游戏托管开关，编辑时以传入值为准。"""
+    return bool(patch.get("Game", {}).get("Enabled", script.Game.Enabled))

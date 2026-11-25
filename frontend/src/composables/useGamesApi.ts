@@ -31,7 +31,7 @@ export function useGameBindingQuery(
       const script = scriptResponse.data[sid]
       const account = uid ? userResponse?.data[uid] : undefined
       return {
-        binding: account?.game ?? script?.game,
+        binding: uid ? account?.game : script?.game,
         inherited: script?.game,
         uiSources: [...(scriptResponse.uiSources ?? []), ...(userResponse?.uiSources ?? [])],
       }

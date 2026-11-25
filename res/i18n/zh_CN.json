@@ -4840,6 +4840,7 @@
   "core.games.discard": "放弃尚未保存的修改？",
   "core.games.accountBinding": "单独指定模拟器 / 客户端",
   "core.games.accountOverrideDesc": "该账号运行时将使用下方指定的运行环境，不影响同托管其他账号",
+  "core.games.bindingUnsupported": "当前设置不支持此游戏绑定，请清除已有绑定。",
   "core.games.defaultBinding": "模拟器 / 游戏客户端",
   "core.games.inherit": "跟随托管设置",
   "core.games.noTarget": "未选择",
