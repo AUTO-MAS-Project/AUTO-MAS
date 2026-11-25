@@ -26,6 +26,7 @@ from contextlib import suppress
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.config import ConfigCollection
 from app.core import Notify, Publisher
@@ -91,6 +92,7 @@ from .tools.launcher_start import (
     detect_game_maintenance_text,
     launcher_process_paths,
 )
+from .tools.native_config import publish_staged_config
 from .tools.runtime import OkNteProcessManager, runtime_dir
 
 logger = get_logger("OK-NTE 自动代理")
@@ -520,6 +522,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         target = self.script_config.Script.ConfigPath
         if target is None:
             return False
+        temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
+        snapshot = _utils_io.read_native_config_snapshot(
+            temp, expected_script_id=self.script_info.script_id
+        )
+        if snapshot is not None and not snapshot.original_exists:
+            return False
         if self.script_config.Script.ConfigPathMode == "File":
             return target.is_file()
         with suppress(OSError):
@@ -535,15 +543,18 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         )
 
     def _oknte_source_config_dir(self, mas_config_dir: Path) -> Path | None:
+        temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         candidates = [
             self._oknte_legacy_mas_config_dir(),
-            Path.cwd() / "data" / self.script_info.script_id / "Temp",
+            temp,
             self.script_config_path,
             runtime_dir(self.script_root_path) / "configs",
             self.script_root_path / "configs",
         ]
         for config_dir in candidates:
-            if not config_dir.is_dir():
+            if not config_dir.is_dir() or (
+                config_dir == temp and not any(temp.iterdir())
+            ):
                 continue
             with suppress(OSError):
                 if config_dir.resolve() == mas_config_dir.resolve():
@@ -580,6 +591,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
         logger.info("开始配置 OK-NTE 运行参数: 自动代理")
         await process.kill_process(self.script_exe_path)
+        if not await self.oknte_process_manager.confirm_stopped(all_sessions=True):
+            raise RuntimeError("无法确认旧 OK-NTE 进程已退出，已停止下发配置")
 
         temp = Path.cwd() / "data" / self.script_info.script_id / "Temp"
         folder_mode = self.script_config.Script.ConfigPathMode == "Folder"
@@ -587,44 +600,53 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             archive_mas_runtime_backup(
                 self.script_info.script_id, str(self.cur_user_uid)
             )
-        # 每账号先还原任务级原生基线，避免原生来源沿用上一账号的注入值。
-        if self.native_base:
-            if folder_mode and temp.is_dir():
-                _utils_io.swap_in_dir(temp, self.script_config_path)
-            elif not folder_mode and (temp / "config.temp").is_file():
-                shutil.copyfile(temp / "config.temp", self.script_config_path)
-        else:
-            source = self._ensure_oknte_mas_config_dir()
-            if folder_mode:
-                _utils_io.swap_in_dir(source, self.script_config_path)
+        live = self.script_config_path
+        live.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix=".oknte-config-", dir=live.parent) as staging:
+            target_dir = Path(staging)
+            staged = target_dir if folder_mode else target_dir / live.name
+            # 用任务开始前的原生基线或 MAS 账号配置作为本轮来源。
+            if self.native_base:
+                baseline = temp if folder_mode else temp / "config.temp"
+                source = baseline if baseline.exists() else live
             else:
-                shutil.copyfile(
-                    source / self.script_config_path.name, self.script_config_path
+                mas_dir = self._ensure_oknte_mas_config_dir()
+                source = mas_dir if folder_mode else mas_dir / live.name
+            if folder_mode:
+                shutil.copytree(source, staged, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(source, staged)
+                for name in (DAILY_ROUTINE_TASK_FILE, LEGACY_DAILY_TASK_FILE):
+                    sibling = live.parent / name
+                    if name != live.name and sibling.is_file():
+                        shutil.copyfile(sibling, target_dir / name)
+
+            quick_config_takeover(
+                self.cur_user_config, lambda: self._apply_oknte_quick_config(staged)
+            )
+            if self.plan_active:
+                from app.core import Config
+                from app.models.schema import OkNtePlanKey
+
+                from .tools.plan import apply_plan
+
+                plan = Config.PlanConfig[self.cur_user_config.Info.PlanMode]
+                if not isinstance(plan, OkNtePlanConfig):
+                    raise ValueError("所选计划不是 OkNte 计划表")
+                apply_plan(
+                    target_dir, OkNtePlanKey.model_validate(plan.get_current_key())
                 )
-        quick_config_takeover(self.cur_user_config, self._apply_oknte_quick_config)
-        target_dir = (
-            self.script_config_path if folder_mode else self.script_config_path.parent
-        )
-        if self.plan_active:
-            from app.core import Config
-            from app.models.schema import OkNtePlanKey
-
-            from .tools.plan import apply_plan
-
-            plan = Config.PlanConfig[self.cur_user_config.Info.PlanMode]
-            if not isinstance(plan, OkNtePlanConfig):
-                raise ValueError("所选计划不是 OkNte 计划表")
-            apply_plan(target_dir, OkNtePlanKey.model_validate(plan.get_current_key()))
-        self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
-        if folder_mode:
-            _utils_io.mark_native_config_injected(
+            self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
+            publish_staged_config(
+                staged,
+                live,
                 temp,
-                self.script_config_path,
                 script_id=self.script_info.script_id,
+                folder_mode=folder_mode,
             )
         logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
-    def _apply_oknte_quick_config(self) -> None:
+    def _apply_oknte_quick_config(self, staged_path: Path) -> None:
         """覆盖编辑器实际保存的原生文件，不解析或重新建模任务内容。"""
 
         source = ensure_quick_config_dir(
@@ -635,16 +657,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 src = source / info["filename"]
                 if not src.is_file():
                     continue
-                target = self.script_config_path / src.name
+                target = staged_path / src.name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 tmp = target.with_suffix(".json.tmp")
                 shutil.copyfile(src, tmp)
                 tmp.replace(target)
         else:
-            src = source / self.script_config_path.name
-            tmp = self.script_config_path.with_suffix(".tmp")
+            src = source / staged_path.name
+            tmp = staged_path.with_suffix(".tmp")
             shutil.copyfile(src, tmp)
-            tmp.replace(self.script_config_path)
+            tmp.replace(staged_path)
         logger.info("OK-NTE 覆写常规配置已应用")
 
     async def update_config(self) -> None:
@@ -901,29 +923,21 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
 
     async def handle_pre_oknte_error(
         self, error_message: str, e: Exception | None = None
-    ) -> None:
-        """游戏启动 / 账号切换等前置步骤失败的统一处理（对齐 OK-WW）。"""
+    ) -> bool:
+        """记录前置步骤失败，返回是否已确认旧 OK-NTE 进程退出。"""
 
-        if e is None:
-            logger.warning(f"账号: {self.cur_user_uid} - {error_message}")
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=error_message),
-            )
-        else:
-            logger.opt(exception=True).warning(
-                f"账号: {self.cur_user_uid} - {error_message}: {e}"
-            )
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"{error_message}: {e}"),
-            )
-        await self.cur_user_log.set_state(content=[f"{error_message}, 无日志记录"])
-        await self.cur_user_log.set_state(status=error_message)
+        error_detail = f"{error_message}: {e}" if e is not None else error_message
+        logger.opt(exception=e is not None).warning(
+            f"账号: {self.cur_user_uid} - {error_detail}"
+        )
+        await self.cur_user_log.set_state(status=error_detail, content=[error_detail])
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="error", message=error_detail),
+        )
 
-        await self.kill_managed_process(
+        stopped = await self.kill_managed_process(
             kill_game=self._mas_should_close_game_on_retry()
         )
 
@@ -931,13 +945,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             await Notify.send_notice(
                 LocalNotice(
                     title="OK-NTE 自动代理出现异常！",
-                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_message}",
+                    message=f"账号 {self.cur_user_item.name} 自动代理时{error_detail}",
                     ticker=f"{self.cur_user_item.name}的自动代理出现异常",
                     duration_seconds=3,
                 )
             )
         except Exception:
             pass
+        return stopped
 
     async def main_task(self):
         await self.prepare()
@@ -1068,11 +1083,29 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"启动 OK-NTE 进程: {self.script_exe_path} {' '.join(self.oknte_args)}"
             )
 
-            with operation(self, "start_script"):
-                await self.oknte_process_manager.open_oknte(
-                    self.script_exe_path,
-                    *self.oknte_args,
-                )
+            try:
+                with operation(self, "start_script"):
+                    await self.oknte_process_manager.open_oknte(
+                        self.script_exe_path,
+                        *self.oknte_args,
+                        on_log=self._push_dispatch_log,
+                    )
+            except (OSError, RuntimeError) as e:
+                stopped = await self.handle_pre_oknte_error("OK-NTE 启动失败", e)
+                if not stopped:
+                    message = "无法确认旧 OK-NTE 进程已退出，已停止重试"
+                    await self.cur_user_log.append_content(f"\n{message}")
+                    await self.cur_user_item.set_state(status="异常")
+                    await self._push_dispatch_log(message)
+                    break
+                if i + 1 < run_limit:
+                    await self._push_dispatch_log(
+                        f"OK-NTE 启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                    )
+                    await asyncio.sleep(10)
+                else:
+                    await self.cur_user_item.set_state(status="异常")
+                continue
 
             # 启动日志监控（文件日志）
             await asyncio.sleep(1)
@@ -1289,10 +1322,14 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 and log_item is self.cur_user_log
                 and log_item.status == "任务被用户手动中止"
             )
-            if len(log_item.content) == 0:
-                await log_item.set_state(content=["未捕获到任何日志内容"])
-                if not was_cancelled:
-                    await log_item.set_state(status="未捕获到日志")
+            if not log_item.content:
+                # 启动失败可能早于本体日志，历史和报告仍须保留已有结论。
+                if log_item.status == "未开始监看日志":
+                    await log_item.set_state(
+                        status="未捕获到日志", content=["未捕获到任何日志内容"]
+                    )
+                else:
+                    await log_item.set_state(content=[log_item.status])
 
             history_records.append(
                 HistoryWrite(
@@ -1450,7 +1487,8 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         except Exception:
             pass
 
-    async def _kill_oknte_process(self) -> None:
+    async def _kill_oknte_process(self) -> bool:
+        """结束 OK-NTE 启动器与本体，并按路径确认退出。"""
         try:
             point(self, "stop_script")
             await self.oknte_process_manager.kill()
@@ -1459,13 +1497,17 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 f"通过进程管理器中止 OK-NTE 进程失败: {e}"
             )
         # 更新前后的两种本体都清理，防止冻结 EXE 脱离启动器后继续占用配置。
-        for exe in self.oknte_process_manager.cleanup_executables():
+        executables = self.oknte_process_manager.cleanup_executables()
+        for exe in executables:
             try:
-                await process.kill_process(exe)
+                if not await process.kill_process(exe):
+                    logger.warning(f"未能完整清理 OK-NTE 进程，将复核退出状态: {exe}")
             except Exception as e:
                 logger.opt(exception=True).warning(f"中止 OK-NTE 进程失败: {exe} ({e})")
         if self.script_config.Game.Enabled and self.script_config.Game.Type == "Client":
             await self._kill_launcher_process(use_script_fallback=False)
+
+        return await self.oknte_process_manager.confirm_stopped()
 
     async def _kill_launcher_process(self, *, use_script_fallback: bool) -> None:
         try:
@@ -1503,11 +1545,12 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
-    async def kill_managed_process(self, *, kill_game: bool = True) -> None:
-        """中止 OK-NTE；kill_game 为真时结束游戏（失败重试恒为真；成功收尾看 CloseOnFinish）"""
-        await self._kill_oknte_process()
+    async def kill_managed_process(self, *, kill_game: bool = True) -> bool:
+        """清理脚本与可选的游戏进程，返回脚本进程是否已确认退出。"""
+        stopped = await self._kill_oknte_process()
         if kill_game:
             await self._kill_game_process()
+        return stopped
 
     async def _wait_game_exit_before_next_user(self) -> None:
         """多账号切换：等上一账号的游戏完全退出后再进下个账号。
