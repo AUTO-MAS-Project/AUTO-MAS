@@ -80,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   DesktopOutlined,
@@ -95,11 +95,11 @@ import type { GameRow } from '@/types/games'
 import {
   countActiveDevices,
   countOnlineDevices,
+  filterGameTargetRows,
   getTargetPriorityBadge,
+  shouldShowTargetSearch,
   type TargetPriorityBadge,
 } from '../gamePresentation'
-
-const RAIL_SEARCH_THRESHOLD = 5
 
 const props = defineProps<{
   rows: readonly GameRow[]
@@ -113,18 +113,15 @@ const emit = defineEmits<{ select: [uid: string] }>()
 const { t } = useI18n()
 const keyword = ref('')
 
-const showSearch = computed(() => props.rows.length > RAIL_SEARCH_THRESHOLD)
+const showSearch = computed(() => shouldShowTargetSearch(props.rows.length))
 
-const filteredRows = computed(() => {
-  const query = keyword.value.trim().toLowerCase()
-  if (!query) return props.rows
-  return props.rows.filter(row => {
-    const name = (row.document.info?.name ?? '').toLowerCase()
-    const path = (row.document.info?.path ?? '').toLowerCase()
-    const adapter = row.type.name.toLowerCase()
-    return name.includes(query) || path.includes(query) || adapter.includes(query)
-  })
+watch(showSearch, visible => {
+  if (!visible && keyword.value) keyword.value = ''
 })
+
+const filteredRows = computed(() =>
+  filterGameTargetRows(props.rows, keyword.value, showSearch.value)
+)
 
 const otherOperatingTarget = computed(() =>
   props.rows.find(

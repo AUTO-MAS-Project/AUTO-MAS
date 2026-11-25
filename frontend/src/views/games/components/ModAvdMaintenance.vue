@@ -119,12 +119,14 @@ import { CloudDownloadOutlined, ToolOutlined } from '@ant-design/icons-vue'
 import { StatusChip } from '@/components/ui'
 import { useConfirm } from '@/composables/useConfirm'
 import { gameActionHint, type GameRow } from '@/types/games'
+import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
-import { hasModAvdUpdate } from '../gamePresentation'
+import { hasModAvdUpdate, resolveEditableGameTarget } from '../gamePresentation'
 
 const props = defineProps<{ game: GameRow }>()
 const { t } = useI18n()
 const { confirm } = useConfirm()
+const api = useGamesApi()
 const operations = useGameTriggers()
 const error = ref('')
 
@@ -173,11 +175,22 @@ async function run(action: string) {
 }
 
 function update() {
+  if (!canRun('update')) return
+  const targetUid = props.game.uid
   void confirm({
     tone: 'warning',
     title: t('core.games.updateConfirm'),
     description: t('core.games.updateHint'),
-    onOk: () => run('update'),
+    onOk: async () => {
+      const target = resolveEditableGameTarget(api.rows.value, targetUid, 'update')
+      if (!target) return
+      error.value = ''
+      try {
+        await operations.run(target, target.uid, 'update')
+      } catch (e) {
+        error.value = String(e)
+      }
+    },
   })
 }
 </script>

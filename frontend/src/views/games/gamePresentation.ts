@@ -124,6 +124,54 @@ export function deviceStatusTone(device: GameDevice): StatusTone {
   return 'neutral'
 }
 
+export const RAIL_SEARCH_THRESHOLD = 5
+
+export function shouldShowTargetSearch(rowCount: number): boolean {
+  return rowCount > RAIL_SEARCH_THRESHOLD
+}
+
+/** 搜索框隐藏时忽略旧关键词，避免目标数降回阈值内后列表被旧筛选藏空。 */
+export function filterGameTargetRows(
+  rows: readonly GameRow[],
+  keyword: string,
+  searchVisible = shouldShowTargetSearch(rows.length)
+): readonly GameRow[] {
+  if (!searchVisible) return rows
+  const query = keyword.trim().toLowerCase()
+  if (!query) return rows
+  return rows.filter(row => {
+    const name = (row.document.info?.name ?? '').toLowerCase()
+    const path = (row.document.info?.path ?? '').toLowerCase()
+    const adapter = row.type.name.toLowerCase()
+    return name.includes(query) || path.includes(query) || adapter.includes(query)
+  })
+}
+
+/** 按打开确认框时固定的目标 UID 回查最新列表，目标消失或不可执行时返回 undefined。 */
+export function resolveEditableGameTarget(
+  rows: readonly GameRow[],
+  targetUid: string,
+  actionField: string
+): GameRow | undefined {
+  const row = rows.find(item => item.uid === targetUid)
+  if (!row || gameActionHint(row, row.uid, actionField)?.editable !== true) return undefined
+  return row
+}
+
+/** 按打开确认框时固定的目标与设备 UID 回查最新列表，设备消失或不可执行时返回 undefined。 */
+export function resolveEditableDeviceTarget(
+  rows: readonly GameRow[],
+  gameUid: string,
+  deviceUid: string,
+  actionField: string
+): GameRow | undefined {
+  const row = rows.find(item => item.uid === gameUid)
+  if (!row) return undefined
+  if (!gameDevices(row).some(device => device.uid === deviceUid)) return undefined
+  if (gameActionHint(row, deviceUid, actionField)?.editable !== true) return undefined
+  return row
+}
+
 export function formatTargetConfigSummary(row: GameRow, t: (key: string) => string): string {
   const info = row.document.info
   const parts: string[] = []

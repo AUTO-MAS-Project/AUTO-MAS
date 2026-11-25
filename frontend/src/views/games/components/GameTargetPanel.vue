@@ -116,7 +116,12 @@
       </a-table>
     </section>
 
-    <GameEditor :open="true" :row="game" :types="[]" />
+    <GameEditor
+      :open="true"
+      :row="game"
+      :types="[]"
+      @dirty-change="(uid, dirty) => emit('dirtyChange', uid, dirty)"
+    />
 
     <DeviceSettings
       v-if="deviceEditing"
@@ -153,7 +158,10 @@ const props = withDefaults(
   }>(),
   { activeOperations: () => [], narrow: false }
 )
-const emit = defineEmits<{ cancel: [field: ActiveTriggerField] }>()
+const emit = defineEmits<{
+  cancel: [field: ActiveTriggerField]
+  dirtyChange: [uid: string, dirty: boolean]
+}>()
 const { t } = useI18n()
 const creating = ref(false)
 const activeSubTab = ref<'devices' | 'maintenance'>('devices')

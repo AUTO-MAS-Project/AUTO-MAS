@@ -69,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { DownOutlined, RightOutlined } from '@ant-design/icons-vue'
@@ -81,7 +81,11 @@ import { formatTargetConfigSummary } from '../gamePresentation'
 import GameConfigFormFields, { type GameConfigDraft } from './GameConfigFormFields.vue'
 
 const props = defineProps<{ open: boolean; row?: GameRow; types: GameTypeItem[] }>()
-const emit = defineEmits<{ close: []; created: [uid: string] }>()
+const emit = defineEmits<{
+  close: []
+  created: [uid: string]
+  dirtyChange: [uid: string, dirty: boolean]
+}>()
 const { t } = useI18n()
 const api = useGamesApi()
 const selectedType = ref('')
@@ -178,6 +182,16 @@ watch(
     if (props.open && !dirty.value) resetDraft()
   }
 )
+watch(
+  dirty,
+  value => {
+    if (props.row) emit('dirtyChange', props.row.uid, value)
+  },
+  { immediate: true }
+)
+onBeforeUnmount(() => {
+  if (props.row) emit('dirtyChange', props.row.uid, false)
+})
 
 async function pickPath(field: 'path' | 'launcher' | 'cwd' | 'adb') {
   try {

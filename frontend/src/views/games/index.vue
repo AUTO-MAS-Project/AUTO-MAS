@@ -66,14 +66,16 @@
             :active-key="activeKey"
             :operations-by-target="operationsByTarget"
             :narrow="isNarrow"
-            @select="uid => (activeKey = uid)"
+            @select="selectTarget"
           />
           <GameTargetPanel
             v-if="activeRow"
+            :key="activeRow.uid"
             :game="activeRow"
             :active-operations="activeRowOperations"
             :narrow="isNarrow"
             @cancel="cancel"
+            @dirty-change="setEditorDirty"
           />
         </PageSurface>
       </div>
@@ -83,7 +85,7 @@
       v-if="editorOpen"
       :open="true"
       :types="api.types.value"
-      @created="uid => (activeKey = uid)"
+      @created="uid => void selectTarget(uid)"
       @close="editorOpen = false"
     />
     <AppModal
@@ -121,6 +123,7 @@ import type { ActiveTriggerField } from '@/api'
 import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { useConfirm } from '@/composables/useConfirm'
 import { buildTargetOperationsMap } from './gamePresentation'
 import GameEditor from './components/GameEditor.vue'
 import GameTargetPanel from './components/GameTargetPanel.vue'
@@ -130,10 +133,13 @@ import GameTargetRail from './components/GameTargetRail.vue'
 const NARROW_LAYOUT_BREAKPOINT = 920
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 const api = useGamesApi()
 const operations = useGameTriggers()
 const { data: activeTriggers } = useActiveTriggers()
 const activeKey = ref<string>()
+const dirtyTargetUid = ref<string | null>(null)
+const switchingTarget = ref(false)
 const editorOpen = ref(false)
 const searching = ref(false)
 const foundOpen = ref(false)
@@ -171,6 +177,36 @@ const operationsByTarget = computed(() =>
 )
 
 const activeRow = computed(() => api.rows.value.find(row => row.uid === activeKey.value))
+const isActiveEditorDirty = computed(() =>
+  Boolean(activeKey.value && dirtyTargetUid.value === activeKey.value)
+)
+
+function setEditorDirty(uid: string, dirty: boolean): void {
+  if (dirty) {
+    dirtyTargetUid.value = uid
+  } else if (dirtyTargetUid.value === uid) {
+    dirtyTargetUid.value = null
+  }
+}
+
+async function selectTarget(uid: string): Promise<void> {
+  if (!uid || uid === activeKey.value || switchingTarget.value) return
+  if (isActiveEditorDirty.value) {
+    switchingTarget.value = true
+    try {
+      const confirmed = await confirm({
+        tone: 'warning',
+        title: t('core.games.discard'),
+      })
+      if (!confirmed) return
+    } finally {
+      switchingTarget.value = false
+    }
+  }
+  if (!api.rows.value.some(row => row.uid === uid)) return
+  dirtyTargetUid.value = null
+  activeKey.value = uid
+}
 
 const activeRowOperations = computed(() =>
   activeRow.value ? (operationsByTarget.value.get(activeRow.value.uid) ?? []) : []
@@ -188,6 +224,9 @@ watch(allActiveOperationKey, () => void api.refresh())
 watch(
   api.rows,
   rows => {
+    if (dirtyTargetUid.value && !rows.some(row => row.uid === dirtyTargetUid.value)) {
+      dirtyTargetUid.value = null
+    }
     if (!rows.some(row => row.uid === activeKey.value)) activeKey.value = rows[0]?.uid
   },
   { immediate: true }
@@ -214,7 +253,8 @@ async function importFound(uid: string) {
   importing.value = uid
   try {
     const response = await api.importFound(uid)
-    activeKey.value = response.order?.[0]?.uid ?? activeKey.value
+    const createdUid = response.order?.[0]?.uid
+    if (createdUid && !isActiveEditorDirty.value) activeKey.value = createdUid
     found.value = found.value.filter(item => item.uid !== uid)
     if (!found.value.length) foundOpen.value = false
   } catch (error) {

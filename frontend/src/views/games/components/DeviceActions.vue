@@ -72,6 +72,7 @@ import type { GameRow, GameDeviceRow } from '@/types/games'
 import { gameActionHint } from '@/types/games'
 import { useGameTriggers } from '@/composables/useGameTriggers'
 import { useGamesApi } from '@/composables/useGamesApi'
+import { resolveEditableDeviceTarget } from '../gamePresentation'
 
 const props = withDefaults(
   defineProps<{ game: GameRow; device: GameDeviceRow; narrow?: boolean }>(),
@@ -152,11 +153,27 @@ function menuAction({ key }: { key: string | number }) {
     return
   }
   if (action === 'delete_instance') {
+    const gameUid = props.game.uid
+    const deviceUid = props.device.uid
+    const description = props.device.document.info?.name ?? undefined
     void confirm({
       tone: 'danger',
       title: t('core.games.deleteInstanceConfirm'),
-      description: props.device.document.info?.name ?? undefined,
-      onOk: () => operate('delete_instance'),
+      description,
+      onOk: async () => {
+        const target = resolveEditableDeviceTarget(
+          api.rows.value,
+          gameUid,
+          deviceUid,
+          'delete_instance'
+        )
+        if (!target) return
+        try {
+          await operations.run(target, deviceUid, 'delete_instance')
+        } catch (error) {
+          message.error(String(error))
+        }
+      },
     })
     return
   }

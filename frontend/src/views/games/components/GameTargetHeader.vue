@@ -89,7 +89,7 @@ import { Service } from '@/api'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
 import { useGameTriggers } from '@/composables/useGameTriggers'
-import { isTargetInUse } from '../gamePresentation'
+import { isTargetInUse, resolveEditableGameTarget } from '../gamePresentation'
 
 const props = defineProps<{ game: GameRow }>()
 const emit = defineEmits<{ createInstance: [] }>()
@@ -131,13 +131,16 @@ async function refreshDevices() {
 
 function remove() {
   if (!canRun('delete')) return
+  const targetUid = props.game.uid
+  const description = props.game.document.info?.name ?? undefined
   void confirm({
     tone: 'danger',
     title: t('core.games.deleteConfirm'),
-    description: props.game.document.info?.name ?? undefined,
+    description,
     onOk: async () => {
-      if (canRun('delete'))
-        await api.remove(props.game).catch(error => message.error(String(error)))
+      const target = resolveEditableGameTarget(api.rows.value, targetUid, 'delete')
+      if (!target) return
+      await api.remove(target).catch(error => message.error(String(error)))
     },
   })
 }
@@ -149,17 +152,18 @@ function headerMenuAction({ key }: { key: string | number }) {
   }
   if ((key !== 'stable_mode' && key !== 'capture') || !canRun(key)) return
   const stable = key === 'stable_mode'
-  const game = props.game
+  const targetUid = props.game.uid
   void confirm({
     tone: 'warning',
     title: t(stable ? 'core.games.applyStableMode' : 'core.games.capture'),
     onOk: async () => {
-      if (!canRun(key)) return
+      const target = resolveEditableGameTarget(api.rows.value, targetUid, key)
+      if (!target) return
       try {
-        const result = await api.change(game.type.type, stable ? 'stable_mode' : 'capture', () =>
+        const result = await api.change(target.type.type, stable ? 'stable_mode' : 'capture', () =>
           stable
-            ? Service.applyStableModeApiGamesStableModeApplyPost({ gameId: game.uid })
-            : Service.captureBaselinesApiGamesGuardCapturePost({ gameId: game.uid })
+            ? Service.applyStableModeApiGamesStableModeApplyPost({ gameId: target.uid })
+            : Service.captureBaselinesApiGamesGuardCapturePost({ gameId: target.uid })
         )
         const values = Object.values(result.data ?? {}) as unknown[]
         const failures = values.filter(
