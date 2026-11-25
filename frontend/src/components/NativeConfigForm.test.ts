@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { createSSRApp, h } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
+import { createSSRApp, defineComponent, h, type Component } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import Antd from 'ant-design-vue'
@@ -9,7 +9,9 @@ async function render(
   fields: OkwwConfigField[],
   values: Record<string, unknown>,
   disabled = false,
-  labels: Record<string, string> = {}
+  labels: Record<string, string> = {},
+  onChange?: (name: string, value: unknown) => void,
+  stubs: Record<string, Component> = {}
 ) {
   const app = createSSRApp({
     render: () =>
@@ -20,10 +22,12 @@ async function render(
         disabled,
         labelPrefix: 'label.',
         optionPrefix: 'option.',
+        onChange,
       }),
   })
   app.use(Antd)
   app.use(createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false }))
+  for (const [name, component] of Object.entries(stubs)) app.component(name, component)
   return renderToString(app)
 }
 describe('native configuration form', () => {
@@ -40,6 +44,7 @@ describe('native configuration form', () => {
     expect(html).toContain('value="2.5"')
     expect(html).toContain('nested')
     expect(html).toContain('New flag')
+    expect(html).toMatch(/<button[^>]*role="switch"[^>]*aria-checked="true"/)
   })
   it('uses descriptor conditions and inherits the edit lock', async () => {
     const fields: OkwwConfigField[] = [
@@ -56,6 +61,50 @@ describe('native configuration form', () => {
     const html = await render(fields, { Destination: 'Weekly', 'Target index': 3 }, true)
     expect(html).toContain('Target index')
     expect(html).toMatch(/<input[^>]*disabled/)
+  })
+
+  it('submits integers as numbers and keeps text local until blur', async () => {
+    const change = vi.fn()
+    const controls: Record<
+      string,
+      { attrs: Record<string, unknown>; emit: (event: string, ...args: unknown[]) => void }
+    > = {}
+    const stub = (name: string) =>
+      defineComponent({
+        inheritAttrs: false,
+        setup(_, { attrs, emit }) {
+          controls[name] = { attrs, emit }
+          return () => h('input', { value: attrs.value })
+        },
+      })
+    await render(
+      [
+        { name: 'Count', type: OkwwConfigField.type.NUMBER, integer: true, minimum: 1 },
+        { name: 'Name', type: OkwwConfigField.type.STRING },
+      ],
+      { Count: 2, Name: 'initial' },
+      false,
+      {},
+      change,
+      { 'a-input-number': stub('number'), 'a-input': stub('text') }
+    )
+
+    const number = controls.number!
+    const input = controls.text!
+    expect(number.attrs).toMatchObject({ value: 2, precision: 0, min: 1 })
+    expect(input.attrs.value).toBe('initial')
+    number.emit('update:value', '3')
+    expect(change.mock.calls).toEqual([['Count', 3]])
+
+    number.emit('update:value', null)
+    input.emit('update:value', 'first edit')
+    input.emit('update:value', 'final edit')
+    expect(change.mock.calls).toEqual([['Count', 3]])
+    input.emit('blur')
+    expect(change.mock.calls).toEqual([
+      ['Count', 3],
+      ['Name', 'final edit'],
+    ])
   })
 })
 

@@ -18,7 +18,7 @@
           <DeclarativeControl
             v-if="field.type === 'bool' || field.type === 'select'"
             compact
-            :component="field.type"
+            :component="field.type === 'bool' ? 'switch' : field.type"
             :label="label(field.name)"
             :model-value="field.type === 'bool' ? values[field.name] === true : values[field.name]"
             :disabled="disabled || field.disabled"
@@ -32,28 +32,25 @@
             :options="optionsFor(field)"
             @change="(value: unknown) => emit('change', field.name, value)"
           />
-          <a-input-number
+          <DeclarativeControl
             v-else-if="field.type === 'number'"
-            :value="Number(values[field.name])"
-            :min="field.minimum ?? undefined"
-            :max="field.maximum ?? undefined"
+            component="number"
+            compact
+            :model-value="Number(values[field.name])"
+            :min="field.minimum"
+            :max="field.maximum"
             :precision="field.integer ? 0 : undefined"
             :disabled="disabled || field.disabled"
-            style="width: 100%"
-            @change="
-              (value: number | string | null) => {
-                if (value !== null) emit('change', field.name, Number(value))
-              }
-            "
+            @update:model-value="$event !== null && emit('change', field.name, Number($event))"
           />
-          <a-input
+          <DeclarativeControl
             v-else-if="field.type === 'string'"
-            :value="String(values[field.name] ?? '')"
+            component="input"
+            compact
+            :model-value="drafts[field.name] ?? String(values[field.name] ?? '')"
             :disabled="disabled || field.disabled"
-            @blur="
-              (event: FocusEvent) =>
-                emit('change', field.name, (event.target as HTMLInputElement).value)
-            "
+            @update:model-value="drafts[field.name] = $event as string"
+            @blur="saveString(field.name)"
           />
           <a-textarea
             v-else
@@ -106,6 +103,11 @@ function optionsFor(field: NativeConfigField) {
     label: props.labels[value] || t(`${props.optionPrefix}${value}`, value),
   }))
 }
+function saveString(name: string) {
+  const value = drafts[name] ?? String(props.values[name] ?? '')
+  delete drafts[name]
+  emit('change', name, value)
+}
 function saveJson(name: string) {
   if (!(name in drafts)) return
   try {
@@ -136,6 +138,9 @@ function saveJson(name: string) {
 }
 .native-config-field {
   min-width: 0;
+}
+.native-config-field :deep(.declarative-control--compact > .ant-input-number) {
+  width: 100%;
 }
 .native-config-fields :deep(.ant-form-item-label) {
   white-space: normal;
