@@ -35,3 +35,36 @@ def mark_config_injected(
         baseline=snapshot.baseline,
         injected=config_file_fingerprint(live_path),
     )
+
+
+def publish_staged_config(
+    staged_path: Path,
+    live_path: Path,
+    snapshot_path: Path,
+    *,
+    script_id: str,
+    folder_mode: bool,
+) -> None:
+    """先记下待换入指纹，再原子发布已准备完成的配置。"""
+    previous = io.read_native_config_snapshot(
+        snapshot_path, expected_script_id=script_id
+    )
+    mark_config_injected(
+        snapshot_path, staged_path, script_id=script_id, folder_mode=folder_mode
+    )
+    try:
+        if folder_mode:
+            io.swap_in_dir(staged_path, live_path)
+        else:
+            staged_path.replace(live_path)
+    except Exception:
+        # 原子换入失败时现场仍是上一份配置，复原对应的注入指纹。
+        if previous is not None:
+            io.write_native_config_snapshot(
+                snapshot_path,
+                script_id=script_id,
+                original_exists=previous.original_exists,
+                baseline=previous.baseline,
+                injected=previous.injected,
+            )
+        raise

@@ -26,6 +26,7 @@ from contextlib import suppress
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.config import ConfigCollection
 from app.core import Notify, Publisher
@@ -92,7 +93,7 @@ from .tools.launcher_start import (
     detect_game_maintenance_text,
     launcher_process_paths,
 )
-from .tools.native_config import mark_config_injected
+from .tools.native_config import publish_staged_config
 from .tools.runtime import OkNteProcessManager, runtime_dir
 
 logger = get_logger("OK-NTE 自动代理")
@@ -597,44 +598,53 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
             archive_mas_runtime_backup(
                 self.script_info.script_id, str(self.cur_user_uid)
             )
-        # 每账号先还原任务级原生基线，避免原生来源沿用上一账号的注入值。
-        if self.native_base:
-            if folder_mode and temp.is_dir():
-                _utils_io.swap_in_dir(temp, self.script_config_path)
-            elif not folder_mode and (temp / "config.temp").is_file():
-                shutil.copyfile(temp / "config.temp", self.script_config_path)
-        else:
-            source = self._ensure_oknte_mas_config_dir()
-            if folder_mode:
-                _utils_io.swap_in_dir(source, self.script_config_path)
+        live = self.script_config_path
+        live.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix=".oknte-config-", dir=live.parent) as staging:
+            target_dir = Path(staging)
+            staged = target_dir if folder_mode else target_dir / live.name
+            # 用任务开始前的原生基线或 MAS 账号配置作为本轮来源。
+            if self.native_base:
+                baseline = temp if folder_mode else temp / "config.temp"
+                source = baseline if baseline.exists() else live
             else:
-                shutil.copyfile(
-                    source / self.script_config_path.name, self.script_config_path
+                mas_dir = self._ensure_oknte_mas_config_dir()
+                source = mas_dir if folder_mode else mas_dir / live.name
+            if folder_mode:
+                shutil.copytree(source, staged, dirs_exist_ok=True)
+            else:
+                shutil.copyfile(source, staged)
+                for name in (DAILY_ROUTINE_TASK_FILE, LEGACY_DAILY_TASK_FILE):
+                    sibling = live.parent / name
+                    if name != live.name and sibling.is_file():
+                        shutil.copyfile(sibling, target_dir / name)
+
+            quick_config_takeover(
+                self.cur_user_config, lambda: self._apply_oknte_quick_config(staged)
+            )
+            if self.plan_active:
+                from app.core import Config
+                from app.models.schema import OkNtePlanKey
+
+                from .tools.plan import apply_plan
+
+                plan = Config.PlanConfig[self.cur_user_config.Info.PlanMode]
+                if not isinstance(plan, OkNtePlanConfig):
+                    raise ValueError("所选计划不是 OkNte 计划表")
+                apply_plan(
+                    target_dir, OkNtePlanKey.model_validate(plan.get_current_key())
                 )
-        quick_config_takeover(self.cur_user_config, self._apply_oknte_quick_config)
-        target_dir = (
-            self.script_config_path if folder_mode else self.script_config_path.parent
-        )
-        if self.plan_active:
-            from app.core import Config
-            from app.models.schema import OkNtePlanKey
-
-            from .tools.plan import apply_plan
-
-            plan = Config.PlanConfig[self.cur_user_config.Info.PlanMode]
-            if not isinstance(plan, OkNtePlanConfig):
-                raise ValueError("所选计划不是 OkNte 计划表")
-            apply_plan(target_dir, OkNtePlanKey.model_validate(plan.get_current_key()))
-        self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
-        mark_config_injected(
-            temp,
-            self.script_config_path,
-            script_id=self.script_info.script_id,
-            folder_mode=folder_mode,
-        )
+            self.daily_activity_required = _oknte_daily_activity_enabled(target_dir)
+            publish_staged_config(
+                staged,
+                live,
+                temp,
+                script_id=self.script_info.script_id,
+                folder_mode=folder_mode,
+            )
         logger.info("OK-NTE 运行参数配置完成: 自动代理")
 
-    def _apply_oknte_quick_config(self) -> None:
+    def _apply_oknte_quick_config(self, staged_path: Path) -> None:
         """覆盖编辑器实际保存的原生文件，不解析或重新建模任务内容。"""
 
         source = ensure_quick_config_dir(
@@ -645,16 +655,16 @@ class AutoProxyTask(ScriptAutoProxyBase[OkNteConfig, OkNteUserConfig]):
                 src = source / info["filename"]
                 if not src.is_file():
                     continue
-                target = self.script_config_path / src.name
+                target = staged_path / src.name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 tmp = target.with_suffix(".json.tmp")
                 shutil.copyfile(src, tmp)
                 tmp.replace(target)
         else:
-            src = source / self.script_config_path.name
-            tmp = self.script_config_path.with_suffix(".tmp")
+            src = source / staged_path.name
+            tmp = staged_path.with_suffix(".tmp")
             shutil.copyfile(src, tmp)
-            tmp.replace(self.script_config_path)
+            tmp.replace(staged_path)
         logger.info("OK-NTE 覆写常规配置已应用")
 
     async def update_config(self) -> None:

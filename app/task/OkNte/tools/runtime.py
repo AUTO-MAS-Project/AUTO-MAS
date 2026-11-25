@@ -82,10 +82,11 @@ class OkNteProcessManager(ProcessManager):
         program: Path | str,
         *args: str,
         use_custom_target: bool = True,
+        require_runtime: bool = False,
         on_log: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         """启动上游入口，按自定义条件或实际本体接管生命周期。"""
-        track = self.config.Script.IfTrackProcess
+        track = require_runtime or self.config.Script.IfTrackProcess
         custom = self._custom_target() if track and use_custom_target else None
         launcher = (
             Path(program) == self.root / "ok-nte.exe"

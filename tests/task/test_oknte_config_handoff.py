@@ -1,3 +1,4 @@
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -5,10 +6,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from app.core import Config, Notify
+from app.models.config.plan import OkNtePlanConfig
 from app.models.config.script import OkNteConfig, OkNteUserConfig
 from app.models.task import TaskUserItem
 from app.task.OkNte import manager as manager_module
 from app.task.OkNte.AutoProxy import AutoProxyTask
+from app.task.OkNte.config_schema import DAILY_ROUTINE_TASK_FILE
 from app.task.OkNte.manager import OkNteManager
 from app.task.OkNte.ScriptConfig import ScriptConfigTask
 from app.task.OkNte.tools.native_config import mark_config_injected
@@ -170,12 +173,20 @@ async def test_deferred_file_snapshot_is_kept_when_live_file_has_changed(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("task_class", [AutoProxyTask, ScriptConfigTask])
-async def test_config_entry_points_stop_before_writing_when_body_is_running(
-    tmp_path, monkeypatch, task_class
+@pytest.mark.parametrize(
+    ("task_class", "gui_exit"),
+    [
+        pytest.param(AutoProxyTask, None, id="autoproxy-blocked"),
+        pytest.param(ScriptConfigTask, None, id="gui-launch-blocked"),
+        pytest.param(ScriptConfigTask, False, id="gui-exit-unconfirmed"),
+        pytest.param(ScriptConfigTask, True, id="gui-exit-confirmed"),
+    ],
+)
+async def test_config_entry_points_require_process_exit(
+    tmp_path, monkeypatch, task_class, gui_exit
 ):
     uid = uuid.uuid4()
-    _root, script, _user = await create_runtime_tree(user_id=str(uid))
+    _root, script, user = await create_runtime_tree(user_id=str(uid))
     launcher = tmp_path / "ok-nte.exe"
     launcher.touch()
     live = tmp_path / "runtime-config"
@@ -197,12 +208,110 @@ async def test_config_entry_points_stop_before_writing_when_body_is_running(
 
     worker = tmp_path / "data/apps/ok-nte/working/ok-nte.exe"
 
+    worker_running = gui_exit is None
+
     async def is_stopped(path, *, all_sessions=False):
-        return not (path == worker and all_sessions)
+        return not (worker_running and path == worker and all_sessions)
 
     monkeypatch.setattr(process, "is_process_stopped", is_stopped)
     monkeypatch.setattr(process, "kill_process", AsyncMock(return_value=True))
     monkeypatch.setattr(OkNteProcessManager, "kill", AsyncMock())
-    with pytest.raises(RuntimeError, match="已停止下发配置"):
+    if isinstance(task, ScriptConfigTask):
+        task.mas_config_dir = tmp_path / "selected-account"
+        task.mas_config_dir.mkdir()
+        account_file = task.mas_config_dir / "tasks.json"
+        account_file.write_text("selected account", encoding="utf-8")
+        if gui_exit is not None:
+
+            async def open_gui(*_args, **_kwargs):
+                nonlocal worker_running
+                worker_running = not gui_exit
+                config_file.write_text("gui change", encoding="utf-8")
+                task.wait_event.set()
+
+            monkeypatch.setattr(OkNteProcessManager, "open_oknte", open_gui)
+            monkeypatch.setattr(
+                "app.task.OkNte.ScriptConfig.archive_mas_runtime_backup",
+                lambda *_: None,
+            )
+        await task.execution.run()
+        assert user.status == ("完成" if gui_exit else "异常")
+        assert account_file.read_text(encoding="utf-8") == (
+            "gui change" if gui_exit else "selected account"
+        )
+    else:
+        with pytest.raises(RuntimeError, match="已停止下发配置"):
+            await task.set_oknte()
+    assert config_file.read_text(encoding="utf-8") == (
+        "in use" if gui_exit is None else "gui change"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed", [True, False], ids=["invalid-plan-input", "valid"]
+)
+async def test_first_config_publish_waits_for_plan_composition(
+    tmp_path, monkeypatch, malformed
+):
+    mas_root = tmp_path / "mas"
+    mas_root.mkdir()
+    monkeypatch.chdir(mas_root)
+    script_root = tmp_path / "oknte"
+    script_root.mkdir()
+    launcher = script_root / "ok-nte.exe"
+    launcher.touch()
+    log = script_root / "runtime.log"
+    log.touch()
+    live = script_root / "runtime-config"
+    source = tmp_path / "account-config"
+    source.mkdir()
+    routine = source / DAILY_ROUTINE_TASK_FILE
+    routine.write_text(
+        "broken" if malformed else '{"Routine Items":[]}', encoding="utf-8"
+    )
+    uid = uuid.uuid4()
+    script_id = str(uuid.uuid4())
+    _root, script, _user = await create_runtime_tree(
+        script_id=script_id, user_id=str(uid)
+    )
+    config = await activate_config(
+        OkNteConfig(
+            Info={"RootPath": script_root},
+            Script={"ScriptPath": launcher, "ConfigPath": live, "LogPath": log},
+        )
+    )
+    account = await activate_config(
+        OkNteUserConfig(Info={"IfQuickConfig": False}, Task={"TaskIndex": "2"})
+    )
+    task = AutoProxyTask(script, config, {uid: account}, None)
+    assert await task.check() == "Pass"
+    await task.prepare()
+    task.plan_active = True
+
+    plan = OkNtePlanConfig()
+    monkeypatch.setattr(Config, "PlanConfig", {account.Info.PlanMode: plan})
+    monkeypatch.setattr(
+        OkNtePlanConfig,
+        "get_current_key",
+        lambda _: {"Configs": {DAILY_ROUTINE_TASK_FILE: {"Routine Items": []}}},
+    )
+    monkeypatch.setattr(task, "_ensure_oknte_mas_config_dir", lambda: source)
+    monkeypatch.setattr(process, "kill_process", AsyncMock(return_value=True))
+    monkeypatch.setattr(process, "is_process_stopped", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        "app.task.OkNte.AutoProxy.archive_mas_runtime_backup", lambda *_: None
+    )
+
+    if malformed:
+        with pytest.raises(json.JSONDecodeError):
+            await task.set_oknte()
+        assert not live.exists()
+    else:
         await task.set_oknte()
-    assert config_file.read_text(encoding="utf-8") == "in use"
+        assert (
+            json.loads((live / DAILY_ROUTINE_TASK_FILE).read_text(encoding="utf-8"))[
+                "Routine Items"
+            ]
+            == []
+        )
