@@ -541,6 +541,51 @@ async def test_failed_game_selection_marks_waiting_accounts_failed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["precheck"])
+async def test_plugin_pre_dispatch_failure_marks_waiting_accounts_failed(
+    scheduler, monkeypatch, failure
+):
+    """排队期间插件被停用：派发 L3 之前就失败时，账号记「异常」、托管写明原因，不留在「等待」。"""
+    from app.core import Plugin
+    from app.models.task import TaskMode
+    from app.plugin.errors import PluginPrecheckError
+    from app.task.user_expander import UserExpander
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(True)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    sid, _ = await _plugin_script_world(
+        scheduler, monkeypatch, Expander, {"game_id": "-", "device_id": "-"}
+    )
+    reason = "托管所属插件当前不可用"
+    if failure == "precheck":
+
+        def unavailable(script, config):
+            raise PluginPrecheckError(reason)
+
+        monkeypatch.setattr(manager, "plugin_expander", unavailable)
+    else:
+        # 执行对象已建好，类型声明在准备期间被摘掉。
+        monkeypatch.setattr(Plugin, "script_types", {})
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert not entered
+    assert script.status == "异常" and reason in script.log
+    assert [u.status for u in script.user_list] == ["异常"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("concurrent_execution", [False, True], ids=["gate", "device"])
 async def test_waiting_for_game_pushes_task_log_before_acquisition(
     monkeypatch, concurrent_execution

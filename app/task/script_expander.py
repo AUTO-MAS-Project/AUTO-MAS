@@ -189,7 +189,8 @@ class ScriptExpander(TaskBase):
 
         entry: ScriptConfigType
         game_token = None
-        selection_failed = False
+        # 插件路径从解析执行对象起、到进入 L3 为止都还没有账号开始；这段失败按托管级检查失败处理。
+        pre_dispatch_failed = False
         try:
             candidate: ScriptConfigType | None = Config.ScriptConfig.get(
                 script.script_id
@@ -245,8 +246,10 @@ class ScriptExpander(TaskBase):
                         await asyncio.sleep(1)
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
+                    pre_dispatch_failed = True
                     plugin = self.dispatcher.plugin_expander(script, entry)
                     if plugin is None:
+                        pre_dispatch_failed = False
                         # 旧 manager 自持递归锁，必须先归还探测锁，不能叠加持锁等待。
                         await self._release_script_lock()
                 if plugin is not None:
@@ -271,15 +274,12 @@ class ScriptExpander(TaskBase):
                     if not plugin.defer_game_session:
                         # 声明了的插件在确认有可运行账号之后自己选定（同旧专项
                         # after_config_lock），没有账号就不占游戏、不排队。
-                        try:
-                            await self._game_session.select()
-                        except Exception:
-                            selection_failed = True
-                            raise
+                        await self._game_session.select()
                     plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin
+                    pre_dispatch_failed = False
                     await self._run_plugin(plugin)
                     if self.cancelled:
                         raise asyncio.CancelledError
@@ -351,7 +351,7 @@ class ScriptExpander(TaskBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=str(error)),
             )
-            if selection_failed:
+            if pre_dispatch_failed:
                 # 同旧专项托管级检查失败：一个账号都没开始，账号记「异常」，不留在「等待」。
                 for user in script.user_list:
                     if user.status == "等待":
