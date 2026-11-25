@@ -300,7 +300,12 @@ onUnmounted(() => {
           @refresh="refreshGameSignConfig"
         />
         <CommunityActivityView v-else-if="activeView === 'activity'" />
-        <GachaPage v-else-if="activeView === 'gacha'" @back="handleViewChange('sign')" />
+        <GachaPage
+          v-else-if="activeView === 'gacha'"
+          :accounts="accounts"
+          :disabled="loading"
+          @manage="goAccounts"
+        />
         <AccountsPage
           v-else-if="activeView === 'accounts'"
           :result-source="() => editingConfig.GameSign?.Result"
