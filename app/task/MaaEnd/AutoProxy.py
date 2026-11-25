@@ -1671,12 +1671,16 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 )
                 break
             # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
+            no_runnable_task = False
             try:
                 if self.emulator_manager is None:
                     await self.set_maaend(None)
-                    await self._start_game(
-                        preserve_running_game=keep_game_for_login_retry
-                    )
+                    # 任务表在写入配置时已经定下；一个都不跑就别先拉起游戏。
+                    no_runnable_task = not self._has_runnable_task(cloud_adb)
+                    if not no_runnable_task:
+                        await self._start_game(
+                            preserve_running_game=keep_game_for_login_retry
+                        )
                 else:
                     logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                     point(self, "start_game")
@@ -1695,6 +1699,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     e,
                 )
                 continue
+            if no_runnable_task:
+                self.retryable = False
+                # 游戏还没拉起，没有要关的游戏进程。
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置", kill_game=False
+                )
+                break
 
             account_id = str(self.cur_user_config.Info.Id).strip()
             if use_mas_account_switch and account_id:
@@ -1760,12 +1771,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if self.emulator_manager is not None:
                 await self.set_maaend(self.emulator_info)
 
-            if not any(
-                any(tasks.values())
-                for name, tasks in self.task_dict.items()
-                if not cloud_adb
-                or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
-            ):
+            if not self._has_runnable_task(cloud_adb):
                 self.retryable = False
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置"
@@ -1868,6 +1874,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 if not self.retryable:
                     logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
+
+    def _has_runnable_task(self, cloud_adb: bool) -> bool:
+        """本轮任务表（``set_maaend`` 写配置时生成）里至少开着一个业务任务。
+
+        云终末地的启动游戏任务由 MAS 补进去，不算业务任务。
+        """
+        return any(
+            any(tasks.values())
+            for name, tasks in self.task_dict.items()
+            if not cloud_adb
+            or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
+        )
 
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None, *, kill_game: bool = True

@@ -260,6 +260,26 @@ async def test_member_unreadable_by_returned_plugin_stays_aside(tmp_path):
     assert profile.saved_targets() == profile.ids
 
 
+async def test_unreadable_member_detail_omits_input_value(tmp_path):
+    """读不了的成员只记字段路径和错误类别：激活时隔离、插件回来后还原失败两条路都一样。"""
+    secret = "token-LEAK-0123456789abcdef"
+    profile = Profile(tmp_path, unreadable=1)
+    profile.document["data"][profile.ids[1]]["Info"]["Count"] = secret
+    profile.document["data"][profile.ids[2]]["Info"]["Count"] = secret
+    config_io.write_file(profile.path, profile.document)
+    scripts, _pointers = await profile.start([KnownEntry])
+    await _plugin_back(scripts)
+    await scripts.materialize_unresolved("PluginEntry")
+
+    details = {str(item.uid): item.detail for item in scripts.unresolved()}
+    assert set(details) == {profile.ids[1], profile.ids[2]}
+    for detail in details.values():
+        assert secret not in detail
+        assert detail == "ValidationError: Count（int_parsing）"
+    await config_manager.flush()
+    assert profile.saved() == profile.document
+
+
 async def test_discarded_member_reaches_disk_without_exit_flush(tmp_path):
     """删掉旁挂成员后，后台的防抖保存就要把它从盘上去掉，不能只等退出时的 flush。"""
     profile = Profile(tmp_path)

@@ -191,7 +191,10 @@ class _PluginManager:
 
     @asynccontextmanager
     async def _pause_owners(self, owners):
-        """暂停指定插件的调用准入，等待在途调用和配置操作收尾，退出时按当前启用状态恢复准入。"""
+        """暂停指定插件的调用准入，等待在途调用和配置操作收尾，退出时按当前启用状态恢复准入。
+
+        等配置触发器和等在途调用共用一个截止时间，任一段到点都放弃本次操作。
+        """
         owners = tuple(owners)
         gates = {
             uid: (self._calls[uid], self._calls[uid].accepting)
@@ -200,25 +203,48 @@ class _PluginManager:
         }
         for gate, _ in gates.values():
             gate.accepting = False
+        deadline = asyncio.get_running_loop().time() + _PAUSE_DRAIN_TIMEOUT
         try:
-            async with config_manager.pause_trigger_owners(owners):
+            async with contextlib.AsyncExitStack() as stack:
                 # 保留发起调用的任务身份，让 drain 排除自身，避免等待自己返回。
                 # 在当前任务里限时等待（不另起任务），否则 drain 认不出发起者自己的调用。
                 pending: UUID | None = None
                 try:
-                    async with asyncio.timeout(_PAUSE_DRAIN_TIMEOUT):
+                    async with asyncio.timeout_at(deadline):
+                        # 进入时等这些插件的配置触发器退出；超时取消在这里，
+                        # 暂停计数由它自己的 finally 撤回。
+                        await stack.enter_async_context(
+                            config_manager.pause_trigger_owners(owners)
+                        )
                         for uid, (gate, _) in gates.items():
                             pending = uid
                             await gate.drain()
                 except TimeoutError:
                     from app.core import Config
 
-                    record = Config.plugin_registry.get(pending)
-                    name = record.info.plugin_name if record is not None else pending
-                    logger.warning(
-                        f"插件 {name} 的在途调用 {_PAUSE_DRAIN_TIMEOUT:g} 秒内没有结束，"
-                        "拒绝本次停用 / 重载 / 卸载，恢复调用准入"
-                    )
+                    if pending is None:
+                        names = "、".join(
+                            str(
+                                record.info.plugin_name
+                                if (record := Config.plugin_registry.get(uid))
+                                is not None
+                                else uid
+                            )
+                            for uid in owners
+                        )
+                        logger.warning(
+                            f"插件 {names} 的配置触发器 {_PAUSE_DRAIN_TIMEOUT:g} 秒内"
+                            "没有结束，拒绝本次停用 / 重载 / 卸载，恢复调用准入"
+                        )
+                    else:
+                        record = Config.plugin_registry.get(pending)
+                        name = (
+                            record.info.plugin_name if record is not None else pending
+                        )
+                        logger.warning(
+                            f"插件 {name} 的在途调用 {_PAUSE_DRAIN_TIMEOUT:g} 秒内没有结束，"
+                            "拒绝本次停用 / 重载 / 卸载，恢复调用准入"
+                        )
                     raise PluginBusyError(_BUSY_MESSAGE) from None
                 yield
         finally:

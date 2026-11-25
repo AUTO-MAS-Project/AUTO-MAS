@@ -330,6 +330,27 @@ async def test_native_tasks_run_independently_in_one_queue(
 
 
 @pytest.mark.asyncio
+async def test_no_runnable_task_fails_before_launching_game(proxy_fixture):
+    """一个业务任务都没开：拉起游戏之前就报「没有可执行任务」，不白拉一次游戏，也不重试。"""
+    proxy, attempts = proxy_fixture
+    user = proxy.cur_user_config
+    user.Info.IfQuickConfig = False
+    await user.commit()
+    path = proxy.maaend_config_file
+    original = json.loads(path.read_text())
+    for task in original["instances"][0]["tasks"]:
+        task["enabled"] = False
+    path.write_text(json.dumps(original))
+
+    await proxy.execution.run()
+
+    proxy._start_game.assert_not_awaited()
+    assert attempts == []
+    assert proxy.cur_user_item.status == "异常"
+    assert proxy.cur_user_log.status == "MaaEnd 没有可执行任务，请检查任务配置"
+
+
+@pytest.mark.asyncio
 async def test_old_plan_routes_each_native_task_and_unbinds_on_delete(monkeypatch):
     plans = ConfigCollection.build([MaaEndPlanConfig])
     monkeypatch.setitem(config_manager._collections, "PlanConfig", plans)
