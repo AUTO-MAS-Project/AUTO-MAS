@@ -218,3 +218,74 @@ asyncio.run(run())
     assert data_version("v2.2") == "v2.2"
     _run_config_startup(tmp_path, start.replace("__LEGACY__", "False"))
     assert {name: (config / name).read_bytes() for name in files} == original
+
+
+def test_unreadable_managed_summary_omits_config_values(tmp_path):
+    """读不了的托管：给界面、启动提示、日志和升级拒绝的原因只有字段路径和错误类别，不带原值。"""
+    secret = "whsec-LEAK-0123456789abcdef"
+    seed = """
+import asyncio, json
+from app.config import config_manager
+from app.core import Config
+from app.models.config import GeneralConfig
+
+async def run():
+    await Config.check_data()
+    uid = Config.ScriptConfig.add(GeneralConfig, payload={"Info": {"Name": "BAD"}})
+    await Config.ScriptConfig.commit()
+    await config_manager.flush()
+    (Config.work_path / "ids.json").write_text(json.dumps([str(uid)]))
+
+asyncio.run(run())
+"""
+    start = """
+import asyncio, json
+from app.config import config_manager
+from app.core import Config
+
+Config._get_script_config_handler = lambda script: None
+(bad,) = json.loads((Config.work_path / "ids.json").read_text())
+SECRET = __SECRET__
+
+async def run():
+    try:
+        await Config.check_data()
+    except Exception as exc:
+        assert __LEGACY__, exc
+        text = str(exc)
+        assert SECRET not in text, text
+        assert bad in text and "WaitTime" in text and "int_parsing" in text, text
+        return
+    assert not __LEGACY__
+    (item,) = Config.unavailable_scripts()
+    assert item["reason"] == "load_failed"
+    assert SECRET not in item["detail"], item["detail"]
+    assert "WaitTime" in item["detail"] and "int_parsing" in item["detail"], item
+    notices = json.dumps(Config.startup_notices, ensure_ascii=False)
+    assert SECRET not in notices, notices
+    await config_manager.flush()
+
+asyncio.run(run())
+""".replace("__SECRET__", repr(secret))
+    _run_config_startup(tmp_path, seed)
+    (bad,) = json.loads((tmp_path / "ids.json").read_text())
+    config = tmp_path / "config"
+    scripts = config_io.read_dict_file(config / "scripts.yaml")
+    scripts["data"][bad]["Game"]["WaitTime"] = secret
+    config_io.write_file(config / "scripts.yaml", scripts)
+    log = tmp_path / "debug" / "app.log"
+
+    with sqlite3.connect(tmp_path / "data" / "data.db") as db:
+        db.execute("UPDATE version SET v = ?", ("v2.1",))
+    _run_config_startup(tmp_path, start.replace("__LEGACY__", "True"))
+
+    with sqlite3.connect(tmp_path / "data" / "data.db") as db:
+        db.execute("UPDATE version SET v = ?", ("v2.2",))
+    _run_config_startup(tmp_path, start.replace("__LEGACY__", "False"))
+    # 原文照旧原样留在盘上，供恢复。
+    saved = config_io.read_dict_file(config / "scripts.yaml")
+    assert saved["data"][bad]["Game"]["WaitTime"] == secret
+    text = log.read_text(encoding="utf-8", errors="replace")
+    assert f"配置读不了，原样保留：GeneralConfig {bad}" in text
+    assert "WaitTime" in text
+    assert secret not in text

@@ -17,7 +17,14 @@ from pathlib import Path
 from typing import Any, ClassVar, Generic, Iterator, Literal, Self, TypeVar, cast
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, PrivateAttr, SerializationInfo, model_serializer
+from pydantic import (
+    BaseModel,
+    Field,
+    PrivateAttr,
+    SerializationInfo,
+    ValidationError,
+    model_serializer,
+)
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from ..errors import ConfigAggregateError, DeletedNodeError, UnresolvedEntryError
@@ -56,8 +63,24 @@ class UnresolvedEntry:
     detail: str = ""
 
 
+def _describe_error(exc: BaseException) -> str:
+    """单个错误的描述：只有类型名、字段路径和错误类别，不带任何输入值。
+
+    异常正文（尤其 pydantic 的校验错误）会带着配置原值，里面可能有密码、令牌、
+    Webhook 地址，不能进界面和日志。
+    """
+    if isinstance(exc, ValidationError):
+        parts = []
+        for error in exc.errors(include_url=False, include_input=False):
+            loc = ".".join(str(part) for part in error.get("loc", ())) or "<根>"
+            parts.append(f"{loc}（{error.get('type', 'unknown')}）")
+        if parts:
+            return f"{type(exc).__name__}: " + "，".join(parts)
+    return type(exc).__name__
+
+
 def _error_summary(exc: BaseException, limit: int = 300) -> str:
-    """还原失败的简短原因，给界面和日志看。"""
+    """还原失败的简短原因，给界面和日志看；不含配置原值（见 ``_describe_error``）。"""
     errors: list[BaseException] = []
     pending: list[BaseException] = [exc]
     while pending:
@@ -67,7 +90,7 @@ def _error_summary(exc: BaseException, limit: int = 300) -> str:
             pending[:0] = current.errors
         else:
             errors.append(current)
-    text = "; ".join(f"{type(e).__name__}: {e}" for e in errors) or type(exc).__name__
+    text = "; ".join(_describe_error(e) for e in errors) or type(exc).__name__
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
