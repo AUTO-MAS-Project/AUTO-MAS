@@ -58,6 +58,8 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 
 在动态前端加载上线前，MAA、奇想盒、SRC 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
 
+插件自有的 HTTP 端点（如 `/api/plugin/signflow/*`）由宿主在启停时挂到 `app.routes`，因此只有生成那一刻已启用的插件才会进 `frontend/src/api`。整仓重跑 `yarn openapi` 会把未启用插件的契约模型当作过期文件清掉，**不要用它来同步插件端点**；这类端点改在主程序 `frontend/src/services/` 里手写薄封装，视图与组合式函数只调该模块。
+
 ## 回归与测试环境
 
 主仓专项集成测试消费 `tests/requirements-plugins.txt` 中锁定版本与 SHA-256 的已发布 wheel（安装到 `.test-plugins/`，SDK 使用当前主仓源码）：

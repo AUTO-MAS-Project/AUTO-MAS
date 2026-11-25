@@ -52,6 +52,10 @@ export function useGachaRecords() {
   const unavailable = ref('')
   /** 插件首启只探测一次：未启用时每次切筛选都重试只会反复闪同一条提示 */
   let probed = false
+  /** 查询代次：连点或翻页时后到的旧响应不能覆盖新结果 */
+  let queryToken = 0
+  /** 读取代次与查询分开：读取成功后还要再查一次，共用计数器会把读取的收尾判成过期 */
+  let fetchToken = 0
 
   const probe = async (): Promise<void> => {
     if (probed) return
@@ -73,6 +77,7 @@ export function useGachaRecords() {
   const query = async (filter: GachaQueryFilter): Promise<void> => {
     await probe()
     if (unavailable.value) return
+    const token = ++queryToken
     querying.value = true
     errorMessage.value = ''
     try {
@@ -83,10 +88,13 @@ export function useGachaRecords() {
         page: page.value,
         pageSize: pageSize.value,
       })
+      // 连点「查询」或快速翻页时，只让最后一次请求落地
+      if (token !== queryToken) return
       records.value = result.data
       pools.value = Array.isArray(result.pools) ? result.pools : []
       total.value = result.total
     } catch (error) {
+      if (token !== queryToken) return
       if (isPluginUnavailable(error)) {
         unavailable.value = t('core.gamesign.gacha.pluginMissing')
         return
@@ -95,7 +103,7 @@ export function useGachaRecords() {
       records.value = []
       total.value = 0
     } finally {
-      querying.value = false
+      if (token === queryToken) querying.value = false
     }
   }
 
@@ -103,6 +111,7 @@ export function useGachaRecords() {
   const fetchRecords = async (target: GachaFetchTarget): Promise<void> => {
     await probe()
     if (unavailable.value) return
+    const token = ++fetchToken
     fetching.value = true
     errorMessage.value = ''
     try {
@@ -123,18 +132,22 @@ export function useGachaRecords() {
       page.value = 1
       await query({ game: target.game, playerUid: target.playerUid, pool: '' })
     } catch (error) {
+      if (token !== fetchToken) return
       if (isPluginUnavailable(error)) {
         unavailable.value = t('core.gamesign.gacha.pluginMissing')
         return
       }
       errorMessage.value = errorText(error)
     } finally {
-      fetching.value = false
+      if (token === fetchToken) fetching.value = false
     }
   }
 
   /** 切帐号或改角色 UID 时要清掉上一份结果，避免把别人的记录当成当前角色的 */
   const reset = () => {
+    // 换帐号或换角色后，在途的旧查询与读取结果都不再属于当前筛选
+    queryToken += 1
+    fetchToken += 1
     records.value = []
     pools.value = []
     total.value = 0
