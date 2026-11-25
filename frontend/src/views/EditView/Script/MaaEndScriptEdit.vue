@@ -5,7 +5,6 @@
         <template #extra-actions>
           <a-button
             type="primary"
-            size="large"
             :loading="maaEndConfigLoading"
             :disabled="pageLoading || showMaaEndConfigMask"
             @click="handleMaaEndConfig"
@@ -19,16 +18,9 @@
       </ScriptEditHeader>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-card
-        :title="t('core.edit.maaendScriptConfiguration')"
-        :loading="pageLoading"
-        class="config-card"
-      >
-        <template #extra>
-          <a-tag class="type-tag">MaaEnd</a-tag>
-        </template>
-
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content" game-binding="none">
+      <GameBindingSection :script-id="scriptId" variant="card" />
+      <a-spin :spinning="pageLoading">
         <a-alert :message="t('core.edit.important')" type="warning" show-icon class="notice-alert">
           <template #description>
             <div class="notice-content">
@@ -54,15 +46,16 @@
         </a-alert>
 
         <a-form
+          :aria-label="t('core.edit.maaendScriptConfiguration')"
           ref="formRef"
           :model="formData"
           :rules="rules"
           layout="vertical"
           class="config-form"
         >
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
             <a-row :gutter="24">
-              <a-col :span="8">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="name">
                   <template #label>
                     <FieldLabelWithHint
@@ -74,12 +67,11 @@
                   <a-input
                     v-model:value="formData.name"
                     :placeholder="t('core.edit.enterScriptName')"
-                    size="large"
                     @blur="handleChange('Info', 'Name', formData.name)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="16">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="path" :rules="rules.path">
                   <template #label>
                     <FieldLabelWithHint
@@ -100,9 +92,13 @@
             </a-row>
           </SectionCard>
 
-          <SectionCard variant="plain" :title="t('core.edit.gameConfiguration')">
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.gameConfiguration')"
+            :icon="ControlOutlined"
+          >
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -113,28 +109,10 @@
                   </template>
                   <a-select
                     v-model:value="maaEndConfig.Game.ControllerType"
-                    size="large"
                     :options="controllerOptions"
                     :loading="maaEndOptionsLoading"
                     :disabled="maaEndOptionsLoading || isSaving"
                     @change="handleControllerTypeChange"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.closeGameAfterTask2')"
-                      :hint="t('core.edit.whetherGameClosesAfter')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="maaEndConfig.Game.CloseOnFinish"
-                    size="large"
-                    :options="booleanOptions"
-                    @change="handleChange('Game', 'CloseOnFinish', $event)"
                   />
                 </a-form-item>
               </a-col>
@@ -160,7 +138,7 @@
             />
 
             <a-row v-if="isWinController" :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -172,7 +150,7 @@
                   <BoundGamePathField />
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -194,7 +172,6 @@
                     v-model:value="maaEndConfig.Game.Arguments"
                     :disabled="isSaving || !isMasLaunchMode"
                     :placeholder="t('core.edit.enterLaunchArguments')"
-                    size="large"
                     @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
                   />
                   <div v-if="!isMasLaunchMode" class="control-hint">
@@ -202,7 +179,7 @@
                   </div>
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -215,7 +192,6 @@
                     v-model:value="maaEndConfig.Game.WaitTime"
                     :min="60"
                     :max="9999"
-                    size="large"
                     style="width: 100%"
                     @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)"
                   />
@@ -223,39 +199,14 @@
               </a-col>
             </a-row>
 
-            <a-divider v-if="isWinController" orientation="left">
-              {{ t('core.edit.maaEndLaunchSettings') }}
-            </a-divider>
-            <a-row v-if="isWinController" :gutter="24">
-              <a-col :span="24">
-                <a-form-item
-                  :label="t('core.edit.maaEndSetResolution')"
-                  :help="
-                    !canSetResolution
-                      ? t(
-                          maaEndLaunchSupported
-                            ? 'core.edit.maaEndResolutionRequiresNative'
-                            : 'core.edit.maaEndResolutionUnsupported'
-                        )
-                      : t('core.edit.maaEndLaunchSettingsHint')
-                  "
-                >
-                  <a-select
-                    :value="canSetResolution && maaEndConfig.Game.SetResolution"
-                    size="large"
-                    :options="booleanOptions"
-                    :disabled="isSaving || !launchCapabilitiesReady || !canSetResolution"
-                    @change="handleSetResolutionChange"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <MaaEndHDRField
-              v-if="isWinController && effectiveLaunchMode === 'MaaEnd'"
-              :value="maaEndConfig.Game.AutoHDR ?? 'Unchanged'"
-              :disabled="isSaving || !launchCapabilitiesReady || !maaEndLaunchSupported"
-              @change="handleAutoHDRChange('AutoHDR', $event)"
-            />
+            <template v-if="isWinController && effectiveLaunchMode === 'MaaEnd'">
+              <a-divider orientation="left">{{ t('core.edit.maaEndLaunchSettings') }}</a-divider>
+              <MaaEndHDRField
+                :value="maaEndConfig.Game.AutoHDR ?? 'Unchanged'"
+                :disabled="isSaving || !launchCapabilitiesReady || !maaEndLaunchSupported"
+                @change="handleAutoHDRChange('AutoHDR', $event)"
+              />
+            </template>
             <a-divider
               v-if="isWinController && maaEndConfig.Game.CloseOnFinish"
               orientation="left"
@@ -273,25 +224,23 @@
               :message="t('core.edit.maaEndRestorePathRequired')"
             />
             <a-row v-if="isWinController && maaEndConfig.Game.CloseOnFinish" :gutter="24">
-              <a-col :span="showRestoreResolution ? 12 : 24">
+              <a-col :xs="24" :md="12">
                 <a-form-item
                   :label="t('core.edit.maaEndRestoreDisplayType')"
                   :help="t('core.edit.maaEndRestoreSettingsHint')"
                 >
                   <a-select
                     :value="restoreDisplaySelection"
-                    size="large"
                     :options="displayTypeOptions"
                     :disabled="isSaving"
                     @change="handleRestoreDisplayChange"
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="showRestoreResolution" :span="12">
+              <a-col v-if="showRestoreResolution" :xs="24" :md="12">
                 <a-form-item :label="t('core.edit.maaEndRestoreResolution')">
                   <a-select
                     v-model:value="maaEndConfig.Game.RestoreResolution"
-                    size="large"
                     :options="restoreResolutionOptions"
                     :loading="maaEndOptionsLoading"
                     :disabled="isSaving"
@@ -309,28 +258,26 @@
               "
               :gutter="24"
             >
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item :label="t('core.edit.maaEndResolutionWidth')">
                   <a-input-number
                     v-model:value="maaEndConfig.Game.RestoreResolutionWidth"
                     :min="1"
                     :max="16384"
                     :precision="0"
-                    size="large"
                     style="width: 100%"
                     :disabled="isSaving"
                     @blur="handleResolutionBlur('RestoreResolutionWidth')"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item :label="t('core.edit.maaEndResolutionHeight')">
                   <a-input-number
                     v-model:value="maaEndConfig.Game.RestoreResolutionHeight"
                     :min="1"
                     :max="16384"
                     :precision="0"
-                    size="large"
                     style="width: 100%"
                     :disabled="isSaving"
                     @blur="handleResolutionBlur('RestoreResolutionHeight')"
@@ -347,8 +294,6 @@
               @change="handleAutoHDRChange('RestoreAutoHDR', $event)"
             />
 
-            <a-row v-if="isAdbController" :gutter="24"> </a-row>
-
             <MaaEndGameUpdateSection
               v-if="isWinController"
               v-model:game="maaEndConfig.Game"
@@ -364,6 +309,33 @@
               @timeout-blur="handleUpdateTimeoutBlur"
               @check="handleCheckUpdate"
             />
+            <a-row :gutter="[24, 12]" class="switch-row">
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="maaEndConfig.Game.CloseOnFinish"
+                  :title="t('core.edit.closeGameAfterTask2')"
+                  :description="t('core.edit.whetherGameClosesAfter')"
+                  @change="handleChange('Game', 'CloseOnFinish', $event)"
+                />
+              </a-col>
+              <a-col v-if="isWinController" :xs="24" :md="12">
+                <SwitchTile
+                  :checked="canSetResolution && Boolean(maaEndConfig.Game.SetResolution)"
+                  :title="t('core.edit.maaEndSetResolution')"
+                  :description="
+                    canSetResolution
+                      ? t('core.edit.maaEndLaunchSettingsHint')
+                      : t(
+                          maaEndLaunchSupported
+                            ? 'core.edit.maaEndResolutionRequiresNative'
+                            : 'core.edit.maaEndResolutionUnsupported'
+                        )
+                  "
+                  :disabled="isSaving || !launchCapabilitiesReady || !canSetResolution"
+                  @change="handleSetResolutionChange"
+                />
+              </a-col>
+            </a-row>
           </SectionCard>
 
           <MaaEndRunConfigSection
@@ -377,7 +349,7 @@
             @save="(key, value) => handleChange('Update', key, value)"
           />
         </a-form>
-      </a-card>
+      </a-spin>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -394,12 +366,7 @@
               {{ t('core.edit.clickSaveConfigurationWhen') }}
             </p>
             <div class="mask-actions">
-              <a-button
-                v-if="maaEndTaskId"
-                type="primary"
-                size="large"
-                @click="handleSaveMaaEndConfig"
-              >
+              <a-button v-if="maaEndTaskId" type="primary" @click="handleSaveMaaEndConfig">
                 {{ t('core.edit.saveConfiguration') }}
               </a-button>
             </div>
@@ -439,7 +406,8 @@
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
+import GameBindingSection from '@/components/GameBindingSection.vue'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 import { useBoundGameTarget } from '@/composables/useBoundGameTarget'
 
@@ -469,7 +437,12 @@ import {
 } from '@/services/websocket/types'
 import { type TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  AppstoreOutlined,
+  ControlOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { useMaaEndUpdate } from './useMaaEndUpdate'
 import { useMaaEndLauncher } from './useMaaEndLauncher'
@@ -586,11 +559,6 @@ const gameSettingControllers = ref<string[]>([])
 const launchCapabilitiesReady = ref(false)
 const defaultMaaEndController = 'Win32-Front'
 
-const booleanOptions = [
-  { label: t('core.edit.yes'), value: true },
-  { label: t('core.edit.no'), value: false },
-]
-
 const controllerProtocol = computed(
   () => controllerProtocols.value[maaEndConfig.Game.ControllerType ?? '']
 )
@@ -632,7 +600,6 @@ const {
   autoDetect: () => effectiveLaunchMode.value !== 'MaaEnd',
   save: patch => enqueue(() => updateScript(scriptId, { Game: patch }), 'Game.Launcher'),
 })
-const isAdbController = computed(() => controllerProtocol.value === 'Adb')
 
 // 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
 // 保存后回读一次界面才与落盘值一致；其余字段保存即生效不再整份回读
@@ -979,10 +946,12 @@ onBeforeUnmount(() => {
 <style scoped src="@/styles/scriptEditForm.css"></style>
 
 <style scoped>
-.type-tag {
-  border: 1px solid var(--ant-color-primary-border);
-  color: var(--ant-color-primary);
-  background: var(--ant-color-primary-bg);
+.notice-alert {
+  margin-bottom: 16px;
+}
+
+.switch-row {
+  margin-bottom: 12px;
 }
 
 .maaend-config-mask {
