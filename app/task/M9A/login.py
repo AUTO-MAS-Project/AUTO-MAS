@@ -59,7 +59,8 @@
 https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/1882#issuecomment-6721059637
 该决定不扩大为其他游戏内能力的通用豁免；其余补位范围仍需上游评估依据或维护者明确接受。
 
-失败一律抛 :class:`MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试）；
+失败一律抛 :class:`MaaFWLoginRequired`（文案直接给用户看，本轮按普通失败重试；配置错误
+抛 ``retryable=False``，不重试）；
 用户停止（``CancelledError``）照常向上抛，不在截图 / 等帧里吞掉。
 """
 
@@ -470,7 +471,8 @@ async def _agree_privacy(
     if not _if_agree_bilibili():
         raise MaaFWLoginRequired(
             "B 服登录失败：检测到 bilibili 隐私政策提示，但未开启「托管Bilibili游戏隐私政策」；"
-            "请手动同意，或在「设置 → 功能设置 → 神秘入口」里打开该开关后重试"
+            "请手动同意，或在「设置 → 功能设置 → 神秘入口」里打开该开关后重试",
+            retryable=False,
         )
     buttons = _pick(
         items,
@@ -774,27 +776,32 @@ async def ensure_logged_in(
     if mode.strip() != "Mas":
         return ""
 
+    # 下面四条是配置错误：重试只会原样再失败，抛不可重试的（宿主不再重启模拟器重试）
     if not adb_address:
         raise MaaFWLoginRequired(
-            "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」"
+            "「由 MAS 登录 B 服」仅支持 ADB 控制器，请切换控制器或把登录方式改回「由 M9A 登录」",
+            retryable=False,
         )
 
     account = str(getattr(getattr(user_config, "Info", None), "Id") or "").strip()
     if not account:
         raise MaaFWLoginRequired(
-            "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称"
+            "B 服登录失败：账号为空，请在本账号的「账号」里填写登录记录中显示的完整昵称",
+            retryable=False,
         )
     package = str(package_name or "").strip() or BILIBILI_PACKAGE
     if package != BILIBILI_PACKAGE:
         raise MaaFWLoginRequired(
             f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但要启动的客户端是「{package}」；"
             f"这种登录方式只能用于 B 服客户端（{BILIBILI_PACKAGE}）。"
-            "请把游戏资源与游戏包名都改成 B 服，或把登录方式改回「由 M9A 登录」"
+            "请把游戏资源与游戏包名都改成 B 服，或把登录方式改回「由 M9A 登录」",
+            retryable=False,
         )
     if not _is_bilibili_resource(resource_name):
         raise MaaFWLoginRequired(
             f"B 服登录失败：登录方式选了「由 MAS 登录 B 服」，但游戏资源是「{resource_name or '未选择'}」；"
-            "这种登录方式只支持「B 服」资源，请改选后再运行（或把登录方式改回「由 M9A 登录」）"
+            "这种登录方式只支持「B 服」资源，请改选后再运行（或把登录方式改回「由 M9A 登录」）",
+            retryable=False,
         )
     device = _Device(adb_path, adb_address, host_adb)
 
