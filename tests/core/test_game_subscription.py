@@ -586,6 +586,27 @@ async def test_plugin_pre_dispatch_failure_marks_waiting_accounts_failed(
 
 
 @pytest.mark.asyncio
+async def test_legacy_factory_failure_keeps_waiting_accounts(scheduler, monkeypatch):
+    """插件解析器不接手、改走旧工厂后失败：账号照内置口径留在「等待」，不跟插件路径记「异常」。"""
+    from app.models.config import GeneralConfig
+    from app.models.task import TaskMode
+
+    manager, _, _, sid = scheduler
+    monkeypatch.setattr(manager, "plugin_expander", lambda script, config: None)
+    monkeypatch.setattr(
+        manager, "manager_factories", {GeneralConfig: lambda script: None}
+    )
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert script.status == "异常" and "该托管没有内建执行能力" in script.log
+    assert [u.status for u in script.user_list] == ["等待", "等待"]
+
+
+@pytest.mark.asyncio
 async def test_plugin_unconfirmed_writer_stops_following_scripts(
     scheduler, monkeypatch
 ):
