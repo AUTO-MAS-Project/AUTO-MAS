@@ -15,7 +15,6 @@
           :min="1"
           :max="9999"
           :precision="0"
-          size="large"
           style="width: 100%"
           @blur="handleSave"
         />

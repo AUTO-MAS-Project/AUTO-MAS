@@ -236,6 +236,16 @@ const {
 /* 与页面其它 section 同节奏 */
 .slot-manage-section {
   margin-bottom: 12px;
+  padding: 20px 24px 8px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--app-appearance-surface-bg, var(--ant-color-bg-container));
+}
+
+html:not(.dark):not(.appearance-custom) .slot-manage-section {
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 4px 12px -4px rgba(16, 24, 40, 0.06);
 }
 
 .help-icon {
@@ -256,8 +266,8 @@ const {
 
 .slot-manage-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;
