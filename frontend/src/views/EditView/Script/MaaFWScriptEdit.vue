@@ -14,21 +14,14 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
-        <template #extra>
-          <a-tag :color="flavor.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
-        </template>
-
-        <a-steps
-          v-if="isWizard"
-          size="small"
-          :current="currentStep"
-          :items="stepItems"
-          class="wizard-steps"
-        />
+      <a-spin :spinning="pageLoading">
+        <SectionCard v-if="isWizard" variant="card">
+          <a-steps size="small" :current="currentStep" :items="stepItems" class="wizard-steps" />
+        </SectionCard>
 
         <a-form
           ref="formRef"
+          :aria-label="pageTitle"
           :model="formData"
           :rules="rules"
           layout="vertical"
@@ -188,35 +181,25 @@
           :disabled="shellImporting"
         />
 
-        <div v-if="isWizard" class="wizard-actions">
-          <a-button
-            v-if="currentStep > 0"
-            size="large"
-            :disabled="shellImporting"
-            @click="currentStep -= 1"
-          >
-            {{ t('core.edit.previousStep') }}
-          </a-button>
-          <a-button
-            v-if="currentStep < stepItems.length - 1"
-            type="primary"
-            size="large"
-            :disabled="!canLeaveCurrentStep"
-            @click="currentStep += 1"
-          >
-            {{ t('core.edit.next') }}
-          </a-button>
-          <a-button
-            v-else
-            type="primary"
-            size="large"
-            :loading="shellImporting"
-            @click="handleFinishWizard"
-          >
-            {{ finishButtonLabel }}
-          </a-button>
-        </div>
-      </a-card>
+        <SectionCard v-if="isWizard" variant="card">
+          <div class="wizard-actions">
+            <a-button v-if="currentStep > 0" :disabled="shellImporting" @click="currentStep -= 1">
+              {{ t('core.edit.previousStep') }}
+            </a-button>
+            <a-button
+              v-if="currentStep < stepItems.length - 1"
+              type="primary"
+              :disabled="!canLeaveCurrentStep"
+              @click="currentStep += 1"
+            >
+              {{ t('core.edit.next') }}
+            </a-button>
+            <a-button v-else type="primary" :loading="shellImporting" @click="handleFinishWizard">
+              {{ finishButtonLabel }}
+            </a-button>
+          </div>
+        </SectionCard>
+      </a-spin>
     </ConfigLockPanel>
   </ConfigEditShell>
 </template>
@@ -224,7 +207,7 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import { ConfigEditShell } from '@/components/ui'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -311,7 +294,6 @@ const {
   finishButtonLabel,
   handleFinishWizard,
   previewProjectTitle,
-  typeTagLabel,
   pageTitle,
   interfaceStats,
   handlePreviewInterface,
@@ -342,36 +324,20 @@ const besidePackageNameCount = computed(
 </script>
 
 <style scoped>
-.wizard-steps {
-  margin-bottom: 28px;
+.wizard-steps,
+.wizard-actions {
+  padding: 16px 0 8px;
 }
 
 .wizard-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 8px;
-  padding-top: 20px;
-  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 .script-edit-content {
   flex: 1;
-}
-
-.config-card {
-  border-radius: 16px;
-  box-shadow: none;
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
 }
 
 .config-form {
