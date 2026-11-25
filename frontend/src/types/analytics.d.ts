@@ -9,7 +9,6 @@ export type AnalyticsQueueKind = 'normal' | 'cycle' | 'unknown'
 export type AnalyticsPlanType =
   | 'MaaPlanConfig'
   | 'MaaEndPlanConfig'
-  | 'BAAHPlanConfig'
   | 'MSSPlanConfig'
   | 'OkwwPlanConfig'
   | 'OkNtePlanConfig'

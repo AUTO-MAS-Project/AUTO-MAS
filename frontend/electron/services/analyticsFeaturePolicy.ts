@@ -64,7 +64,6 @@ const gameOperation = [
 const plan = [
   'MaaPlanConfig',
   'MaaEndPlanConfig',
-  'BAAHPlanConfig',
   'MSSPlanConfig',
   'OkwwPlanConfig',
   'OkNtePlanConfig',

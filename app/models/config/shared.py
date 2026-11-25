@@ -361,91 +361,6 @@ def _tag_notes(config: UserConfigType) -> dict:
     }
 
 
-BAAH_PLAN_KEY_SHAPE = {
-    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
-    # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
-    "Wanted": ([1, -1, -1], 2, 4),
-    "Special": ([1, -1, -1], 2, 4),
-    "Exchange": ([1, -1, -1], 2, 4),
-    "Hard": ([1, 1, -1], 2, 4),
-    "Normal": ([1, 1, -1], 2, 4),
-}
-
-
-def default_baah_plan_key() -> dict[str, Any]:
-    """默认拉满悬赏通缉和交流会、关闭特别委托，其余沿用 BAAH。"""
-    return {"Wanted": [1, -1, -1], "Special": [], "Exchange": [1, -1, -1]}
-
-
-def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。
-
-    输入里没有的字段，结果里**也不会出现**：缺席表示「今天这一类不干预」，由 BAAH
-    沿用自己配置里的关卡与开关；在这里补齐默认值会把它静默改成「按默认关卡打」。
-
-    越界的位按 schema 的逐位规则修正到最近的合法值（困难图关卡 0/-1 修成 1、
-    次数小于 -1 修成 -1、开关位非 0/1 修成 1），存量的脏配置因此也能过校验。
-    """
-
-    if isinstance(raw_key, dict) and "Key" in raw_key:
-        raw_key = raw_key["Key"]
-    data = raw_key if isinstance(raw_key, dict) else {}
-
-    result: dict[str, Any] = {}
-    for field, (default, minimum, maximum) in BAAH_PLAN_KEY_SHAPE.items():
-        if field not in data:
-            continue
-
-        value = data[field]
-        if value is None:
-            # 显式 null 与字段缺失同义：都不干预这一类
-            continue
-
-        if not isinstance(value, list):
-            result[field] = list(default)
-            continue
-
-        if not value:
-            # 空数组表示「今天不打这一类」，补成默认值就变成照默认关卡打了
-            result[field] = []
-            continue
-
-        try:
-            items = [int(item) for item in value]
-        except (TypeError, ValueError):
-            # 每一位都有固定含义（如「地区、关卡、次数」），丢掉一位会让后面的
-            # 位整体错位，所以只要有一位转不成 int，整项就回落到默认值。
-            result[field] = list(default)
-            continue
-
-        if len(items) > maximum:
-            items = items[:maximum]
-        elif len(items) < minimum:
-            # 缺位用默认值补齐，已经写明的位保持不动。
-            items = items + default[len(items) :]
-
-        # 存量配置里可能存着越界的位（如困难图关卡写成 0），按 schema 的规则表
-        # 修正到最近的合法值：这一步只修不问，任何输入都不抛异常。
-        result[field] = [
-            schema_model.fix_baah_plan_slot(field, index, item)
-            for index, item in enumerate(items)
-        ]
-
-    return result
-
-
-def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。
-
-    ``exclude_none=True`` 是必需的：缺席字段不能被 dump 成 ``None``，否则
-    「今天不干预这一类」会跟着 key 一起落盘，语义与「不打这一类」混在一起。
-    """
-
-    return schema_model.BAAHPlanKey.model_validate(raw_key).model_dump(
-        exclude_none=True, exclude={"Event"}
-    )
-
-
 def normalize_mss_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 MSS key。"""
 
@@ -542,42 +457,11 @@ def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:
     return normalized_data, False
 
 
-def _migrate_baah_event_first(data: dict) -> tuple[dict, bool]:
-    """把存量配置里的「活动适配」开关接到新的「活动关优先」。
-
-    ``Info.IfActivityAdapt`` 与 ``Info.ActivityConfigName`` 随 5.5.0 / 5.6.0
-    发出去过，本版改成计划表 + 活动关优先后两个字段都被删除。若直接删字段，
-    当年开着活动适配的用户升级后 ``IfEventFirst`` 仍取默认的关，活动期间不再
-    有任何动作，等于静默失效；这里把那时开着的适配开关迁移到 ``IfEventFirst``，
-    保持升级前后的行为一致。
-
-    ``ActivityConfigName`` 指向的是 BAAH 的配置文件名，新方案里没有对应概念
-    （换成按周排的计划表），无法自动迁移，只能留在旧文件里不再读取。
-
-    Returns:
-        (迁移后的配置字典, 是否发生了迁移)
-    """
-
-    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-    info = normalized_data.get("Info")
-    if not isinstance(info, dict):
-        return normalized_data, False
-
-    ## 已经写过新键的配置不动，避免把用户后来的选择覆盖回 True
-    if "IfEventFirst" in info or not info.get("IfActivityAdapt"):
-        return normalized_data, False
-
-    info["IfEventFirst"] = True
-    return normalized_data, True
-
-
 __all__ = [
     "SRAProfileName",
-    "BAAH_PLAN_KEY_SHAPE",
     "_BGI_BUILTIN_ONE_DRAGON_GROUPS",
     "_BGI_LEGACY_SERVERS_TO_RESOURCE",
     "_clamp_plan_number",
-    "_migrate_baah_event_first",
     "_migrate_bgi_account_switch_default",
     "_migrate_oknte_launch_mode_default",
     "_normalize_maaend_sanity_task_type",
@@ -585,13 +469,10 @@ __all__ = [
     "_tag_notes",
     "_tag_proxy",
     "_tag_remained_days",
-    "default_baah_plan_key",
     "logger",
-    "normalize_baah_plan_key",
     "normalize_maaend_plan_key",
     "normalize_mss_plan_key",
     "schema_model",
-    "validate_baah_plan_key",
     "validate_maaend_plan_key",
 ]
 

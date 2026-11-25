@@ -54,7 +54,7 @@ TYPE_BOOK = {
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maaend", "baah", "mss", "universal", "oknte", "okww")
+PLAN_CONSUMER_VALUES = ("maaend", "mss", "universal", "oknte", "okww")
 """计划表消费方列表；PLAN_BOOK 按下标引用此项，往中间插入会把已有类型指到别的
 消费方，所以新消费方只能追加到末尾（baah 早于 mss 加入，因此排在它前面）"""
 

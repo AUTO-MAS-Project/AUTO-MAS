@@ -175,13 +175,6 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
         serial: 101,
       },
       {
-        scriptType: 'BAAHConfig',
-        userType: 'BAAHUserConfig',
-        planField: 'StageMode',
-        planType: 'BAAHPlanConfig',
-        serial: 104,
-      },
-      {
         scriptType: 'MSSConfig',
         userType: 'MSSUserConfig',
         planField: 'PlanMode',
