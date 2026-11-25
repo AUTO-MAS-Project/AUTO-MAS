@@ -267,9 +267,13 @@ def _check_dev_port_available(port: int) -> bool:
 @logger.catch(reraise=True)
 def main():
     """准备后端权限、运行目录和应用依赖，装配 FastAPI 服务并启动事件循环。"""
-    from app.utils.common.asyncio_compat import install_windows_connection_cleanup
+    from app.utils.common.asyncio_compat import (
+        install_websockets_connection_cleanup,
+        install_windows_connection_cleanup,
+    )
 
     install_windows_connection_cleanup()
+    install_websockets_connection_cleanup()
 
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
