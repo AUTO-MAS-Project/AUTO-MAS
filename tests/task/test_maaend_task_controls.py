@@ -351,6 +351,28 @@ async def test_no_runnable_task_fails_before_launching_game(proxy_fixture):
 
 
 @pytest.mark.asyncio
+async def test_no_runnable_task_fails_before_opening_emulator(proxy_fixture):
+    """模拟器路径一个业务任务都没开：开模拟器之前就报「没有可执行任务」，也不重试。"""
+    proxy, attempts = proxy_fixture
+    proxy.emulator_manager = SimpleNamespace(open=AsyncMock(return_value=None))
+    user = proxy.cur_user_config
+    user.Info.IfQuickConfig = False
+    await user.commit()
+    path = proxy.maaend_config_file
+    original = json.loads(path.read_text())
+    for task in original["instances"][0]["tasks"]:
+        task["enabled"] = False
+    path.write_text(json.dumps(original))
+
+    await proxy.execution.run()
+
+    proxy.emulator_manager.open.assert_not_awaited()
+    assert attempts == []
+    assert proxy.cur_user_item.status == "异常"
+    assert proxy.cur_user_log.status == "MaaEnd 没有可执行任务，请检查任务配置"
+
+
+@pytest.mark.asyncio
 async def test_old_plan_routes_each_native_task_and_unbinds_on_delete(monkeypatch):
     plans = ConfigCollection.build([MaaEndPlanConfig])
     monkeypatch.setitem(config_manager._collections, "PlanConfig", plans)

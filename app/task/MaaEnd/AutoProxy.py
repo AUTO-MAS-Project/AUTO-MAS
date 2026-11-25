@@ -1670,8 +1670,15 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     kill_game=False,
                 )
                 break
-            # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             no_runnable_task = False
+            if self.emulator_manager is not None:
+                # 任务表只看 MAS 与 MaaEnd 配置，设备信息只影响连哪台设备和云终末地补的
+                # 启动游戏任务（不算业务任务）；一个都不跑就别先开模拟器。开机后照旧带
+                # 设备信息再写一次配置，任务表沿用这次生成的。
+                if self.task_dict is None:
+                    await self.set_maaend(None)
+                no_runnable_task = not self._has_runnable_task(cloud_adb)
+            # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
                     await self.set_maaend(None)
@@ -1681,7 +1688,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                         await self._start_game(
                             preserve_running_game=keep_game_for_login_retry
                         )
-                else:
+                elif not no_runnable_task:
                     logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                     point(self, "start_game")
                     self.emulator_info = await self.emulator_manager.open(
@@ -1701,7 +1708,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 continue
             if no_runnable_task:
                 self.retryable = False
-                # 游戏还没拉起，没有要关的游戏进程。
+                # 游戏还没拉起、模拟器也还没开，没有要关的游戏进程。
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置", kill_game=False
                 )
