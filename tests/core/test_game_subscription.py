@@ -541,7 +541,7 @@ async def test_failed_game_selection_marks_waiting_accounts_failed(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["precheck"])
+@pytest.mark.parametrize("failure", ["precheck", "no_declaration"])
 async def test_plugin_pre_dispatch_failure_marks_waiting_accounts_failed(
     scheduler, monkeypatch, failure
 ):

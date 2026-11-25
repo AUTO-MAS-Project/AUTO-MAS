@@ -263,12 +263,19 @@ class ScriptExpander(TaskBase):
                         raise TypeError("插件必须绑定当前托管运行节点及已锁配置")
                     await self._prefetch.prepare(script, entry)
                     from app.core import Plugin
+                    from app.plugin.errors import PluginPrecheckError
 
                     declaration = next(
-                        d
-                        for d in Plugin.script_types.values()
-                        if isinstance(entry, d.script_type)
+                        (
+                            d
+                            for d in Plugin.script_types.values()
+                            if isinstance(entry, d.script_type)
+                        ),
+                        None,
                     )
+                    if declaration is None:
+                        # 准备期间插件被停用，声明已摘掉。
+                        raise PluginPrecheckError("托管所属插件当前不可用")
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
                     if not plugin.defer_game_session:
