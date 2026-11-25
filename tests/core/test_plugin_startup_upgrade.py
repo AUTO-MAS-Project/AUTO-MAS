@@ -824,6 +824,35 @@ async def test_install_keeps_host_library_for_builtin_managed(
 
 
 @pytest.mark.asyncio
+async def test_minimum_missing_from_index_names_minimum_and_current(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """存量配置要的下限在索引里还没有（镜像没同步）：原因说出要的下限、现装版本、
+    索引里没有，不说成插件之间依赖冲突；已装环境不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    before = _installed_versions(site)
+    manager = _PluginManager()
+    try:
+        with pytest.raises(PluginError) as caught:
+            await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.3.0")
+            )
+    finally:
+        await manager.shutdown()
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    message = caught.value.message
+    assert "索引里没有" in message
+    assert "fam-adapter-a>=0.3.0" in message
+    assert "0.1.0" in message
+    assert "无法共同满足" not in message
+    assert _installed_versions(site) == before
+    assert not site.with_suffix(".pending").exists()
+
+
+@pytest.mark.asyncio
 async def test_family_still_unsolvable_after_release_changes_nothing(
     isolated_app_paths, monkeypatch, tmp_path
 ):
@@ -843,6 +872,8 @@ async def test_family_still_unsolvable_after_release_changes_nothing(
         for name in FAMILY_MODULES:
             sys.modules.pop(name, None)
     assert "网络" not in caught.value.message
+    # 新版本索引里有，是同族里有一个没出新版本：不能说成索引里没有。
+    assert "索引里没有" not in caught.value.message
     assert _installed_versions(site) == before
     assert not site.with_suffix(".pending").exists()
     assert environment.read_installation() is None

@@ -169,11 +169,14 @@ async def _family_release(
     pins: list[str],
     *,
     installed_path: Path | None = None,
-) -> dict[str, str]:
+) -> dict[str, str] | None:
     """其余插件全钉住无解时，算出要一起放开的已装插件（包名 → 当前版本）。
 
     范围：目标单独求解得到的依赖闭包里出现的已装插件，再加上直接依赖了目标或
     已放开包的已装插件，反复到不再增加。别的插件照旧钉住。
+
+    目标单独求解也确定无解、且不涉及主程序钉住的包时返回 None：问题不在别的插件，
+    是索引里拿不到能装的目标（连同它的依赖）。
     """
     from app.core import Config
     from app.plugin.runtime.discover import local_libraries
@@ -192,7 +195,9 @@ async def _family_release(
         partial=True,
     )
     if not alone.ok:
-        return {}
+        if alone.incomplete or alone.host_conflicts:
+            return {}
+        return None
     targets = {canonicalize_name(Requirement(spec).name) for spec in package_specs}
     released = {name for name in alone.resolved if name in installed}
     frontier = released | targets
@@ -220,6 +225,27 @@ def _release_pins(pinned: list[str], released: dict[str, str]) -> list[str]:
     return result
 
 
+def _minimum_failure(
+    raised: Mapping[str, Version],
+    current: Mapping[str, str],
+    result,
+    unavailable: bool,
+) -> str:
+    """抬到版本下限没装成时的原因：要的下限、现装版本，以及是索引里拿不到还是解不开。"""
+    from .precheck import conflict_summary, incomplete_message
+
+    if result.incomplete:
+        return incomplete_message(result)
+    wanted = "、".join(
+        f"{name}>={minimum}" + (f"（当前 {current[name]}）" if name in current else "")
+        for name, minimum in raised.items()
+    )
+    if unavailable:
+        return f"索引里没有可装的 {wanted}"
+    summary = conflict_summary(result)
+    return f"没能装上 {wanted}" + (f"：涉及 {summary}" if summary else "")
+
+
 async def install(
     package_spec: str,
     *,
@@ -227,11 +253,15 @@ async def install(
     meta_id: UUID | None = None,
     dry_run: bool = False,
     libraries: Sequence[str] = (),
+    minimum: Version | None = None,
 ) -> bool:
     """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。
 
     ``libraries``：宿主内置托管要的库（需求串），和已装插件一样留在重建后的环境里；
     按需求原样求解，新插件要更高版本时可以一起升。
+
+    ``minimum``：存量配置要求的版本下限（``package_spec`` 已写成 ``>=下限``）；
+    装不成时按下限说原因。
     """
     from packaging.requirements import Requirement
 
@@ -263,6 +293,8 @@ async def install(
     pins = host_constraints()
     # 为求解放开钉子的已装插件：规范化包名 → 原版本。
     released: dict[str, str] = {}
+    # 目标单独求解也无解：索引里拿不到能装的目标。
+    unavailable = False
     with tempfile.TemporaryDirectory(
         prefix=".install-", dir=target.parent
     ) as temporary:
@@ -277,7 +309,9 @@ async def install(
         )
         if not result.ok:
             # 别的插件全钉住时无解：同族插件之间写了次版本上限，要一起升才解得开。
-            released = await _family_release([package_spec], pinned, pins)
+            family = await _family_release([package_spec], pinned, pins)
+            unavailable = family is None
+            released = family or {}
             if released:
                 logger.info(
                     "安装 {} 时其余插件全部钉住无解，放开同族插件再求解：{}",
@@ -304,6 +338,22 @@ async def install(
             if result.incomplete:
                 raise PluginPrecheckError(
                     incomplete_message(result),
+                    payload={
+                        "detail": result.detail,
+                        "conflicts": list(result.conflicts),
+                    },
+                )
+            if minimum is not None:
+                raise PluginError(
+                    _minimum_failure(
+                        {canonicalize_name(replacing): minimum},
+                        {
+                            name: dist.version
+                            for name, dist in environment.distributions(target).items()
+                        },
+                        result,
+                        unavailable,
+                    ),
                     payload={
                         "detail": result.detail,
                         "conflicts": list(result.conflicts),
@@ -452,15 +502,19 @@ async def _solve_minimums(
     pins: list[str],
     prepared: Path,
     installed_path: Path,
+    current: Mapping[str, str],
 ):
     """带上版本下限求解并装进候选目录；解不开或出错时返回 None，由调用方按原样启动。
 
     先只抬下限、别的插件钉住；无解时照安装时的做法放开同族插件再解一次。
+    ``current`` 是插件环境里现装的版本（规范化包名 → 版本），用来说明没装成的原因。
     """
     from app.core import Config
 
-    from .precheck import conflict_summary, host_dependencies, resolve_environment
+    from .precheck import host_dependencies, resolve_environment
 
+    # 抬下限的目标单独求解也无解：索引里拿不到能装的版本。
+    unavailable = False
     logger.info(
         "存量配置要的插件低于版本下限，加载插件前一并升级：{}",
         "、".join(f"{name}>={version}" for name, version in raised.items()),
@@ -481,12 +535,14 @@ async def _solve_minimums(
                 if Path(item).is_dir()
                 or canonicalize_name(Requirement(item).name) not in raised
             ]
-            released = await _family_release(
+            family = await _family_release(
                 [f"{name}>={version}" for name, version in raised.items()],
                 pinned,
                 pins,
                 installed_path=installed_path,
             )
+            unavailable = family is None
+            released = family or {}
             if released:
                 logger.info(
                     "只抬下限无解，放开同族插件再求解：{}",
@@ -511,11 +567,9 @@ async def _solve_minimums(
         )
         return None
     if not result.ok:
-        summary = conflict_summary(result)
         logger.warning(
-            "启动前没能把插件升到版本下限，先按现有版本启动：{}{}",
-            result.detail,
-            f"（涉及 {summary}）" if summary else "",
+            "启动前没能把插件升到版本下限，先按现有版本启动：{}",
+            _minimum_failure(raised, current, result, unavailable),
         )
         return None
     return result
@@ -679,7 +733,7 @@ async def prepare_environment(
         result = None
         if raised:
             result = await _solve_minimums(
-                [*targets, *libraries], raised, pins, prepared, target
+                [*targets, *libraries], raised, pins, prepared, target, existing
             )
             if result is None:
                 if prepared.exists():

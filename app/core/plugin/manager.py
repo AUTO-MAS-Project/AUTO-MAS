@@ -1334,10 +1334,13 @@ class _PluginManager:
                 raise PluginPrecheckError("市场条目缺少版本，请刷新目录后重试")
             # 主程序升级可从内部声明自动求解版本；同样须通过装包后的实际元数据校验。
             requirement = package
+            options: dict[str, Any] = {}
             if version:
                 requirement += f"=={version}"
             elif minimum_version is not None:
                 requirement += f">={minimum_version}"
+                # 装不成时按下限说原因（要的下限、现装版本、索引里拿不拿得到）。
+                options["minimum"] = minimum_version
             pause = (
                 self._pause_activity(existing)
                 if existing is not None and existing._plugin_cls is not None
@@ -1357,7 +1360,6 @@ class _PluginManager:
                 )
                 # 装包可能按 Requires-Dist 连带装上别的插件，记下装包前已登记的名字。
                 before = {r.info.plugin_name for r in Config.plugin_registry.values()}
-                options: dict[str, Any] = {}
                 if libraries := self._host_libraries():
                     # 重建环境时留住宿主内置托管要的库（例如 MaaEnd 用的 MFW 解析库）。
                     options["libraries"] = libraries
