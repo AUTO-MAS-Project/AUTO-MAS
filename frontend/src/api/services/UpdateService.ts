@@ -34,76 +34,6 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class UpdateService {
     /**
-     * 提交目录项的安装触发器
-     * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePluginCatalogApiPluginCatalogUpdatePost(
-        requestBody: PluginCatalogUpdateIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/update',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 修改插件自有配置（凭注册表项定位）
-     * 按插件实际配置类型校验并保存局部补丁，返回配置更新结果。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePluginConfigApiPluginConfigUpdatePost(
-        requestBody: PluginConfigUpdateIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_config/update',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新工具配置
-     * 更新工具配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updateToolsApiToolsUpdatePost(
-        requestBody: ToolsUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新托管配置信息
      * @param requestBody
      * @returns OutBase Successful Response
@@ -427,6 +357,26 @@ export class UpdateService {
         });
     }
     /**
+     * 更新工具配置
+     * 更新工具配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateToolsApiToolsUpdatePost(
+        requestBody: ToolsUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 更新配置
      * 更新配置
      * @param requestBody
@@ -458,6 +408,56 @@ export class UpdateService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 提交目录项的安装触发器
+     * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginCatalogApiPluginCatalogUpdatePost(
+        requestBody: PluginCatalogUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改插件自有配置（凭注册表项定位）
+     * 按插件实际配置类型校验并保存局部补丁，返回配置更新结果。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginConfigApiPluginConfigUpdatePost(
+        requestBody: PluginConfigUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/update',
+            query: {
+                'locale': locale,
+            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {
