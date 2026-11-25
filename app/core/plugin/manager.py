@@ -869,9 +869,9 @@ class _PluginManager:
                         record.info.state == PluginState.ENABLED
                         and record._plugin_cls is not None
                     ):
-                        await self._precheck_teardown(
-                            self._teardown_tree(record, enabled_only=True)
-                        )
+                        tree = self._teardown_tree(record, enabled_only=True)
+                        self._precheck_cascade_data(tree)
+                        await self._precheck_teardown(tree)
 
                 # 先在不关调用门时问一次：有运行在途就直接拒，在跑的托管不受打扰；
                 # 暂停之后再问一次，关上两次检查之间的窗口。
@@ -1002,13 +1002,13 @@ class _PluginManager:
         if not held:
             async with self._hold():
                 # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
-                await self._precheck_teardown(
-                    self._teardown_tree(record, enabled_only=False)
-                )
+                tree = self._teardown_tree(record, enabled_only=False)
+                self._precheck_cascade_data(tree)
+                await self._precheck_teardown(tree)
                 async with self._pause_activity(record):
-                    await self._precheck_teardown(
-                        self._teardown_tree(record, enabled_only=False)
-                    )
+                    tree = self._teardown_tree(record, enabled_only=False)
+                    self._precheck_cascade_data(tree)
+                    await self._precheck_teardown(tree)
                     return await self.unload(
                         record,
                         held=True,
@@ -1480,15 +1480,15 @@ class _PluginManager:
         ensure_writable()
         async with self._hold():
             # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
-            await self._precheck_teardown(
-                self._teardown_tree(record, enabled_only=False)
-            )
+            tree = self._teardown_tree(record, enabled_only=False)
+            self._precheck_cascade_data(tree)
+            await self._precheck_teardown(tree)
             async with self._pause_activity(record):
                 name = record.info.plugin_name
                 package = record.info.package_name or name
-                await self._precheck_teardown(
-                    self._teardown_tree(record, enabled_only=False)
-                )
+                tree = self._teardown_tree(record, enabled_only=False)
+                self._precheck_cascade_data(tree)
+                await self._precheck_teardown(tree)
                 deps = await self.unload(record, held=True, remove_record=False)
                 from app.core.config import Config
 
@@ -1956,6 +1956,54 @@ class _PluginManager:
             raise PluginPrecheckError(
                 "；".join(f"插件 `{b['plugin']}`：{b['reason']}" for b in blockers),
                 payload={"blockers": blockers},
+            )
+
+    def _precheck_cascade_data(self, records: Sequence[PluginRecord]) -> None:
+        """连带停用 / 卸载的专项名下还有托管或计划表时拒绝，与直接停用专项时界面拦住同一口径。
+
+        ``records`` 是 ``_teardown_tree`` 的结果，第一项是用户操作的插件本身，不在此列。
+        停用专项会按类型删掉名下全部托管和计划表，只经确认框不够：经接口直接写触发器也要拦住。
+        只有用户发起的停用与卸载走这里；重载、安装与升级不删数据，不经过此检查。
+        """
+        from app.core import Config
+
+        in_use: list[dict[str, Any]] = []
+        for record in records[1:]:
+            plugin = record._plugin
+            # 未启用的专项没有登记类型，名下托管与计划表已在它停用时删除。
+            if not isinstance(plugin, ScriptAdapterPlugin):
+                continue
+            scripts = sum(
+                1
+                for entry in Config.ScriptConfig.values()
+                if isinstance(entry, plugin.script_type)
+            )
+            plans = (
+                sum(
+                    1
+                    for entry in Config.PlanConfig.values()
+                    if isinstance(entry, plugin.plan_type)
+                )
+                if plugin.plan_type is not None
+                else 0
+            )
+            if scripts or plans:
+                in_use.append(
+                    {
+                        "plugin": record.info.plugin_name,
+                        "scripts": scripts,
+                        "plans": plans,
+                    }
+                )
+        if in_use:
+            listing = "、".join(
+                f"`{item['plugin']}`（{item['scripts']} 个托管、{item['plans']} 张计划表）"
+                for item in in_use
+            )
+            raise PluginPrecheckError(
+                f"会一并停用的专项名下还有托管或计划表：{listing}。"
+                "删掉这些托管和计划表后才能停用或卸载",
+                payload={"inUse": in_use},
             )
 
     def dependency_view(self, record: PluginRecord) -> dict[str, list[str]]:

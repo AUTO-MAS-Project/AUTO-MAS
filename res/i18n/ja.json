@@ -4986,6 +4986,8 @@
   "core.plugins.guard.uninstallTitle": "今は「{name}」をアンインストールできません",
   "core.plugins.guard.inUse": "まだ {count} 件の管理スクリプトが使用しています。これらを削除してから無効化またはアンインストールしてください。",
   "core.plugins.guard.inUseList": "使用中の管理スクリプト",
+  "core.plugins.guard.cascadeInUse": "一緒に無効化される専用プラグインに、まだ管理スクリプトまたは計画表があります。これらを削除してから無効化またはアンインストールしてください。",
+  "core.plugins.guard.cascadeInUseList": "一緒に無効化される専用プラグイン",
   "core.plugins.guard.goScripts": "スクリプト管理へ",
   "core.plugins.guard.usageLoading": "管理スクリプトの使用状況を読み込み中のため、使用中かどうか確認できません。",
   "core.plugins.guard.usageFailed": "管理スクリプトの使用状況を読み込めなかったため、使用中かどうか確認できません。",

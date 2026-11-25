@@ -162,7 +162,41 @@ def _reportable(error: BaseException | None) -> tuple[str | None, dict | None]:
         detail = json.loads(json.dumps(error.payload, default=str))
     except (TypeError, ValueError):
         detail = None
-    return error.message, detail if isinstance(detail, dict) else None
+    # 包着配置校验错误正文的原因（如插件生命周期包装的异常）同样不带输入值。
+    message = error.message
+    if str(error) == message:
+        message = _trigger_error_text(error)
+    return message, detail if isinstance(detail, dict) else None
+
+
+def _trigger_error_text(error: BaseException | None) -> str:
+    """触发器失败告警里的异常文本：配置校验错误不带输入值，其余异常照原文。
+
+    pydantic 校验错误的正文带着配置原值（密码、令牌、Webhook 地址），换成只有错误类型、
+    字段路径和错误类别的描述（同 ``collection._describe_error``）；聚合错误逐条处理；
+    把校验错误正文原样拼进自己消息的包装异常（如 ``PluginOperationError(str(exc))``），
+    把那段正文换成描述。
+    """
+    from pydantic import ValidationError
+
+    from .collection import _describe_error
+
+    if isinstance(error, ValidationError):
+        return _describe_error(error)
+    if isinstance(error, ConfigAggregateError) and error.errors:
+        return "; ".join(
+            _describe_error(sub)
+            if isinstance(sub, ValidationError)
+            else f"{type(sub).__name__}: {_trigger_error_text(sub)}"
+            for sub in error.errors
+        )
+    text = str(error)
+    cause = error.__cause__ if error is not None else None
+    if isinstance(cause, (ValidationError, ConfigAggregateError)):
+        raw = str(cause)
+        if raw and raw in text:
+            return text.replace(raw, _trigger_error_text(cause))
+    return text
 
 
 @dataclass
@@ -406,7 +440,9 @@ class ConfigManager:
                 if len(self._trigger_results) > 200:
                     self._trigger_results.popitem(last=False)
             if outcome.state in ("failed", "timed_out"):
-                trigger_logger.warning(f"{entry.uid} {group}.{field}: {outcome.error}")
+                trigger_logger.warning(
+                    f"{entry.uid} {group}.{field}: {_trigger_error_text(outcome.error)}"
+                )
 
         with self.runtime_transaction(entry):
             self._triggers[uid] = _RunningTrigger(

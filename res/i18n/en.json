@@ -4986,6 +4986,8 @@
   "core.plugins.guard.uninstallTitle": "{name} can't be uninstalled right now",
   "core.plugins.guard.inUse": "Managed scripts still using it: {count}. Delete them before disabling or uninstalling.",
   "core.plugins.guard.inUseList": "Managed scripts in use",
+  "core.plugins.guard.cascadeInUse": "Specialized plugins that would be disabled along with it still have managed scripts or plans. Delete them before disabling or uninstalling.",
+  "core.plugins.guard.cascadeInUseList": "Specialized plugins disabled along with it",
   "core.plugins.guard.goScripts": "Go to managed scripts",
   "core.plugins.guard.usageLoading": "Managed script usage is still loading, so it can't be confirmed whether any script uses it.",
   "core.plugins.guard.usageFailed": "Couldn't read managed script usage, so it can't be confirmed whether any script uses it.",
