@@ -36,7 +36,6 @@ from app.utils import (
     BASE_SOURCE_LABELS,
     LOG_TYPE_ERROR,
     TASK_MODE_ZH,
-    ProcessManager,
     get_logger,
     log_box,
 )
@@ -184,7 +183,7 @@ class OkwwManager(ScriptManagerBase):
             )
 
         # Enabled=游戏管理总开关；开启后任务前始终启动游戏，任务结束/失败时始终关闭游戏
-        self.game_manager: ProcessManager | None = None
+        self.game_manager: ClientProcess | None = None
         if self.execution_mode == "AutoProxy" and self.script_config.Game.Enabled:
             self.game_manager = ClientProcess()
 

@@ -32,7 +32,7 @@ from app.models.task import ScriptItem, UserItem
 from app.task.client import ClientProcess
 from app.task.manager_base import ScriptManagerBase
 from app.task.proxy_helpers import user_uses_native_base, user_uses_quick_config
-from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, ProcessManager, get_logger, log_box
+from app.utils import LOG_TYPE_ERROR, TASK_MODE_ZH, get_logger, log_box
 from app.utils import io as _utils_io
 
 from .AutoProxy import AutoProxyTask
@@ -66,7 +66,7 @@ class OkNteManager(ScriptManagerBase):
         self.script_config_path: Path | None = None
         self.script_config: OkNteConfig | None = None
         self.user_config: ConfigCollection[OkNteUserConfig] | None = None
-        self.game_manager: ProcessManager | None = None
+        self.game_manager: ClientProcess | None = None
         self.had_original_script_config = False
         self.crashed = False
         self.plan_locks = []
