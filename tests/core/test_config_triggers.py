@@ -2,11 +2,12 @@
 
 import asyncio
 from threading import Event
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from pydantic import Field, PrivateAttr
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 
 from app.config import (
     ConfigCollection,
@@ -19,8 +20,9 @@ from app.config import (
     trigger_field,
 )
 from app.config.core.manager import ConfigManager, TriggerUnavailable
+from app.config.errors import ConfigAggregateError
 from app.core.background_tasks import BackgroundTaskRegistry
-from app.plugin.errors import PluginBusyError
+from app.plugin.errors import PluginBusyError, PluginOperationError
 from app.plugin.types import PluginState
 from tests.core.test_plugin_cascade import cascade_plugins as cascade_plugins
 
@@ -65,6 +67,87 @@ class CommandConfig(ConfigEntry):
     async def fixed_command(self):
         """复用相同业务行为，模拟取消后须等待结束的临界操作。"""
         await self.run_command()
+
+
+SECRET = "sk-SECRET-token-123"
+
+
+class _SecretModel(BaseModel):
+    token: int
+
+
+class LeakyConfig(ConfigEntry):
+    """触发器抛带配置原值的校验错误：直接抛、包成插件错误、混在聚合错误里，以及普通错误。"""
+
+    class Action(ConfigGroup):
+        raw: Trigger = None
+        wrapped: Trigger = None
+        aggregate: Trigger = None
+        plain: Trigger = None
+
+    action: Action = Field(default_factory=Action)
+
+    @trigger_field("action.raw")
+    async def raw_command(self):
+        _SecretModel.model_validate({"token": SECRET})
+
+    @trigger_field("action.wrapped")
+    async def wrapped_command(self):
+        try:
+            _SecretModel.model_validate({"token": SECRET})
+        except ValidationError as exc:
+            raise PluginOperationError(str(exc), payload={"name": "probe"}) from exc
+
+    @trigger_field("action.aggregate")
+    async def aggregate_command(self):
+        try:
+            _SecretModel.model_validate({"token": SECRET})
+        except ValidationError as exc:
+            raise ConfigAggregateError([exc, ValueError("other failed")]) from None
+
+    @trigger_field("action.plain")
+    async def plain_command(self):
+        raise ValueError("business failed")
+
+
+@pytest.mark.asyncio
+async def test_trigger_failure_log_and_reason_omit_config_values(monkeypatch):
+    """触发器失败告警与界面原因不带配置原值，只留错误类型、字段路径和错误类别；其余信息不少。"""
+    from app.config.core import manager as manager_module
+
+    lines: list[str] = []
+    monkeypatch.setattr(
+        manager_module, "trigger_logger", SimpleNamespace(warning=lines.append)
+    )
+    background = BackgroundTaskRegistry()
+    config = LeakyConfig.build()
+    await config.activate()
+    dispatcher = ConfigManager()
+    dispatcher.initialize_triggers(background, max_running=4)
+    try:
+        fields = ("raw", "wrapped", "aggregate", "plain")
+        uids = {
+            name: dispatcher.submit_trigger(
+                config, group="action", field=name, value=True
+            )
+            for name in fields
+        }
+        assert await background.get_group("config-triggers").drain(2)
+        described = "ValidationError: token（int_parsing）"
+        assert sorted(lines) == sorted(
+            [
+                f"{config.uid} action.raw: {described}",
+                f"{config.uid} action.wrapped: {described}",
+                f"{config.uid} action.aggregate: {described}; ValueError: other failed",
+                f"{config.uid} action.plain: business failed",
+            ]
+        )
+        wrapped = dispatcher.trigger_result(uids["wrapped"])
+        assert wrapped.error_code == "PluginOperationError"
+        assert wrapped.message == described
+        assert all(SECRET not in line for line in lines)
+    finally:
+        await dispatcher.shutdown_triggers()
 
 
 @pytest.mark.asyncio
