@@ -105,6 +105,6 @@ class ScriptConfigHandler:
     supports_account_game_override: bool = True
 
 
-def game_management_enabled(script, patch: dict[str, Any]) -> bool:
+def game_management_enabled(script: Any, patch: dict[str, Any]) -> bool:
     """读取存量专项的 MAS 游戏托管开关，编辑时以传入值为准。"""
-    return patch.get("Game", {}).get("Enabled", script.Game.Enabled)
+    return bool(patch.get("Game", {}).get("Enabled", script.Game.Enabled))
