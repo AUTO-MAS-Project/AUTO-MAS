@@ -9,13 +9,26 @@ import { expect, test, vi } from 'vite-plus/test'
 
 const require = createRequire(import.meta.url)
 const launcher = fileURLToPath(new URL('./dev.cjs', import.meta.url))
-const { ensureDevelopmentRuntime } = require(launcher) as {
+const { ensureDevelopmentRuntime, buildDesktopEnvironment } = require(launcher) as {
   ensureDevelopmentRuntime: (
     root: string,
     env: NodeJS.ProcessEnv,
     platform: string
   ) => Promise<void>
+  buildDesktopEnvironment: (baseEnv: NodeJS.ProcessEnv, preloadFile?: string) => NodeJS.ProcessEnv
 }
+
+test('buildDesktopEnvironment strips ELECTRON_RUN_AS_NODE case-insensitively while preserving dev vars', () => {
+  const env = buildDesktopEnvironment(
+    { ELECTRON_RUN_AS_NODE: '1', electron_run_as_node: '1', AUTO_MAS_HTTP_PORT: '36164' },
+    'E:\\desktop\\AUTO-MAS\\frontend\\scripts\\dev.cjs'
+  )
+  expect(env.ELECTRON_RUN_AS_NODE).toBeUndefined()
+  expect(env.electron_run_as_node).toBeUndefined()
+  expect(env.AUTO_MAS_HTTP_PORT).toBe('36164')
+  expect(env.VITE_DEV_SERVER_URL).toBe('http://127.0.0.1:5173/')
+  expect(env.NODE_OPTIONS).toContain('--require "E:/desktop/AUTO-MAS/frontend/scripts/dev.cjs"')
+})
 
 test('development Runtime is verified on first download and reused offline', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'auto-mas-dev-runtime-'))

@@ -1,5 +1,15 @@
 # 脚本与本地验证工具
 
+## 本地开发环境诊断与辅助（`dev_doctor.py`）
+
+检查依赖就绪状态、开发端口（默认 `36164`，与正式版 `36163` 隔离）和当前仓库残留的开发后端进程，支持按需清理开发后端或生成可选的 `.vscode/launch.json` 模板：
+
+```powershell
+uv run --no-sync python scripts/dev_doctor.py                # 诊断依赖、端口与当前仓库开发后端
+uv run --no-sync python scripts/dev_doctor.py --kill-dev     # 仅清理当前仓库的 main.py 开发后端（绝不触碰正式版）
+uv run --no-sync python scripts/dev_doctor.py --init-vscode  # 按需生成极简 .vscode/launch.json（不覆盖已有文件）
+```
+
 ## 本地 PR 一键预检（`pr_check.py`）
 
 提 PR 前在仓库根目录执行，按当前改动路径自动运行对应的 CI 门禁（`git diff --check`、`ruff format --check`、`uv lock --check`、Vue 500 行门禁、前端 lint / typecheck / format / i18n、E2E 契约与 `changelog.py check`），失败时直接输出禁止绕过项与精确修复命令：

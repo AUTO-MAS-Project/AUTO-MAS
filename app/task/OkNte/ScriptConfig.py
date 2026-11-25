@@ -20,6 +20,7 @@ import shutil
 import uuid
 from contextlib import suppress
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from app.config import ConfigCollection
 from app.core import Publisher
@@ -41,6 +42,7 @@ from .tools.backup_archive import (
     ensure_quick_config_dir,
     mas_config_dir,
 )
+from .tools.native_config import publish_staged_config
 from .tools.runtime import OkNteProcessManager
 
 logger = get_logger("OK-NTE 脚本设置")
@@ -75,6 +77,7 @@ class ScriptConfigTask(TaskExecuteBase):
         self.game_manager = game_manager
         # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
         self.view_only = view_only
+        self._gui_started = False
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.oknte_process_manager = OkNteProcessManager(self.script_config)
         self.wait_event: asyncio.Event = asyncio.Event()
@@ -124,8 +127,9 @@ class ScriptConfigTask(TaskExecuteBase):
         self.wait_event.clear()
         # 配置 GUI 无参启动，不套用自动任务的 -t/-e 等自定义追踪条件。
         await self.oknte_process_manager.open_oknte(
-            self.script_exe_path, use_custom_target=False
+            self.script_exe_path, use_custom_target=False, require_runtime=True
         )
+        self._gui_started = True
         await self.wait_event.wait()
 
     async def set_oknte(self) -> None:
@@ -138,6 +142,8 @@ class ScriptConfigTask(TaskExecuteBase):
 
         logger.info(f"开始配置 OK-NTE GUI: 设置账号 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
+        if not await self.oknte_process_manager.confirm_stopped(all_sessions=True):
+            raise RuntimeError("无法确认旧 OK-NTE 进程已退出，已停止下发配置")
 
         # 下发前归档 MAS 账号配置（下发源；指纹去重，失败不阻断会话）——
         # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录。
@@ -159,27 +165,36 @@ class ScriptConfigTask(TaskExecuteBase):
             logger.info("未找到账号级 OK-NTE 配置，使用脚本当前配置启动 GUI")
             return
 
-        if self.script_config.Script.ConfigPathMode == "Folder":
-            _utils_io.swap_in_dir(self.mas_config_dir, self.script_config_path)
-            _utils_io.mark_native_config_injected(
-                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
-                self.script_config_path,
-                script_id=self.script_info.script_id,
-            )
-        elif self.script_config.Script.ConfigPathMode == "File":
-            src_file = self.mas_config_dir / self.script_config_path.name
-            if src_file.exists():
-                self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
-                tmp_file = self.script_config_path.with_name(
-                    self.script_config_path.name + ".tmp"
+        live = self.script_config_path
+        folder_mode = self.script_config.Script.ConfigPathMode == "Folder"
+        snapshot = Path.cwd() / "data" / self.script_info.script_id / "Temp"
+        source = self.mas_config_dir if folder_mode else self.mas_config_dir / live.name
+        if folder_mode or source.is_file():
+            live.parent.mkdir(parents=True, exist_ok=True)
+            with TemporaryDirectory(
+                prefix=".oknte-config-", dir=live.parent
+            ) as staging:
+                staged = Path(staging) if folder_mode else Path(staging) / live.name
+                if folder_mode:
+                    shutil.copytree(source, staged, dirs_exist_ok=True)
+                else:
+                    shutil.copyfile(source, staged)
+                publish_staged_config(
+                    staged,
+                    live,
+                    snapshot,
+                    script_id=self.script_info.script_id,
+                    folder_mode=folder_mode,
                 )
-                shutil.copy(src_file, tmp_file)
-                tmp_file.replace(self.script_config_path)
 
         logger.success(f"OK-NTE GUI 配置已加载: {self.cur_user_item.user_id}")
 
     async def final_task(self) -> None:
         await self._kill_oknte_process()
+        if not self._gui_started or self.cur_user_item.status == "异常":
+            return
+        if not await self.oknte_process_manager.confirm_stopped(all_sessions=True):
+            raise RuntimeError("无法确认本次 OK-NTE GUI 已退出，已停止回写配置")
 
         # 查看会话：只读预览，不把原生目录回写 MAS 配置（原生现场由 manager
         # 的任务前快照还原）；GUI 内的改动一律丢弃

@@ -8,7 +8,7 @@
       />
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content" game-binding="none">
       <a-card
         :title="t('core.edit.baahScriptConfiguration')"
         :loading="pageLoading"
@@ -122,10 +122,8 @@
             />
           </SectionCard>
 
-          <!-- 模拟器管理 -->
-          <SectionCard variant="plain" :title="t('core.edit.emulators')">
-            <a-row :gutter="24"> </a-row>
-          </SectionCard>
+          <!-- 模拟器 / 游戏客户端 -->
+          <GameBindingSection :script-id="scriptId" variant="section" />
 
           <!-- 运行配置 -->
           <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
@@ -153,6 +151,7 @@ import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import GameBindingSection from '@/components/GameBindingSection.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
 import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { computed, onMounted, reactive, ref } from 'vue'
