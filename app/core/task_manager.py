@@ -42,12 +42,21 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
+from app.utils.common.log_flow.observation import (
+    CloseReason,
+    InvalidObservationCursor,
+    Node,
+    NodeObservation,
+    ObservationCursor,
+    public_log_node,
+)
 from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
 _RECENT_ANALYSIS_BYTES = 16 * 1024 * 1024
+_RECENT_ANALYSIS_HISTORY_BYTES = 16 * 1024 * 1024
 
 
 @dataclass
@@ -56,6 +65,15 @@ class _RecentTask:
     tree: dict[str, Any]
     finished_at: str
     analysis_sizes: dict[tuple[str, str], int]
+    observations: dict[tuple[str, str], NodeObservation]
+
+
+@dataclass(frozen=True)
+class TaskLogAnalysisRead:
+    nodes: tuple[Node, ...]
+    cursor: ObservationCursor | None
+    has_more: bool
+    close_reason: CloseReason | None
 
 
 if TYPE_CHECKING:
@@ -486,6 +504,79 @@ class _TaskManager:
                     ].pop("log_analysis", None)
                     del task.analysis_sizes[path]
 
+        history_remaining = _RECENT_ANALYSIS_HISTORY_BYTES
+        for task in reversed(self._recent.values()):
+            for path in reversed(tuple(task.observations)):
+                size = task.observations[path].retained_bytes
+                if size <= history_remaining:
+                    history_remaining -= size
+                else:
+                    del task.observations[path]
+
+    def read_log_analysis(
+        self,
+        task_id: UUID,
+        *,
+        script_run_id: UUID,
+        user_run_id: UUID,
+        after: ObservationCursor | None = None,
+        limit: int = 50,
+    ) -> TaskLogAnalysisRead | None:
+        """按实际运行查询节点。变更历史淘汰后仍可返回保留的最终结果。"""
+        if (run := self._running.get(task_id)) is not None:
+            script = run.task_info.scripts.get(script_run_id)
+            user = script.users.get(user_run_id) if script is not None else None
+            if user is None:
+                return None
+            observation = user.log_analysis_observation
+            final = (
+                (user.log_analysis.nodes, user.log_analysis.close_reason)
+                if user.log_analysis.close_reason is not None
+                else None
+            )
+        else:
+            self._prune_recent()
+            recent = self._recent.get(task_id)
+            if recent is None:
+                return None
+            script_id, user_id = str(script_run_id), str(user_run_id)
+            observation = recent.observations.get((script_id, user_id))
+            script_data = recent.tree["scripts"]["data"].get(script_id)
+            user_data = (
+                script_data["users"]["data"].get(user_id) if script_data else None
+            )
+            analysis = user_data.get("log_analysis") if user_data else None
+            final = (
+                (
+                    tuple(Node.model_validate(node) for node in analysis["nodes"]),
+                    analysis["close_reason"],
+                )
+                if analysis is not None and observation is None
+                else None
+            )
+        if observation is None:
+            if final is None:
+                return None
+            if after is not None:
+                raise InvalidObservationCursor("日志变更历史已过期，请重新读取快照")
+            nodes, close_reason = final
+            return TaskLogAnalysisRead(nodes, None, False, close_reason)
+        if after is None:
+            snapshot = observation.capture()
+            return TaskLogAnalysisRead(
+                tuple(public_log_node(node) for node in snapshot.nodes),
+                snapshot.cursor,
+                False,
+                snapshot.close_reason,
+            )
+        page = observation.read(after=after, limit=limit)
+        return TaskLogAnalysisRead(
+            tuple(public_log_node(node) for node in page.nodes),
+            page.cursor,
+            page.has_more,
+            page.close_reason,
+        )
+
     def describe_lock_holders(self, config: ConfigNode, *, cascade: bool) -> str:
         """只诊断当前冲突票据；从实际执行器查询占用者，不建立另一份锁登记。"""
         nodes = [config]
@@ -648,6 +739,12 @@ class _TaskManager:
         tree = TaskTreeData.model_validate(
             self._export_task(info, include_log_analysis=True)
         ).model_dump(mode="json")
+        observations = {
+            (str(script.uid), str(user.uid)): observation
+            for script in info.scripts.values()
+            for user in script.users.values()
+            if (observation := user.log_analysis_observation) is not None
+        }
         self._recent[info.uid] = _RecentTask(
             ended_at=time.monotonic(),
             tree=tree,
@@ -660,6 +757,7 @@ class _TaskManager:
                 for user_id, user in script["users"]["data"].items()
                 if (analysis := user.get("log_analysis")) is not None
             },
+            observations=observations,
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)

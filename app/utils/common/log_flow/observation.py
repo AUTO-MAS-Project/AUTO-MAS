@@ -145,12 +145,19 @@ class NodeObservation:
 
     def __init__(self) -> None:
         self.session_id = uuid4()
+        self._owner_run_id: UUID | None = None
         self._nodes: list[Node] = []
         self._current: dict[str | int, Node] = {}
         self._node_sizes: list[int] = []
         self.size_bytes = 0
         self._report_bytes = 0
         self._summary: SessionSummary | None = None
+
+    def bind_run(self, run_id: UUID) -> None:
+        """记录唯一拥有者，避免不同运行共用游标及节点。"""
+        if self._owner_run_id is not None and self._owner_run_id != run_id:
+            raise ValueError("日志分析已经属于另一个账号运行")
+        self._owner_run_id = run_id
 
     def append(self, node: Node, *, frame_bytes: int) -> None:
         if self._summary is not None or node.sequence != len(self._nodes) + 1:

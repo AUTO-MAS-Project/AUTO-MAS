@@ -208,7 +208,13 @@ class TaskUserItem(RuntimeEntry):
             and self._log_observation is not observation
         ):
             raise ValueError("账号运行已绑定其他日志分析")
+        observation.bind_run(self.uid)
         self._log_observation = observation
+
+    @property
+    def log_analysis_observation(self) -> NodeObservation | None:
+        """供调度查询读取本次运行保留的观察历史。"""
+        return self._log_observation
 
     def capture_log_analysis(self) -> ObservationSnapshot | None:
         """读取同一时点的账号节点、采集状态及补读起点。"""
