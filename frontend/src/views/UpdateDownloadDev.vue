@@ -59,10 +59,9 @@
       type="warning"
       show-icon
       message="真实下载会调用后端并下载你输入的版本包。确认版本存在后再开始。"
-      class="section-alert"
     />
 
-    <a-card title="真实目标版本下载" class="section-card">
+    <SectionCard title="真实目标版本下载">
       <a-form layout="vertical">
         <a-row :gutter="16">
           <a-col :span="10">
@@ -103,16 +102,15 @@
           </a-col>
         </a-row>
       </a-form>
-    </a-card>
+    </SectionCard>
 
     <a-alert
       type="info"
       show-icon
       message="安全模拟不会访问后端，可用于快速检查弹窗、标题栏和低速提示。"
-      class="section-alert"
     />
 
-    <a-card title="安全模拟" class="section-card">
+    <SectionCard title="安全模拟">
       <a-space direction="vertical" size="large" class="full-width">
         <a-space wrap>
           <a-button type="primary" @click="simulateUpdateAvailable(simulatedVersion)">
@@ -171,13 +169,15 @@
           </a-space>
         </a-form>
       </a-space>
-    </a-card>
+    </SectionCard>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { SectionCard } from '@/components/ui'
+import { useConfirm } from '@/composables/useConfirm'
 import { useUpdateChecker, useUpdateModal } from '@/composables/useUpdateChecker'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 import { useUpdateDownloadDevtools } from '@/composables/updateDownloadDevtools'
@@ -204,6 +204,7 @@ const {
   switchToCnb,
   install,
 } = useUpdateDownload()
+const { confirm } = useConfirm()
 const { checkUpdate } = useUpdateChecker()
 const { latestVersion: availableVersion, updateData: availableUpdateData } = useUpdateModal()
 const {
@@ -298,46 +299,42 @@ const confirmRealDownload = () => {
     message.warning('请输入目标版本')
     return
   }
-  Modal.confirm({
+  void confirm({
     title: '开始真实更新下载？',
-    content: `将从后端下载 ${realTargetVersion.value} 更新包。`,
+    description: `将从后端下载 ${realTargetVersion.value} 更新包。`,
     okText: '开始下载',
     cancelText: '取消',
-    centered: true,
     onOk: () => start(realTargetVersion.value, availableUpdateData.value),
   })
 }
 
 const confirmRealCancel = () => {
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: '真实取消更新下载？',
-    content: '这会停止后台任务并删除未完成的临时文件。',
+    description: '这会停止后台任务并删除未完成的临时文件。',
     okText: '确认取消',
     cancelText: '返回',
-    okType: 'danger',
-    centered: true,
     onOk: cancel,
   })
 }
 
 const confirmRealSwitch = () => {
-  Modal.confirm({
+  void confirm({
     title: '真实切换至 CNB 源？',
-    content: '这会停止当前下载、保存更新源并重新开始下载。',
+    description: '这会停止当前下载、保存更新源并重新开始下载。',
     okText: '切换至 CNB',
     cancelText: '取消',
-    centered: true,
     onOk: switchToCnb,
   })
 }
 
 const confirmRealInstall = () => {
-  Modal.confirm({
+  void confirm({
     title: '启动真实安装程序？',
-    content: '应用可能关闭并启动更新安装程序。',
+    description: '应用可能关闭并启动更新安装程序。',
     okText: '启动安装',
     cancelText: '取消',
-    centered: true,
     onOk: install,
   })
 }
@@ -362,7 +359,7 @@ onUnmounted(() => {
 }
 
 .summary-row,
-.section-alert,
+.update-download-dev-page > .ant-alert,
 .section-card {
   margin-bottom: 16px;
 }
