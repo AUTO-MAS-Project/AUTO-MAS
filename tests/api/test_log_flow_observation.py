@@ -8,6 +8,7 @@ from fastapi import FastAPI
 
 from app.api import dispatch
 from app.core import task_manager
+from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig
 from app.models.task import TaskMode
 from app.utils.common.log_flow.analysis import analyze_logs
@@ -44,7 +45,12 @@ async def test_final_results_follow_account_run_in_dispatch_tree(
                     )
                     assert result == "accepted"
                 assert analysis.result is not None
+                previous = Publisher.send.await_count
                 await user.record_log_analysis(analysis.result)
+                assert all(
+                    call.kwargs.get("type") != protocol.TASK_INFO_UPDATED
+                    for call in Publisher.send.await_args_list[previous:]
+                )
                 if user.info.name == "first":
                     first_recorded.set()
                     await finish.wait()
@@ -198,6 +204,7 @@ async def test_account_log_analysis_supports_snapshot_and_cursor_reconnect(
             assert (
                 await query(first, headers={"Origin": "https://example.com"})
             ).status_code == 403
+            assert (await query(first, headers={"Origin": "null"})).status_code == 403
             assert (await query(first, limit=101)).status_code == 422
             async with asyncio.timeout(5):
                 while len((snapshot := await page(first))["nodes"]) < 2:

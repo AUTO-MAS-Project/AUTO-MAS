@@ -251,7 +251,17 @@ def _get_log_analysis(
     )
 
 
-@router.post("/get", tags=["Get"], response_model=TaskGetOut)
+@router.post(
+    "/get",
+    tags=["Get"],
+    response_model=TaskGetOut,
+    responses={
+        400: {"model": TaskGetOut, "description": "任务运行 ID 格式错误"},
+        403: {"model": TaskGetOut, "description": "日志分析查询仅限本机"},
+        404: {"model": TaskGetOut, "description": "账号运行没有可查询的日志分析"},
+        409: {"model": TaskGetOut, "description": "游标失效，需要重新读取快照"},
+    },
+)
 async def get_tasks(
     request: Request, response: Response, body: TaskGetIn = Body(...)
 ) -> TaskGetOut:

@@ -46,7 +46,7 @@ from app.utils.contracts.power import PowerSignal
 if TYPE_CHECKING:
     # [兼容旧专项] 旧类型导出；新执行器直接使用 app.task.lifecycle.TaskBase。
     from app.task.legacy import TaskExecuteBase as TaskExecuteBase
-    from app.utils.common.log_flow.analysis import LogAnalysis
+    from app.utils.common.log_flow.analysis import LogAnalysis as LogFlowAnalysis
 
 # 数组保留递归类型；对象的文档投影展开为开放字典，避开生成器的循环 Record 别名。
 # 实际参数仍递归校验全部 JSON 值。
@@ -177,8 +177,10 @@ class TaskUserItem(RuntimeEntry):
     class LogAnalysis(ConfigGroup):
         """本次账号运行的最终日志分析。"""
 
-        nodes: tuple[Node, ...] = ()
-        close_reason: CloseReason | None = None
+        nodes: tuple[Node, ...] = Field(default=(), description="本轮最终有效日志节点")
+        close_reason: CloseReason | None = Field(
+            default=None, description="日志采集结束原因"
+        )
 
         @model_serializer(mode="wrap")
         def _serialize(
@@ -214,7 +216,7 @@ class TaskUserItem(RuntimeEntry):
             info["user_id"] = "default"
         super().__init__(info=info, **values)
 
-    def bind_log_analysis(self, analysis: LogAnalysis) -> None:
+    def bind_log_analysis(self, analysis: LogFlowAnalysis) -> None:
         """由 L4 将独立分析关联到本次账号运行，供框架读取实时节点。"""
         observation = analysis.observation
         if (
@@ -719,6 +721,7 @@ async def _info_changed(sender: object, event: ConfigEvent) -> None:
             and event.group == "current"
             and event.field == "log"
         )
+        or (isinstance(node, TaskUserItem) and event.group == "log_analysis")
         or event.value == event.old_value
     ):
         return
