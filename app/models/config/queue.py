@@ -32,9 +32,11 @@ from app.config import (
     ConfigCollection,
     ConfigGroup,
     Trigger,
+    UiHintsMap,
     UiVisibility,
     Virtual,
     collection,
+    config_manager,
     ref,
     trigger_field,
     tz,
@@ -103,12 +105,7 @@ class QueueItem(DomainEntry):
     class InfoFields(ConfigGroup):
         ScriptId: Annotated[
             UUID | str,
-            ref(
-                "ScriptConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
+            ref("ScriptConfig", default="-", allow_values=("-",)),
         ] = Field(default_factory=lambda: "-", description="托管 ID")
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -120,6 +117,22 @@ class QueueItem(DomainEntry):
         )
 
     Schedule: ScheduleFields = Field(default_factory=ScheduleFields)
+
+    @virtual_field("ui.hints")
+    def _get_ui_hints(self) -> UiHintsMap:
+        """用宿主统一名称补全托管引用标签，兼容插件和存量配置。"""
+        from app.models.script_access import entry_name
+
+        hints = super()._get_ui_hints()
+        scripts = config_manager.get_collection("ScriptConfig")
+        for hint in hints.get("Info", ()):
+            if hint["field"] == "ScriptId":
+                for option in hint.get("options") or ():
+                    uid = option["value"]
+                    script = scripts.get(uid)
+                    if script is not None:
+                        option["label"] = entry_name(script) or uid
+        return hints
 
 
 class TimeSet(DomainEntry):

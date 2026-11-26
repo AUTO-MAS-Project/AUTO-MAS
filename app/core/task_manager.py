@@ -57,6 +57,10 @@ type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander 
 class UnsupportedDesktopTask(ValueError):
     """所选任务包含尚不能在桌面分身执行的操作。"""
 
+    def __init__(self, message, reason="unsupported_config"):
+        super().__init__(message)
+        self.reason = reason
+
 
 def script_config_name(entry: ScriptConfigType) -> str:
     return entry.info.name if isinstance(entry, ScriptEntry) else entry.Info.Name
@@ -277,12 +281,11 @@ class _TaskManager:
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
                     if desktop:
-                        from app.core.desktop_session.lifecycle import supports_task
+                        from app.core.desktop_session.lifecycle import (
+                            require_task_support,
+                        )
 
-                        if not supports_task(entry):
-                            raise UnsupportedDesktopTask(
-                                "此托管的启动方式暂不支持桌面分身"
-                            )
+                        require_task_support(entry)
                     sid = info.scripts.add(
                         TaskScriptItem,
                         payload={

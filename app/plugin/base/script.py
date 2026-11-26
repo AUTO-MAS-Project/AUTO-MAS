@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
 from app.models.config.plan import PlanEntry
 from app.models.config.plugin_script import ScriptEntry, UserEntry
@@ -18,6 +18,10 @@ if TYPE_CHECKING:
     from app.utils.common.config.restore import ConfigRestorePool
 
     from .emulator import EmulatorExpect
+
+
+DesktopSessionCheckReason = Literal["admin_required", "unsupported_config"]
+DesktopSessionReason = Literal[DesktopSessionCheckReason, "plugin_unavailable"]
 
 
 @dataclass(frozen=True)
@@ -50,7 +54,7 @@ class ScriptTypeDecl:
     # 按托管当前配置和保存补丁收窄 game_kinds：返回 "emulator" / "client"；
     # 返回 None、插件不可用或抛异常时按 game_kinds。同步调用，经插件调用门。
     game_kind: Callable[[ScriptEntry, dict[str, Any]], str | None] | None = None
-    # 这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持。
+    # [兼容旧调用方] MFW 系已发布适配器使用布尔能力检查。
     desktop_session: Callable[[ScriptEntry], bool] | None = None
     # None 沿用旧插件的绑定能力，game_kinds 为空时不限制目标类型。
     supports_game_binding: bool | None = None
@@ -58,6 +62,30 @@ class ScriptTypeDecl:
     # 维护入口复用调度任务的锁、进程归属和停止确认。
     maintenance_expander: type[UserExpander] | None = None
     restore_pools: tuple[ConfigRestorePool, ...] = ()
+    # 同步读取当前托管配置与宿主提权状态；None 表示可用。
+    desktop_session_check: (
+        Callable[[ScriptEntry, bool], DesktopSessionCheckReason | None] | None
+    ) = None
+
+    def desktop_session_reason(
+        self, config: ScriptEntry, elevated: bool
+    ) -> DesktopSessionReason | None:
+        """核验自动代理模式，并在调用门返回前拦截无效结果。"""
+        if TaskMode.AUTO_PROXY not in self.supported_modes:
+            return "unsupported_config"
+        if self.desktop_session_check is not None:
+            result = self.desktop_session_check(config, elevated)
+            if result is None or result in get_args(DesktopSessionCheckReason):
+                return result
+        elif self.desktop_session is not None:
+            result = self.desktop_session(config)
+            if isinstance(result, bool):
+                return None if result else "unsupported_config"
+        else:
+            return "unsupported_config"
+        if isinstance(result, Coroutine):
+            result.close()
+        raise ValueError("桌面分身能力检查须同步返回有效值")
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):
@@ -91,6 +119,10 @@ class ScriptAdapterPlugin(_AdapterPlugin):
             self.decl.expect_builder
         ):
             raise ValueError("expect_builder 须为可调用或 None")
+        if self.decl.desktop_session_check is not None and not callable(
+            self.decl.desktop_session_check
+        ):
+            raise ValueError("desktop_session_check 须为可调用或 None")
         self._validate_decl()
 
     # ── 托管生命周期钩子 ──

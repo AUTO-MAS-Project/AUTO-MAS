@@ -33,6 +33,7 @@ from pydantic import (
 
 from app.core import Power, TaskManager
 from app.core.desktop_session.lifecycle import DesktopSessionDisconnected
+from app.core.task_manager import UnsupportedDesktopTask
 from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
@@ -42,6 +43,7 @@ from app.models.schema import (
     TaskTreeData,
 )
 from app.models.task import TaskMode
+from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
 from app.utils.contracts.power import PowerSignal
 
@@ -89,8 +91,8 @@ class TaskGetOut(OutBase):
 
 class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
-    reason: Literal["desktop_session_disconnected"] | None = Field(
-        default=None, description="启动未受理时可由客户端处理的原因"
+    reason: Literal["desktop_session_disconnected", DesktopSessionReason] | None = (
+        Field(default=None, description="启动未受理时可由客户端处理的原因")
     )
 
 
@@ -188,6 +190,10 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             if task.requireDesktopSession:
                 raise RuntimeError("本次任务已不再配置为在桌面分身执行")
             task_id = await TaskManager.start(task.mode, task.tasks)
+    except UnsupportedDesktopTask as error:
+        return TaskCreateOut(
+            code=409, status="error", message=str(error), taskId="", reason=error.reason
+        )
     except DesktopSessionDisconnected as error:
         return TaskCreateOut(
             code=409,

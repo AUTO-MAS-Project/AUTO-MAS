@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from app.config import LockTicket
 from app.core import Config, Notify, Publisher
+from app.core.desktop_session.lifecycle import require_task_support
 from app.core.ws import protocol
 from app.models.config import ScriptEntry
 from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
@@ -22,6 +23,7 @@ from app.task.lifecycle import TaskBase
 from app.task.script_update import ScriptRecoverySession
 from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -249,6 +251,12 @@ class ScriptExpander(TaskBase):
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
                     pre_dispatch_failed = True
+                    if (
+                        not self.maintenance
+                        and desktop_process_target.get() is not None
+                        and isinstance(entry, ScriptEntry)
+                    ):
+                        require_task_support(entry)
                     if self.maintenance:
                         from app.core import Plugin
 
@@ -275,14 +283,7 @@ class ScriptExpander(TaskBase):
                     from app.core import Plugin
                     from app.plugin.errors import PluginPrecheckError
 
-                    declaration = next(
-                        (
-                            d
-                            for d in Plugin.script_types.values()
-                            if isinstance(entry, d.script_type)
-                        ),
-                        None,
-                    )
+                    declaration = Plugin.script_decl(entry)
                     if declaration is None:
                         # 准备期间插件被停用，声明已摘掉。
                         raise PluginPrecheckError("托管所属插件当前不可用")
@@ -318,6 +319,8 @@ class ScriptExpander(TaskBase):
 
                         async def after_lock(locked_config):
                             """在旧专项取得配置锁后复查并等待预下载，将任务参数和 URL 路径映射绑定到专项运行上下文。"""
+                            if desktop_process_target.get():
+                                require_task_support(locked_config)
                             self._game_session.config = locked_config
                             paths = await self._prefetch.prepare(script, locked_config)
                             await self._game_session.select()

@@ -15,6 +15,7 @@ export type ScriptIndexItem = {
      * 对应的游戏活动标识，无游戏归属时为空
      */
     activityGame?: (string | null);
+    desktopSessionReason?: ('admin_required' | 'unsupported_config' | 'plugin_unavailable' | null);
     /**
      * 所属插件当前是否可用；插件托管的插件不在已启用状态时为 false
      */

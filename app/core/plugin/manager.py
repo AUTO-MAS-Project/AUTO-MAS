@@ -181,10 +181,8 @@ class _PluginManager:
                 if isinstance(node, (decl.game_class, decl.device_class)):
                     return uid
             for uid, decl in self.script_types.items():
-                types = (decl.script_type, decl.user_type)
-                if decl.plan_type is not None:
-                    types += (decl.plan_type,)
-                if isinstance(node, types):
+                # 账号可复用同一类型，由其所属托管确定插件。
+                if type(node) is decl.script_type or type(node) is decl.plan_type:
                     return uid
             node = node.parent
         return None
@@ -1525,10 +1523,30 @@ class _PluginManager:
             (
                 decl
                 for decl in self.script_types.values()
-                if isinstance(config, decl.script_type)
+                if type(config) is decl.script_type
             ),
             None,
         )
+
+    def desktop_session_reason(self, config, elevated: bool):
+        """在当前启用实例的调用门内查询分身能力。"""
+        for record in self.list_plugins():
+            decl = self.script_types.get(record.uid)
+            if decl is None or type(config) is not decl.script_type:
+                continue
+            gate = self._calls.get(record.uid)
+            if (
+                record.info.state != PluginState.ENABLED
+                or gate is None
+                or not gate.accepting
+            ):
+                break
+            try:
+                return gate.wrap(decl.desktop_session_reason)(config, elevated)
+            except Exception as error:
+                logger.opt(exception=True).warning(f"无法检查插件桌面分身能力: {error}")
+                break
+        return "plugin_unavailable"
 
     def script_classes(self):
         """返回已登记专项的创建标识和配置类，供通用配置管理使用。"""
@@ -1550,7 +1568,7 @@ class _PluginManager:
             if (
                 record.info.state == PluginState.ENABLED
                 and decl is not None
-                and isinstance(config, decl.script_type)
+                and type(config) is decl.script_type
             ):
                 if decl.prefetch_check is None:
                     return []
@@ -1568,7 +1586,7 @@ class _PluginManager:
 
         for record in self.list_plugins():
             decl = self.script_types.get(record.uid)
-            if decl is None or not isinstance(config, decl.script_type):
+            if decl is None or type(config) is not decl.script_type:
                 continue
             plugin_cls = record._plugin_cls
             overridden = {
@@ -1640,7 +1658,7 @@ class _PluginManager:
     def _script_decl_gate(self, config):
         """按托管配置找声明及其插件的调用门；声明在、门不在时门为 ``None``。"""
         for uid, decl in self.script_types.items():
-            if isinstance(config, decl.script_type):
+            if type(config) is decl.script_type:
                 return decl, self._calls.get(uid)
         return None, None
 
@@ -1659,19 +1677,6 @@ class _PluginManager:
             )
             return decl.game_kinds
         return decl.game_kinds if kind is None else (kind,)
-
-    def script_supports_desktop(self, config) -> bool:
-        """插件托管能否在桌面分身里跑；未声明、插件不可用或判定失败时为否。"""
-        decl, gate = self._script_decl_gate(config)
-        if decl is None or decl.desktop_session is None or gate is None:
-            return False
-        try:
-            return bool(gate.wrap(decl.desktop_session)(config))
-        except Exception:
-            logger.opt(exception=True).warning(
-                f"插件判定桌面分身失败，按不支持处理: {type(config).__name__}"
-            )
-            return False
 
     async def search_game_adapter(
         self, uid: UUID, decl: GameTypeDecl
@@ -1711,7 +1716,7 @@ class _PluginManager:
             decl = self.script_types.get(record.uid)
             if record.info.state != PluginState.ENABLED or decl is None:
                 continue
-            if isinstance(config, decl.script_type):
+            if type(config) is decl.script_type:
                 if maintenance:
                     if decl.maintenance_expander is None:
                         raise PluginPrecheckError("该托管不支持手动更新")
