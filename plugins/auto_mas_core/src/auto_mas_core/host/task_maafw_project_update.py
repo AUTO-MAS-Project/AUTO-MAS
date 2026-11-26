@@ -4,9 +4,9 @@
 与 ``auto_mas_core.host.utils_common_zip_range`` 指向同一份实现。
 """
 
-from auto_mas_core.host.utils_common_zip_range import (  # noqa: F401 - 复用同一份惰性导出。
-    RangeHTTPReader as RangeHTTPReader,
-    RangeSpeedGuard as RangeSpeedGuard,
+from auto_mas_core.host.utils_common_zip_range import (
+    RangeHTTPReader,
+    RangeSpeedGuard,
 )
 
 __all__ = ["RangeHTTPReader", "RangeSpeedGuard"]
