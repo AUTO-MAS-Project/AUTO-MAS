@@ -558,6 +558,8 @@ class LogFlowMonitor(LogMonitor):
 
         if self.task is not None and not self.task.done():
             await self.stop()
+            if self.task is not None and not self.task.done():
+                raise RuntimeError("旧日志监控仍在收尾，无法启动新监控")
 
         self._file_stop = asyncio.Event()
         self.task = asyncio.create_task(
@@ -585,10 +587,31 @@ class LogFlowMonitor(LogMonitor):
 
         if self.task is not None and not self.task.done():
             await self.stop()
+            if self.task is not None and not self.task.done():
+                raise RuntimeError("旧日志监控仍在收尾，无法启动新监控")
 
         self._file_stop = None
         self.task = asyncio.create_task(self.monitor_process(process, stream))
         logger.info(f"进程日志监控已启动: {process.pid}")
+
+    @staticmethod
+    def _report_cancelled_monitor_failure(task: asyncio.Task) -> None:
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning(f"日志监控取消失败: {error}")
+
+    async def _cancel_after_failed_drain(self, task: asyncio.Task) -> None:
+        if task.done():
+            self._report_cancelled_monitor_failure(task)
+            return
+        task.cancel()
+        try:
+            await asyncio.wait((task,), timeout=_STOP_DRAIN_SECONDS)
+        finally:
+            if task.done():
+                self._report_cancelled_monitor_failure(task)
+            else:
+                # 保留引用和错误处理，拒绝在旧读取结束前换上新的监控任务。
+                task.add_done_callback(self._report_cancelled_monitor_failure)
 
     async def stop(self):
         """停止监控；有原始行订阅时，在同一期限内排空文件或进程管道。"""
@@ -612,11 +635,13 @@ class LogFlowMonitor(LogMonitor):
                     logger.warning(f"日志监控末次读取失败: {exc}")
                 finally:
                     if not drained:
-                        task.cancel()
-                        if on_incomplete is not None:
-                            source = "文件" if file_stop is not None else "进程"
-                            on_incomplete(f"原生{source}日志未能完成末次读取")
-                        logger.warning("日志监控未能完成末次读取")
+                        try:
+                            if on_incomplete is not None:
+                                source = "文件" if file_stop is not None else "进程"
+                                on_incomplete(f"原生{source}日志未能完成末次读取")
+                            logger.warning("日志监控未能完成末次读取")
+                        finally:
+                            await self._cancel_after_failed_drain(task)
             elif task is not None and not task.done():
                 task.cancel()
                 try:
@@ -624,7 +649,10 @@ class LogFlowMonitor(LogMonitor):
                 except asyncio.CancelledError:
                     logger.info("日志监控任务已中止")
         finally:
-            if self.task is task:
+            if self.task is task and (task is None or task.done()):
                 self.task = None
                 self._file_stop = None
-        logger.success("日志监控任务已停止")
+        if task is not None and not task.done():
+            logger.warning("日志监控仍在收尾，已保留任务等待退出")
+        else:
+            logger.success("日志监控任务已停止")

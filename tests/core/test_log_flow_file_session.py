@@ -1837,6 +1837,53 @@ async def test_oknte_shadow_report_matches_legacy_aggregation():
         await session.close(timeout=0)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel_stop", [False, True], ids=["timeout", "cancel"])
+async def test_stop_waits_for_monitor_cancellation_cleanup(monkeypatch, cancel_stop):
+    from app.utils.common.log import flow_monitor
+
+    async def display(_lines, _latest_time):
+        pass
+
+    monitor = LogMonitor((0, 0), "", display, on_raw_line=lambda _: None)
+    incomplete = []
+    monitor.on_raw_incomplete = incomplete.append
+    started = asyncio.Event()
+    cleaned_up = asyncio.Event()
+    release = asyncio.Event()
+
+    async def read():
+        try:
+            started.set()
+            await asyncio.Future()
+        finally:
+            cleaned_up.set()
+            await release.wait()
+
+    monitored = asyncio.create_task(read())
+    monitor.task = monitored
+    await asyncio.wait_for(started.wait(), 2)
+    monkeypatch.setattr(flow_monitor, "_STOP_DRAIN_SECONDS", 0.2)
+    stopping = asyncio.create_task(monitor.stop())
+    if cancel_stop:
+        await asyncio.sleep(0)
+        stopping.cancel()
+    try:
+        await asyncio.wait_for(cleaned_up.wait(), 2)
+        assert not stopping.done()
+        assert monitor.task is monitored
+    finally:
+        release.set()
+        if cancel_stop:
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(stopping, 2)
+        else:
+            await asyncio.wait_for(stopping, 2)
+        await asyncio.gather(monitored, return_exceptions=True)
+    assert monitored.done() and monitor.task is None
+    assert len(incomplete) == 1
+
+
 @pytest.mark.parametrize("mode", ["逐条", "汇总"])
 def test_rendered_reports_mask_credentials(mode):
     from app.utils.common.log_flow.observation import Node, SessionSummary
