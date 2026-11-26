@@ -79,9 +79,10 @@ class LogFlow(TaskBase):
     async def main_task(self) -> None:
         self._cleanup.push_async_callback(self._publish_final)
         self._analysis = await self._cleanup.enter_async_context(self._analysis_context)
-        self._cleanup.push_async_callback(self._monitor.stop_owned_source)
         self._cleanup.callback(self._finished.set)
         self._cleanup.push_async_callback(self._monitor.stop)
+        # 退出栈先停生产进程，再从管道读到 EOF，最后结束分析。
+        self._cleanup.push_async_callback(self._monitor.stop_owned_source)
         # 只在此子协程暂存并提交分析字段。业务配置与日志生产仍由 L4 调用协程管理。
         self._publishing = asyncio.create_task(self._publish_nodes(self._analysis))
         await self._monitor.run_source()

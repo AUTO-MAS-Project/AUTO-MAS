@@ -181,7 +181,9 @@ async def stop_process(
     *,
     kill_tree: bool = False,
     deadline: float | None = None,
+    close_pipes: bool = True,
 ) -> None:
+    """停止进程。仍需排空输出的调用方负责在读取结束后关闭管道。"""
     scope = current_process_scope.get()
 
     async def stop_and_wait() -> None:
@@ -210,9 +212,9 @@ async def stop_process(
                 "无法确认进程已停止，不能释放更新目录"
             ) from error
 
-        # 确认之后统一强制清理；后续新增的例外判断放在此边界之后。
-        # 项目固定 Python 3.12，不排空输出、不等待 EOF，直接关闭本命令全部管道。
-        close_process_pipes(process)
+        # 默认不等待 EOF，直接关闭命令的全部管道。日志监控仍需读取尾部。
+        if close_pipes:
+            close_process_pipes(process)
 
     # 停进程树在线程里执行；重复停止不能只取消等待，让 pip 等写入者继续运行。
     cleanup = asyncio.create_task(stop_and_wait(), context=detached_process_context())

@@ -30,7 +30,7 @@ from typing import Awaitable, Callable, Literal
 import aiofiles
 
 from app.utils.common.constants import ANSI_ESCAPE_RE
-from app.utils.common.process.runner import stop_process
+from app.utils.common.process.runner import close_process_pipes, stop_process
 from app.utils.common.tools import decode_bytes
 
 from .flow_file import LOG_READ_OPENER, file_identity
@@ -102,7 +102,7 @@ class LogFlowMonitor(LogMonitor):
     async def stop_owned_source(self) -> None:
         """关闭由监视器创建且尚未退出的日志生产进程。"""
         if (process := self._source_process) is not None and process.returncode is None:
-            await stop_process(process, kill_tree=True)
+            await stop_process(process, kill_tree=True, close_pipes=False)
 
     async def monitor_file(
         self,
@@ -685,6 +685,10 @@ class LogFlowMonitor(LogMonitor):
                 except asyncio.CancelledError:
                     logger.info("日志监控任务已中止")
         finally:
+            if (
+                process := self._source_process
+            ) is not None and process.returncode is not None:
+                close_process_pipes(process)
             if self.task is task and (task is None or task.done()):
                 self.task = None
                 self._file_stop = None

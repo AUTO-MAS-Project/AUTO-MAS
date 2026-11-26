@@ -331,7 +331,7 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account(
             "-u",
             "-c",
             "from pathlib import Path; import sys; print('done:claim'); sys.stdin.readline(); "
-            "print('done:tail'); Path(sys.argv[1]).touch(); sys.stdin.readline()",
+            "print('done:tail', end=''); Path(sys.argv[1]).touch(); sys.stdin.readline()",
             str(tail_written),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -369,13 +369,14 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account(
             async with asyncio.timeout(5):
                 while not tail_written.exists():
                     await asyncio.sleep(0.01)
+            assert process.returncode is None
             await asyncio.wait_for(worker.stop(), 8)
         else:
             process.stdin.close()
             await asyncio.wait_for(worker.accomplish.wait(), 8)
         assert worker.error is None, worker.error
         assert process.returncode is not None
-        assert account.log_analysis.close_reason is not None
+        assert account.log_analysis.close_reason == "complete"
         if cancel:
             assert account.status == "已取消"
             assert [node.text for node in account.log_analysis.nodes] == [
@@ -384,7 +385,6 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account(
             ]
         else:
             assert account.status == "完成"
-            assert account.log_analysis.close_reason == "complete"
             assert [node.text for node in account.log_analysis.nodes] == [
                 "done:claim",
                 "done:tail",
