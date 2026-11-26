@@ -19,6 +19,33 @@ from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("peer", "status"), [("::ffff:127.0.0.1", 404), ("::ffff:192.0.2.1", 403)]
+)
+async def test_mapped_ipv6_peer_obeys_dispatch_analysis_loopback_boundary(
+    scheduler, monkeypatch, peer, status
+):
+    manager, _, _, _ = scheduler
+    monkeypatch.setattr(dispatch, "TaskManager", manager)
+    app = FastAPI()
+    app.include_router(dispatch.router)
+    missing_id = "00000000-0000-0000-0000-000000000001"
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, client=(peer, 12345)),
+        base_url="http://[::ffff:127.0.0.1]",
+    ) as client:
+        response = await client.post(
+            "/api/dispatch/get",
+            headers={"Origin": "http://[::ffff:127.0.0.1]"},
+            json={
+                "taskId": missing_id,
+                "logAnalysis": {"scriptRunId": missing_id, "userRunId": missing_id},
+            },
+        )
+    assert response.status_code == status, response.text
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cache_budget", [1024, 16 * 1024 * 1024])
 async def test_final_results_follow_account_run_in_dispatch_tree(
     scheduler, monkeypatch, cache_budget

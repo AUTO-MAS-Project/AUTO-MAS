@@ -155,9 +155,10 @@ def _loopback_host(host: str | None) -> bool:
     if host == "localhost":
         return True
     try:
-        return ip_address(host or "").is_loopback
+        address = ip_address(host or "")
     except ValueError:
         return False
+    return (getattr(address, "ipv4_mapped", None) or address).is_loopback
 
 
 def _local_node_reader(request: Request) -> bool:
