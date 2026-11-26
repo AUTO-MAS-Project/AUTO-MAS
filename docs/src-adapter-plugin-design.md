@@ -37,7 +37,7 @@ class Plugin(ScriptAdapterPlugin):
 
 SRC 没有专项计划表。声明沿用当前设备范围和程序更新时机。设备要求、ModAVD 专属支持、后台预下载均须有对应实现才声明。游戏与设备由已有适配器提供，无须再装一个 SRC 游戏管理插件。[SDK 声明](../app/plugin/base/script.py) · [SRC 当前注册](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/e0380ba92/app/task/SRC/registration.py)
 
-公共调用仍是“创建 SRC 托管 → 添加账号 → 提交任务要求树”。运行、编辑、查看分别提交 `AutoProxy`、`ScriptConfig`、`ScriptView`。调用者给出托管或账号 UUID，用返回的运行任务 ID 停止会话并等待收尾。托管级操作传托管 UUID，磁盘目录名 `Default` 只在插件内部解析。托管和账号读写继续走现有 CRUD。备份的 list、ensure、preview、file、restore 由插件 router 在 `/api/plugin/src_adapter/backup/*` 提供，复用现有 DTO、恢复服务和前端面板。按启用插件导出 OpenAPI 并重新生成客户端。[任务入口](../frontend/src/composables/useTaskApi.ts) · [动态 OpenAPI](../app/plugin/openapi.py) · [现有备份操作](../app/api/scripts/backup.py)
+公共调用仍是“创建 SRC 托管 → 添加账号 → 提交任务要求树”。运行、编辑、查看分别提交 `AutoProxy`、`ScriptConfig`、`ScriptView`。调用者给出托管或账号 UUID，用返回的运行任务 ID 停止会话并等待收尾。托管级操作传托管 UUID，磁盘目录名 `Default` 只在插件内部解析。托管和账号读写继续走现有 CRUD。备份的 list、ensure、preview、file、restore 由插件 router 在 `/api/plugin/src_adapter/backup/*` 提供，复用现有 DTO、恢复服务和前端面板。按启用插件导出 OpenAPI 并重新生成客户端。生成前须同时启用所有会被调用的插件，否则未启用插件的契约模型会被 `frontend/scripts/postprocess-openapi.mjs` 当作过期文件清掉；这类检查不要用整仓 `yarn openapi` 跨插件同步。[任务入口](../frontend/src/composables/useTaskApi.ts) · [动态 OpenAPI](../app/plugin/openapi.py) · [现有备份操作](../app/api/scripts/backup.py)
 
 ## 一次托管怎样执行
 
