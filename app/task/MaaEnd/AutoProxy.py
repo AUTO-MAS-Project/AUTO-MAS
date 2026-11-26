@@ -49,16 +49,6 @@ from app.task.emulator_core import (
 )
 from app.task.failure_capture_core import FailureCapture
 from app.task.game import game_device_id
-from app.task.MaaFW.tools.core.interface.loader import load_interface_model
-from app.task.MaaFW.tools.core.interface.task_config import (
-    build_task_option_maps,
-    normalize_task_options_by_task,
-)
-from app.task.MaaFW.tools.core.runner.run_plan import (
-    _build_pretask_plans,
-    _select_resource,
-)
-from app.task.MaaFW.tools.embedded.shell_instances import _Labels, _mxu_option_values
 from app.task.proxy_helpers import (
     CONFIG_BASE_NATIVE,
     append_push_log,
@@ -95,6 +85,15 @@ from .inventory_report import (
     inventory_resolve,
     load_reward_groups,
     merge_gain_entries,
+)
+from .mfw_parse import (
+    build_pretask_plans,
+    build_task_option_maps,
+    labels,
+    load_interface_model,
+    mxu_option_values,
+    normalize_task_options_by_task,
+    select_resource,
 )
 from .push_log import MAAEND_PUSH_RULES, maaend_plain_text, maaend_resolve
 from .resource_loader import (
@@ -518,6 +517,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         self.original_game_settings_read = False
         self.launcher_game_setting_options: dict[str, Any] = {}
         self.launcher_runtime_path: Path | None = None
+        self._launcher_started_at: float | None = None
         desktop = desktop_process_target.get()
         # 此登记表只在主 MAS 进程内使用，None 恒指该进程所在的主会话。
         self.launcher_session_id = desktop.session_id if desktop is not None else None
@@ -653,7 +653,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             raise RuntimeError(
                 f"MaaEnd 控制器 {controller_name} 在当前资源中不存在，请重新配置 MaaEnd"
             )
-        resource = _select_resource(interface, "", controller)
+        resource = select_resource(interface, "", controller)
         skipped: list[str] = []
         # 复用现有 MXU 选项转换与 PI 预任务命令解析，不复制上游显示设置逻辑。
         setting_options = self.launcher_game_setting_options.copy()
@@ -678,11 +678,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 "type": "select",
                 "value": "CN" if server == "官服" else server,
             }
-        values = _mxu_option_values(
+        values = mxu_option_values(
             setting_options,
             build_task_option_maps(interface)[task_name],
             "游戏启动设置",
-            _Labels(interface, None),
+            labels(interface, None),
             skipped,
         )
         if skipped:
@@ -696,7 +696,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             controller_name=controller.name,
             resource_name=resource.name,
         )
-        plans = _build_pretask_plans(
+        plans = build_pretask_plans(
             base_dir=self.maaend_root_path,
             interface_model=interface,
             controller=controller,
@@ -800,6 +800,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         return bool(win32gui.FindWindow("UnityWndClass", "Endfield"))
 
     async def _game_window_in_session(self) -> bool:
+        if executable := client_executable_path(self.script_config):
+            return await has_process_window(_MAAEND_CLIENT_PROCESS, exe=str(executable))
+        if not await has_process_window(_MAAEND_CLIENT_PROCESS):
+            return False
         if (desktop := desktop_process_target.get()) is None:
             return self._game_window_present()
         from app.task.desktop_session_worker import request_desktop_action
@@ -809,10 +813,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
 
     async def _mas_launch_game_directly(self) -> None:
         """通过现有直启入口拉起游戏，也用于更新确认后的重新启动。"""
-        if (
-            await has_process_window(_MAAEND_CLIENT_PROCESS)
-            and await self._game_window_in_session()
-        ):
+        if await self._game_window_in_session():
             logger.info("检测到终末地客户端已运行，准备由 MAS 执行账号切换")
             return
         # 进程残留但窗口已消失（如更新重启失败）：清掉残留后重新拉起
@@ -868,6 +869,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         """
 
         async with _launcher_automation():
+            self._launcher_started_at = None
             launcher_path = self._launcher_path()
             if launcher_path is None:
                 raise RuntimeError(
@@ -885,10 +887,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 and self._game_setting_pretask() is not None
             ):
                 await self._apply_launcher_game_settings()
-            if (
-                await has_process_window(_MAAEND_CLIENT_PROCESS)
-                and await self._game_window_in_session()
-            ):
+            if await self._game_window_in_session():
                 logger.info("检测到终末地客户端进程已在运行，跳过由 MAS 重复启动游戏")
                 await push_dispatch_log(
                     self.script_info, "检测到客户端已在运行，跳过启动"
@@ -897,22 +896,17 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             # 拉起前校验官方签名：与直接启动（game_launcher）同一套校验口径
             await asyncio.to_thread(verify_launcher_signature, launcher_path)
             point(self, "start_game")
-            if await self.game_process_manager.is_running():
-                # 阶段切换可能只关闭游戏；手动指定的常驻启动器仍由同一管理器持有。
-                await push_dispatch_log(self.script_info, "复用仍在运行的终末地启动器")
-            else:
-                await push_dispatch_log(
-                    self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
-                )
-                # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
-                await self.game_process_manager.open_process(
-                    launcher_path,
-                    "--game=Endfield",
-                    "--reason=4",
-                    breakaway=True,
-                    owned=False,
-                    retain_desktop_descendants=True,
-                )
+            await push_dispatch_log(
+                self.script_info, f"正在拉起终末地启动器: {launcher_path.name}"
+            )
+            # 手选 Games.exe 也已解析到稳定入口，始终定位终末地页。
+            client_path = client_executable_path(self.script_config)
+            self._launcher_started_at = time()
+            await self.game_process_manager.open_launcher(
+                launcher_path,
+                "--game=Endfield",
+                "--reason=4",
+            )
             # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；push_dispatch_log
             # 是 async 函数，须经 run_coroutine_threadsafe 调度回事件循环
             launch_loop = asyncio.get_running_loop()
@@ -928,7 +922,10 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 code, screenshots = await request_desktop_action(
                     desktop,
                     "maaend_launch",
-                    {"launcher_path": str(launcher_path)},
+                    {
+                        "launcher_path": str(launcher_path),
+                        "client_path": str(client_path) if client_path else None,
+                    },
                     on_log=_push_launch_log,
                 )
                 for screenshot in screenshots:
@@ -937,6 +934,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             else:
                 launched = await async_start_game_via_launcher(
                     launcher_path,
+                    client_path=client_path,
                     on_log=_push_launch_log,
                     on_error_screenshot=self._record_error_screenshot,
                 )
@@ -948,9 +946,11 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                 f"游戏窗口已出现，正在等待画面就绪（最多 {wait_time}s）...",
             )
             # 启动器只保证窗口出现，引擎还在初始化时截图仍是空图，等客户区画出来再继续
-            await wait_process_window_ready(
-                ProcessInfo(name=_MAAEND_CLIENT_PROCESS), wait_time
+            target = ProcessInfo(
+                name=_MAAEND_CLIENT_PROCESS,
+                exe=str(client_path) if client_path else None,
             )
+            await wait_process_window_ready(target, wait_time)
 
     async def _kill_launcher_process(self) -> None:
         """持有启动器锁时，按进程家族与安装根目录树结束启动器。"""
@@ -1670,14 +1670,25 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     kill_game=False,
                 )
                 break
+            no_runnable_task = False
+            if self.emulator_manager is not None:
+                # 任务表只看 MAS 与 MaaEnd 配置，设备信息只影响连哪台设备和云终末地补的
+                # 启动游戏任务（不算业务任务）；一个都不跑就别先开模拟器。开机后照旧带
+                # 设备信息再写一次配置，任务表沿用这次生成的。
+                if self.task_dict is None:
+                    await self.set_maaend(None)
+                no_runnable_task = not self._has_runnable_task(cloud_adb)
             # 三种 PC 启动方式均由 MAS 编排，游戏就绪后再进入账号切换与任务。
             try:
                 if self.emulator_manager is None:
                     await self.set_maaend(None)
-                    await self._start_game(
-                        preserve_running_game=keep_game_for_login_retry
-                    )
-                else:
+                    # 任务表在写入配置时已经定下；一个都不跑就别先拉起游戏。
+                    no_runnable_task = not self._has_runnable_task(cloud_adb)
+                    if not no_runnable_task:
+                        await self._start_game(
+                            preserve_running_game=keep_game_for_login_retry
+                        )
+                elif not no_runnable_task:
                     logger.info(f"启动模拟器: {game_device_id(self.script_config)}")
                     point(self, "start_game")
                     self.emulator_info = await self.emulator_manager.open(
@@ -1695,6 +1706,13 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     e,
                 )
                 continue
+            if no_runnable_task:
+                self.retryable = False
+                # 游戏还没拉起、模拟器也还没开，没有要关的游戏进程。
+                await self.handle_pre_maaend_error(
+                    "MaaEnd 没有可执行任务，请检查任务配置", kill_game=False
+                )
+                break
 
             account_id = str(self.cur_user_config.Info.Id).strip()
             if use_mas_account_switch and account_id:
@@ -1760,12 +1778,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             if self.emulator_manager is not None:
                 await self.set_maaend(self.emulator_info)
 
-            if not any(
-                any(tasks.values())
-                for name, tasks in self.task_dict.items()
-                if not cloud_adb
-                or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
-            ):
+            if not self._has_runnable_task(cloud_adb):
                 self.retryable = False
                 await self.handle_pre_maaend_error(
                     "MaaEnd 没有可执行任务，请检查任务配置"
@@ -1869,6 +1882,18 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
                     logger.info("检测到不可恢复的错误，跳过后续重试")
                     i = run_times_limit
 
+    def _has_runnable_task(self, cloud_adb: bool) -> bool:
+        """本轮任务表（``set_maaend`` 写配置时生成）里至少开着一个业务任务。
+
+        云终末地的启动游戏任务由 MAS 补进去，不算业务任务。
+        """
+        return any(
+            any(tasks.values())
+            for name, tasks in self.task_dict.items()
+            if not cloud_adb
+            or self.task_name_map.get(name) != _MAAEND_ANDROID_OPEN_GAME_TASK
+        )
+
     async def handle_pre_maaend_error(
         self, error_message: str, e: Exception | None = None, *, kill_game: bool = True
     ):
@@ -1962,11 +1987,19 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
         if self.emulator_manager is None:
             logger.info("中止终末地进程")
             point(self, "stop_game")
+            if self._launcher_started_at is not None:
+                await self._kill_launcher_process()
             try:
-                await self.game_process_manager.kill()
+                if self._launcher_started_at is None:
+                    await self.game_process_manager.kill()
+                elif client_path := client_executable_path(self.script_config):
+                    await self.game_process_manager.stop_launcher_client(
+                        client_path, self._launcher_started_at
+                    )
             except Exception as error:
                 logger.opt(exception=True).warning(f"终末地进程管理器清理失败: {error}")
-            await self._kill_launcher_process()
+            if self._launcher_started_at is None:
+                await self._kill_launcher_process()
         else:
             try:
                 logger.info("中止模拟器进程")
@@ -2314,7 +2347,7 @@ class AutoProxyTask(ScriptAutoProxyBase[MaaEndConfig, MaaEndUserConfig]):
             return self.original_game_settings
         self.original_game_settings_read = True
 
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )

@@ -40,15 +40,12 @@ from .tools import *
 
 CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
     "MaaEnd": MaaEndConfig,
-    "M9A": M9AConfig,
-    "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
-    "MSS": MSSConfig,
 }
 
 
@@ -102,14 +99,5 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "script_class": BAAHConfig,
         "field_group": "Info",
         "field_name": "StageMode",
-    },
-    "MSSPlanConfig": {
-        "create_type": "MSSPlan",
-        "config_class": MSSPlanConfig,
-        # MSS 排在 baah 之后，位置索引跟着往后挪一位
-        "consumer": PLAN_CONSUMER_VALUES[2],
-        "script_class": MSSConfig,
-        "field_group": "Info",
-        "field_name": "PlanMode",
     },
 }

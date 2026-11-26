@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from app.models.config.game_binding import GameBindingOwner
+from app.plugin.base.client import ClientControl
 from app.plugin.base.emulator import EmulatorControl
 from app.plugin.base.game import DeviceSubscribeError
 from app.utils import get_logger
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from app.config import LockTicket
+    from app.models.config.game import GameEntry
     from app.models.emulator import (
         DeviceInfo,
         DeviceRef,
@@ -33,6 +35,16 @@ logger = get_logger("游戏会话")
 current_game_session: ContextVar[GameSession | None] = ContextVar(
     "game_session", default=None
 )
+
+
+def _default_client_device(game: GameEntry) -> UUID:
+    """设备留空时，本地游戏只可隐式订阅唯一的设备。"""
+    candidates = [device.uid for device in game.devices.values() if not device.deleted]
+    if not candidates:
+        raise ValueError("所选本地游戏没有可用设备")
+    if len(candidates) != 1:
+        raise ValueError("所选本地游戏有多个设备，请指定要运行的设备")
+    return candidates[0]
 
 
 def selected_game_session() -> GameSession | None:
@@ -188,28 +200,50 @@ class GameSession:
         from app.core import Config, GameManager
 
         self.selected = True
-        self._account_override = owner is not None and owner.game.game_id != "-"
+        self._account_override = False
+        default = self.config.game
+        has_override = owner is not None and owner.game.game_id != "-"
+        if (
+            not has_override
+            and default.game_id == "-"
+            and not default.unavailable_reason
+        ):
+            await self.release()
+            return
+        capabilities = Config.script_game_binding(self.config, {})
+        if not capabilities.supported:
+            await self.release()
+            return
+        self._account_override = (
+            has_override and capabilities.account_override_supported
+        )
         binding = (
-            owner.game
-            if owner is not None and self._account_override
-            else self.config.game
+            owner.game if owner is not None and self._account_override else default
         )
         if binding.unavailable_reason:
             raise ValueError(binding.unavailable_reason)
         uid = binding.game_id if binding.game_id != "-" else None
         device_uid = binding.device_id if binding.device_id != "-" else None
-        if self.game_uid == uid and self.device_uid == device_uid:
-            return
+        if self.game_uid == uid:
+            if device_uid is None and isinstance(self.control, ClientControl):
+                device_uid = _default_client_device(self.control.config)
+            if self.device_uid == device_uid:
+                return
         await self.release()
         if uid is None:
             return
         refusal = await GameManager.validate_binding(
-            str(self.config.uid), {"game": {"game_id": uid}}, owner=owner
+            str(self.config.uid),
+            {"game": {"game_id": uid}},
+            owner=owner if self._account_override else None,
+            script=self.config,
+            capabilities=capabilities,
         )
         if refusal:
             raise ValueError(refusal)
         game_name = Config.GameConfig[uid].info.name
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
+        logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
         self.control, self.ticket = await GameManager.subscribe(uid)
         self.game_uid = uid
@@ -218,6 +252,8 @@ class GameSession:
         game = Config.GameConfig.get(uid)
         if game is None:
             raise ValueError("所选游戏目标已删除")
+        if device_uid is None and isinstance(self.control, ClientControl):
+            device_uid = _default_client_device(game)
         if device_uid is not None:
             device = game.devices.get(device_uid)
             if device is None:
@@ -248,6 +284,7 @@ class GameSession:
                     await asyncio.sleep(1)
             self.device_uid = device_uid
         self.script.current.log += f"已获取游戏实例「{game_name}」。\n"
+        logger.info(f"已获取游戏实例「{game_name}」")
         await self.script.set_state(status="运行")
 
     async def release_account(self) -> None:

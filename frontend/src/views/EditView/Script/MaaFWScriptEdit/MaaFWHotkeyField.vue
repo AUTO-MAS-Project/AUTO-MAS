@@ -1,13 +1,13 @@
 <template>
   <!-- interface 里没有对当前控制器 / 资源生效的 hotkey option 时整格不渲染 -->
-  <a-col v-if="options.length > 0" :span="span ?? 6">
+  <a-col v-if="options.length > 0" :xs="24" :md="12">
     <a-form-item>
       <template #label>
         <span class="form-label">{{ t('core.edit.mfwHotkey') }}</span>
       </template>
       <a-input-group compact class="path-input-group">
-        <a-input :value="summary" size="large" class="path-input" readonly />
-        <a-button size="large" class="path-button" @click="modalOpen = true">
+        <a-input :value="summary" class="path-input" readonly />
+        <a-button class="path-button" @click="modalOpen = true">
           <template #icon>
             <SettingOutlined />
           </template>
@@ -56,8 +56,6 @@ const props = defineProps<{
   resourceName: string
   /** 脚本配置 Game.Hotkeys（JSON 字符串） */
   value: string | undefined
-  /** 栅格宽度：由所在行决定，缺省四分之一行 */
-  span?: number
 }>()
 
 const emit = defineEmits<{

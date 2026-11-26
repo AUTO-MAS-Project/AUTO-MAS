@@ -4,8 +4,8 @@
       <span class="form-label">{{ t('core.edit.taskTimeLimitOverrides') }}</span>
     </template>
     <a-input-group compact class="path-input-group">
-      <a-input :value="summary" size="large" class="path-input" readonly />
-      <a-button size="large" class="path-button" :disabled="disabled" @click="modalOpen = true">
+      <a-input :value="summary" class="path-input" readonly />
+      <a-button class="path-button" :disabled="disabled" @click="modalOpen = true">
         <template #icon>
           <SettingOutlined />
         </template>

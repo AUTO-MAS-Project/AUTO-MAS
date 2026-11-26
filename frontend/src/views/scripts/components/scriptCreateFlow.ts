@@ -1,6 +1,6 @@
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import { MAAFW_FLAVORS, isMaaFWFamily, type MaaFWFlavorType } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, type MaaFWFamilyType } from '@/plugins/maafwFamily'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
@@ -9,8 +9,8 @@ export type ConfigMode = 'template' | 'custom'
 export type MfwSourceMode = 'new' | 'reuse'
 export type CreateStepKey = 'type' | 'config'
 
-/** 由 MaaFW 引擎运行的类型（各特调登记在特调注册表，类型最终由项目决定） */
-export type MfwFamilyType = MaaFWFlavorType
+/** 由 MaaFW 引擎运行的类型（看适配条目上的家族标记，类型最终由项目决定） */
+export type MfwFamilyType = MaaFWFamilyType
 export const isMfwFamily = (type: ScriptType): type is MfwFamilyType => isMaaFWFamily(type)
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
@@ -49,26 +49,12 @@ export type ScriptCreateRequest =
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: ShareTemplateItem }
 
-// MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 create.card.after 插回原位
-const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = (Object.keys(SCRIPT_METADATA) as ScriptType[])
+// 全部类型（含 MaaFW 家族）按各自 metadata.createOrder 排
+export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = (
+  Object.keys(SCRIPT_METADATA) as ScriptType[]
+)
   .sort((left, right) => SCRIPT_METADATA[left].createOrder - SCRIPT_METADATA[right].createOrder)
-  .filter(type => !isMaaFWFamily(type))
   .map(type => ({ value: type, ...SCRIPT_METADATA[type].create, icon: SCRIPT_METADATA[type].logo }))
-
-const withMaaFWFlavorOptions = (base: readonly ScriptTypeOption[]): ScriptTypeOption[] => {
-  const options = [...base]
-  for (const flavor of MAAFW_FLAVORS) {
-    const { after, ...card } = flavor.create.card
-    const option: ScriptTypeOption = { value: flavor.type, ...card, icon: flavor.logo }
-    const index = after ? options.findIndex(item => item.value === after) : -1
-    if (index >= 0) options.splice(index + 1, 0, option)
-    else options.push(option)
-  }
-  return options
-}
-
-export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] =
-  withMaaFWFlavorOptions(BASE_SCRIPT_TYPE_OPTIONS)
 
 /** 第二步列表里的一行「已导入的项目」：同一项目开了几个脚本只列一行，克隆源取其中一个 */
 export interface MfwReuseChoice {
@@ -173,4 +159,28 @@ export const buildCreateRequest = (state: CreateRequestState): ScriptCreateReque
     return { kind: 'general-custom' }
   }
   return state.template ? { kind: 'general-template', template: state.template } : null
+}
+
+/**
+ * 新建流程 `source`：MFW 家族第二步「项目从哪来」的选项（新建一个别的项目 / 复用已导入的项目）。
+ * 选中状态归对话框所有（返回再进来照样保留，列表变了选中的源失效时由对话框退回 'new'），
+ * 分节只负责显示与交回选择。
+ */
+export interface MaaFWCreateSourceSectionProps {
+  /** 选中的类型卡片：只列与它同类型的项目 */
+  type: MfwFamilyType
+  /** 可复用的项目（已按类型筛好、同一项目并成一行） */
+  choices: MfwReuseChoice[]
+  /** 候选列表正在读 */
+  loading: boolean
+  /** 候选列表没读出来的原因；有值就显示错误条 + 重试 */
+  error: string | null
+  /** 'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  value: string
+}
+
+export interface MaaFWCreateSourceSectionEmits {
+  'update:value': [value: string]
+  /** 点了错误条上的「重试」：对话框重新读候选列表 */
+  retry: []
 }

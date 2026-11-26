@@ -1,6 +1,7 @@
 """托管与账号共用的游戏目标；账号未选择时继承托管目标。"""
 
-from typing import Annotated, Literal
+from dataclasses import dataclass
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, ValidationInfo, field_validator
@@ -16,6 +17,13 @@ from app.config import (
     ui,
 )
 from app.config.fields.ref import RefDeleteAction
+
+
+@dataclass(frozen=True)
+class GameBindingCapabilities:
+    supported: bool = True
+    account_override_supported: bool = True
+    kinds: tuple[str, ...] = ()
 
 
 async def clear_deleted_target(entry, event):
@@ -67,6 +75,21 @@ class GameBinding(ConfigGroup):
 
 class GameBindingOwner(ConfigEntry):
     game: GameBinding = Field(default_factory=GameBinding, description="游戏与设备")
+
+    async def update(self, other: Self, *, check_visibility: bool = True) -> None:
+        if (
+            "game" in other.model_fields_set
+            and "game_id" in other.game.model_fields_set
+            and other.game.game_id == "-"
+            and self.game.unavailable_reason
+        ):
+            # 历史坏引用的目标已是「-」，复位时不会触发目标变化信号。
+            async with config_manager.transaction():
+                await super().update(other, check_visibility=check_visibility)
+                self.game.unavailable_reason = ""
+                await self.commit()
+            return
+        await super().update(other, check_visibility=check_visibility)
 
     @classmethod
     def __pydantic_init_subclass__(cls, **kwargs):

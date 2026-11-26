@@ -43,22 +43,21 @@ yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn in
 
 ### 1. 完整桌面端（Electron + Runtime，推荐）
 
-源码 Electron 默认通过 Runtime 的 `development` 模式监督当前检出（安装版默认使用 `managed` 模式，开发排障可用 `AUTO_MAS_RUNTIME_MODE` 覆盖）。Runtime 不会自动创建或同步 `.venv`，需先在仓库根目录准备 Python 环境：
+源码 Electron 默认通过 Runtime 的 `development` 模式监督当前检出，端口默认 `36164`（与正式安装版 `36163` 隔离，可同时运行）。Runtime 不会自动创建或同步 `.venv`，需先在仓库根目录准备 Python 环境：
 
 ```powershell
 # 仓库根目录
 uv sync --locked --group dev
 
-# 进入 frontend/ 启动桌面端
+# 进入 frontend/ 启动桌面端（Windows 首次会自动下载并校验缓存 Runtime）
 Set-Location frontend
-$env:AUTO_MAS_RUNTIME_EXE = '<path/to/auto-mas-runtime.exe>'
 yarn dev
 ```
 
-- Runtime 可使用官方发行版，或按 [本地打包说明](../scripts/README.md) 本地构建；缺失 Runtime 时会显示启动失败。
-- `yarn dev`（与 `yarn dev:fullstack` 相同）使用 Rolldown 编译主进程并并行启动 Vite 与 Electron，后台持续运行 Electron 类型检查。
+- 如需使用本地编译的 Runtime，再显式设置 `$env:AUTO_MAS_RUNTIME_EXE = '<path/to/auto-mas-runtime.exe>'` 覆盖默认缓存。
+- `yarn dev`（与 `yarn dev:fullstack` 相同）会自动屏蔽宿主 IDE 可能注入的 `ELECTRON_RUN_AS_NODE`，使用 Rolldown 编译主进程并并行启动 Vite 与 Electron，后台持续运行 Electron 类型检查。
 - 渲染层支持 Vite HMR；修改 Electron 主进程代码后需重启 Electron 生效。
-- 默认通过 `AUTO_MAS_HTTP_PORT` 指定端口（1024–65535）；退出 Electron 时会经 Runtime 一并关闭后端进程树。
+- 默认通过 `AUTO_MAS_HTTP_PORT` 指定端口（1024–65535，默认 `36164`）；退出 Electron 时会经 Runtime 一并关闭后端进程树。如需多 worktree 并行预览，因 `yarn dev` 固定监听 Vite `5173`，请对第二个 worktree 使用 `yarn backend` + `yarn web -- --port <其他端口>`。
 
 ### 2. 独立后端 + 浏览器预览（无需 Runtime）
 

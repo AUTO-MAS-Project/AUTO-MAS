@@ -362,6 +362,21 @@ class ConfigSnapshotOut(OutBase):
     uiSources: list[UUID] = Field(default_factory=list)
 
 
+class UnavailableConfigItem(BaseModel):
+    """所属插件不可用、原样保留着的托管或计划表（不在 index / data 里）。"""
+
+    uid: str = Field(..., description="唯一标识符")
+    type: str = Field(..., description="盘上记录的配置类型名")
+    typeLabel: str = Field(..., description="类型显示名，不认识的类型即类型名")
+    name: str = Field(default="", description="名称，取不到时为空")
+    plugin: Optional[str] = Field(default=None, description="所属插件名，不认识时为空")
+    reason: Literal["plugin_unavailable", "load_failed"] = Field(
+        ...,
+        description="plugin_unavailable：所属插件没装上或没启用；load_failed：插件在但解析不了",
+    )
+    detail: str = Field(default="", description="load_failed 时的错误摘要")
+
+
 class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 

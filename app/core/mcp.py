@@ -58,8 +58,6 @@ MCP_INCLUDED_OPERATIONS = (
     "get_user_api_scripts_user_get_post",
     "update_user_api_scripts_user_update_post",
     "import_script_config_file_api_scripts_config_import_post",
-    "get_maafw_embedded_status_api_scripts_maafw_embedded_status_post",
-    "reimport_maafw_embedded_api_scripts_maafw_embedded_reimport_post",
     "get_maaend_options_api_scripts_maaend_options_post",
     "get_plan_combox_api_info_combox_plan_post",
     "game_types_api_games_types_post",
@@ -86,11 +84,6 @@ MCP_INCLUDED_OPERATIONS = (
     # 只读历史记录与编号详情，用于核对已结束的运行。
     "search_history_api_history_search_post",
     "get_history_detail_api_history_detail_post",
-    # MFW / M9A / MSS 项目与外壳配置
-    "preview_maafw_interface_api_scripts_maafw_preview_post",
-    "list_maafw_shell_instances_api_scripts_maafw_shell_instances_post",
-    "import_maafw_shell_instances_api_scripts_maafw_shell_instances_import_post",
-    "resolve_maafw_game_package_api_scripts_maafw_game_package_post",
     # HSR 引擎能力、托管配置和动态选项
     "get_hsr_capabilities_api_api_scripts_hsr_capabilities_get",
     "get_hsr_managed_config_api_api_scripts_hsr_managed_config_get",

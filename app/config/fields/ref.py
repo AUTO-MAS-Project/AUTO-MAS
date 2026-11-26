@@ -101,7 +101,13 @@ class RefField:
             return self.default
         col = config_manager.get_collection(self.target)  # 未登记 → LookupError
         entry = col.get(uid)
-        if entry is None or not self.accepts(entry):
+        if entry is None:
+            # 目标所属插件不可用、原样留在旁挂区：引用保留，等插件恢复后照旧生效。
+            is_unresolved = getattr(col, "is_unresolved", None)
+            if is_unresolved is not None and is_unresolved(uid):
+                return uid
+            return self.default
+        if not self.accepts(entry):
             return self.default
         return uid
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import OkwwConfig
-from app.models.script_contracts import ScriptConfigHandler
+from app.models.script_contracts import ScriptConfigHandler, game_management_enabled
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -41,6 +41,7 @@ def build_config_handler() -> ScriptConfigHandler:
 
     return ScriptConfigHandler(
         user_config_class=OkwwUserConfig,
+        supports_game_binding=game_management_enabled,
         initialize_user=initialize_okww_user,
         import_config=import_okww_config,
     )

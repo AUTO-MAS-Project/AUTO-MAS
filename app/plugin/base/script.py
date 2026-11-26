@@ -47,7 +47,14 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
+    # 按托管当前配置和保存补丁收窄 game_kinds：返回 "emulator" / "client"；
+    # 返回 None、插件不可用或抛异常时按 game_kinds。同步调用，经插件调用门。
+    game_kind: Callable[[ScriptEntry, dict[str, Any]], str | None] | None = None
+    # 这个托管能否在桌面分身里跑；未声明、插件不可用或抛异常时为不支持。
     desktop_session: Callable[[ScriptEntry], bool] | None = None
+    # None 沿用旧插件的绑定能力，game_kinds 为空时不限制目标类型。
+    supports_game_binding: bool | None = None
+    supports_account_game_override: bool = True
     # 维护入口复用调度任务的锁、进程归属和停止确认。
     maintenance_expander: type[UserExpander] | None = None
     restore_pools: tuple[ConfigRestorePool, ...] = ()
@@ -86,6 +93,35 @@ class ScriptAdapterPlugin(_AdapterPlugin):
             raise ValueError("expect_builder 须为可调用或 None")
         self._validate_decl()
 
+    # ── 托管生命周期钩子 ──
+    # 默认什么都不做；宿主只在子类覆盖了某一项时才接上它（见 SCRIPT_LIFECYCLE_HOOKS）。
+    # 全部经本插件的调用门执行，插件停用中调用得到 PluginBusyError；
+    # 抛出的其他异常原样传给发起操作的接口。
+
+    async def on_script_cloned(self, source: ScriptEntry, target: ScriptEntry) -> None:
+        """复制托管：新托管的配置已提交，宿主复制 ``data/<来源 uid>`` 之前调用。"""
+
+    async def on_script_removed(self, script_id: str) -> None:
+        """删除托管：配置删除已提交、宿主已删 ``data/<uid>`` 之后调用。"""
+
+    async def prepare_user_read(
+        self, script: ScriptEntry, user_ids: list[str] | None
+    ) -> None:
+        """读取账号配置前调用；``user_ids`` 为 ``None`` 表示读取整个托管的账号。"""
+
+    async def on_user_added(self, script: ScriptEntry, user: UserEntry) -> None:
+        """新账号已提交后调用；失败时账号保留，不撤回。"""
+
+    async def prepare_user_update(
+        self, script: ScriptEntry, user: UserEntry, data: dict[str, Any]
+    ) -> Callable[[], None] | None:
+        """保存账号前原地修改 ``data``（例如加密、补字段）。
+
+        在配置执行门之外调用，可以等待；返回的同步守卫在执行门内、写入前执行，
+        守卫抛出异常时本次不写入。
+        """
+        return None
+
     def _validate_decl(self) -> None:
         """校验脚本/用户预声明字段；有计划类型时要求 user.info 含 plan_id。"""
         fields = getattr(self.script_type, "model_fields", {})
@@ -116,3 +152,13 @@ class ScriptAdapterPlugin(_AdapterPlugin):
                 )
             if "plan_id" not in info_fields:
                 raise ValueError("声明了 plan_type 时，user_type.info 须含 plan_id")
+
+
+# 宿主按名字检查子类是否覆盖，只接覆盖了的钩子。
+SCRIPT_LIFECYCLE_HOOKS: tuple[str, ...] = (
+    "on_script_cloned",
+    "on_script_removed",
+    "prepare_user_read",
+    "on_user_added",
+    "prepare_user_update",
+)

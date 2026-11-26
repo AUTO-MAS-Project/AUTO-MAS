@@ -21,7 +21,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from app.models.config import ZzzOdConfig
-from app.models.script_contracts import ScriptConfigHandler
+from app.models.script_contracts import ScriptConfigHandler, game_management_enabled
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -45,6 +45,7 @@ def build_config_handler(*, zzzod: ZzzOdRecovery) -> ScriptConfigHandler:
 
     return ScriptConfigHandler(
         user_config_class=ZzzOdUserConfig,
+        supports_game_binding=game_management_enabled,
         prepare_script_removal=zzzod.prepare_script_removal,
         prepare_user_update=prepare_zzzod_user_update,
         prepare_user_removal=zzzod.prepare_user_removal,

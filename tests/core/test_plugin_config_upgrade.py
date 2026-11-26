@@ -12,6 +12,7 @@ from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
     backup_legacy_adapter_users,
+    backup_legacy_maafw_documents,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -26,6 +27,10 @@ from app.utils import io as config_io
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
         ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
+        ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
+        ("MSSConfig", "mss_adapter", "auto-mas-mss-adapter"),
+        ("MSSPlanConfig", "mss_adapter", "auto-mas-mss-adapter"),
     ],
 )
 def test_upgrade_detects_only_collection_types(
@@ -39,20 +44,49 @@ def test_upgrade_detects_only_collection_types(
     assert required_adapter_plugins(tmp_path) == {}
 
 
-def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
+@pytest.mark.parametrize(
+    ("adapter", "config_type"), [("src", "SrcConfig"), ("bettergi", "BetterGIConfig")]
+)
+def test_adapter_backup_preserves_original_even_without_indexed_body(
+    tmp_path, adapter, config_type
+):
     path = tmp_path / "scripts.yaml"
     sid = str(uuid4())
     config_io.write_file(
-        path, {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {}}
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {}}
     )
     original = path.read_bytes()
-    backup_legacy_adapter_users(tmp_path, "src", "SrcConfig")
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
     config_io.write_file(
         path,
-        {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {sid: {"users": {}}}},
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
     )
-    backup_legacy_adapter_users(tmp_path, "src", "SrcConfig")
-    assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
+    assert (tmp_path / f"legacy-{adapter}-plugin" / path.name).read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("filename", "config_type"),
+    [("scripts.yaml", "M9AConfig"), ("plans.yaml", "MSSPlanConfig")],
+)
+def test_maafw_backup_preserves_first_original(tmp_path, filename, config_type):
+    """MFW 一族首次接手前按字节备份，重试不覆盖；别的类型不备份。"""
+    path = tmp_path / filename
+    sid = str(uuid4())
+    config_io.write_file(path, {"order": [{"uid": sid, "type": "OkwwConfig"}]})
+    backup_legacy_maafw_documents(tmp_path)
+    assert not (tmp_path / "legacy-maafw-plugin").exists()
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {sid: {}}}
+    )
+    original = path.read_bytes()
+    backup_legacy_maafw_documents(tmp_path)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_maafw_documents(tmp_path)
+    assert (tmp_path / "legacy-maafw-plugin" / filename).read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])
@@ -192,6 +226,7 @@ if fresh:
 
 script_file = Config.config_path / ("ScriptConfig.json" if fresh and legacy else "scripts.yaml")
 original = script_file.read_bytes()
+original_document = io.read_dict_file(script_file)
 installed_marker = Path.cwd() / "adapter-installed"
 visible = installed_marker.exists()
 installed_before = visible
@@ -199,7 +234,7 @@ with sqlite3.connect(Config.database_path) as db:
     pending = db.execute("SELECT v FROM version").fetchone()[0] != "v2.2"
 installs = []
 
-async def install(spec, *, plugin_name, meta_id, dry_run=False):
+async def install(spec, *, plugin_name, meta_id, dry_run=False, minimum=None):
     global visible
     assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)
@@ -235,6 +270,16 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
+            if failure == "install" and current:
+                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
+                await Config.check_data(prepare_plugins=prepare)
+                assert Config.ScriptConfig.is_unresolved(sid)
+                assert Config.PlanConfig.is_unresolved(pid)
+                assert not Config.managed_configs_loaded()
+                assert io.read_dict_file(script_file) == original_document
+                with sqlite3.connect(Config.database_path) as db:
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
+                return
             try:
                 await Config.check_data(prepare_plugins=prepare)
             except OSError as exc:

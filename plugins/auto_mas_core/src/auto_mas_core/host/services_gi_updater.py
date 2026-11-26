@@ -5,8 +5,11 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.services.common.gi_updater import *  # noqa: F403 - SDK 整包静态再导出，复用宿主自身的公开符号声明。
+    from app.services.common.gi_updater import genshin as genshin
 else:
 
     def __getattr__(name: str) -> Any:
         """按需从宿主 app.services.common.gi_updater 取得同名能力，使插件通过 SDK 入口复用宿主实现。"""
+        if name == "genshin":
+            return import_module("app.services.common.gi_updater.genshin")
         return getattr(import_module("app.services.common.gi_updater"), name)

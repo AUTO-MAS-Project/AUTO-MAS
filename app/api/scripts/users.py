@@ -64,28 +64,10 @@ HSRUserConfig = ConfigPayload[_config_models.HSRUserConfig]
 HSRUserConfigInput = ConfigInput[_config_models.HSRUserConfig]
 
 
-M9AUserConfig = ConfigPayload[_config_models.M9AUserConfig]
-
-
-M9AUserConfigInput = ConfigInput[_config_models.M9AUserConfig]
-
-
-MSSUserConfig = ConfigPayload[_config_models.MSSUserConfig]
-
-
-MSSUserConfigInput = ConfigInput[_config_models.MSSUserConfig]
-
-
 MaaEndUserConfig = ConfigPayload[_config_models.MaaEndUserConfig]
 
 
 MaaEndUserConfigInput = ConfigInput[_config_models.MaaEndUserConfig]
-
-
-MaaFWUserConfig = ConfigPayload[_config_models.MaaFWUserConfig]
-
-
-MaaFWUserConfigInput = ConfigInput[_config_models.MaaFWUserConfig]
 
 
 OkNteUserConfig = ConfigPayload[_config_models.OkNteUserConfig]
@@ -115,12 +97,9 @@ class UserIndexItem(BaseModel):
                 "OkwwUserConfig",
                 "OkNteUserConfig",
                 "MaaEndUserConfig",
-                "M9AUserConfig",
-                "MaaFWUserConfig",
                 "HSRUserConfig",
                 "ZzzOdUserConfig",
                 "BAAHUserConfig",
-                "MSSUserConfig",
             ]
         },
         default=...,
@@ -152,12 +131,9 @@ class UserGetOut(ConfigSnapshotOut):
             OkwwUserConfig,
             OkNteUserConfig,
             MaaEndUserConfig,
-            M9AUserConfig,
-            MaaFWUserConfig,
             HSRUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
-            MSSUserConfig,
         ],
     ] = Field(..., description="账号数据字典, key来自于index列表的uid")
 
@@ -170,12 +146,9 @@ class UserCreateOut(OutBase):
         OkwwUserConfig,
         OkNteUserConfig,
         MaaEndUserConfig,
-        M9AUserConfig,
-        MaaFWUserConfig,
         HSRUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
-        MSSUserConfig,
     ] = Field(..., description="账号配置数据")
 
 
@@ -187,12 +160,9 @@ class UserUpdateIn(UserInBase):
         OkwwUserConfigInput,
         OkNteUserConfigInput,
         MaaEndUserConfigInput,
-        M9AUserConfigInput,
-        MaaFWUserConfigInput,
         HSRUserConfigInput,
         ZzzOdUserConfigInput,
         BAAHUserConfigInput,
-        MSSUserConfigInput,
     ] = Field(..., description="账号更新数据")
 
     @model_validator(mode="before")

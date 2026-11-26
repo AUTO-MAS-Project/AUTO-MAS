@@ -7,6 +7,7 @@ import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
+import { SectionCard } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { getConfig, saveConfig } from '@/utils/config'
@@ -26,20 +27,18 @@ import {
 
 const { t } = useI18n()
 
-const {
-  config,
-  disabled = false,
-  onFieldChange = undefined,
-  onRefreshConfig = undefined,
-} = defineProps<{
-  config: ToolsConfig_GameSign
-  disabled?: boolean
-  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
-    key: K,
-    value: ToolsConfig_GameSign[K]
-  ) => void | Promise<void>
-  onRefreshConfig?: () => Promise<void>
-}>()
+const props = withDefaults(
+  defineProps<{
+    config: ToolsConfig_GameSign
+    disabled?: boolean
+    onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+      key: K,
+      value: ToolsConfig_GameSign[K]
+    ) => void | Promise<void>
+    onRefreshConfig?: () => Promise<void>
+  }>(),
+  { disabled: false, onFieldChange: undefined, onRefreshConfig: undefined }
+)
 
 const logger = window.electronAPI.getLogger('游戏社区')
 const signLoading = ref(false)
@@ -246,7 +245,7 @@ const handleEditModalOk = async () => {
 // ==================== 签到结果解析（按用户绑定） ====================
 // 解析与聚合逻辑都在 gameSignDisplay.ts，这里只负责接上响应式
 
-const signResult = computed(() => parseSignResult(config.Result))
+const signResult = computed(() => parseSignResult(props.config.Result))
 
 // 预计算每个用户的社区标签，signResult 或 accounts 变化时自动重算
 const userTagsMap = computed(() => buildUserTagsMap(accounts.value, signResult.value))
@@ -272,17 +271,17 @@ const handleChange = async <K extends keyof ToolsConfig_GameSign>(
   key: K,
   value: ToolsConfig_GameSign[K]
 ) => {
-  if (!onFieldChange) return
+  if (!props.onFieldChange) return
 
   try {
-    await onFieldChange(key, value)
+    await props.onFieldChange(key, value)
   } catch {
     // updateTools 已显示错误，父组件负责回滚配置
   }
 }
 
 const handleNotifyEnabledChange = async (value: boolean) => {
-  if (!onFieldChange) return
+  if (!props.onFieldChange) return
 
   notifySaving.value = true
   try {
@@ -352,7 +351,7 @@ const handleManualSign = async () => {
       message.success(response.message || t('core.gamesign.toast.signDone'))
     }
     // 立即刷新签到结果（不等父组件轮询）
-    if (onRefreshConfig) await onRefreshConfig()
+    if (props.onRefreshConfig) await props.onRefreshConfig()
     await loadAccounts()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -374,24 +373,21 @@ onMounted(() => {
 <template>
   <div class="tab-content">
     <!-- 全局设置区 -->
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.gamesign.section.settings') }}</h3>
-        <div class="section-header-actions">
-          <DocLink :url="MAS_DOC_URLS.gameSign" />
-          <a-button
-            type="primary"
-            size="small"
-            class="section-update-button primary-style"
-            :loading="signLoading"
-            :disabled="disabled || !config.Enabled"
-            @click="handleManualSign"
-          >
-            <template #icon><SwapOutlined /></template>
-            {{ t('core.gamesign.section.signAll') }}
-          </a-button>
-        </div>
-      </div>
+    <SectionCard variant="plain" :title="t('core.gamesign.section.settings')">
+      <template #actions>
+        <DocLink :url="MAS_DOC_URLS.gameSign" />
+        <a-button
+          type="primary"
+          size="small"
+          class="section-update-button primary-style"
+          :loading="signLoading"
+          :disabled="disabled || !config.Enabled"
+          @click="handleManualSign"
+        >
+          <template #icon><SwapOutlined /></template>
+          {{ t('core.gamesign.section.signAll') }}
+        </a-button>
+      </template>
       <a-alert class="game-sign-notice" type="info" show-icon>
         <template #message>{{ t('core.gamesign.section.noticeTitle') }}</template>
         <template #description>
@@ -471,12 +467,11 @@ onMounted(() => {
           }}</span>
         </div>
       </div>
-    </div>
+    </SectionCard>
 
     <!-- 用户列表 -->
-    <div class="form-section">
-      <div class="section-header">
-        <h3>{{ t('core.gamesign.list.title') }}</h3>
+    <SectionCard variant="plain" :title="t('core.gamesign.list.title')">
+      <template #actions>
         <a-button
           type="primary"
           ghost
@@ -488,7 +483,7 @@ onMounted(() => {
           <template #icon><PlusOutlined /></template>
           {{ t('core.gamesign.list.add') }}
         </a-button>
-      </div>
+      </template>
 
       <div class="user-table-container">
         <!-- 表头 -->
@@ -623,7 +618,7 @@ onMounted(() => {
           </template>
         </NoData>
       </div>
-    </div>
+    </SectionCard>
 
     <!-- 编辑 Token 模态框 -->
     <a-modal
@@ -694,13 +689,8 @@ onMounted(() => {
 <style scoped>
 /* 布尔设置统一使用 Ant Design 开关，避免同类值出现不同交互。 */
 
-.section-header-actions {
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-
 /* 复用新版通知页的页眉操作按钮规格，保持文档入口和主操作高度一致。 */
-.section-header-actions .section-update-button {
+.section-update-button {
   height: 32px;
   padding: 4px 8px;
   font-size: 14px;
@@ -712,7 +702,7 @@ onMounted(() => {
   gap: 4px;
 }
 
-.section-header-actions .section-update-button.primary-style {
+.section-update-button.primary-style {
   background: var(--ant-color-primary);
   border: 1px solid var(--ant-color-primary);
   color: #fff;
@@ -722,12 +712,12 @@ onMounted(() => {
     box-shadow 0.16s ease;
 }
 
-.section-header-actions .section-update-button.primary-style:hover:not(:disabled) {
+.section-update-button.primary-style:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(22, 119, 255, 0.22);
 }
 
-.section-header-actions .section-update-button.primary-style:disabled {
+.section-update-button.primary-style:disabled {
   transform: none;
   box-shadow: none;
 }
@@ -1140,11 +1130,6 @@ onMounted(() => {
 }
 
 @media (max-width: 860px) {
-  .section-header-actions {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
   .setting-row {
     align-items: flex-start;
     padding: 12px 16px;

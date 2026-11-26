@@ -182,7 +182,7 @@ def protect(data: bytearray, *, decrypt: bool = False) -> bytes | bytearray:
             )
 
 
-def load(path: Path, account: str) -> Credential:
+def load(path: Path, account: str) -> Credential | None:
     try:
         with path.open("rb") as stream:
             payload = json.loads(stream.read(65537))
@@ -195,13 +195,10 @@ def load(path: Path, account: str) -> Credential:
             return Credential(account, clear.decode("utf-8"))
         finally:
             clear[:] = b"\0" * len(clear)
-    except (OSError, KeyError, TypeError, ValueError) as exc:
-        code = (
-            "password_required"
-            if isinstance(exc, FileNotFoundError)
-            else "credential_unreadable"
-        )
-        raise CredentialError(code) from None
+    except (FileNotFoundError, KeyError):
+        return None
+    except (OSError, TypeError, ValueError):
+        raise CredentialError("credential_unreadable") from None
 
 
 def encode(credential: Credential) -> str:

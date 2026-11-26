@@ -34,6 +34,20 @@ describe('插件设置编辑稿', () => {
     expect(draft.dirtyCount.value).toBe(0)
   })
 
+  it('批量保存失败保留草稿，修正一个字段仅清除该字段的提示', () => {
+    const draft = usePluginSettingsDraft()
+    draft.reset({ group: { a: 1, b: 2, c: 3 } }, { keepDraft: false })
+    draft.update('group', 'a', 10)
+    draft.update('group', 'b', 20)
+    draft.saveFailed('failed')
+    expect(draft.errors.value).toEqual({ 'group.a': 'failed', 'group.b': 'failed' })
+    expect(draft.values.group).toEqual({ a: 10, b: 20, c: 3 })
+    draft.update('group', 'a', 11)
+    expect(draft.errors.value).toEqual({ 'group.b': 'failed' })
+    draft.discard()
+    expect(draft.errors.value).toEqual({})
+  })
+
   it('保存成功后基线即为提交的值，重读没成功也不算未保存；保存期间的新改动仍算未保存', () => {
     const draft = usePluginSettingsDraft()
     draft.reset({ general: { a: 1, b: 'x' } }, { keepDraft: false })

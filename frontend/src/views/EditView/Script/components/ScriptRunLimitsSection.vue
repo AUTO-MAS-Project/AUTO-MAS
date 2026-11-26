@@ -5,15 +5,20 @@ import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import ScriptRunLimitField from './ScriptRunLimitField.vue'
 
 defineProps<{
+  hideExecutionSession?: boolean
+  hideDaily?: boolean
+  columnSpan?: number
+  dailyLabel?: string
   dailyHint?: string
   retryLabel?: string
   retryHint: string
+  timeoutLabel?: string
   timeoutHint: string
   enhanced?: boolean
 }>()
 
 const hardTimeLimit = defineModel<number>('hardTimeLimit', { required: true })
-const dailyLimit = defineModel<number>('dailyLimit', { required: true })
+const dailyLimit = defineModel<number>('dailyLimit')
 const retryLimit = defineModel<number>('retryLimit', { required: true })
 const timeout = defineModel<number>('timeout', { required: true })
 // 失焦归一化先同步到页面草稿；保存时由页面读取，避免消费尚未回刷的子组件值。
@@ -24,20 +29,27 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <ScriptExecutionSessionField />
-  <ScriptHardTimeoutField v-model:value="hardTimeLimit" @save="emit('save', 'HardTimeLimit')" />
+  <ScriptExecutionSessionField v-if="!hideExecutionSession" />
   <a-row :gutter="24">
-    <a-col :span="8">
+    <slot name="before-limits" />
+    <a-col :xs="24" :md="columnSpan ?? 12">
+      <ScriptHardTimeoutField
+        v-model:value="hardTimeLimit"
+        full-width
+        @save="emit('save', 'HardTimeLimit')"
+      />
+    </a-col>
+    <a-col v-if="!hideDaily" :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="dailyLimit"
         kind="daily"
-        :label="t('core.edit.runsPerDay')"
+        :label="dailyLabel ?? t('core.edit.runsPerDay')"
         :hint="dailyHint ?? t('core.edit.k0MeansNoLimit')"
         :enhanced="enhanced"
         @save="emit('save', 'ProxyTimesLimit')"
       />
     </a-col>
-    <a-col :span="8">
+    <a-col :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="retryLimit"
         kind="retry"
@@ -47,15 +59,16 @@ const { t } = useI18n()
         @save="emit('save', 'RunTimesLimit')"
       />
     </a-col>
-    <a-col :span="8">
+    <a-col :xs="24" :md="columnSpan ?? 12">
       <ScriptRunLimitField
         v-model="timeout"
         kind="timeout"
-        :label="t('core.edit.runTimeoutMinutes')"
+        :label="timeoutLabel ?? t('core.edit.runTimeoutMinutes')"
         :hint="timeoutHint"
         :enhanced="enhanced"
         @save="emit('save', 'RunTimeLimit')"
       />
     </a-col>
+    <slot />
   </a-row>
 </template>

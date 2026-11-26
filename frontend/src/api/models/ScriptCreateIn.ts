@@ -21,16 +21,16 @@ export namespace ScriptCreateIn {
         OKWW = 'Okww',
         OK_NTE = 'OkNte',
         MAA_END = 'MaaEnd',
-        M9A = 'M9A',
-        MAA_FW = 'MaaFW',
         HSR = 'HSR',
         ZZZ_OD = 'ZzzOd',
         BAAH = 'BAAH',
-        MSS = 'MSS',
-        MAA = 'MAA',
-        WHIMBOX = 'Whimbox',
-        SRC = 'SRC',
         BETTER_GI = 'BetterGI',
+        M9A = 'M9A',
+        MAA = 'MAA',
+        MAA_FW = 'MaaFW',
+        MSS = 'MSS',
+        SRC = 'SRC',
+        WHIMBOX = 'Whimbox',
     }
 }
 

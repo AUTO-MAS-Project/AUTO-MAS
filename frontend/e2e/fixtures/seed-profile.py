@@ -19,12 +19,12 @@ def bind_script_handlers() -> None:
     """有托管的隔离副本和后端启动使用相同的专项初始化入口。"""
     from app.task.builtin_registration import build_builtin_script_capabilities
     from app.task.MaaEnd.api_service import MaaEndConfigService
-    from app.task.MaaFW.tools.embedded.game_resolution import (
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
+    from app.utils.common.game_resolution import (
         read_unity_display_type,
         read_unity_resolution,
     )
-    from app.task.ZzzOd.config_context import ZzzOdContext
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     capabilities = build_builtin_script_capabilities(
         maaend=MaaEndConfigService(

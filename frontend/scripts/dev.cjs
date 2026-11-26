@@ -62,7 +62,21 @@ async function ensureDevelopmentRuntime(
   console.log(`[dev] Runtime ${version} 已准备完成`)
 }
 
-if (typeof module !== 'undefined') module.exports = { ensureDevelopmentRuntime }
+function buildDesktopEnvironment(baseEnv = process.env, preloadFile = __filename) {
+  const env = { ...baseEnv }
+  // VS Code / Cursor / Antigravity 等宿主 IDE 可能向子终端注入 ELECTRON_RUN_AS_NODE=1
+  // （Windows 下环境变量名不区分大小写，复制为普通 JS 对象后须按小写匹配删除），
+  // 否则 Electron 会以纯 Node 模式启动并使 require('electron').app 为 undefined。
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() === 'electron_run_as_node') delete env[key]
+  }
+  env.VITE_DEV_SERVER_URL = DEV_SERVER_URL
+  env.NODE_OPTIONS = `${baseEnv.NODE_OPTIONS ?? ''} --require "${preloadFile.replaceAll('\\', '/')}"`
+  return env
+}
+
+if (typeof module !== 'undefined')
+  module.exports = { ensureDevelopmentRuntime, buildDesktopEnvironment }
 
 if (process.versions.electron && process.type === 'browser') {
   let electron
@@ -246,11 +260,7 @@ if (process.versions.electron && process.type === 'browser') {
           // Windows 下隐藏 Electron 进程会让主窗口首次 show() 失效。
           windowsHide: false,
           stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-          env: {
-            ...process.env,
-            VITE_DEV_SERVER_URL: DEV_SERVER_URL,
-            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --require "${__filename.replaceAll('\\', '/')}"`,
-          },
+          env: buildDesktopEnvironment(process.env, __filename),
         }
       )
       desktop = child

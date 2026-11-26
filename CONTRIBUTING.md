@@ -9,20 +9,26 @@
    git switch --no-track -c feat/<你的功能名> origin/dev
    ```
 
-2. **安装锁定依赖并启动**（需已安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 与 Node 24 / Yarn 4）：
+2. **安装锁定依赖并启动**（需已安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 与 Node 24 / Yarn 4；开发端默认使用 `36164` 端口，与正式安装版 `36163` 隔离、可同时运行）：
 
    ```powershell
    # 仓库根目录：准备后端环境
    uv sync --locked --group dev
-   uv run --no-sync python main.py
 
-   # 另一终端（frontend/ 目录）：准备并预览前端
+   # frontend/ 目录：安装前端依赖
    Set-Location frontend
    yarn install --immutable
-   yarn web
    ```
 
-   > `requirements.txt` 与 `pyproject.toml` 并存，改依赖时同步更新两者并执行 `uv lock` 提交 `uv.lock`。桌面端完整调试见 [frontend/README.md](frontend/README.md)。
+   按开发习惯任选一种官方启动方式：
+
+   | 模式 | 启动命令 | 适用场景 |
+   | --- | --- | --- |
+   | **桌面全栈（推荐）** | `cd frontend && yarn dev` | 日常联调与前端开发；Windows 自动缓存 Runtime 并在关闭窗口时回收后端进程树 |
+   | **分离调试（后端断点）** | 根目录 `uv run --no-sync python main.py`（或 IDE 调试器）+ `cd frontend && yarn dev:frontend` | 给 Python 后端打断点或频繁重启后端 |
+   | **轻量浏览器 / 非 Windows** | `cd frontend && yarn backend` + `cd frontend && yarn web` | 纯网页预览或非 Windows 系统 |
+
+   > 遇到端口冲突、残留开发后端或需要生成可选的 `.vscode/launch.json` 模板时，可在仓库根目录运行 `uv run --no-sync python scripts/dev_doctor.py`（详见 [scripts/README.md](scripts/README.md)）。`requirements.txt` 与 `pyproject.toml` 并存，改依赖时同步更新两者并执行 `uv lock` 提交 `uv.lock`。桌面端完整调试见 [frontend/README.md](frontend/README.md)。
 
 3. **参考代码样例**：
 

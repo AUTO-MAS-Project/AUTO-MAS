@@ -1,250 +1,205 @@
 <template>
-  <ScriptEditHeader script-type="OkNte" :title="t('core.edit.editScript')" @cancel="handleCancel" />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="OkNte"
+        :title="t('core.edit.editScript')"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card
-      :title="t('core.edit.okNteScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
-      <template #extra>
-        <a-tag color="blue" class="type-tag">OK-NTE</a-tag>
-      </template>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content" game-binding="none">
+      <GameBindingSection :script-id="scriptId" variant="card" />
+      <a-spin :spinning="pageLoading">
+        <a-form
+          :aria-label="t('core.edit.okNteScriptConfiguration')"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
+            <a-row :gutter="24">
+              <a-col :xs="24" :md="12">
+                <a-form-item name="name">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.scriptName')"
+                      :hint="t('core.edit.tellsOkNteScript')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="formData.name"
+                    :placeholder="t('core.edit.enterScriptName')"
+                    @blur="handleChange('Info', 'Name', formData.name)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item name="path" :rules="rules.path">
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.okNtePath')"
+                      :hint="t('core.edit.pickDirectoryHoldingOk3')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="formData.path"
+                    mode="folder"
+                    :placeholder="t('core.edit.pickDirectoryHoldingOk')"
+                    :pick-label="t('core.edit.pickDirectory')"
+                    @pick="selectRootPath"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
 
-      <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-          </div>
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="name">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.scriptName')"
-                    :hint="t('core.edit.tellsOkNteScript')"
-                    variant="form"
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.gameConfiguration')"
+            :icon="ControlOutlined"
+          >
+            <a-row :gutter="24">
+              <a-col :xs="24" :md="12">
+                <a-form-item :label="t('core.edit.launchType')">
+                  <a-radio-group
+                    v-model:value="oknteConfig.Game.LaunchMode"
+                    size="small"
+                    button-style="solid"
+                    :disabled="launchModeDisabled"
+                    @change="handleLaunchModeChange"
+                  >
+                    <a-radio-button value="Autoplay">
+                      {{ t('core.edit.oknteLaunchDirectly') }}
+                    </a-radio-button>
+                    <a-radio-button value="LauncherUi">
+                      {{ t('core.edit.oknteLaunchViaLauncher') }}
+                    </a-radio-button>
+                  </a-radio-group>
+                  <span v-if="showLaunchModeHint" class="control-hint">
+                    {{ t('core.edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
+                  </span>
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item :label="t('core.edit.gamePath')">
+                  <BoundGamePathField />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.launchArguments')"
+                      :hint="t('core.edit.gameLaunchArgumentsNot')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="oknteConfig.Game.Arguments"
+                    :placeholder="t('core.edit.enterGameLaunchArguments')"
+                    :disabled="!oknteConfig.Game.Enabled"
+                    @blur="handleChange('Game', 'Arguments', oknteConfig.Game.Arguments)"
                   />
-                </template>
-                <a-input
-                  v-model:value="formData.name"
-                  :placeholder="t('core.edit.enterScriptName')"
-                  size="large"
-                  class="modern-input"
-                  @blur="handleChange('Info', 'Name', formData.name)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="16">
-              <a-form-item name="path" :rules="rules.path">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.okNtePath')"
-                    :hint="t('core.edit.pickDirectoryHoldingOk3')"
-                    variant="form"
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.startupWait')"
+                      :hint="t('core.edit.howLongWaitAfter')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input-number
+                    v-model:value="oknteConfig.Game.WaitTime"
+                    :min="0"
+                    :max="9999"
+                    style="width: 100%"
+                    :disabled="!oknteConfig.Game.Enabled"
+                    @blur="handleChange('Game', 'WaitTime', oknteConfig.Game.WaitTime)"
                   />
-                </template>
-                <PathPickerField
-                  v-model="formData.path"
-                  mode="folder"
-                  :placeholder="t('core.edit.pickDirectoryHoldingOk')"
-                  :pick-label="t('core.edit.pickDirectory')"
-                  @pick="selectRootPath"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </div>
+                </a-form-item>
+              </a-col>
+            </a-row>
 
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.gameConfiguration') }}</h3>
-          </div>
-          <a-row :gutter="24" class="game-control-row">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.enableGameConfiguration')"
-                    :hint="t('core.edit.masterSwitchGameManagement')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.Enabled"
-                  size="large"
-                  class="modern-input"
+            <a-alert class="launch-mode-bubble" type="info" show-icon :message="launchModeBubble" />
+            <a-row :gutter="[24, 12]" class="switch-row">
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="oknteConfig.Game.Enabled"
+                  :title="t('core.edit.enableGameConfiguration')"
+                  :description="t('core.edit.masterSwitchGameManagement')"
                   @change="handleGameEnabledChange"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.launchGameBeforeTask')"
-                    :hint="t('core.edit.whetherMasLaunchesGame')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.LaunchBeforeTask"
-                  size="large"
-                  class="modern-input"
+                />
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="oknteConfig.Game.LaunchBeforeTask"
+                  :title="t('core.edit.launchGameBeforeTask')"
+                  :description="t('core.edit.whetherMasLaunchesGame')"
                   :disabled="!oknteConfig.Game.Enabled"
                   @change="handleChange('Game', 'LaunchBeforeTask', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-row :gutter="24" class="game-control-row">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.closeGameAfterTask')"
-                    :hint="t('core.edit.whetherMasClosesGame')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.CloseOnFinish"
-                  size="large"
-                  class="modern-input"
+                />
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="oknteConfig.Game.CloseOnFinish"
+                  :title="t('core.edit.closeGameAfterTask')"
+                  :description="t('core.edit.whetherMasClosesGame')"
                   @change="handleChange('Game', 'CloseOnFinish', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.forceSwitchAccountBeforeRun')"
-                    :hint="t('core.edit.oknteAccountSwitchHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="oknteConfig.Game.AccountSwitch"
-                  size="large"
-                  class="modern-input"
+                />
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="oknteConfig.Game.AccountSwitch"
+                  :title="t('core.edit.forceSwitchAccountBeforeRun')"
+                  :description="
+                    [
+                      t('core.edit.oknteAccountSwitchHint'),
+                      t('core.edit.accountSwitch16x9Only'),
+                    ].join(' ')
+                  "
                   :disabled="!oknteConfig.Game.Enabled || !oknteConfig.Game.LaunchBeforeTask"
                   @change="handleChange('Game', 'AccountSwitch', $event)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-                <span class="control-hint">{{ t('core.edit.accountSwitch16x9Only') }}</span>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <div class="launch-type-label">
-                    <span class="form-label">{{ t('core.edit.launchType') }}</span>
-                    <a-radio-group
-                      v-model:value="oknteConfig.Game.LaunchMode"
-                      size="small"
-                      button-style="solid"
-                      :disabled="launchModeDisabled"
-                      @change="handleLaunchModeChange"
-                    >
-                      <a-radio-button value="Autoplay">
-                        {{ t('core.edit.oknteLaunchDirectly') }}
-                      </a-radio-button>
-                      <a-radio-button value="LauncherUi">
-                        {{ t('core.edit.oknteLaunchViaLauncher') }}
-                      </a-radio-button>
-                    </a-radio-group>
-                  </div>
-                </template>
-                <BoundGamePathField />
-                <span v-if="showLaunchModeHint" class="control-hint">
-                  {{ t('core.edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
-                </span>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.launchArguments')"
-                    :hint="t('core.edit.gameLaunchArgumentsNot')"
-                    variant="form"
-                  />
-                </template>
-                <a-input
-                  v-model:value="oknteConfig.Game.Arguments"
-                  :placeholder="t('core.edit.enterGameLaunchArguments')"
-                  size="large"
-                  class="modern-input"
-                  :disabled="!oknteConfig.Game.Enabled"
-                  @blur="handleChange('Game', 'Arguments', oknteConfig.Game.Arguments)"
                 />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.startupWait')"
-                    :hint="t('core.edit.howLongWaitAfter')"
-                    variant="form"
-                  />
-                </template>
-                <a-input-number
-                  v-model:value="oknteConfig.Game.WaitTime"
-                  :min="0"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  :disabled="!oknteConfig.Game.Enabled"
-                  @blur="handleChange('Game', 'WaitTime', oknteConfig.Game.WaitTime)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
+              </a-col>
+            </a-row>
+          </SectionCard>
 
-          <a-alert class="launch-mode-bubble" type="info" show-icon :message="launchModeBubble" />
-        </div>
-
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('core.edit.runConfiguration') }}</h3>
-          </div>
-          <ScriptRunLimitsSection
-            v-model:hard-time-limit="oknteConfig.Run.HardTimeLimit"
-            v-model:daily-limit="oknteConfig.Run.ProxyTimesLimit"
-            v-model:retry-limit="oknteConfig.Run.RunTimesLimit"
-            v-model:timeout="oknteConfig.Run.RunTimeLimit"
-            :retry-hint="t('core.edit.giveUpAfterThis')"
-            :timeout-hint="t('core.edit.logThatStaysUnchanged')"
-            @save="key => handleChange('Run', key, oknteConfig.Run[key])"
-          />
-        </div>
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.runConfiguration')"
+            :icon="ThunderboltOutlined"
+          >
+            <ScriptRunLimitsSection
+              enhanced
+              v-model:hard-time-limit="oknteConfig.Run.HardTimeLimit"
+              v-model:daily-limit="oknteConfig.Run.ProxyTimesLimit"
+              v-model:retry-limit="oknteConfig.Run.RunTimesLimit"
+              v-model:timeout="oknteConfig.Run.RunTimeLimit"
+              :retry-hint="t('core.edit.giveUpAfterThis')"
+              :timeout-hint="t('core.edit.logThatStaysUnchanged')"
+              @save="key => handleChange('Run', key, oknteConfig.Run[key])"
+            />
+          </SectionCard>
+        </a-form>
+      </a-spin>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { AppstoreOutlined, ControlOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
+import GameBindingSection from '@/components/GameBindingSection.vue'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
-import OkNteLauncherPicker from './components/OkNteLauncherPicker.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -531,55 +486,11 @@ onMounted(loadScript)
 <style scoped src="@/styles/scriptEditForm.css"></style>
 
 <style scoped>
-.config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
-  border: 1px solid var(--ant-color-border-secondary);
-}
-
-.config-card :deep(.ant-card-head) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.form-section {
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.launch-type-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
+.switch-row {
+  margin-bottom: 12px;
 }
 
 .launch-mode-bubble {
-  margin-bottom: 24px;
-}
-
-.modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-}
-
-.game-control-row {
-  margin-bottom: 8px;
-}
-
-.game-control-row :deep(.ant-form-item) {
-  margin-bottom: 0;
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  margin-bottom: 12px;
 }
 </style>
