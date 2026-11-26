@@ -1884,6 +1884,34 @@ async def test_stop_waits_for_monitor_cancellation_cleanup(monkeypatch, cancel_s
     assert len(incomplete) == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_drain", [False, True], ids=["timeout", "io-error"])
+async def test_unready_worker_reports_startup_failure(monkeypatch, fail_drain):
+    original = asyncio.create_subprocess_exec
+
+    async def start_unready(executable, *_args, **kwargs):
+        process = await original(
+            executable, "-c", "import time; time.sleep(30)", **kwargs
+        )
+        if fail_drain:
+
+            async def fail():
+                raise OSError("模拟启动 IPC 写入失败")
+
+            monkeypatch.setattr(process.stdin, "drain", fail)
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", start_unready)
+    observation = NodeObservation()
+    with pytest.raises(SessionOpenError):
+        await LogFlowSession.open(
+            PipelineSpec(accept_push=True), timeout=1, observation=observation
+        )
+    assert observation.summary is not None
+    assert observation.summary.reason == "worker_error"
+    assert "未在期限内就绪" in observation.summary.detail
+
+
 @pytest.mark.parametrize("mode", ["逐条", "汇总"])
 def test_rendered_reports_mask_credentials(mode):
     from app.utils.common.log_flow.observation import Node, SessionSummary

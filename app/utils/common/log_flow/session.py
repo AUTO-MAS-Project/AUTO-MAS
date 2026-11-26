@@ -215,12 +215,15 @@ class LogFlowSession:
                     summary = await asyncio.shield(session._receiver)
                     raise SessionOpenError(summary.detail)
         except (TimeoutError, OSError) as exc:
+            detail = "LogFlow worker 启动失败或未在期限内就绪"
             if session is not None:
-                await session.close_on_exit(timeout=0)
-            raise SessionOpenError("LogFlow worker 启动失败或未在期限内就绪") from exc
+                await session.close_on_exit(timeout=0, startup_error=detail)
+            raise SessionOpenError(detail) from exc
         except BaseException:
             if session is not None:
-                await session.close_on_exit(timeout=0)
+                await session.close_on_exit(
+                    timeout=0, startup_error="LogFlow worker 启动已中断"
+                )
             raise
         finally:
             if session is None:
@@ -326,14 +329,20 @@ class LogFlowSession:
         """首位调用者设定唯一收尾预算；取消某个等待者不取消清理。"""
         return await asyncio.shield(self._start_close(timeout))
 
-    def _start_close(self, timeout: float) -> asyncio.Task[SessionSummary]:
+    def _start_close(
+        self, timeout: float, *, startup_error: str | None = None
+    ) -> asyncio.Task[SessionSummary]:
         if self._closing is None:
-            self._closing = asyncio.create_task(self._close(timeout))
+            self._closing = asyncio.create_task(
+                self._close(timeout, startup_error=startup_error)
+            )
         return self._closing
 
-    async def close_on_exit(self, *, timeout: float = 2.0) -> None:
+    async def close_on_exit(
+        self, *, timeout: float = 2.0, startup_error: str | None = None
+    ) -> None:
         """生命周期所有者先等待有界收尾，再传播取消。"""
-        closing = self._start_close(timeout)
+        closing = self._start_close(timeout, startup_error=startup_error)
         cancelled: asyncio.CancelledError | None = None
         while not closing.done():
             try:
@@ -344,7 +353,9 @@ class LogFlowSession:
         if cancelled is not None:
             raise cancelled
 
-    async def _close(self, timeout: float) -> SessionSummary:
+    async def _close(
+        self, timeout: float, *, startup_error: str | None
+    ) -> SessionSummary:
         assert self._process.stdin is not None
         if self._writer is None:
             self._process.stdin.close()
@@ -360,10 +371,13 @@ class LogFlowSession:
             stopped = await self._stop_worker()
             with suppress(asyncio.CancelledError):
                 await self._receiver
-            detail = "采集收尾超时，报告不完整"
+            detail = startup_error or "采集收尾超时，报告不完整"
             if not stopped:
                 detail += "；worker 退出未确认"
-            return self._finish_observation("timeout", detail)
+            reason: CloseReason = (
+                "worker_error" if startup_error is not None else "timeout"
+            )
+            return self._finish_observation(reason, detail)
         finally:
             if self._writer is not None:
                 self._writer.cancel()
