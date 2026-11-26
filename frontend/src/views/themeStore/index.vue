@@ -18,6 +18,7 @@ import ThemeStoreLocalStatus from './components/ThemeStoreLocalStatus.vue'
 import { toStoreItem } from './myAppearance'
 import { useMyAppearances } from './useMyAppearances'
 import { useOnlineAppearance } from './useOnlineAppearance'
+import { useOutdatedAppearances } from './useOutdatedAppearances'
 import { useShareAccount } from './useShareAccount'
 
 defineOptions({ name: 'ThemeStorePage' })
@@ -35,6 +36,10 @@ const account = useShareAccount({
   onError: text => message.error(text),
 })
 
+const refreshOutdated = (): void => {
+  void outdated.refresh()
+}
+
 // 按分类独立持有列表、封面和下载 token，切换时不会把旧请求写进新分类。
 const contexts = {
   all: {
@@ -42,12 +47,14 @@ const contexts = {
       categoryKey: 'all',
       install: (token, category, opts) =>
         installPreparedOnlineAppearance(token, category ?? 'theme', opts),
+      onInstalled: refreshOutdated,
     }),
   },
   theme: {
     store: useOnlineAppearance({
       categoryKey: 'theme',
       install: (token, _category, opts) => installPreparedOnlineAppearance(token, 'theme', opts),
+      onInstalled: refreshOutdated,
     }),
     mine: useMyAppearances({
       categoryKey: 'theme',
@@ -59,6 +66,7 @@ const contexts = {
     store: useOnlineAppearance({
       categoryKey: 'mascot',
       install: (token, _category, opts) => installPreparedOnlineAppearance(token, 'mascot', opts),
+      onInstalled: refreshOutdated,
     }),
     mine: useMyAppearances({
       categoryKey: 'mascot',
@@ -85,11 +93,18 @@ const mine = computed(() => {
   if (tab.value === 'mascot') return contexts.mascot.mine
   return allMine
 })
-const installing = computed(() =>
-  Object.values(contexts).some(
-    context => context.store.installing.value || context.store.updatingAll.value
-  )
+const storeInstalling = computed(() =>
+  Object.values(contexts).some(context => context.store.installing.value)
 )
+// 顶部状态条与「全部更新」共享独立于搜索、分页和分类页签的全量本机待更新清单。
+const outdated = useOutdatedAppearances({
+  install: (token, category, opts) => installPreparedOnlineAppearance(token, category, opts),
+  isBusy: () => storeInstalling.value,
+  onUpdated: () => {
+    if (tab.value !== 'mine') void store.value.loadList(store.value.page.value)
+  },
+})
+const installing = computed(() => storeInstalling.value || outdated.updatingAll.value)
 const { authorized, state: accountState } = account
 
 const tabOptions = computed(() => [
@@ -126,6 +141,7 @@ const openDocs = (): void => {
 
 const handleUploaded = (): void => {
   invalidateMine()
+  void outdated.refresh()
   if (tab.value !== 'mine') void store.value.loadList(store.value.page.value)
   if (authorized.value) void mine.value.ensureLoaded()
 }
@@ -171,18 +187,31 @@ watch(
   { immediate: true }
 )
 
+let unsubAppearance: (() => void) | undefined
+let unsubMascot: (() => void) | undefined
+
 onMounted(() => {
   contexts.all.store.open()
+  void outdated.refresh()
   void account.refresh()
+  unsubAppearance = window.electronAPI.onAppearanceChanged?.(() => {
+    if (!outdated.updatingAll.value) void outdated.refresh()
+  })
+  unsubMascot = window.electronAPI.onMascotChanged?.(() => {
+    if (!outdated.updatingAll.value) void outdated.refresh()
+  })
 })
 
 onBeforeUnmount(() => {
+  unsubAppearance?.()
+  unsubMascot?.()
   contexts.all.store.reset()
   contexts.theme.store.reset()
   contexts.theme.mine.reset()
   contexts.mascot.store.reset()
   contexts.mascot.mine.reset()
   allMine.reset()
+  outdated.reset()
   account.dispose()
 })
 </script>
@@ -206,9 +235,9 @@ onBeforeUnmount(() => {
 
     <PageSurface :scrollable="false" class="theme-store-content">
       <ThemeStoreLocalStatus
-        :outdated-count="store.outdatedItems.value.length"
-        :updating-all="store.updatingAll.value"
-        @update-all="void store.updateAllOutdated()"
+        :outdated-count="outdated.items.value.length"
+        :updating-all="outdated.updatingAll.value"
+        @update-all="void outdated.updateAll()"
       />
 
       <a-segmented

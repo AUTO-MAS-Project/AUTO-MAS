@@ -25,6 +25,15 @@ export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
 export type OnlineAppearanceInstallOutcome = 'installed' | 'partial' | 'cancelled' | 'failed'
 
+export interface OnlineAppearanceInstallOptions {
+  /** 安装成功后立即切换为当前生效外观（如试穿后确认应用）。 */
+  applyImmediately?: boolean
+  /** 仅更新资源包本身，不修改当前生效的主题或桌宠选择，也不弹单项预览提示（用于批量更新）。 */
+  preserveCurrentSelection?: boolean
+  /** 已知是在更新已安装资源时，直接允许覆盖同 ID，避免批量更新逐条弹确认框。 */
+  replaceExisting?: boolean
+}
+
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
 
 export interface PreparedOnlineAppearance {
@@ -72,9 +81,10 @@ export function useOnlineAppearance(options: {
   install: (
     token: string,
     category?: AppearanceCategory,
-    installOptions?: { applyImmediately?: boolean; skipPreviewPrompt?: boolean }
+    installOptions?: OnlineAppearanceInstallOptions
   ) => Promise<OnlineAppearanceInstallOutcome>
   categoryKey?: AppearanceFilter
+  onInstalled?: () => void
 }) {
   const logger = window.electronAPI.getLogger('在线外观')
   const api = () => window.electronAPI
@@ -87,7 +97,6 @@ export function useOnlineAppearance(options: {
 
   const view = ref<'list' | 'detail'>('list')
   const tryingFileKey = ref<string | null>(null)
-  const updatingAll = ref(false)
 
   const items = ref<OnlineAppearanceItem[]>([])
   const listLoading = ref(false)
@@ -430,19 +439,17 @@ export function useOnlineAppearance(options: {
       if (outcome === 'installed') {
         backToList()
         void loadList(page.value)
+        options.onInstalled?.()
       }
     }
   }
 
   const detailOpen = computed(() => view.value === 'detail' && Boolean(detailItem.value))
-  const outdatedItems = computed(() =>
-    items.value.filter(item => getOnlineAppearanceStatus(item) === 'outdated')
-  )
 
   const installTokenWithTelemetry = async (
     token: string,
     category: AppearanceCategory,
-    installOptions?: { applyImmediately?: boolean; skipPreviewPrompt?: boolean }
+    installOptions?: OnlineAppearanceInstallOptions
   ): Promise<OnlineAppearanceInstallOutcome> => {
     const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
     let outcome: OnlineAppearanceInstallOutcome = 'failed'
@@ -526,7 +533,10 @@ export function useOnlineAppearance(options: {
           const outcome = await installTokenWithTelemetry(token, 'theme', {
             applyImmediately: true,
           })
-          if (outcome === 'installed') void loadList(page.value)
+          if (outcome === 'installed') {
+            void loadList(page.value)
+            options.onInstalled?.()
+          }
           return outcome
         },
       })
@@ -537,48 +547,6 @@ export function useOnlineAppearance(options: {
       message.error(t('core.themeStore.prepareFailed'))
     } finally {
       tryingFileKey.value = null
-    }
-  }
-
-  /** 顺序升级全部有新版本的已安装在线资源（复用下载校验与安装遥测）。 */
-  const updateAllOutdated = async (): Promise<void> => {
-    const targets = [...outdatedItems.value]
-    if (targets.length === 0 || updatingAll.value || installing.value) return
-    updatingAll.value = true
-    let succeeded = 0
-    let failed = 0
-    try {
-      for (const item of targets) {
-        if (item.publishedVersionNo === null) continue
-        const itemCategory: AppearanceCategory =
-          item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
-        const preparedItem = await api().prepareOnlineAppearance?.(
-          item.fileKey,
-          item.publishedVersionNo,
-          itemCategory
-        )
-        if (!preparedItem?.success || !preparedItem.token) {
-          failed += 1
-          continue
-        }
-        const outcome = await installTokenWithTelemetry(preparedItem.token, itemCategory, {
-          skipPreviewPrompt: true,
-        })
-        if (outcome === 'installed') {
-          succeeded += 1
-        } else if (outcome !== 'cancelled') {
-          failed += 1
-          discardToken(preparedItem.token, itemCategory)
-        }
-      }
-      if (succeeded > 0) void loadList(page.value)
-      if (failed === 0 && succeeded > 0) {
-        message.success(t('core.themeStore.localStatus.updateAllSuccess', { count: succeeded }))
-      } else if (failed > 0) {
-        message.warning(t('core.themeStore.localStatus.updateAllPartial', { succeeded, failed }))
-      }
-    } finally {
-      updatingAll.value = false
     }
   }
 
@@ -612,7 +580,6 @@ export function useOnlineAppearance(options: {
     view,
     detailOpen,
     items,
-    outdatedItems,
     listLoading,
     listError,
     page,
@@ -632,7 +599,6 @@ export function useOnlineAppearance(options: {
     prepareError,
     installing,
     tryingFileKey,
-    updatingAll,
     open,
     reset,
     loadList,
@@ -644,7 +610,6 @@ export function useOnlineAppearance(options: {
     prepareSelected,
     install,
     tryOnItem,
-    updateAllOutdated,
     backToList,
   }
 }

@@ -13,7 +13,10 @@ import type {
   InstalledAppearance,
   OnlineAppearanceInstallResult,
 } from '@/types/appearance'
-import { type OnlineAppearanceInstallOutcome } from '@/views/themeStore/useOnlineAppearance'
+import {
+  type OnlineAppearanceInstallOptions,
+  type OnlineAppearanceInstallOutcome,
+} from '@/views/themeStore/useOnlineAppearance'
 import './appearance.css'
 import type { AppearanceCategory } from '@/types/mascotPack'
 import { saveConfig } from '@/utils/config'
@@ -143,14 +146,14 @@ export function useAppearanceSettings() {
       okText: t('core.setting.basic.replaceAppearance'),
     })
 
-  // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用（或由调用方直接应用）。
+  // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用（或由调用方直接应用/静默更新）。
   const runAppearanceInstall = async (
     install: (replace: boolean) => Promise<AppearanceImportResult | OnlineAppearanceInstallResult>,
     describeFailure: (result: AppearanceImportResult | OnlineAppearanceInstallResult) => string,
     category: AppearanceCategory = 'theme',
-    options: { applyImmediately?: boolean; skipPreviewPrompt?: boolean } = {}
+    options: OnlineAppearanceInstallOptions = {}
   ): Promise<OnlineAppearanceInstallOutcome> => {
-    let result = await install(false)
+    let result = await install(Boolean(options.replaceExisting))
     if (!result.success && result.code === 'DUPLICATE_ID') {
       const replace = await confirmReplace(
         result.existing?.name ?? result.existing?.id ?? t('core.setting.basic.appearance'),
@@ -173,11 +176,11 @@ export function useAppearanceSettings() {
           message.error(t('core.setting.basic.appearanceApplyFailed'))
           return 'partial'
         }
-      } else if (!options.skipPreviewPrompt) {
+      } else if (!options.preserveCurrentSelection) {
         showAppearancePreview(result.appearance)
       }
     }
-    if ('mascot' in result && result.mascot) {
+    if ('mascot' in result && result.mascot && !options.preserveCurrentSelection) {
       try {
         await saveConfig({ desktopMascotId: result.mascot.id })
       } catch (error) {
@@ -209,7 +212,7 @@ export function useAppearanceSettings() {
   const installPreparedOnlineAppearance = async (
     token: string,
     category: AppearanceCategory = 'theme',
-    options: { applyImmediately?: boolean; skipPreviewPrompt?: boolean } = {}
+    options: OnlineAppearanceInstallOptions = {}
   ): Promise<OnlineAppearanceInstallOutcome> => {
     if (appearanceBusy.value) return 'cancelled'
     appearanceBusy.value = true
