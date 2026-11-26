@@ -39,6 +39,7 @@ from app.task.MaaEnd.tools.package_download import (
 from app.task.MaaEnd.tools.pipeline_migration import refresh_merged_pipelines
 from app.utils import fluxdown_cli as _fluxdown_cli
 from app.utils import io as _utils_io
+from app.utils.common.process.operations import iter_process_info
 
 REPOSITORY = "MaaEnd/MaaEnd"
 # 官方包的 data/ 是资源目录（如 AutoDelivery/catalog.json），必须更新；
@@ -48,10 +49,10 @@ PROTECTED = frozenset({"config", "debug", "logs", "user", ".git"})
 
 def assert_idle(root: Path) -> None:
     """覆盖 MXU、agent 和独立更新器；无法读取进程路径时不猜成空闲。"""
-    for process in psutil.process_iter(["exe", "name"]):
+    for _, info in iter_process_info(["exe", "name"]):
         try:
-            executable = process.info["exe"]
-            if not executable and str(process.info.get("name", "")).casefold() in {
+            executable = info["exe"]
+            if not executable and str(info.get("name", "")).casefold() in {
                 "maaend.exe",
                 "go-service.exe",
                 "cpp-algo.exe",

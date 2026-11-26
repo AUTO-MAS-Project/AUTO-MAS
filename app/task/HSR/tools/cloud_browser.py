@@ -46,7 +46,7 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from app.utils import ProcessManager, get_logger
 from app.utils.common.process.operations import (
-    iter_processes,
+    iter_scoped_process_info,
     processes_in_scope,
     terminate_process,
 )
@@ -291,12 +291,12 @@ def is_m7a_self_started_browser_cmdline(cmdline: Iterable[str] | None) -> bool:
 
 def _find_cloud_browsers(match: Callable[[list[str]], bool]) -> list[psutil.Process]:
     found: list[psutil.Process] = []
-    for proc in iter_processes(["name", "cmdline"]):
+    for proc, info in iter_scoped_process_info(["name", "cmdline"]):
         with suppress(psutil.Error):
-            name = proc.info.get("name")
+            name = info.get("name")
             if not name or name.lower() != BROWSER_PROCESS_NAME:
                 continue
-            if match(list(proc.info.get("cmdline") or [])):
+            if match(list(info.get("cmdline") or [])):
                 found.append(proc)
     return found
 

@@ -113,24 +113,23 @@ async def test_launcher_startup(
     log.write_text(f"{emitter} INFO [{app_id}]: {_DOWNLOAD}\n", encoding="utf-8")
 
     elapsed = 0
+    fields = {
+        "name": custom_name if tracking == "custom" else "ok-nte.exe",
+        "exe": str(runtime_executables(tmp_path)[0]),
+        "cmdline": ["ok-nte.exe"],
+        "create_time": 1000 + (runtime_at or 0),
+    }
     body = SimpleNamespace(
-        pid=123,
-        info={
-            "name": custom_name if tracking == "custom" else "ok-nte.exe",
-            "exe": str(runtime_executables(tmp_path)[0]),
-            "cmdline": ["ok-nte.exe"],
-            "create_time": 1000 + (runtime_at or 0),
-        },
+        pid=123, as_dict=lambda *, attrs: {attr: fields[attr] for attr in attrs}
     )
     clock = SimpleNamespace(monotonic=lambda: elapsed, time=lambda: 1000 + elapsed)
     monkeypatch.setattr(runtime, "time", clock)
     monkeypatch.setattr("app.task.pyappify_startup.time", clock)
     monkeypatch.setattr(process_manager, "time", clock)
 
-    def running_processes(_):
+    def running_processes():
         return [body] if runtime_at is not None and elapsed >= runtime_at else []
 
-    monkeypatch.setattr(runtime, "iter_processes", running_processes)
     monkeypatch.setattr(process_manager.psutil, "process_iter", running_processes)
 
     async def launch(*args, **kwargs):

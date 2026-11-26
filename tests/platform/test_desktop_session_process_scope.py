@@ -122,18 +122,28 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
     from app.utils.windows.desktop_session import native
 
     process = Mock(pid=100)
-    monkeypatch.setattr(operations.psutil, "process_iter", lambda _: iter([process]))
+    process.as_dict.return_value = {"pid": process.pid}
+    monkeypatch.setattr(
+        operations.psutil, "process_iter", lambda attrs=None: iter([process])
+    )
     monkeypatch.setattr(native, "process_session", lambda pid: 7)
     monkeypatch.setattr(session, "_parent_scope", None)
     assert list(operations.iter_processes(["pid"])) == [process]
+    assert list(operations.iter_scoped_process_info(["pid"])) == [
+        (process, {"pid": process.pid})
+    ]
 
     session.configure_parent_scope(lambda: 1)
     assert list(operations.iter_processes(["pid"])) == []
+    assert list(operations.iter_scoped_process_info(["pid"])) == []
     token = session.desktop_process_target.set(
         session.DesktopProcessTarget(7, Path.cwd(), Path.cwd())
     )
     try:
         assert list(operations.iter_processes(["pid"])) == [process]
+        assert list(operations.iter_scoped_process_info(["pid"])) == [
+            (process, {"pid": process.pid})
+        ]
     finally:
         session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
@@ -147,8 +157,9 @@ async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_p
 
     game = tmp_path / "game" / "Endfield.exe"
     process = Mock(pid=100)
-    process.info = {"pid": 100, "name": game.name, "exe": str(game)}
-    monkeypatch.setattr(operations.psutil, "process_iter", lambda _: iter([process]))
+    info = {"name": game.name, "exe": str(game)}
+    process.as_dict.side_effect = lambda *, attrs: {attr: info[attr] for attr in attrs}
+    monkeypatch.setattr(operations.psutil, "process_iter", lambda: iter([process]))
     monkeypatch.setattr(
         operations, "matches_session", lambda _, session_id: session_id in (None, 1)
     )
@@ -166,7 +177,7 @@ async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_p
         assert await operations.is_process_stopped(
             other_installation, all_sessions=True
         )
-        process.info["exe"] = None
+        info["exe"] = None
         assert not await operations.is_process_stopped(game, all_sessions=True)
     finally:
         session.desktop_process_target.reset(token)

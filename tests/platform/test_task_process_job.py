@@ -528,12 +528,7 @@ async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
         # 只隔离宿主进程目录；身份、后代查询与 Job 操作仍使用真实进程。
         known = [psutil.Process(unrelated.pid), psutil.Process(parent.pid)]
 
-        def iter_known(attrs):
-            for process in known:
-                process.info = process.as_dict(attrs=attrs)
-                yield process
-
-        monkeypatch.setattr(psutil, "process_iter", iter_known)
+        monkeypatch.setattr(psutil, "process_iter", lambda: iter(known))
         if child_before_registration:
             async with asyncio.timeout(5):
                 while not pid_file.exists():
