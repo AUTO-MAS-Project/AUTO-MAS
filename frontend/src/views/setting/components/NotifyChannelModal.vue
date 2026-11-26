@@ -7,6 +7,7 @@ import { scopeFields, normalizeGroup } from '../notifyChannelView'
 import ClawBinding, { type ClawBindingState } from './ClawBinding.vue'
 import NotifyFieldRenderer from './NotifyFieldRenderer.vue'
 import WebhookManager from '@/components/WebhookManager.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import { channelIcon, channelIconColor } from './notifyChannelIcons'
 
 const props = withDefaults(
@@ -91,13 +92,14 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   <!-- transition 名不对应任何 CSS = 瞬显瞬隐；对齐 Scripts.vue 配置MAA 遮罩
        （.maa-config-mask）的无动画行为：长淡入在主线程被内容挂载卡住时会
        掉帧，被感知成遮罩闪一下 -->
-  <a-modal
+  <AppModal
     :open="open"
     :width="480"
-    :footer="null"
+    footer="none"
     :closable="false"
+    :destroy-on-close="false"
+    scroll="none"
     :z-index="900"
-    centered
     wrap-class-name="notify-channel-modal"
     mask-transition-name="notify-mask-fade"
     transition-name="notify-panel-zoom"
@@ -172,7 +174,7 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
         />
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped src="./notifyChannel.css"></style>

@@ -1,16 +1,15 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="modalOpen"
-    :footer="null"
-    :closable="!busy"
+    footer="none"
+    layer="blocking"
+    :submitting="busy"
     :mask-closable="false"
-    :keyboard="!busy"
     :width="400"
-    centered
     wrap-class-name="app-close-prompt-modal"
     @cancel="emit('cancel')"
   >
-    <template #title>
+    <template #header>
       <span class="close-prompt-title">{{ t('bootstrap.comp.closeActionPrompt') }}</span>
     </template>
 
@@ -41,12 +40,13 @@
         </a-button>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppModal from '@/components/ui/AppModal.vue'
 import type { AppCloseAction } from '@/utils/appClosePreferences'
 
 const props = defineProps<{

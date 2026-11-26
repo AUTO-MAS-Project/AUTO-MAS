@@ -1,11 +1,9 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :width="960"
-    :closable="!submitting"
-    :keyboard="!submitting"
-    :mask-closable="!submitting"
-    :confirm-loading="submitting"
+    :submitting="submitting"
+    footer="custom"
     :z-index="900"
     :body-style="{ height: '500px', minHeight: 0, overflowY: 'auto' }"
     class="script-create-dialog"
@@ -224,7 +222,7 @@
         </a-space>
       </div>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -254,6 +252,7 @@ import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { openExternalUrl } from '@/utils/openExternal'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
@@ -502,9 +501,7 @@ const submitCurrentSelection = () => {
   if (request) emit('submit', request)
 }
 
-const handleCancel = () => {
-  if (!props.submitting) emit('update:open', false)
-}
+const handleCancel = () => emit('update:open', false)
 
 const chooseCustomConfig = () => {
   selectedConfigMode.value = 'custom'
