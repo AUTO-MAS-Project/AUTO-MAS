@@ -23,7 +23,8 @@ def test_plan_gates_docs_only() -> None:
 def test_plan_gates_backend_and_lock() -> None:
     gates = pr_check.plan_gates(["app/api/setting.py", "pyproject.toml"])
     ids = [g.id for g in gates]
-    assert ids == ["GIT-DIFF", "RUFF-FORMAT", "UV-LOCK", "CHANGELOG"]
+    # 后端改动必须跑 pytest 全量（BACKEND-TEST），顺序在依赖锁检查之后、碎片检查之前。
+    assert ids == ["GIT-DIFF", "RUFF-FORMAT", "UV-LOCK", "BACKEND-TEST", "CHANGELOG"]
 
 
 def test_plan_gates_frontend_vue_and_electron() -> None:
@@ -36,14 +37,18 @@ def test_plan_gates_frontend_vue_and_electron() -> None:
         skip_changelog=True,
     )
     ids = [g.id for g in gates]
+    # .vue 改动先跑尺寸基线自检（VUE-BASELINE-CHECK）再跑 500 行门禁（VUE-SIZE）；
+    # frontend/src 改动要补前端单测（FRONTEND-TEST），排在 e2e 契约自检之前。
     assert ids == [
         "GIT-DIFF",
+        "VUE-BASELINE-CHECK",
         "VUE-SIZE",
         "FRONTEND-LINT",
         "FRONTEND-TYPECHECK",
         "ELECTRON-TYPECHECK",
         "FRONTEND-FORMAT",
         "I18N-AUDIT",
+        "FRONTEND-TEST",
         "E2E-HARNESS",
         "CHANGELOG",
     ]
