@@ -7,6 +7,7 @@
  * 不依赖本目录下其它服务，避免与环境或后端启动服务形成循环导入。
  */
 
+import * as fs from 'node:fs'
 import * as path from 'path'
 import { app } from 'electron'
 import type { ApplicationEnvironment, BackendOwnership } from '../../src/types/environment'
@@ -89,13 +90,22 @@ export function getDefaultApiEndpoints(): { local: string; websocket: string } {
 }
 
 /** 开发版使用独立的用户数据目录；正式版名称来自 package.json 的 productName。 */
-export function applyInstanceIdentity(): void {
+export function applyInstanceIdentity(): boolean {
   if (!app || !isDevelopmentEnvironment()) {
-    return
+    return false
   }
 
   const instanceName = `${app.getName()}-dev`
   const developerHome = process.env.AUTO_MAS_DEVELOPER_HOME?.trim()
-  app.setPath('userData', path.join(developerHome || app.getPath('appData'), instanceName))
+  const userData = developerHome
+    ? path.resolve(developerHome, instanceName)
+    : path.join(app.getPath('appData'), instanceName)
+  if (developerHome) {
+    fs.mkdirSync(userData, { recursive: true })
+    const profile = path.relative(fs.realpathSync(developerHome), fs.realpathSync(userData))
+    if (profile !== instanceName) throw new Error('工作树用户数据目录不能链接到其他目录')
+  }
+  app.setPath('userData', userData)
   app.setName(instanceName)
+  return Boolean(developerHome)
 }

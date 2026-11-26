@@ -123,6 +123,18 @@ if ($test) {
             throw "测试包缺少 $relative；请先准备专用测试包，不要使用日常安装。"
         }
     }
+    # 能力标记由 Electron 打包产出，兼容的 Python/Runtime 不能证明旧桌面程序会隔离数据。
+    $profileCapability = Join-Path $AppRoot 'resources/worktree-profile-isolation.json'
+    $profileError = '该测试包不支持 worktree 桌面数据隔离；请换用包含新版 Electron 的测试包，不要手工添加能力标记。'
+    if (!(Test-Path -LiteralPath $profileCapability -PathType Leaf)) { throw $profileError }
+    try {
+        $capabilities = Get-Content -LiteralPath $profileCapability -Raw | ConvertFrom-Json -AsHashtable
+    } catch {
+        throw $profileError
+    }
+    if ($capabilities -isnot [System.Collections.IDictionary] -or $capabilities['worktreeProfileIsolation'] -cne 1) {
+        throw $profileError
+    }
     $venv = Join-Path $AppRoot 'runtime/environment/venv'
 }
 

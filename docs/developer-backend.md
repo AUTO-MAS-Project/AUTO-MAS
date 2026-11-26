@@ -32,7 +32,7 @@ python scripts/prepare-developer-backend.py --source . --base '<安装目录>' -
 
 ### 用一份专用测试包联调
 
-准备一份包含 #2054 的完整 Windows 测试包，存放在所有工作树和日常安装之外，正常启动完成初始化后退出。确认这是专用测试包后，手动创建标记并为此 Git 仓库登记一次：
+准备一份包含 #2054 且打包时生成了 `resources/worktree-profile-isolation.json` 的完整 Windows 测试包。旧版测试包即使 Python 与 Runtime 兼容也不可用于这个入口，不要手工补该能力文件。把包存放在所有工作树和日常安装之外，在独立的 Windows 测试账号或虚拟机内完成首次正常启动和初始化后退出；随后手动创建专用测试包标记并登记：
 
 ```powershell
 $testApp = 'D:\MAS-Test'
@@ -42,7 +42,7 @@ git config --local automas.backendAppRoot $testApp
 ./scripts/dev-backend.ps1 Start
 ```
 
-`-AppRoot` 可单次覆盖登记路径。仅 `Start` 需要管理员 PowerShell；工具不会自行提权、复制日常配置或打开自动任务开关。启动时才把 `AUTO_MAS_BACKEND_REPO` 传给子进程，Electron 的用户目录位于当前工作树的 `.automas-dev-electron/`，后端使用该工作树的配置与数据库。不要将这些目录链接到其他工作树或日常安装，也不要把指向真实脚本的日常配置当作测试数据。开发后端使用 36164，`Start` 同一时间只允许一个实例；关闭前一个开发实例后再换工作树。若解释器或锁定的运行依赖不匹配，请另准备匹配的专用测试包；不要在现有包里同步依赖。
+`-AppRoot` 可单次覆盖登记路径。仅 `Start` 需要管理员 PowerShell；工具不会自行提权、复制日常配置或打开自动任务开关。启动时才把 `AUTO_MAS_BACKEND_REPO` 传给子进程，Electron 在当前工作树的 `.automas-dev-electron/` 内取桌面锁并保存会话，不导入或回退到旧 `frontend-dev` 目录；后端使用该工作树的配置与数据库。不要将这些目录链接到其他工作树或日常安装，也不要把指向真实脚本的日常配置当作测试数据。开发后端使用 36164，`Start` 同一时间只允许一个实例；关闭前一个开发实例后再换工作树。若解释器或锁定的运行依赖不匹配，请另准备匹配的专用测试包；不要在现有包里同步依赖。
 
 ### 用独立共享环境运行 pytest
 
