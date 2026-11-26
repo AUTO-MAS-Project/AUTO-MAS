@@ -2419,6 +2419,12 @@ ipcMain.handle('set-initialized-version', async (_event, version: string) => {
 ipcMain.handle('get-runtime-launch-mode', () => resolveRuntimeLaunchModeDetail())
 
 // 应用生命周期
+// Windows 上部分环境（安全软件等）会让沙箱渲染进程起不来（launch-failed, exitCode=18），
+// 窗口白屏打不开，所以 Windows 仍全局禁用沙箱；Linux 不能加这个开关，见 #1989。
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
 app.on('second-instance', (_event, argv) => {
   if (keepAwakeForScheduledWakeup(argv)) return
   if (mainWindow) {
