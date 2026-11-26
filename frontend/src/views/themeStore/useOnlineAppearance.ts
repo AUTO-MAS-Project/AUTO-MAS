@@ -2,7 +2,10 @@ import { describePackageError } from '@/utils/resourcePackageError'
 import { beginAnalyticsOperation } from '@/utils/analytics'
 import { appearanceCategory } from '@/utils/preferenceAnalytics'
 import { computed, ref, shallowRef } from 'vue'
+import { message } from 'ant-design-vue'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
+import { useTheme } from '@/composables/useTheme'
+import { useAppearanceTryOnStore } from '@/stores/appearanceTryOn'
 
 import { translate as t } from '@/i18n'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
@@ -66,17 +69,25 @@ export function pickDefaultVersion(
 }
 
 export function useOnlineAppearance(options: {
-  install: (token: string, category?: AppearanceCategory) => Promise<OnlineAppearanceInstallOutcome>
+  install: (
+    token: string,
+    category?: AppearanceCategory,
+    installOptions?: { applyImmediately?: boolean; skipPreviewPrompt?: boolean }
+  ) => Promise<OnlineAppearanceInstallOutcome>
   categoryKey?: AppearanceFilter
 }) {
   const logger = window.electronAPI.getLogger('在线外观')
   const api = () => window.electronAPI
+  const { appearances } = useTheme()
+  const tryOnStore = useAppearanceTryOnStore()
   const categoryArgs = (category?: AppearanceCategory): [] | [AppearanceCategory] => {
     if (category) return [category]
     return options.categoryKey && options.categoryKey !== 'all' ? [options.categoryKey] : []
   }
 
   const view = ref<'list' | 'detail'>('list')
+  const tryingFileKey = ref<string | null>(null)
+  const updatingAll = ref(false)
 
   const items = ref<OnlineAppearanceItem[]>([])
   const listLoading = ref(false)
@@ -423,6 +434,154 @@ export function useOnlineAppearance(options: {
     }
   }
 
+  const detailOpen = computed(() => view.value === 'detail' && Boolean(detailItem.value))
+  const outdatedItems = computed(() =>
+    items.value.filter(item => getOnlineAppearanceStatus(item) === 'outdated')
+  )
+
+  const installTokenWithTelemetry = async (
+    token: string,
+    category: AppearanceCategory,
+    installOptions?: { applyImmediately?: boolean; skipPreviewPrompt?: boolean }
+  ): Promise<OnlineAppearanceInstallOutcome> => {
+    const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
+    let outcome: OnlineAppearanceInstallOutcome = 'failed'
+    try {
+      outcome = await options.install(token, category, installOptions)
+      return outcome
+    } finally {
+      telemetry.finish({
+        category_kind: appearanceCategory(category),
+        outcome:
+          outcome === 'installed'
+            ? 'success'
+            : outcome === 'partial'
+              ? 'partial'
+              : outcome === 'cancelled'
+                ? 'cancelled'
+                : 'failure',
+      })
+    }
+  }
+
+  /**
+   * 卡片或详情内一键试穿（仅主题外观，纯内存态、不写盘）：
+   * - 已安装且版本一致时直接复用本机内存外观，零下载秒开；
+   * - 否则下载校验为临时 token，装进全局试穿沙盒，满意时可直接消费该 token 安装并应用。
+   */
+  const tryOnItem = async (
+    item: OnlineAppearanceItem,
+    explicitVersionNo?: number
+  ): Promise<void> => {
+    const itemCategory: AppearanceCategory =
+      item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
+    if (itemCategory !== 'theme' || tryingFileKey.value || installing.value) return
+
+    const targetVersion = explicitVersionNo ?? item.publishedVersionNo
+    if (targetVersion === null) {
+      message.warning(t('core.themeStore.noVersions'))
+      return
+    }
+
+    const coverUrl = coverFor(item.fileKey, targetVersion, item.categoryKey)
+    // 本机已装同版本时直接试穿内存外观，不重复下载。
+    if (item.installed && item.installed.versionNo === targetVersion) {
+      const local = appearances.value.find(entry => entry.id === item.installed?.appearanceId)
+      if (local) {
+        tryOnStore.start({
+          source: 'installed',
+          title: item.displayName || item.fileKey,
+          versionNo: targetVersion,
+          coverUrl: coverUrl ?? local.previewUrl,
+          fileKey: item.fileKey,
+          installedId: local.id,
+          hasBundledMascot: Boolean(local.mascot),
+          appearance: local,
+        })
+        return
+      }
+    }
+
+    tryingFileKey.value = item.fileKey
+    try {
+      const result = await api().prepareOnlineAppearance?.(item.fileKey, targetVersion, 'theme')
+      if (!result?.success || !result.token || !result.appearance?.tryOnAppearance) {
+        if (result?.token) discardToken(result.token, 'theme')
+        message.error(
+          describePackageError(result ?? UNSUPPORTED, 'core.themeStore.prepareFailed', 'theme')
+        )
+        return
+      }
+      const token = result.token
+      tryOnStore.start({
+        source: 'store',
+        title: item.displayName || item.fileKey,
+        versionNo: targetVersion,
+        coverUrl: coverUrl ?? result.appearance.previewUrl,
+        fileKey: item.fileKey,
+        token,
+        hasBundledMascot: Boolean(result.appearance.hasBundledMascot),
+        appearance: result.appearance.tryOnAppearance,
+        onInstall: async () => {
+          const outcome = await installTokenWithTelemetry(token, 'theme', {
+            applyImmediately: true,
+          })
+          if (outcome === 'installed') void loadList(page.value)
+          return outcome
+        },
+      })
+    } catch (error) {
+      logger.error(
+        `试穿在线外观失败: ${item.fileKey} v${targetVersion}，${error instanceof Error ? error.message : String(error)}`
+      )
+      message.error(t('core.themeStore.prepareFailed'))
+    } finally {
+      tryingFileKey.value = null
+    }
+  }
+
+  /** 顺序升级全部有新版本的已安装在线资源（复用下载校验与安装遥测）。 */
+  const updateAllOutdated = async (): Promise<void> => {
+    const targets = [...outdatedItems.value]
+    if (targets.length === 0 || updatingAll.value || installing.value) return
+    updatingAll.value = true
+    let succeeded = 0
+    let failed = 0
+    try {
+      for (const item of targets) {
+        if (item.publishedVersionNo === null) continue
+        const itemCategory: AppearanceCategory =
+          item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
+        const preparedItem = await api().prepareOnlineAppearance?.(
+          item.fileKey,
+          item.publishedVersionNo,
+          itemCategory
+        )
+        if (!preparedItem?.success || !preparedItem.token) {
+          failed += 1
+          continue
+        }
+        const outcome = await installTokenWithTelemetry(preparedItem.token, itemCategory, {
+          skipPreviewPrompt: true,
+        })
+        if (outcome === 'installed') {
+          succeeded += 1
+        } else if (outcome !== 'cancelled') {
+          failed += 1
+          discardToken(preparedItem.token, itemCategory)
+        }
+      }
+      if (succeeded > 0) void loadList(page.value)
+      if (failed === 0 && succeeded > 0) {
+        message.success(t('core.themeStore.localStatus.updateAllSuccess', { count: succeeded }))
+      } else if (failed > 0) {
+        message.warning(t('core.themeStore.localStatus.updateAllPartial', { succeeded, failed }))
+      }
+    } finally {
+      updatingAll.value = false
+    }
+  }
+
   const backToList = (): void => {
     if (installing.value) return
     resetDetail()
@@ -451,7 +610,9 @@ export function useOnlineAppearance(options: {
 
   return {
     view,
+    detailOpen,
     items,
+    outdatedItems,
     listLoading,
     listError,
     page,
@@ -470,6 +631,8 @@ export function useOnlineAppearance(options: {
     preparing,
     prepareError,
     installing,
+    tryingFileKey,
+    updatingAll,
     open,
     reset,
     loadList,
@@ -480,6 +643,8 @@ export function useOnlineAppearance(options: {
     selectVersion,
     prepareSelected,
     install,
+    tryOnItem,
+    updateAllOutdated,
     backToList,
   }
 }

@@ -537,9 +537,13 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath: string,
     category?: AppearanceCategory
   ) => Promise<LocalAppearanceInspectResult>
-  inspectAppearanceCover?: (
-    imagePath: string
-  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  inspectAppearanceCover?: (imagePath: string) => Promise<{
+    success: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    error?: string
+  }>
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 

@@ -42,6 +42,10 @@ export interface OnlineAppearanceItem {
   installed: OnlineAppearanceInstalled | null
   /** 发布版本有没有封面；分享站没给这个字段时为 false。 */
   hasCover: boolean
+  /** 分享站累计下载次数。 */
+  downloadCount?: number
+  /** 分享站标签名称列表。 */
+  tags?: string[]
 }
 
 export interface OnlineAppearanceVersion {
@@ -82,6 +86,17 @@ export interface OnlineAppearancePreview {
   mode?: AppearanceMode
   tokens?: AppearanceManifest['tokens']
   previewUrl?: string
+  tryOnAppearance?: Awaited<ReturnType<typeof inspectAppearancePackage>>['tryOnAppearance']
+  hasBundledMascot?: boolean
+  precheck?: {
+    hasCustomMenuIcons: boolean
+    hasDefaultMenuIcon: boolean
+    menuIconCount: number
+    hasBackground: boolean
+    hasCursors: boolean
+    hasMascot: boolean
+    previewDimensions?: { width: number; height: number }
+  }
 }
 
 export interface OnlineAppearancePrepareResult {
@@ -614,6 +629,24 @@ export function createOnlineAppearanceService(
   ): OnlineAppearanceItem | null => {
     if (!isPlainObject(raw) || !isValidOnlineFileKey(raw.file_key)) return null
     const fileKey = raw.file_key
+    const rawDownloadCount = raw.download_count
+    const downloadCount =
+      typeof rawDownloadCount === 'number' &&
+      Number.isSafeInteger(rawDownloadCount) &&
+      rawDownloadCount >= 0
+        ? rawDownloadCount
+        : undefined
+    const tags = Array.isArray(raw.tags)
+      ? raw.tags
+          .map(tag =>
+            isPlainObject(tag)
+              ? clipText(tag.tag_name ?? tag.tag_key, 32).trim()
+              : typeof tag === 'string'
+                ? clipText(tag, 32).trim()
+                : ''
+          )
+          .filter(Boolean)
+      : undefined
     return {
       fileKey,
       displayName: clipText(raw.display_name, 120) || fileKey,
@@ -627,6 +660,8 @@ export function createOnlineAppearanceService(
       hasCover:
         raw.has_cover === true ||
         (isPlainObject(raw.published_version) && raw.published_version.has_cover === true),
+      ...(downloadCount !== undefined ? { downloadCount } : {}),
+      ...(tags && tags.length > 0 ? { tags } : {}),
     }
   }
 
@@ -922,6 +957,21 @@ export function createOnlineAppearanceService(
       const { manifest, previewUrl } = inspected
       const existing = getInstalled(options.userDataPath(), manifest.id)
       const theme = 'tokens' in manifest ? manifest : null
+      const tryOnAppearance = 'tryOnAppearance' in inspected ? inspected.tryOnAppearance : undefined
+      const previewDimensions =
+        'previewDimensions' in inspected ? inspected.previewDimensions : undefined
+      const menuIconKeys = Object.keys(theme?.menuIcons ?? {})
+      const precheck = theme
+        ? {
+            hasCustomMenuIcons: menuIconKeys.length > 0,
+            hasDefaultMenuIcon: Boolean(theme.menuIcons?.default),
+            menuIconCount: menuIconKeys.length,
+            hasBackground: Boolean(theme.background),
+            hasCursors: Object.keys(theme.cursors ?? {}).length > 0,
+            hasMascot: Boolean(theme.mascot),
+            ...(previewDimensions ? { previewDimensions } : {}),
+          }
+        : undefined
       const tokens = theme
         ? (Object.fromEntries(
             Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
@@ -940,6 +990,9 @@ export function createOnlineAppearanceService(
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
           ...(theme ? { mode: theme.mode, tokens } : {}),
           ...(previewUrl ? { previewUrl } : {}),
+          ...(tryOnAppearance ? { tryOnAppearance } : {}),
+          ...(theme ? { hasBundledMascot: Boolean(theme.mascot) } : {}),
+          ...(precheck ? { precheck } : {}),
         },
         existing: existing ? { id: existing.id, name: existing.name } : null,
       }

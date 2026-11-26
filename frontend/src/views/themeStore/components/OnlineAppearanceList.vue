@@ -1,18 +1,32 @@
 <script setup lang="ts">
-import { SearchOutlined, SkinOutlined, UserOutlined } from '@ant-design/icons-vue'
+import { computed, ref } from 'vue'
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-
+import { useTheme } from '@/composables/useTheme'
+import { useAppearanceTryOnStore } from '@/stores/appearanceTryOn'
+import type { OnlineAppearanceItem } from '@/types/appearance'
+import type { AppearanceCategory } from '@/types/mascotPack'
 import {
-  formatOnlineAppearanceTime,
-  getOnlineAppearanceStatus,
-  type OnlineAppearanceStore,
-} from '../useOnlineAppearance'
+  filterAndSortStoreItems,
+  isLiveThemeItem,
+  pickAutoFeaturedItem,
+  shouldUseCompactBanner,
+  type StoreQuickFilter,
+  type StoreSortKey,
+} from '../storeFiltering'
+import { getOnlineAppearanceStatus, type OnlineAppearanceStore } from '../useOnlineAppearance'
+import OnlineAppearanceCard from './OnlineAppearanceCard.vue'
+import StoreFeaturedBanner from './StoreFeaturedBanner.vue'
 
 const props = defineProps<{
   store: OnlineAppearanceStore
+  categoryMode: 'all' | 'theme' | 'mascot' | 'installed'
 }>()
 
 const { t } = useI18n()
+const { persistedAppearance } = useTheme()
+const tryOnStore = useAppearanceTryOnStore()
+
 const {
   items,
   listLoading,
@@ -21,16 +35,71 @@ const {
   total,
   keyword,
   pageSize,
+  tryingFileKey,
   coverFor,
   loadList,
   scheduleSearch,
   clearKeyword,
   openDetail,
+  tryOnItem,
 } = props.store
+
+const quickFilter = ref<StoreQuickFilter>('all')
+const sortKey = ref<StoreSortKey>('latest')
+const bannerCollapsed = ref(false)
+
+const isThemeItem = (item: OnlineAppearanceItem): boolean => {
+  const cat: AppearanceCategory =
+    item.categoryKey ?? (props.categoryMode === 'mascot' ? 'mascot' : 'theme')
+  return cat === 'theme'
+}
+
+const isItemActive = (item: OnlineAppearanceItem): boolean =>
+  Boolean(item.installed && persistedAppearance.value?.id === item.installed.appearanceId)
+
+const isItemTrying = (item: OnlineAppearanceItem): boolean =>
+  Boolean(tryOnStore.active && tryOnStore.session?.fileKey === item.fileKey)
+
+const displayItems = computed(() =>
+  filterAndSortStoreItems(items.value, {
+    filter: quickFilter.value,
+    sort: sortKey.value,
+    installedOnly: props.categoryMode === 'installed',
+  })
+)
+
+const featuredItem = computed(() => {
+  if (
+    props.categoryMode === 'installed' ||
+    keyword.value.trim() ||
+    quickFilter.value !== 'all' ||
+    page.value !== 1
+  ) {
+    return null
+  }
+  return pickAutoFeaturedItem(items.value)
+})
+
+const compactBanner = computed(() => shouldUseCompactBanner(total.value || items.value.length))
+const outdatedCount = computed(
+  () => items.value.filter(item => getOnlineAppearanceStatus(item) === 'outdated').length
+)
+const liveCount = computed(() => items.value.filter(isLiveThemeItem).length)
+
+const sortOptions = computed(() => [
+  { value: 'latest', label: t('core.themeStore.sort.latest') },
+  { value: 'popular', label: t('core.themeStore.sort.popular') },
+  { value: 'updated', label: t('core.themeStore.sort.updated') },
+])
 
 const handleKeywordInput = (value: string): void => {
   keyword.value = value
   scheduleSearch()
+}
+
+const resetFilters = (): void => {
+  quickFilter.value = 'all'
+  clearKeyword()
 }
 </script>
 
@@ -40,16 +109,59 @@ const handleKeywordInput = (value: string): void => {
       :value="keyword"
       allow-clear
       :placeholder="t('core.themeStore.search')"
+      class="online-search"
       @update:value="handleKeywordInput"
       @press-enter="loadList(1)"
     >
       <template #prefix><SearchOutlined /></template>
     </a-input>
-    <slot name="filters" />
-    <a-button :loading="listLoading" @click="loadList(page)">
+
+    <div v-if="categoryMode !== 'mascot'" class="online-filter-pills">
+      <a-button
+        size="small"
+        :type="quickFilter === 'all' ? 'primary' : 'default'"
+        :ghost="quickFilter === 'all'"
+        @click="quickFilter = 'all'"
+      >
+        {{ t('core.themeStore.categories.all') }}
+      </a-button>
+      <a-button
+        v-if="outdatedCount > 0"
+        size="small"
+        :type="quickFilter === 'outdated' ? 'primary' : 'default'"
+        :ghost="quickFilter === 'outdated'"
+        @click="quickFilter = 'outdated'"
+      >
+        {{ t('core.themeStore.filter.outdated', { count: outdatedCount }) }}
+      </a-button>
+      <a-button
+        v-if="liveCount > 0"
+        size="small"
+        :type="quickFilter === 'live' ? 'primary' : 'default'"
+        :ghost="quickFilter === 'live'"
+        @click="quickFilter = 'live'"
+      >
+        {{ t('core.themeStore.filter.liveTheme') }}
+      </a-button>
+    </div>
+
+    <a-select
+      v-model:value="sortKey"
+      :options="sortOptions"
+      :aria-label="t('core.themeStore.sort.label')"
+      class="online-sort-select"
+    />
+
+    <a-button
+      :loading="listLoading"
+      :aria-label="t('core.themeStore.refresh')"
+      @click="loadList(page)"
+    >
+      <template #icon><ReloadOutlined /></template>
       {{ t('core.themeStore.refresh') }}
     </a-button>
   </div>
+
   <div v-if="listLoading" class="online-state">
     <a-spin size="large" :tip="t('core.themeStore.loading')" />
   </div>
@@ -62,65 +174,60 @@ const handleKeywordInput = (value: string): void => {
       </template>
     </a-result>
   </div>
-  <div v-else-if="items.length === 0" class="online-state">
+  <div v-else-if="displayItems.length === 0" class="online-state">
     <NoData
-      :description="keyword.trim() ? t('core.themeStore.noMatch') : t('core.themeStore.empty')"
+      :description="
+        keyword.trim() || quickFilter !== 'all'
+          ? t('core.themeStore.noMatch')
+          : categoryMode === 'installed'
+            ? t('core.themeStore.installedEmpty')
+            : t('core.themeStore.empty')
+      "
     >
-      <a-button v-if="keyword.trim()" @click="clearKeyword">
+      <a-button v-if="keyword.trim() || quickFilter !== 'all'" @click="resetFilters">
         {{ t('core.themeStore.clearSearch') }}
       </a-button>
     </NoData>
   </div>
-  <div v-else class="online-grid">
-    <button
-      v-for="item in items"
-      :key="`${item.categoryKey ?? ''}:${item.fileKey}`"
-      type="button"
-      class="online-card"
-      @click="openDetail(item)"
+  <template v-else>
+    <StoreFeaturedBanner
+      v-if="featuredItem"
+      :item="featuredItem"
+      :cover-url="
+        coverFor(featuredItem.fileKey, featuredItem.publishedVersionNo, featuredItem.categoryKey)
+      "
+      :compact="compactBanner"
+      :collapsed="bannerCollapsed"
+      :trying="tryingFileKey === featuredItem.fileKey"
+      :can-try-on="isThemeItem(featuredItem)"
+      @try-on="item => void tryOnItem(item)"
+      @open-detail="openDetail"
+      @toggle-collapse="bannerCollapsed = !bannerCollapsed"
+    />
+
+    <div
+      class="online-grid"
+      :class="{
+        'online-grid--mascot': categoryMode === 'mascot',
+        'online-grid--dock-pad': tryOnStore.active,
+      }"
     >
-      <span class="online-cover">
-        <img
-          v-if="coverFor(item.fileKey, item.publishedVersionNo, item.categoryKey)"
-          :src="coverFor(item.fileKey, item.publishedVersionNo, item.categoryKey)"
-          :alt="item.displayName || item.fileKey"
-          class="online-cover-image"
-        />
-        <SkinOutlined v-else class="online-cover-placeholder" />
-        <a-tag
-          v-if="getOnlineAppearanceStatus(item) === 'installed'"
-          color="success"
-          class="online-cover-tag"
-        >
-          {{ t('core.themeStore.installed') }}
-        </a-tag>
-        <a-tag
-          v-else-if="getOnlineAppearanceStatus(item) === 'outdated'"
-          color="warning"
-          class="online-cover-tag"
-        >
-          {{ t('core.themeStore.installedOlder', { version: item.installed?.versionNo }) }}
-        </a-tag>
-      </span>
-      <span class="online-card-body">
-        <span class="online-name">{{ item.displayName || item.fileKey }}</span>
-        <span v-if="item.categoryKey" class="online-meta">{{
-          t(`core.themeStore.categories.${item.categoryKey}`)
-        }}</span>
-        <span class="online-meta">
-          <span v-if="item.publishedVersionNo !== null">v{{ item.publishedVersionNo }}</span>
-          <span class="online-owner">
-            <UserOutlined />
-            {{ item.ownerUsername || t('core.themeStore.unknownAuthor') }}
-          </span>
-          <span>{{ formatOnlineAppearanceTime(item.publishedAt || item.updatedAt) }}</span>
-        </span>
-        <span class="online-description">
-          {{ item.description || t('core.themeStore.noDescription') }}
-        </span>
-      </span>
-    </button>
-  </div>
+      <OnlineAppearanceCard
+        v-for="item in displayItems"
+        :key="`${item.categoryKey ?? ''}:${item.fileKey}`"
+        :item="item"
+        :cover-url="coverFor(item.fileKey, item.publishedVersionNo, item.categoryKey)"
+        :show-category-badge="categoryMode === 'all'"
+        :can-try-on="isThemeItem(item)"
+        :is-active="isItemActive(item)"
+        :is-trying="isItemTrying(item)"
+        :trying-loading="tryingFileKey === item.fileKey"
+        @open="openDetail"
+        @try-on="entry => void tryOnItem(entry)"
+      />
+    </div>
+  </template>
+
   <div v-if="!listLoading && !listError && total > pageSize" class="online-pagination">
     <a-pagination
       size="small"
@@ -136,13 +243,26 @@ const handleKeywordInput = (value: string): void => {
 <style scoped>
 .online-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
   margin-bottom: 16px;
 }
 
-.online-toolbar > :first-child {
-  flex: 1;
-  min-width: 0;
+.online-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.online-filter-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.online-sort-select {
+  width: 132px;
 }
 
 .online-state {
@@ -154,101 +274,16 @@ const handleKeywordInput = (value: string): void => {
 
 .online-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
   gap: 16px;
 }
 
-.online-card {
-  display: flex;
-  min-width: 0;
-  overflow: hidden;
-  flex-direction: column;
-  padding: 0;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  color: var(--ant-color-text);
-  background: var(--ant-color-bg-container);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+.online-grid--mascot {
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
 }
 
-.online-card:hover,
-.online-card:focus-visible {
-  border-color: var(--ant-color-primary);
-  outline: none;
-}
-
-.online-cover {
-  position: relative;
-  display: flex;
-  aspect-ratio: 16 / 10;
-  align-items: center;
-  justify-content: center;
-  background: var(--ant-color-bg-layout);
-}
-
-.online-cover-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.online-cover-placeholder {
-  color: var(--ant-color-text-quaternary);
-  font-size: 32px;
-}
-
-.online-cover-tag {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  margin-inline-end: 0;
-}
-
-.online-card-body {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  padding: 12px 14px 14px;
-}
-
-.online-name {
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.online-meta {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 2px 12px;
-  margin-top: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.online-owner {
-  overflow: hidden;
-  max-width: 100%;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.online-description {
-  display: -webkit-box;
-  margin-top: 8px;
-  overflow: hidden;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+.online-grid--dock-pad {
+  padding-bottom: 76px;
 }
 
 .online-pagination {
