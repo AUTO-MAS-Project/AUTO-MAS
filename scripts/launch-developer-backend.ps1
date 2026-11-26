@@ -72,13 +72,15 @@ try {
         Write-Output "发行版 $($file.FullName)"
         return
     }
-    $previous = $env:AUTO_MAS_BACKEND_REPO
-    try {
-        $env:AUTO_MAS_BACKEND_REPO = $source
-        Start-Process -FilePath $file.FullName -WorkingDirectory $base
-    } finally {
-        $env:AUTO_MAS_BACKEND_REPO = $previous
-    }
+    # 只修改子进程环境：使用与本次预检一致的 Runtime 根，不继承旧的路径覆盖。
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $file.FullName
+    $start.WorkingDirectory = $base
+    $start.UseShellExecute = $false
+    $start.EnvironmentVariables['AUTO_MAS_BACKEND_REPO'] = $source
+    $start.EnvironmentVariables['AUTO_MAS_BACKEND_RUNTIME_ROOT'] = $base
+    $child = [Diagnostics.Process]::Start($start)
+    $child.Dispose()
 } catch {
     if (!$WhatIf -and $interactive) {
         Add-Type -AssemblyName System.Windows.Forms
