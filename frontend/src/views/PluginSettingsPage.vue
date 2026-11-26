@@ -5,7 +5,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vue'
+import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
@@ -27,7 +27,6 @@ import {
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
-import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -179,7 +178,6 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
   // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
   const field = hint.field
   if (
-    value !== true ||
     !field ||
     !configUid.value ||
     hint.editable !== true ||
@@ -188,6 +186,11 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
     activeFields.value.includes(`${group}.${field}`)
   )
     return
+  // 触发器只接受三态命令。这里仅启动任务，false 是取消，null 是跳过。
+  if (value !== true) {
+    message.error(t('core.plugins.actionFailed'))
+    return
+  }
   runningKey.value = `${group}.${field}`
   try {
     const result = await api.runCommand('config', {
@@ -254,7 +257,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         overlay-loading
         @retry="fetchSettings"
       >
-        <PluginDeclarativeForm
+        <DeclarativeForm
           v-if="groups.length"
           :groups="groups"
           :tables="tables"

@@ -110,12 +110,13 @@ def _read_field(proc: psutil.Process, field: str) -> object:
         return None
 
 
-def is_process_running(process_name: str) -> bool:
+def is_process_running(process_name: str, *, exe: str | None = None) -> bool:
     """在调用者所在桌面查找指定进程的可见窗口。"""
 
-    for proc in psutil.process_iter(["name"]):
+    target = ProcessInfo(name=process_name, exe=exe)
+    for proc in psutil.process_iter(["name", "exe"] if exe else ["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
+            if match_process(proc, target):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
@@ -123,16 +124,16 @@ def is_process_running(process_name: str) -> bool:
     return False
 
 
-async def has_process_window(process_name: str) -> bool:
+async def has_process_window(process_name: str, *, exe: str | None = None) -> bool:
     """在任务所在桌面查找指定进程的可见窗口。"""
     desktop = desktop_process_target.get()
     if desktop is None:
-        return is_process_running(process_name)
+        return is_process_running(process_name, exe=exe)
 
     from app.utils.windows.desktop_session.process_runner import run_desktop_action
 
     code, _, _ = await run_desktop_action(
-        desktop, "has_process_window", {"name": process_name}
+        desktop, "has_process_window", {"name": process_name, "exe": exe}
     )
     return code == 0
 

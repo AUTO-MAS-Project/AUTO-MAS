@@ -9,6 +9,7 @@ import type { GuardedAction } from './useInstalledActions'
 
 /**
  * 停用与卸载被拦住时的弹层：有托管在用时列出托管并引导去托管管理；
+ * 会连带停用的专项名下还有托管或计划表时列出这些专项及数量，同样引导去托管管理；
  * 用量还不知道（加载中或失败）时不当成没有托管，提示重试。
  */
 const props = defineProps<{
@@ -26,7 +27,9 @@ const open = computed(
   () =>
     props.view !== null &&
     props.action !== null &&
-    (props.decision?.kind === 'blockedInUse' || props.decision?.kind === 'blockedUnknown')
+    (props.decision?.kind === 'blockedInUse' ||
+      props.decision?.kind === 'blockedCascade' ||
+      props.decision?.kind === 'blockedUnknown')
 )
 const title = computed(() =>
   props.view && props.action
@@ -35,6 +38,22 @@ const title = computed(() =>
 )
 const scripts = computed(() =>
   props.decision?.kind === 'blockedInUse' ? props.decision.scripts : []
+)
+/** 会连带停用、名下还有托管或计划表的专项，每项附托管数与计划表数（为 0 的不显示）。 */
+const cascade = computed(() =>
+  props.decision?.kind === 'blockedCascade'
+    ? props.decision.plugins.map(item => ({
+        ...item,
+        counts: (
+          [
+            ['core.plugins.usage.scripts', item.scripts],
+            ['core.plugins.usage.plans', item.plans],
+          ] as const
+        )
+          .flatMap(([key, count]) => (count ? [t(key, { count })] : []))
+          .join(' · '),
+      }))
+    : []
 )
 const unknownReason = computed(() =>
   props.decision?.kind === 'blockedUnknown' ? props.decision.reason : null
@@ -78,6 +97,18 @@ const goScripts = () => {
           </ul>
         </div>
       </template>
+      <template v-else-if="cascade.length">
+        <a-alert type="warning" :message="t('core.plugins.guard.cascadeInUse')" />
+        <div>
+          <div class="guard-caption">{{ t('core.plugins.guard.cascadeInUseList') }}</div>
+          <ul class="guard-scripts">
+            <li v-for="item in cascade" :key="item.pluginId">
+              <span class="guard-script-name">{{ item.name }}</span>
+              <span class="guard-caption">{{ item.counts }}</span>
+            </li>
+          </ul>
+        </div>
+      </template>
       <a-alert
         v-else-if="unknownReason"
         :type="unknownReason === 'failed' ? 'error' : 'info'"
@@ -92,7 +123,7 @@ const goScripts = () => {
     </div>
     <template #footer>
       <a-button @click="emit('close')">{{ t('core.common.close') }}</a-button>
-      <a-button v-if="scripts.length" type="primary" @click="goScripts">{{
+      <a-button v-if="scripts.length || cascade.length" type="primary" @click="goScripts">{{
         t('core.plugins.guard.goScripts')
       }}</a-button>
       <a-button v-else type="primary" :loading="usageLoading" @click="emit('retry')">{{

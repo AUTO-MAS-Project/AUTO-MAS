@@ -20,6 +20,7 @@ from app.task.run_flow import (
     operation,
     point,
 )
+from app.task.user_expander import ScriptSkip
 
 
 def in_desktop_session() -> bool:
@@ -40,6 +41,7 @@ __all__ = [
     "ScriptAdapterPlugin",
     "ScriptConfigWorker",
     "UserExpander",
+    "ScriptSkip",
     "ScriptTypeDecl",
     "RunPoint",
     "begin_attempt",

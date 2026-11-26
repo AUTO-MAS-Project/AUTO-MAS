@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { presetTemplateChips } from '../maafwPresetQueue'
-import type { MaaFWQueueTemplateView, PresetTemplate } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWQueueTemplateView, PresetTemplate } from './sectionProps'
 import MaaFWQueueCard from './MaaFWQueueCard.vue'
 
 /**

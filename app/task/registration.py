@@ -47,7 +47,7 @@ class ScriptRegistration:
     # [兼容旧专项] 存量配置回调工厂，迁至插件配置能力声明后移除此字段及装配。
     create_config_handler: Callable[[], ScriptConfigHandler] | None
     load_restore_pools: RestorePoolLoader | None
-    # 配置与恢复沿用各自的有序 isinstance 规则，不是最近父类匹配。
+    # 配置回调与恢复池都按确切类型查，不按继承匹配；优先级只决定登记先后。
     config_priority: int
     restore_priority: int
 
@@ -79,10 +79,9 @@ def build_script_capabilities(
             if run_type in factories:
                 raise ValueError(f"重复的运行登记: {run_type.__name__}")
             factories[run_type] = declaration.manager_factory
+    # 按确切类型核对：子类不因父类登记过就算登记过（回调与恢复池也按确切类型查）。
     for entry_type in expected_types:
-        if entry_type not in factories or not any(
-            issubclass(entry_type, registered) for registered in config_types
-        ):
+        if entry_type not in factories or entry_type not in config_types:
             raise ValueError(f"专项能力漏登: {entry_type.__name__}")
 
     return ScriptCapabilities(

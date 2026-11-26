@@ -17,6 +17,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import comtypes.client
+from winerror import ERROR_LOGON_FAILURE
 
 from app.utils.windows.desktop_session import audio, credentials
 from app.utils.windows.desktop_session.environment import (
@@ -241,15 +242,20 @@ class Host:
             if password is not None
             else credentials.load(path, account)
         )
-        started = datetime.now(UTC)
-        try:
-            credentials.validate(credential)
-        except credentials.CredentialError as exc:
-            if exc.native_code is not None:
-                failure = recent_failure(started, account, sid, remote=False)
-                if failure:
-                    self.report("authentication_failure", **failure)
-            raise
+        if credential is not None:
+            started = datetime.now(UTC)
+            try:
+                credentials.validate(credential)
+            except credentials.CredentialError as exc:
+                if password is None and exc.native_code == ERROR_LOGON_FAILURE:
+                    # 账号密码可能已移除，改用当前 Windows 会话自动登录。
+                    credential = None
+                else:
+                    if exc.native_code is not None:
+                        failure = recent_failure(started, account, sid, remote=False)
+                        if failure:
+                            self.report("authentication_failure", **failure)
+                    raise
 
         approved = command.get("adoptSessionId")
         current = child_session()
@@ -264,7 +270,7 @@ class Host:
             )
             return
 
-        if password is not None:
+        if password is not None and credential is not None:
             try:
                 credentials.save(path, account, credentials.encode(credential))
             except credentials.CredentialError as exc:

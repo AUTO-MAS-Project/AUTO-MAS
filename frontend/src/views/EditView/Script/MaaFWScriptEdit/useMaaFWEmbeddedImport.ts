@@ -15,24 +15,22 @@ interface MaaFWEmbeddedImportOptions {
   maafwConfig: MaaFWScriptConfig
   formData: MaaFWScriptFormData
   channel: MaaFWProgressChannel
-  /** 导入成功后重新拉脚本类型：后端按项目内容原地换类型 */
-  refreshScriptType: () => Promise<void>
   /** 有效根换了之后重新读 interface 并重新准备运行环境 */
   runPreviewOnNewRoot: () => Promise<void>
-  /** 页面已卸载（导入换了类型、页面宿主换成了特调自己的页面） */
+  /** 页面已卸载（导入期间离开了页面）：不再往下读 interface、回写草稿 */
   isPageUnmounted: () => boolean
 }
 
 /**
  * 内嵌副本：状态只从后端拿（副本在不在、来源在不在都是磁盘上的事实，本地草稿说了不算），
- * 选目录即导入，导入进度走与运行环境准备共用的那条订阅。
+ * 选目录即导入，导入进度走与运行环境准备共用的那条订阅。托管类型不随导入变；M9A / MSS 托管
+ * 选了别的项目时后端拒绝导入，原因与其它导入失败一样记进 importError。
  */
 export function useMaaFWEmbeddedImport({
   scriptId,
   maafwConfig,
   formData,
   channel,
-  refreshScriptType,
   runPreviewOnNewRoot,
   isPageUnmounted,
 }: MaaFWEmbeddedImportOptions) {
@@ -77,9 +75,6 @@ export function useMaaFWEmbeddedImport({
       const { status, message: text } = await action()
       embeddedStatus.value = status
       if (text) message.success(text)
-      // 导入完成后后端按项目内容决定脚本类型（M9A 项目 → M9A，其它 → MaaFW），
-      // 重新拉一次类型让 flavor 文案跟上
-      await refreshScriptType()
       return true
     } catch (error) {
       importError.value = error instanceof Error ? error.message : String(error)
@@ -104,10 +99,7 @@ export function useMaaFWEmbeddedImport({
       importPercent.value = 0
       importMessage.value = ''
       const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
-      if (!ok) return
-      // 导入后类型变成了有自己页面的特调：页面宿主已经换上那个页面，它加载时自己读 interface、
-      // 备运行环境；这个旧实例再往下走只会重复请求、拿旧草稿回写配置
-      if (isPageUnmounted()) return
+      if (!ok || isPageUnmounted()) return
       maafwConfig.Info.Path = path
       formData.path = path
       await runPreviewOnNewRoot()

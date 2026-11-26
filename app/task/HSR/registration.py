@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import HSRConfig
-from app.models.script_contracts import ScriptConfigHandler
+from app.models.script_contracts import ScriptConfigHandler, game_management_enabled
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -37,7 +37,13 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import HSRUserConfig
 
-    return ScriptConfigHandler(user_config_class=HSRUserConfig)
+    return ScriptConfigHandler(
+        user_config_class=HSRUserConfig,
+        supports_game_binding=lambda script, patch: (
+            game_management_enabled(script, patch)
+            and patch.get("Game", {}).get("Platform", script.Game.Platform) == "Client"
+        ),
+    )
 
 
 def load_restore_pools() -> list[ConfigRestorePool]:

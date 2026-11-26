@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from .general import GeneralManager as GeneralManager
     from .HSR import HSRManager as HSRManager
     from .MaaEnd import MaaEndManager as MaaEndManager
-    from .MaaFW.embedded_manager import MaaFWEmbeddedManager as MaaFWEmbeddedManager
     from .mode_worker import (
         MODE_WORKERS as MODE_WORKERS,
     )
@@ -51,16 +50,8 @@ if TYPE_CHECKING:
     from .user_expander import UserExpander as UserExpander
     from .ZzzOd import ZzzOdManager as ZzzOdManager
 
-# 惰性导出（与 app/core/__init__.py 同一 idiom）。
-#
-# 这里必须惰性：第二层的 worker 子进程用的是 runtime pool 的隔离 venv
-# （只有 maafw 与项目依赖），它以 `-m app.task.MaaFW.tools.core.
-# runner.worker` 启动时，Python 会先执行本文件；若在此
-# 急切导入九个 manager，就会连带拉起 app.core -> httpx/loguru/fastapi，
-# 而那些包在隔离 venv 里并不存在，worker 起不来。
-#
-# 顺带也让宿主启动少导入一批模块。属性访问语义不变：
-# `import app.task as task; task.MaaFWManager` 照常可用。
+# 惰性导出（与 app/core/__init__.py 同一 idiom）：宿主启动少导入一批模块。
+# 属性访问语义不变：`import app.task as task; task.MaaEndManager` 照常可用。
 _LAZY_EXPORTS = {
     "UserExpander": (".user_expander", "UserExpander"),
     "ModeWorker": (".mode_worker", "ModeWorker"),
@@ -76,7 +67,6 @@ _LAZY_EXPORTS = {
     "BetterGIManager": (".BetterGI", "BetterGIManager"),
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "BAAHManager": (".BAAH", "BAAHManager"),
-    "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 
 
@@ -107,5 +97,4 @@ __all__ = [
     "HSRManager",
     "BetterGIManager",
     "ZzzOdManager",
-    "MaaFWEmbeddedManager",
 ]

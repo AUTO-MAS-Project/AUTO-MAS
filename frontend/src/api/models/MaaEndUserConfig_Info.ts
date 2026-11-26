@@ -4,25 +4,29 @@
 /* eslint-disable */
 export type MaaEndUserConfig_Info = {
     /**
-     * base 来源（shared=共享/independent=独立/native=原生）
+     * 是否在任务后执行脚本
      */
-    Base?: ('shared' | 'independent' | 'native' | null);
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
     /**
      * 账号ID
      */
     Id?: (string | null);
     /**
-     * 是否启用覆写常规配置
+     * 密码
      */
-    IfQuickConfig?: (boolean | null);
-    /**
-     * 任务后执行脚本
-     */
-    IfScriptAfterTask?: (boolean | null);
-    /**
-     * 任务前执行脚本
-     */
-    IfScriptBeforeTask?: (boolean | null);
+    Password?: (string | null);
     /**
      * 账号名称
      */
@@ -32,13 +36,25 @@ export type MaaEndUserConfig_Info = {
      */
     Notes?: (string | null);
     /**
-     * 密码
-     */
-    Password?: (string | null);
-    /**
      * 剩余天数
      */
     RemainedDay?: (number | null);
+    /**
+     * 是否启用
+     */
+    Status?: (boolean | null);
+    /**
+     * 账号标签信息
+     */
+    readonly Tag?: (string | null);
+    /**
+     * base 来源（shared=共享/independent=独立/native=原生）
+     */
+    Base?: ('shared' | 'independent' | 'native' | null);
+    /**
+     * 是否启用覆写常规配置
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * MaaEnd 启动服务器选项原值，官服为旧配置兼容值
      */
@@ -55,21 +71,5 @@ export type MaaEndUserConfig_Info = {
      * 基质刷取配置模式
      */
     AutoEssenceMode?: (string | null);
-    /**
-     * 任务后脚本路径
-     */
-    ScriptAfterTask?: (string | null);
-    /**
-     * 任务前脚本路径
-     */
-    ScriptBeforeTask?: (string | null);
-    /**
-     * 是否启用
-     */
-    Status?: (boolean | null);
-    /**
-     * 账号标签信息
-     */
-    readonly Tag?: (string | null);
 };
 

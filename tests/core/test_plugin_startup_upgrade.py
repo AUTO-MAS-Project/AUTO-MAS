@@ -14,11 +14,13 @@ from zipfile import ZipFile
 
 import pytest
 import tomli_w
+from packaging.version import Version
 
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
-from app.plugin.errors import PluginError
-from app.plugin.uv import ops, precheck
+from app.plugin.errors import PluginError, PluginPrecheckError
+from app.plugin.runtime import loader
+from app.plugin.uv import environment, ops, precheck
 
 
 @pytest.fixture(autouse=True)
@@ -124,9 +126,14 @@ def wheel(
                     "Metadata-Version: 2.1",
                     f"Name: {name}",
                     f"Version: {version}",
-                    f"Keywords: auto-mas-plugin, auto-mas-id:{plugin_id or 'startup_probe'}"
-                    if plugin_id is not None or module == "startup_probe"
-                    else "",
+                    # 不是插件时不写这行；写成空行会截断头部，后面的 Requires-Dist 就丢了。
+                    *(
+                        [
+                            f"Keywords: auto-mas-plugin, auto-mas-id:{plugin_id or 'startup_probe'}"
+                        ]
+                        if plugin_id is not None or module == "startup_probe"
+                        else []
+                    ),
                     *(f"Requires-Dist: {item}" for item in requires),
                     "",
                     "",
@@ -634,3 +641,532 @@ async def test_cold_upgrade_preserves_host_and_config_and_enables_without_restar
         I18n.set_plugin_sources(previous_sources)
         sys.modules.pop("startup_probe", None)
         sys.modules.pop("probe_host", None)
+
+
+FAMILY_MODULES = ("fam_service", "fam_adapter_a", "fam_adapter_b", "fam_adapter_c")
+FAMILY_PLUGIN = "from app.plugin.base import BasePlugin\nclass Plugin(BasePlugin): pass\nPLUGIN=Plugin\n"
+
+
+async def _plugin_family(config, monkeypatch, tmp_path, *, stuck):
+    """已装 0.1 全家（服务 + 只认服务 0.1.x 的两个专项）和一个无关插件，
+    索引里有 0.2 全家和无关插件 2.0；``stuck`` 时另装一个没有新版本的同族专项。"""
+    source = tmp_path / "source"
+    (source / "plugins").mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="auto-mas"\nversion="5.9.0b1"\ndependencies=[]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "source_path", source)
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    site = ops.site_dir(activate=False)
+    monkeypatch.syspath_prepend(str(site))
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+
+    def plugin(name, version, *requires):
+        module = name.replace("-", "_")
+        return wheel(
+            wheels,
+            name=name,
+            version=version,
+            module=module,
+            plugin_id=module,
+            content=FAMILY_PLUGIN,
+            requires=["auto-mas-core>=5,<6", *requires],
+        )
+
+    old_service, new_service = "fam-service>=0.1,<0.2", "fam-service>=0.2,<0.3"
+    installed = [
+        plugin("fam-service", "0.1.0"),
+        plugin("fam-adapter-a", "0.1.0", old_service),
+        plugin("fam-adapter-b", "0.1.0", old_service),
+        plugin("fam-unrelated", "1.0"),
+    ]
+    if stuck:
+        installed.append(plugin("fam-adapter-c", "0.1.0", old_service))
+    for path in installed:
+        with ZipFile(path) as archive:
+            archive.extractall(site)
+    plugin("fam-service", "0.2.0")
+    plugin("fam-adapter-a", "0.2.0", new_service)
+    plugin("fam-adapter-b", "0.2.0", new_service)
+    plugin("fam-unrelated", "2.0")
+    importlib.invalidate_caches()
+    from app.plugin.runtime import discover
+
+    await discover.refresh()
+    monkeypatch.setattr(precheck, "candidates", lambda: ["https://offline.test/simple"])
+    execute = precheck.ProcessRunner.run_process
+
+    async def offline(*args, **kwargs):
+        """只把包索引换成本地 wheel 目录，求解与安装都是真 uv。"""
+        args = list(args)
+        if "--index-url" in args:
+            index = args.index("--index-url")
+            args[index : index + 2] = ["--no-index", "--find-links", str(wheels)]
+        return await execute(*args, **kwargs)
+
+    monkeypatch.setattr(precheck.ProcessRunner, "run_process", offline)
+    return registry, site
+
+
+def _installed_versions(site):
+    return {
+        dist.metadata["Name"]: dist.version
+        for dist in importlib.metadata.distributions(path=[str(site)])
+    }
+
+
+def _upgrade_request(package):
+    # 主程序升级补装专项的入口：不带版本，由调用方给版本下限。
+    return PluginMeta.build(
+        info={
+            "package_name": package,
+            "plugin_name": package.replace("-", "_"),
+            "version": "",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_family_plugins_upgrade_together_and_unrelated_plugin_stays(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """装专项 0.2 时已加载的服务插件 0.1 挡路：同族一起升到 0.2、等重启生效，无关插件不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        result = await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        )
+        assert result == {"restart_required": True}
+        # 运行中的环境原样，重启后生效的候选环境里整族都是 0.2。
+        assert _installed_versions(site)["fam-service"] == "0.1.0"
+        pending = _installed_versions(site.with_suffix(".pending"))
+        assert {
+            name: pending[name]
+            for name in ("fam-service", "fam-adapter-a", "fam-adapter-b")
+        } == dict.fromkeys(("fam-service", "fam-adapter-a", "fam-adapter-b"), "0.2.0")
+        assert pending["fam-unrelated"] == "1.0"
+        # 同一轮补装兄弟专项：已被一起升到下限以上，等同一次重启即可，不能报错。
+        assert await manager.install(
+            _upgrade_request("fam-adapter-b"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+        with pytest.raises(PluginPrecheckError, match="等待重启"):
+            await manager.install(
+                _upgrade_request("fam-adapter-b"), minimum_version=Version("0.3.0")
+            )
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["hot", "restart"])
+async def test_install_keeps_host_library_for_builtin_managed(
+    isolated_app_paths, monkeypatch, tmp_path, mode
+):
+    """配置里有 MaaEnd 托管、环境里已有 MFW 解析库：装别的插件重建环境后库还在，
+    热发布与等重启换入的候选环境都一样。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    wheels = tmp_path / "wheels"
+    library = wheel(
+        wheels,
+        name="auto-mas-maafw-interface",
+        version="0.2.0",
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    wheel(
+        wheels,
+        name="fam-newcomer",
+        version="1.0",
+        module="fam_newcomer",
+        plugin_id="fam_newcomer",
+        content=FAMILY_PLUGIN,
+        requires=["auto-mas-core>=5,<6"],
+    )
+    config_path = isolated_app_paths.config_path
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "scripts.yaml").write_text(
+        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
+        encoding="utf-8",
+    )
+    manager = _PluginManager()
+    try:
+        if mode == "hot":
+            await manager.install(_upgrade_request("fam-newcomer"))
+            assert _installed_versions(site)["fam-newcomer"] == "1.0"
+        else:
+            await manager.load(registry.by_name("fam_service"))
+            assert await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+            ) == {"restart_required": True}
+            assert (
+                _installed_versions(site.with_suffix(".pending"))["fam-adapter-a"]
+                == "0.2.0"
+            )
+            await manager.shutdown()
+            assert await environment.apply_pending()
+        assert _installed_versions(site)["auto-mas-maafw-interface"] == "0.2.0"
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in (*FAMILY_MODULES, "fam_newcomer"):
+            sys.modules.pop(name, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fallback", ["pinned", "upgrade"])
+async def test_startup_fallback_keeps_installed_host_library(
+    isolated_app_paths, monkeypatch, tmp_path, fallback
+):
+    """启动前带库求解失败、走兜底重建插件环境时，已装的宿主库不能被移走。
+
+    pinned：库要的新版本索引里此刻拿不到，退回钉住已装插件的求解；
+    upgrade：已装插件的现版本索引里没有了，退回联合升级。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    wheels = tmp_path / "wheels"
+    installed = "0.1.0" if fallback == "pinned" else "0.2.0"
+    library = wheel(
+        wheels,
+        name="auto-mas-maafw-interface",
+        version=installed,
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    if fallback == "upgrade":
+        (wheels / "fam_unrelated-1.0-py3-none-any.whl").unlink()
+    importlib.invalidate_caches()
+    try:
+        await ops.prepare_environment(libraries=["auto-mas-maafw-interface>=0.2.0"])
+        versions = _installed_versions(site)
+    finally:
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    assert versions["auto-mas-maafw-interface"] == installed
+    assert versions["fam-unrelated"] == ("1.0" if fallback == "pinned" else "2.0")
+    assert registry.by_name("fam_service") is not None
+
+
+LIBRARY = "auto-mas-maafw-interface>=0.2.0"
+
+
+async def _pending_without_library(config, monkeypatch, tmp_path, *, available):
+    """装专项 0.2 等重启（此时配置里还没有 MaaEnd 托管，候选里没有解析库），
+    之后才建首条 MaaEnd 托管；``available`` 时索引里有解析库和它新带来的依赖。"""
+    registry, site = await _plugin_family(config, monkeypatch, tmp_path, stuck=False)
+    wheels = tmp_path / "wheels"
+    if available:
+        wheel(
+            wheels,
+            name="auto-mas-maafw-interface",
+            version="0.2.0",
+            module="maafw_interface_probe",
+            requires=["fam-interface-dep>=1"],
+        )
+        wheel(wheels, name="fam-interface-dep", version="1.0", module="fam_dep_probe")
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        assert await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    pending = _installed_versions(site.with_suffix(".pending"))
+    assert "auto-mas-maafw-interface" not in pending
+    return site, pending
+
+
+@pytest.mark.asyncio
+async def test_first_restart_adds_host_library_missing_from_pending(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """候选建好后才加 MaaEnd 托管：第一次重启换入候选时就把解析库补进去，
+    候选里原有的发行包版本一个不变，旧环境留作回滚，安装记录等加载后确认。"""
+    monkeypatch.setattr(ops, "library_failure", None)
+    site, pending = await _pending_without_library(
+        isolated_app_paths, monkeypatch, tmp_path, available=True
+    )
+    await ops.prepare_environment(libraries=[LIBRARY])
+    versions = _installed_versions(site)
+    assert {name: versions[name] for name in pending} == pending
+    assert versions["auto-mas-maafw-interface"] == "0.2.0"
+    assert versions["fam-interface-dep"] == "1.0"
+    assert set(versions) == {*pending, "auto-mas-maafw-interface", "fam-interface-dep"}
+    previous = site.with_suffix(".previous")
+    assert _installed_versions(previous)["fam-adapter-a"] == "0.1.0"
+    assert not site.with_suffix(".pending").exists()
+    assert environment.read_installation().progress.state == "applying"
+    assert ops.library_failure is None
+    # 这次启动没确认成功（例如加载中途退出）：下次启动照常整目录回滚到旧环境。
+    assert not await environment.apply_pending()
+    restored = _installed_versions(site)
+    assert restored["fam-adapter-a"] == "0.1.0"
+    assert "auto-mas-maafw-interface" not in restored
+    assert environment.read_installation().progress.state == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cause", ["unsolvable", "offline"])
+async def test_first_restart_without_library_still_starts_and_explains(
+    isolated_app_paths, monkeypatch, tmp_path, cause
+):
+    """补不上解析库时照常换入启动；原因记下来，MaaEnd 运行时报错带上原因和恢复办法。"""
+    from app.task.MaaEnd import mfw_parse
+
+    monkeypatch.setattr(ops, "library_failure", None)
+    site, pending = await _pending_without_library(
+        isolated_app_paths, monkeypatch, tmp_path, available=False
+    )
+    if cause == "offline":
+
+        async def offline(**kwargs):
+            raise PluginPrecheckError("兼容性检查未完成，请检查网络或稍后重试")
+
+        monkeypatch.setattr(precheck, "resolve_environment", offline)
+    await ops.prepare_environment(libraries=[LIBRARY])
+    assert _installed_versions(site) == pending
+    assert site.with_suffix(".previous").is_dir()
+    assert environment.read_installation().progress.state == "applying"
+    with pytest.raises(RuntimeError) as raised:
+        mfw_parse._module("maafw_interface_absent_probe")
+    message = str(raised.value)
+    if cause == "offline":
+        assert "网络不通或镜像没有响应" in message
+        assert "联网后重启 AUTO-MAS 会自动安装" in message
+    else:
+        assert "依赖解不开，涉及 auto-mas-maafw-interface" in message
+        assert "重启 AUTO-MAS 会再尝试安装" in message
+    assert str(tmp_path) not in message
+
+
+@pytest.mark.asyncio
+async def test_first_restart_skips_solving_when_pending_has_library(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """候选里本来就有解析库：换入时不求解、不联网。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    library = wheel(
+        tmp_path / "wheels",
+        name="auto-mas-maafw-interface",
+        version="0.2.0",
+        module="maafw_interface_probe",
+    )
+    with ZipFile(library) as archive:
+        archive.extractall(site)
+    config_path = isolated_app_paths.config_path
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "scripts.yaml").write_text(
+        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
+        encoding="utf-8",
+    )
+    manager = _PluginManager()
+    try:
+        await manager.load(registry.by_name("fam_service"))
+        assert await manager.install(
+            _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+        ) == {"restart_required": True}
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+
+    async def forbidden(**kwargs):
+        raise AssertionError("候选里已有解析库，不该求解")
+
+    monkeypatch.setattr(precheck, "resolve_environment", forbidden)
+    await ops.prepare_environment(libraries=[LIBRARY])
+    versions = _installed_versions(site)
+    assert versions["auto-mas-maafw-interface"] == "0.2.0"
+    assert versions["fam-adapter-a"] == "0.2.0"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("upgrading", ["fam-special", "fam-runner", "fam-agent-env"])
+async def test_market_update_lifts_mutually_capped_family_together(
+    isolated_app_paths, monkeypatch, tmp_path, upgrading
+):
+    """已装 0.2 一族彼此写 <0.3：市场里把其中一个更新到 0.3.0，别的被钉在 ==0.2.0 时
+    无解，要放开它们一起升到 0.3.0；升依赖方、升被依赖的服务插件（依赖它的专项还钉着
+    旧范围）都一样。"""
+    from email.parser import Parser
+
+    from app.plugin.runtime import discover, market_index
+
+    config = isolated_app_paths
+    source = tmp_path / "source"
+    (source / "plugins").mkdir(parents=True)
+    (source / "pyproject.toml").write_text(
+        '[project]\nname="auto-mas"\nversion="5.9.0b1"\ndependencies=[]\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "source_path", source)
+    registry = PluginRegistryCollection.build([PluginRecord])
+    await registry.activate()
+    monkeypatch.setattr(config, "plugin_registry", registry)
+    site = ops.site_dir(activate=False)
+    monkeypatch.syspath_prepend(str(site))
+    wheels = tmp_path / "wheels"
+    wheels.mkdir()
+
+    def plugin(name, version, *requires):
+        module = name.replace("-", "_")
+        return wheel(
+            wheels,
+            name=name,
+            version=version,
+            module=module,
+            plugin_id=module,
+            content=FAMILY_PLUGIN,
+            requires=["auto-mas-core>=5,<6", *requires],
+        )
+
+    # 0.2 一族彼此写 <0.3；专项挂在 runner 上，runner 挂在 agent-env 上。
+    for path in (
+        plugin("fam-agent-env", "0.2.0", "fam-runner>=0.2.0,<0.3"),
+        plugin("fam-runner", "0.2.0", "fam-agent-env>=0.2.0,<0.3"),
+        plugin("fam-special", "0.2.0", "fam-runner>=0.2.0,<0.3"),
+    ):
+        with ZipFile(path) as archive:
+            archive.extractall(site)
+    released = {
+        "fam-agent-env": plugin("fam-agent-env", "0.3.0"),
+        "fam-runner": plugin("fam-runner", "0.3.0", "fam-agent-env>=0.3.0,<0.4"),
+        "fam-special": plugin("fam-special", "0.3.0", "fam-runner>=0.3.0,<0.4"),
+    }
+    candidate = released[upgrading]
+    importlib.invalidate_caches()
+    await discover.refresh()
+    monkeypatch.setattr(precheck, "candidates", lambda: ["https://offline.test/simple"])
+    execute = precheck.ProcessRunner.run_process
+
+    async def offline(*args, **kwargs):
+        """只把包索引换成本地 wheel 目录，求解与安装都是真 uv。"""
+        args = list(args)
+        if "--index-url" in args:
+            index = args.index("--index-url")
+            args[index : index + 2] = ["--no-index", "--find-links", str(wheels)]
+        return await execute(*args, **kwargs)
+
+    monkeypatch.setattr(precheck.ProcessRunner, "run_process", offline)
+    with ZipFile(candidate) as archive:
+        declaration = Parser().parsestr(
+            archive.read(
+                next(
+                    path
+                    for path in archive.namelist()
+                    if path.endswith(".dist-info/METADATA")
+                )
+            ).decode()
+        )
+
+    async def fetch_metadata(*args, **kwargs):
+        """以真实 wheel 声明替代远端索引，保留安装入口的身份校验。"""
+        return declaration
+
+    monkeypatch.setattr(market_index, "fetch_metadata", fetch_metadata)
+    manager = _PluginManager()
+    modules = ("fam_runner", "fam_agent_env", "fam_special")
+    try:
+        result = await manager.install(
+            PluginMeta.build(
+                info={
+                    "package_name": upgrading,
+                    "plugin_name": upgrading.replace("-", "_"),
+                    "version": "0.3.0",
+                }
+            )
+        )
+        versions = _installed_versions(site)
+    finally:
+        await manager.shutdown()
+        for record in registry.values():
+            loader.clear(record)
+        for name in modules:
+            sys.modules.pop(name, None)
+    assert not result.get("restart_required")
+    assert {name: versions[name] for name in released} == dict.fromkeys(
+        released, "0.3.0"
+    )
+
+
+@pytest.mark.asyncio
+async def test_minimum_missing_from_index_names_minimum_and_current(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """存量配置要的下限在索引里还没有（镜像没同步）：原因说出要的下限、现装版本、
+    索引里没有，不说成插件之间依赖冲突；已装环境不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=False
+    )
+    before = _installed_versions(site)
+    manager = _PluginManager()
+    try:
+        with pytest.raises(PluginError) as caught:
+            await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.3.0")
+            )
+    finally:
+        await manager.shutdown()
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    message = caught.value.message
+    assert "索引里没有" in message
+    assert "fam-adapter-a>=0.3.0" in message
+    assert "0.1.0" in message
+    assert "无法共同满足" not in message
+    assert _installed_versions(site) == before
+    assert not site.with_suffix(".pending").exists()
+
+
+@pytest.mark.asyncio
+async def test_family_still_unsolvable_after_release_changes_nothing(
+    isolated_app_paths, monkeypatch, tmp_path
+):
+    """放开同族后仍无解（有个同族专项没出新版本）：报依赖冲突，已装环境与登记都不动。"""
+    registry, site = await _plugin_family(
+        isolated_app_paths, monkeypatch, tmp_path, stuck=True
+    )
+    before = _installed_versions(site)
+    manager = _PluginManager()
+    try:
+        with pytest.raises(PluginError) as caught:
+            await manager.install(
+                _upgrade_request("fam-adapter-a"), minimum_version=Version("0.2.0")
+            )
+    finally:
+        await manager.shutdown()
+        for name in FAMILY_MODULES:
+            sys.modules.pop(name, None)
+    assert "网络" not in caught.value.message
+    # 新版本索引里有，是同族里有一个没出新版本：不能说成索引里没有。
+    assert "索引里没有" not in caught.value.message
+    assert _installed_versions(site) == before
+    assert not site.with_suffix(".pending").exists()
+    assert environment.read_installation() is None
+    assert registry.by_name("fam_service").info.version == "0.1.0"

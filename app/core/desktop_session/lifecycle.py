@@ -34,7 +34,6 @@ def _reason_probe(
         GeneralConfig,
         HSRConfig,
         MaaEndConfig,
-        MaaFWConfig,
         OkNteConfig,
         OkwwConfig,
         ScriptEntry,
@@ -67,38 +66,6 @@ def _reason_probe(
             return "unsupported_config"
 
         return check_maaend
-    if isinstance(config, MaaFWConfig):
-        from app.task.game import game_is_emulator
-        from app.task.MaaFW.tools.core.interface.service import MaaFWInterfaceService
-        from app.task.MaaFW.tools.core.runner.run_plan import (
-            _select_controller,
-            resolve_run_selection,
-        )
-        from app.task.MaaFW.tools.embedded.embedded_project import (
-            resolve_maafw_project_root,
-        )
-
-        root = resolve_maafw_project_root(str(config.uid), config)
-        controller = str(config.Info.Controller)
-        emulator_selected = game_is_emulator(config)
-        resource = str(config.Info.Resource)
-
-        def check_maafw() -> "DesktopSessionReason | None":
-            try:
-                interface = MaaFWInterfaceService().load(root)
-                name, _ = resolve_run_selection(
-                    interface,
-                    configured_controller=controller,
-                    emulator_selected=emulator_selected,
-                    configured_resource=resource,
-                )
-                if _select_controller(interface, name).type == "Win32":
-                    return None
-            except (OSError, ValueError):
-                return "unsupported_config"
-            return "unsupported_config"
-
-        return check_maafw
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return None
     if isinstance(config, BetterGIConfig):
@@ -303,17 +270,15 @@ class _DesktopSessionLifecycle:
             return None
 
         from app.core import Config, TaskManager
-        from app.models.config.script import DesktopSessionRunFields
         from app.models.task import TaskMode
         from app.utils.common.process.session import desktop_process_target
 
         async with self.lock:
             script = Config.ScriptConfig.get(node.children[0].uid)
+            # 看字段在不在而不看基类：插件托管的配置类不继承宿主的 DesktopSessionRunFields，
+            # 与前端按 'ExecutionSession' in run 决定是否显示该设置的口径一致。
             run = getattr(script, "Run", None)
-            if (
-                not isinstance(run, DesktopSessionRunFields)
-                or run.ExecutionSession == "main"
-            ):
+            if getattr(run, "ExecutionSession", "main") == "main":
                 return None
             require_task_support(script)
             target = self._connected_target()
@@ -384,6 +349,10 @@ class _DesktopSessionLifecycle:
                                 Config.ScriptConfig.get(row.Info.ScriptId)
                                 for row in queue.QueueItem.values()
                                 if row.Info.ScriptId != "-"
+                                # 所属插件不可用的托管运行时会被跳过，预检同样不算它。
+                                and not Config.ScriptConfig.is_unresolved(
+                                    row.Info.ScriptId
+                                )
                             ]
                             if queue is not None
                             else [script]
