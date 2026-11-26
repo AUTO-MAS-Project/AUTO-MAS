@@ -1926,3 +1926,18 @@ def test_rendered_reports_mask_credentials(mode):
         [line] = render_node_details(result, mode=mode)
         assert "task finished" in line
         assert "example_private_value" not in line
+
+
+def test_source_loader_resolves_package_root_before_comparison(tmp_path, monkeypatch):
+    from app.utils.common.source_import import SourceFinder, SourceLoader
+
+    root = tmp_path / "real"
+    root.mkdir()
+    package = root / "probe_source_root"
+    package.mkdir()
+    (package / "__init__.py").write_text("value = 1", encoding="utf-8")
+    (root / "path-alias").mkdir()
+    monkeypatch.syspath_prepend(str(root))
+    finder = SourceFinder(package.name, root / "path-alias" / ".." / package.name)
+    spec = finder.find_spec(package.name)
+    assert spec is not None and isinstance(spec.loader, SourceLoader)

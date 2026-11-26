@@ -20,7 +20,7 @@ class SourceFinder(importlib.abc.MetaPathFinder):
     def __init__(self, package_name: str, package_dir: Path) -> None:
         """限定当前源码查找器负责的插件包名与源码目录。"""
         self.package_name = package_name
-        self.package_dir = package_dir
+        self.package_dir = package_dir.resolve()
 
     def find_spec(
         self,
