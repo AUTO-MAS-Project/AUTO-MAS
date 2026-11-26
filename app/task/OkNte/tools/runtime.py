@@ -29,7 +29,7 @@ import psutil
 from app.models.config import OkNteConfig
 from app.task.pyappify_startup import open_launcher_logs, wait_for_launcher_process
 from app.utils import ProcessInfo, ProcessManager, get_logger, process
-from app.utils.common.process.operations import iter_processes
+from app.utils.common.process.operations import iter_scoped_process_info
 
 logger = get_logger("OK-NTE 运行入口")
 
@@ -147,27 +147,31 @@ class OkNteProcessManager(ProcessManager):
     ) -> None:
         """自动搜索本次安装的主进程；不改变父类显式目标搜索的契约。"""
 
-        def scan() -> tuple[psutil.Process, float] | None:
+        def scan() -> tuple[psutil.Process, float, str] | None:
             executables = runtime_executables(self.root)
-            candidates: list[tuple[int, float, int, psutil.Process]] = []
-            for proc in iter_processes(["pid", "exe", "cmdline", "create_time"]):
-                info = proc.info
-                if not info["exe"] or not info["cmdline"]:
+            candidates: list[tuple[int, float, int, psutil.Process, str]] = []
+            for proc, info in iter_scoped_process_info(
+                ["exe", "cmdline", "create_time"]
+            ):
+                executable = info["exe"]
+                if not executable or not info["cmdline"]:
                     continue
                 # 冻结包的 multiprocessing worker 与 GUI 共用 EXE，不能当作本体。
                 if "--multiprocessing-fork" in info["cmdline"]:
                     continue
-                exe = Path(info["exe"])
+                exe = Path(executable)
                 created = info["create_time"]
                 if exe not in executables or created is None:
                     continue
                 if min_create_time is not None and created < min_create_time - 2:
                     continue
-                candidates.append((executables.index(exe), created, proc.pid, proc))
+                candidates.append(
+                    (executables.index(exe), created, proc.pid, proc, executable)
+                )
             if not candidates:
                 return None
-            _, created, _, proc = min(candidates)
-            return proc, created
+            _, created, _, proc, executable = min(candidates)
+            return proc, created, executable
 
         # 不依据磁盘残留文件决定模式：源码与冻结包文件可能同时存在。
         # 每轮重算候选，覆盖启动器更新期间才解压出来的新本体。
@@ -175,8 +179,8 @@ class OkNteProcessManager(ProcessManager):
         while time.monotonic() < deadline:
             found = await asyncio.to_thread(scan)
             if found is not None:
-                proc, created = found
-                target = ProcessInfo(exe=proc.info["exe"])
+                proc, created, executable = found
+                target = ProcessInfo(exe=executable)
                 self.target_process = proc
                 self._target_info = target
                 self._target_create_time = created

@@ -5,6 +5,7 @@ import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import psutil
 
@@ -18,10 +19,37 @@ logger = get_logger("进程操作")
 def iter_processes(
     attributes: list[str], *, current_session_only: bool = False
 ) -> Iterator[psutil.Process]:
-    """枚举当前进程管理范围内的进程。"""
+    """为插件兼容入口枚举当前范围内的进程，提供 ``Process.info``。"""
     return processes_in_scope(
         psutil.process_iter(attributes), current_session_only=current_session_only
     )
+
+
+def iter_process_info(
+    attributes: list[str], *, processes: Iterable[psutil.Process] | None = None
+) -> Iterator[tuple[psutil.Process, dict[str, Any]]]:
+    """枚举进程并读取本轮所需的字段。
+
+    带属性参数的 ``psutil.process_iter`` 会改写缓存对象的 ``info``，
+    这里单独读取字段，使两次扫描可以使用不同的字段。
+    """
+    candidates = psutil.process_iter() if processes is None else processes
+    for process in candidates:
+        try:
+            info = process.as_dict(attrs=attributes)
+        except psutil.NoSuchProcess:
+            continue
+        yield process, info
+
+
+def iter_scoped_process_info(
+    attributes: list[str], *, current_session_only: bool = False
+) -> Iterator[tuple[psutil.Process, dict[str, Any]]]:
+    """读取当前进程管理范围内的进程字段。"""
+    processes = processes_in_scope(
+        psutil.process_iter(), current_session_only=current_session_only
+    )
+    return iter_process_info(attributes, processes=processes)
 
 
 def processes_in_scope(
@@ -190,13 +218,7 @@ async def _scan_processes_by_path(
         try:
             target_path = str(path.resolve() if all_sessions else path).casefold()
             session_id = None if all_sessions else restricted_session()
-            processes = psutil.process_iter(["pid", "name", "exe"])
-            for proc in processes:
-                try:
-                    info = proc.info
-                except (psutil.NoSuchProcess, psutil.ZombieProcess):
-                    continue
-
+            for proc, info in iter_process_info(["name", "exe"]):
                 process_path = info.get("exe")
                 if process_path:
                     candidate = Path(process_path)
@@ -204,12 +226,12 @@ async def _scan_processes_by_path(
                         try:
                             candidate = candidate.resolve()
                         except OSError:
-                            uncertain_pids.append(info["pid"])
+                            uncertain_pids.append(proc.pid)
                             continue
                     if str(candidate).casefold() == target_path and matches_session(
                         proc.pid, session_id
                     ):
-                        pids.append(info["pid"])
+                        pids.append(proc.pid)
                     continue
 
                 process_name = info.get("name")
@@ -218,7 +240,7 @@ async def _scan_processes_by_path(
                     and str(process_name).casefold() == target_name
                     and matches_session(proc.pid, session_id)
                 ):
-                    uncertain_pids.append(info["pid"])
+                    uncertain_pids.append(proc.pid)
         except (psutil.AccessDenied, OSError) as e:
             logger.warning(f"扫描进程路径失败: {e}")
             return False

@@ -60,7 +60,7 @@ from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 from app.utils.common import game_window as _game_window
-from app.utils.common.process.operations import iter_processes
+from app.utils.common.process.operations import iter_scoped_process_info
 
 if IS_WINDOWS:
     # pyautogui 与 pywin32 仅 Windows 可用（无图形会话导入即失败），随入口的
@@ -231,11 +231,11 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     exe 读取被拒的同名进程跳过并打警告（多为提权进程，普通权限下本就杀不动）。
     """
     pids: list[int] = []
-    for process in iter_processes(["name", "exe"]):
+    for process, info in iter_scoped_process_info(["name", "exe"]):
         try:
-            exe = process.info["exe"]
+            exe = info["exe"]
             if exe is None:
-                name = (process.info["name"] or "").casefold()
+                name = (info["name"] or "").casefold()
                 if (
                     name in _LAUNCHER_PROCESS_NAMES
                     or name == launcher_path.name.casefold()
