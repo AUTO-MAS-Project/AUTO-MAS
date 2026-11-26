@@ -215,7 +215,9 @@ class ScriptExpander(TaskBase):
             ):
                 # 插件接入位置：真实解析器在托管锁内接收当前配置，提供 L3 与模式能力。
                 plugin = None
-                if not self.maintenance and self.dispatcher.plugin_expander is not None:
+                if self.dispatcher.plugin_expander is not None and (
+                    not self.maintenance or isinstance(entry, ScriptEntry)
+                ):
                     last_wait_message = None
                     while True:
                         candidate = Config.ScriptConfig.get(script.script_id)
@@ -249,9 +251,20 @@ class ScriptExpander(TaskBase):
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
                     pre_dispatch_failed = True
-                    if isinstance(entry, ScriptEntry) and desktop_process_target.get():
+                    if (
+                        not self.maintenance
+                        and desktop_process_target.get() is not None
+                        and isinstance(entry, ScriptEntry)
+                    ):
                         require_task_support(entry)
-                    plugin = self.dispatcher.plugin_expander(script, entry)
+                    if self.maintenance:
+                        from app.core import Plugin
+
+                        plugin = Plugin.resolve_script_expander(
+                            script, entry, maintenance=True
+                        )
+                    else:
+                        plugin = self.dispatcher.plugin_expander(script, entry)
                     if plugin is None:
                         pre_dispatch_failed = False
                         # 旧 manager 自持递归锁，必须先归还探测锁，不能叠加持锁等待。
@@ -265,7 +278,8 @@ class ScriptExpander(TaskBase):
                         or plugin.script_config is not entry
                     ):
                         raise TypeError("插件必须绑定当前托管运行节点及已锁配置")
-                    await self._prefetch.prepare(script, entry)
+                    if not self.maintenance:
+                        await self._prefetch.prepare(script, entry)
                     from app.core import Plugin
                     from app.plugin.errors import PluginPrecheckError
 
@@ -275,7 +289,7 @@ class ScriptExpander(TaskBase):
                         raise PluginPrecheckError("托管所属插件当前不可用")
                     if declaration.expect_builder is not None:
                         self._game_session.expect = declaration.expect_builder(entry)
-                    if not plugin.defer_game_session:
+                    if not self.maintenance and not plugin.defer_game_session:
                         # 声明了的插件在确认有可运行账号之后自己选定（同旧专项
                         # after_config_lock），没有账号就不占游戏、不排队。
                         await self._game_session.select()

@@ -22,19 +22,12 @@ from app.utils.common.process.scope import TaskProcessScope, current_process_sco
 def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin(monkeypatch):
     from whimbox_adapter.config import WhimboxConfig
 
-    from app.models.config import BetterGIConfig, GeneralConfig, ZzzOdConfig
+    from app.models.config import GeneralConfig, ZzzOdConfig
 
     monkeypatch.setattr("app.utils.IS_ELEVATED", False)
     assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) == "admin_required"
-    bettergi = BetterGIConfig.model_validate({"Run": {"UseAdmin": True}})
-    assert lifecycle.task_unavailable_reason(bettergi) == "admin_required"
-    takeover = BetterGIConfig.model_validate(
-        {"Run": {"UseAdmin": True}, "Update": {"TakeoverEnabled": True}}
-    )
-    assert lifecycle.task_unavailable_reason(takeover) == "unsupported_config"
     monkeypatch.setattr("app.utils.IS_ELEVATED", True)
-    assert lifecycle.task_unavailable_reason(bettergi) is None
-    assert lifecycle.task_unavailable_reason(takeover) == "unsupported_config"
+    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) is None
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
     assert lifecycle.task_unavailable_reason(general) is None
     assert (

@@ -156,7 +156,8 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
@@ -178,6 +179,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -651,45 +653,42 @@ const handleRestored = async () => {
 // mas 备份：恢复到该用户 ConfigFile 后启动查看会话（目录副本型下发，GUI
 // 所见即备份）；原生备份：恢复到脚本配置路径后启动脚本级查看会话（跳过
 // 下发，原生配置即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) => {
-  if (configLocked.value) return Promise.resolve(false)
+const handleRestoreView = async (target: string, item: { time: string }) => {
+  if (configLocked.value) return false
 
-  return new Promise<boolean>(resolve => {
-    Modal.confirm({
-      title: t('core.edit.configRestoreDetailView'),
-      content: h(
-        'p',
-        { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
-      ),
-      okText: t('core.edit.configRestoreConfirmOk'),
-      okType: 'danger',
-      cancelText: t('core.edit.cancel'),
-      onOk: async () => {
-        if (configLocked.value) {
-          message.error(t('core.edit.configLocked'))
-          resolve(false)
-          return
-        }
+  let restored = false
+  await confirm({
+    tone: 'danger',
+    title: t('core.edit.configRestoreDetailView'),
+    description: h(
+      'p',
+      { style: { color: 'var(--ant-color-error)', margin: 0 } },
+      t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+    ),
+    okText: t('core.edit.configRestoreConfirmOk'),
+    cancelText: t('core.edit.cancel'),
+    onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('core.edit.configLocked'))
+        return
+      }
 
-        try {
-          const resp = await restoreApi.restore(target, item.time)
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          await handleGeneralConfig(true, target)
-          resolve(true)
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
-          resolve(false)
+      try {
+        const resp = await restoreApi.restore(target, item.time)
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('core.edit.configRestoreFailed'))
         }
-      },
-      onCancel: () => resolve(false),
-    })
+        restoreOpen.value = false
+        await handleGeneralConfig(true, target)
+        restored = true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
+      }
+    },
   })
+  return restored
 }
 
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态

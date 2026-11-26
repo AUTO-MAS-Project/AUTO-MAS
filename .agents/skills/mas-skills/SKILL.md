@@ -34,7 +34,7 @@ Load this hub first, then load **only the minimum sub-skills** needed for the ta
 | Script adapters (MAA, SRC, MaaEnd, General, Okww, OkNte, HSR, BetterGI, BAAH, ZzzOd, Whimbox) | `mas-script-specialized-adapter` (+ `references/blackbox-boundary.md`) |
 | Script adapter Desktop Session support, saved execution session, or child-session process ownership | `mas-script-specialized-adapter` (+ `references/desktop-session.md`) and `mas-task-scheduler` |
 | Plan schedule types, `PlanConfig`, `PLAN_BOOK`, plan tables | `mas-plan-schedule` |
-| Game community sign-in (`app/tools/game_sign*`, Skland/Miyoushe/Kuro/Taygedo) | `mas-game-community` |
+| Game community sign-in (`app/core/community/`, `app/tools/common/community/`; Skland/Miyoushe/Kuro/Taygedo) | `mas-game-community` |
 | Observable user workflows, anonymous analytics | `mas-telemetry` |
 | Choosing verification or adding/editing/reviewing tests | `mas-testing` |
 | E2E, Playwright, real game/emulator runs, PR verification hand-off | `mas-e2e` |

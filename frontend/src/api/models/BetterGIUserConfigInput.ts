@@ -7,6 +7,8 @@ import type { BetterGIUserConfig_gameInput } from './BetterGIUserConfig_gameInpu
 import type { BetterGIUserConfig_InfoInput } from './BetterGIUserConfig_InfoInput';
 import type { BetterGIUserConfig_NotifyInput } from './BetterGIUserConfig_NotifyInput';
 import type { BetterGIUserConfig_OneDragonInput } from './BetterGIUserConfig_OneDragonInput';
+import type { BetterGIUserConfig_plugin_infoInput } from './BetterGIUserConfig_plugin_infoInput';
+import type { BetterGIUserConfig_plugin_notifyInput } from './BetterGIUserConfig_plugin_notifyInput';
 import type { BetterGIUserConfig_SwitchInput } from './BetterGIUserConfig_SwitchInput';
 import type { BetterGIUserConfig_TaskInput } from './BetterGIUserConfig_TaskInput';
 export type BetterGIUserConfigInput = {
@@ -14,6 +16,11 @@ export type BetterGIUserConfigInput = {
      * 游戏与设备
      */
     game?: (BetterGIUserConfig_gameInput | null);
+    info?: (BetterGIUserConfig_plugin_infoInput | null);
+    /**
+     * 用户通知
+     */
+    notify?: (BetterGIUserConfig_plugin_notifyInput | null);
     Data?: (BetterGIUserConfig_DataInput | null);
     Info?: (BetterGIUserConfig_InfoInput | null);
     Notify?: (BetterGIUserConfig_NotifyInput | null);

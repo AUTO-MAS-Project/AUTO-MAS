@@ -89,6 +89,7 @@
 - **插件管理**：`usePluginApi` 唯一记录 `plugin_action_finished`（覆盖安装、启停、配置保存与市场手动刷新）；需重启换版依赖时复用 `backend_restart_finished`。
 - **MCP 工具页**：页面访问归入 `screen_view/tools`；手动重新加载由 `useMcpApi` 记录 `mcp_retry_requested`。
 - **任务台**：`taskboard_marking_finished` 记录每周任务选择/打卡与版本主线标记保存（区分 `weekly_task` / `version` 与 `select` / `mark` / `unmark`）。
+- **附属插件（SignFlow）**：`signflow_requested` 唯二记录抽卡记录的查询与读取、社区凭据的自动刷新（区分 `gacha_query` / `gacha_fetch` / `token_refresh`）；插件未启用记为 `unsupported`、切换帐号或翻页导致的旧响应记为 `cancelled`，都不计入失败率。库街区短信登录与塔吉多账密登录复用 `community_login_finished`（`provider=kuro|taygedo`，`stage=sms|password`）。
 
 ## 复用与归因边界
 

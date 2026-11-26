@@ -30,7 +30,6 @@ def _reason_probe(
 ) -> "DesktopSessionReason | None | Callable[[], DesktopSessionReason | None]":
     """同步读取能力参数，按需构造只读取上游资源的检查。"""
     from app.models.config import (
-        BetterGIConfig,
         GeneralConfig,
         HSRConfig,
         MaaEndConfig,
@@ -68,10 +67,6 @@ def _reason_probe(
         return check_maaend
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return None
-    if isinstance(config, BetterGIConfig):
-        if config.Update.TakeoverEnabled:
-            return "unsupported_config"
-        return "admin_required" if config.Run.UseAdmin and not IS_ELEVATED else None
     if isinstance(config, ZzzOdConfig):
         return None if IS_ELEVATED else "admin_required"
     return "unsupported_config"

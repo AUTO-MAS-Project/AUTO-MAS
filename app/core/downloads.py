@@ -46,7 +46,7 @@ type Transfer = Callable[[DownloadRequest, Path, Progress], Awaitable[None]]
 
 
 DownloadObserver = Callable[[Path, int, int, float], None]
-# 只由预下载作用域设置；各下载任务继承自己的观察者，不影响其他队列或手动更新。
+# 下载任务在自己的作用域观察传输，不影响其他队列或手动更新。
 download_observer: ContextVar[DownloadObserver | None] = ContextVar(
     "download_observer", default=None
 )
@@ -258,6 +258,7 @@ class _Artifact:
     snapshot: DownloadSnapshot
     handle: BackgroundTaskHandle[None] | None = None
     error: BaseException | None = None
+    method: str = ""
 
 
 @dataclass
@@ -403,6 +404,14 @@ class DownloadManager:
         """执行文件传输并更新进度，对可恢复的网络错误按退避策略重试，永久失败交由完成回调记录。"""
         from app.services.common.update.fluxdown import FluxdownResumableError
 
+        upstream_observer = download_observer.get()
+
+        def observe(path: Path, downloaded: int, total: int, speed: float) -> None:
+            """记录传输实际使用的下载器，包括 FluxDown 回退到内置下载。"""
+            artifact.method = download_method.get()
+            if upstream_observer is not None:
+                upstream_observer(path, downloaded, total, speed)
+
         async def progress(downloaded: int, total: int, speed: float) -> None:
             """将传输回调中的已下载字节、总量和速度写入本轮下载快照。"""
             artifact.snapshot.downloaded = downloaded
@@ -413,7 +422,11 @@ class DownloadManager:
         for attempt in range(self._attempts):
             artifact.snapshot.state = "running"
             try:
-                await self._transfer(artifact.request, artifact.path, progress)
+                observer_token = download_observer.set(observe)
+                try:
+                    await self._transfer(artifact.request, artifact.path, progress)
+                finally:
+                    download_observer.reset(observer_token)
                 if not artifact.path.is_file():
                     raise FileNotFoundError("下载完成但文件不存在")
                 return
@@ -460,6 +473,12 @@ class DownloadManager:
         )
 
         self._evict()
+
+    def transfer_method(self, request: DownloadRequest) -> str:
+        """返回此文件最近一次观察到的实际下载器，尚未观察到传输时留空。"""
+        entry = self._entries.get(request.cache_key)
+        artifact = entry.artifacts.get(request.identity) if entry else None
+        return artifact.method if artifact is not None else ""
 
     def query(self, request: DownloadRequest) -> DownloadSnapshot:
         """返回指定文件身份的状态副本；成功文件已丢失且仍有使用者时，尝试补交下载。"""

@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .BAAH import BAAHManager as BAAHManager
-    from .BetterGI import BetterGIManager as BetterGIManager
     from .general import GeneralManager as GeneralManager
     from .HSR import HSRManager as HSRManager
     from .MaaEnd import MaaEndManager as MaaEndManager
@@ -64,7 +63,6 @@ _LAZY_EXPORTS = {
     "OkwwManager": (".Okww", "OkwwManager"),
     "OkNteManager": (".OkNte", "OkNteManager"),
     "HSRManager": (".HSR", "HSRManager"),
-    "BetterGIManager": (".BetterGI", "BetterGIManager"),
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "BAAHManager": (".BAAH", "BAAHManager"),
 }
@@ -95,6 +93,5 @@ __all__ = [
     "OkwwManager",
     "OkNteManager",
     "HSRManager",
-    "BetterGIManager",
     "ZzzOdManager",
 ]

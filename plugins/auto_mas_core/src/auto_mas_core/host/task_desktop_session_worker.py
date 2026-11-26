@@ -3,12 +3,13 @@
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-__all__ = ["request_desktop_action"]
+__all__ = ["request_desktop_action", "run_desktop_action"]
 
 if TYPE_CHECKING:
     from app.task.desktop_session_worker import (
         request_desktop_action as request_desktop_action,
     )
+    from app.task.desktop_session_worker import run_desktop_action as run_desktop_action
 else:
 
     def __getattr__(name: str) -> Any:

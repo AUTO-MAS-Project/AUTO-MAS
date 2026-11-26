@@ -38,7 +38,7 @@
 4. **写 provider runner**：在 `app/tools/common/community/sign.py` 加 `_run_<platform>_provider()`，返回 `_CommunityProviderRun(results=..., platforms=..., credential_updates=...)`。
 5. **注册**：在 `_COMMUNITY_SIGN_PROVIDERS` 追加一项。凭据字段表、并发执行、凭据回写、日期标记全部自动生效。
 6. **通知排序**：在 `app/core/notify/community_content.py` 的 `_PLATFORM_ORDER` 追加平台名。缺失时该平台落到排序尾部而不是报错，容易漏掉。
-7. **重新生成 OpenAPI 客户端**，再在 `TabGameSign.vue` 加录入入口。禁止手改 `frontend/src/api/**`。
+7. **重新生成 OpenAPI 客户端**，再在 `frontend/src/views/gamesign/gameSignAccounts.ts` 的 `CREDENTIAL_ROWS` 与 `components/AccountEditorDrawer.vue` 加录入入口。禁止手改 `frontend/src/api/**`。
 
 ## 并发与重复触发
 
