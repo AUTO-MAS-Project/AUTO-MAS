@@ -609,7 +609,7 @@ class _TaskManager:
     def _export_task(
         info: TaskItem, *, include_log_analysis: bool = False
     ) -> dict[str, Any]:
-        tree = info.model_dump()
+        tree = info.export_for_dispatch(include_log_analysis=include_log_analysis)
         for script in tree["scripts"]["data"].values():
             for user in script["users"]["data"].values():
                 analysis = user.get("log_analysis")

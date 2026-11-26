@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextvars import ContextVar
 from dataclasses import replace
 from datetime import datetime
 from enum import StrEnum
@@ -15,6 +16,9 @@ from pydantic import (
     BaseModel,
     Field,
     PrivateAttr,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    model_serializer,
     WithJsonSchema,
 )
 
@@ -59,6 +63,8 @@ type TaskParamValue = (
     ]
 )
 type TaskParams = dict[str, TaskParamValue]
+
+_omit_log_analysis = ContextVar("omit_task_log_analysis", default=False)
 
 # 仅限制 WS 替换包；不裁剪运行树或查询正文。
 _LOG_PUSH_MAX_CHARS = 200_000
@@ -173,6 +179,14 @@ class TaskUserItem(RuntimeEntry):
 
         nodes: tuple[Node, ...] = ()
         close_reason: CloseReason | None = None
+
+        @model_serializer(mode="wrap")
+        def _serialize(
+            self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+        ) -> dict[str, Any]:
+            if _omit_log_analysis.get():
+                return {}
+            return super()._serialize(handler, info)
 
     log_analysis: LogAnalysis = Field(default_factory=LogAnalysis)
     info: Info = Field(default_factory=Info)
@@ -451,6 +465,14 @@ class TaskItem(RuntimeEntry):
     _log_source: UUID | None = PrivateAttr(default=None)
     _log_content: str | list[str] | None = PrivateAttr(default=None)
     _log_seq: int = PrivateAttr(default=0)
+
+    def export_for_dispatch(self, *, include_log_analysis: bool) -> dict[str, Any]:
+        """按调度查询范围导出，省略分析时跳过整组节点的序列化。"""
+        token = _omit_log_analysis.set(not include_log_analysis)
+        try:
+            return self.model_dump()
+        finally:
+            _omit_log_analysis.reset(token)
 
     def clear_log_cursor(self) -> None:
         """清理已发送日志的私有基线，运行树正文继续保留。"""
