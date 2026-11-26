@@ -33,6 +33,13 @@ export interface GachaFetchTarget {
   game: string
   accountUid: string
   playerUid: string
+  /**
+   * 读取完成后按哪个卡池刷新。
+   *
+   * 传取值函数而不是快照：读取要等插件把记录写完才回来，这段时间用户可能已经切过卡池，
+   * 用点击那一刻的旧值会把表格拉回他没在看的池，和标签高亮也对不上。
+   */
+  resolvePool?: () => string
 }
 
 /** 抽卡两类操作共用一个事件，靠 action 区分；终态口径与宿主其它请求一致 */
@@ -166,9 +173,14 @@ export function useGachaRecords() {
           t('core.gamesign.gacha.fetchDone', { added: result.added, fetched: result.fetched })
         )
       }
-      // 读取完成后回到第一页，让新记录立刻可见
+      // 读取完成后回到第一页，让新记录立刻可见；刷新沿用页面当前选中的卡池，
+      // 否则标签高亮的是某个池、表格与总数却是全部池的合计
       page.value = 1
-      await query({ game: target.game, playerUid: target.playerUid, pool: '' })
+      await query({
+        game: target.game,
+        playerUid: target.playerUid,
+        pool: target.resolvePool?.() ?? '',
+      })
     } catch (error) {
       if (token !== fetchToken) {
         finish('cancelled')

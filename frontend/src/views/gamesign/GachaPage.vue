@@ -136,6 +136,8 @@ const runFetch = async () => {
     game: game.value,
     accountUid: accountUid.value,
     playerUid: playerUid.value.trim(),
+    // 读取结束后按此刻选中的卡池刷新：读取期间用户可能已经切过标签
+    resolvePool: () => pool.value,
   })
 }
 

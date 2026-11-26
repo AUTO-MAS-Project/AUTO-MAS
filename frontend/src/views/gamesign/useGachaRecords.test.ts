@@ -104,6 +104,37 @@ describe('抽卡记录的请求代次', () => {
     expect(boundary.success).not.toHaveBeenCalled()
   })
 
+  it('读取成功后按页面当时选中的卡池刷新，不再切回全部卡池', async () => {
+    // 读取还在路上时，用户把标签从「限定寻访」切到「标准寻访」
+    let selectedPool = '限定寻访'
+    boundary.fetchGacha.mockImplementationOnce(async () => {
+      selectedPool = '标准寻访'
+      return { code: 200, added: 2, fetched: 2, warnings: [] }
+    })
+    boundary.queryGacha.mockResolvedValueOnce({
+      code: 200,
+      data: [record('a')],
+      pools: [],
+      total: 1,
+    })
+
+    const gacha = useGachaRecords()
+    await gacha.fetchRecords({
+      game: 'arknights',
+      accountUid: 'account',
+      playerUid: '100',
+      resolvePool: () => selectedPool,
+    })
+
+    expect(boundary.queryGacha).toHaveBeenCalledTimes(1)
+    expect(boundary.queryGacha.mock.calls[0][0]).toMatchObject({
+      game: 'arknights',
+      playerUid: '100',
+      pool: '标准寻访',
+      page: 1,
+    })
+  })
+
   it('切角色时收回旧请求占用的加载态，按钮不会一直转圈', async () => {
     const querying = deferred<{ code: number; data: unknown[]; pools: unknown[]; total: number }>()
     boundary.queryGacha.mockReturnValueOnce(querying.promise)
