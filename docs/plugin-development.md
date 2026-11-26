@@ -46,6 +46,7 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 
 其他常用适配器仓库：
 - 奇想盒：`AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter` → `plugins/whimbox_adapter`
+- BetterGI：[AUTO-MAS-BetterGI-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-BetterGI-Adapter) → `plugins/bettergi_adapter`
 - SRC：[AUTO-MAS-SRC-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-SRC-Adapter) → `plugins/src_adapter`
 
 开发约定：
@@ -63,7 +64,7 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 
 ## 前端静态页面归属
 
-在动态前端加载上线前，MAA、奇想盒、SRC 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
+在动态前端加载上线前，MAA、奇想盒、SRC、BetterGI 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
 
 `frontend/src/views/gamesign/` 这类由插件能力承载的普通功能页同样留在主程序，但走普通路由（不经 `entry.ts`），页面只调 `frontend/src/services/` 下的薄封装。
 

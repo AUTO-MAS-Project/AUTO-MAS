@@ -15,6 +15,8 @@ from app.task.user_expander import UserExpander
 from .extension import _AdapterPlugin
 
 if TYPE_CHECKING:
+    from app.utils.common.config.restore import ConfigRestorePool
+
     from .emulator import EmulatorExpect
 
 
@@ -53,6 +55,9 @@ class ScriptTypeDecl:
     # None 沿用旧插件的绑定能力，game_kinds 为空时不限制目标类型。
     supports_game_binding: bool | None = None
     supports_account_game_override: bool = True
+    # 维护入口复用调度任务的锁、进程归属和停止确认。
+    maintenance_expander: type[UserExpander] | None = None
+    restore_pools: tuple[ConfigRestorePool, ...] = ()
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

@@ -1692,7 +1692,16 @@ class _PluginManager:
         entries = await gate.wrap(decl.search)()
         return entries if gate.accepting and self.game_types.get(uid) is decl else ()
 
-    def resolve_script_expander(self, script, config):
+    @contextlib.contextmanager
+    def use_script_restore_pools(self, config):
+        """在插件调用门内使用该托管的备份池，包含读写与字段回填。"""
+        decl, gate = self._script_decl_gate(config)
+        if decl is None or gate is None:
+            raise PluginBusyError("托管所属插件当前不可用")
+        with gate.active_call():
+            yield decl.restore_pools
+
+    def resolve_script_expander(self, script, config, *, maintenance: bool = False):
         """托管锁内按实际启用声明分派；旧类型由调用方继续走旧工厂。"""
         from app.models.config import ScriptEntry
 
@@ -1703,6 +1712,10 @@ class _PluginManager:
             if record.info.state != PluginState.ENABLED or decl is None:
                 continue
             if isinstance(config, decl.script_type):
+                if maintenance:
+                    if decl.maintenance_expander is None:
+                        raise PluginPrecheckError("该托管不支持手动更新")
+                    return decl.maintenance_expander(script, config)
                 if script.task_info.info.mode not in decl.supported_modes:
                     raise PluginPrecheckError("该插件不支持当前执行模式")
                 return decl.expander_class(script, config)

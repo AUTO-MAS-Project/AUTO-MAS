@@ -4,7 +4,7 @@ BetterGI 基于 BetterGI 程序（`BetterGI.exe`）跑原神一条龙，与 ZzzO
 一条龙家族但物理形态不同：**无持久槽位**——独立配置模式下运行时把
 字段物化到临时槽位 `User/OneDragon/MAS独立配置.json` + 前缀配置组，运行
 结束删除/还原；MAS 前端是唯一编辑入口。本文件只记读代码推不出来的部分，
-文件与字段现场读 `app/task/BetterGI/` 与 `views/BetterGIUserEdit/` 确认。
+文件与字段现场读 `AUTO-MAS-BetterGI-Adapter/src/bettergi_adapter/` 与 `views/BetterGIUserEdit/` 确认。
 
 ## 有效配置来源
 

@@ -58,6 +58,7 @@ const props = withDefaults(
     scroll?: 'body' | 'none'
     /** default/nested 避让 32px 标题栏；blocking 仅用于启动/关闭安全层 */
     layer?: AppModalLayer
+    zIndex?: number
     centered?: boolean
     destroyOnClose?: boolean
     maskClosable?: boolean
@@ -85,6 +86,7 @@ const props = withDefaults(
     dirtyCancelText: undefined,
     scroll: 'body',
     layer: 'default',
+    zIndex: undefined,
     centered: true,
     destroyOnClose: true,
     maskClosable: true,
@@ -110,7 +112,7 @@ const resolvedWidth = computed(() => props.width ?? SIZE_WIDTH_MAP[props.size])
 const resolvedOkText = computed(() => props.okText ?? t('core.common.confirm'))
 const resolvedCancelText = computed(() => props.cancelText ?? t('core.common.cancel'))
 const resolvedCloseText = computed(() => props.cancelText ?? t('core.common.close'))
-const resolvedZIndex = computed(() => LAYER_Z_INDEX[props.layer])
+const resolvedZIndex = computed(() => props.zIndex ?? LAYER_Z_INDEX[props.layer])
 
 const canClose = computed(() => !props.submitting)
 const hasCustomHeader = computed(() =>

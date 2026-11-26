@@ -11,8 +11,8 @@ import pytest
 from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
+    backup_legacy_adapter_users,
     backup_legacy_maafw_documents,
-    backup_legacy_src_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -25,6 +25,7 @@ from app.utils import io as config_io
     ("config_type", "name", "package"),
     [
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
+        ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
         ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
         ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
@@ -43,20 +44,25 @@ def test_upgrade_detects_only_collection_types(
     assert required_adapter_plugins(tmp_path) == {}
 
 
-def test_src_backup_preserves_original_even_without_indexed_body(tmp_path):
+@pytest.mark.parametrize(
+    ("adapter", "config_type"), [("src", "SrcConfig"), ("bettergi", "BetterGIConfig")]
+)
+def test_adapter_backup_preserves_original_even_without_indexed_body(
+    tmp_path, adapter, config_type
+):
     path = tmp_path / "scripts.yaml"
     sid = str(uuid4())
     config_io.write_file(
-        path, {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {}}
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {}}
     )
     original = path.read_bytes()
-    backup_legacy_src_users(tmp_path)
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
     config_io.write_file(
         path,
-        {"order": [{"uid": sid, "type": "SrcConfig"}], "data": {sid: {"users": {}}}},
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
     )
-    backup_legacy_src_users(tmp_path)
-    assert (tmp_path / "legacy-src-plugin" / path.name).read_bytes() == original
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
+    assert (tmp_path / f"legacy-{adapter}-plugin" / path.name).read_bytes() == original
 
 
 @pytest.mark.parametrize(

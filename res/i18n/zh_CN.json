@@ -831,7 +831,6 @@
   "core.edit.clientPathOptionalHint": "可选：留空时按进程名自动匹配客户端；手动指定后，已运行检测与任务结束时的收尾更精确",
   "core.edit.clientPathReset": "已恢复自动定位",
   "core.edit.clientPathSaved": "鸣潮客户端路径已保存",
-  "core.edit.close": "关闭",
   "core.edit.closeGameAfterTask": "任务后关闭游戏",
   "core.edit.closeGameAfterTask2": "任务结束后关闭游戏",
   "core.edit.cnServersEnter11": "官服输入 11 位手机号；若手机号中包含「*」，切换账号时将仅通过识别已登录账号列表登录",

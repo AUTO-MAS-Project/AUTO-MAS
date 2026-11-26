@@ -831,7 +831,6 @@
   "core.edit.clientPathOptionalHint": "任意：空欄の場合はプロセス名でクライアントを自動照合します。指定すると実行中判定とタスク終了時の後処理がより正確になります",
   "core.edit.clientPathReset": "自動特定に戻しました",
   "core.edit.clientPathSaved": "鳴潮クライアントのパスを保存しました",
-  "core.edit.close": "閉じる",
   "core.edit.closeGameAfterTask": "タスク後にゲームを終了",
   "core.edit.closeGameAfterTask2": "タスク終了後にゲームを終了",
   "core.edit.cnServersEnter11": "中国公式サーバーでは 11 桁の電話番号を入力します。「*」を含む場合は、ログイン済みアカウント一覧との照合のみで切り替えます",
