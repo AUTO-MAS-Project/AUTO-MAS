@@ -5,6 +5,7 @@ import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
 
+import { useConfirm } from '@/composables/useConfirm'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
 import type {
@@ -20,7 +21,8 @@ import { saveConfig } from '@/utils/config'
 export function useAppearanceSettings() {
   const { t } = useI18n()
   const [modal, modalContextHolder] = Modal.useModal()
-  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal' }
+  const { confirm } = useConfirm(modal)
+  const modalOptions = { zIndex: 100 }
   const logger = window.electronAPI.getLogger('外观设置')
   const {
     themeMode,
@@ -97,10 +99,10 @@ export function useAppearanceSettings() {
   }
 
   const showAppearancePreview = (appearance: InstalledAppearance) => {
-    modal.confirm({
+    void confirm({
       ...modalOptions,
       title: appearance.name,
-      content: h('div', { class: 'appearance-preview-content' }, [
+      description: h('div', { class: 'appearance-preview-content' }, [
         appearance.previewUrl
           ? h('img', {
               src: appearance.previewUrl,
@@ -111,7 +113,6 @@ export function useAppearanceSettings() {
         appearance.description ? h('p', appearance.description) : null,
       ]),
       okText: t('core.setting.basic.applyAppearance'),
-      cancelText: t('core.common.cancel'),
       onOk: async () => {
         try {
           await setAppearance(appearance.id)
@@ -126,25 +127,20 @@ export function useAppearanceSettings() {
   }
 
   const confirmReplace = (name: string, category: AppearanceCategory): Promise<boolean> =>
-    new Promise(resolve => {
-      modal.confirm({
-        ...modalOptions,
-        title: t(
-          category === 'mascot'
-            ? 'core.setting.basic.mascotReplaceTitle'
-            : 'core.setting.basic.appearanceReplaceTitle'
-        ),
-        content: t(
-          category === 'mascot'
-            ? 'core.setting.basic.mascotReplaceContent'
-            : 'core.setting.basic.appearanceReplaceContent',
-          { name }
-        ),
-        okText: t('core.setting.basic.replaceAppearance'),
-        cancelText: t('core.common.cancel'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    confirm({
+      ...modalOptions,
+      title: t(
+        category === 'mascot'
+          ? 'core.setting.basic.mascotReplaceTitle'
+          : 'core.setting.basic.appearanceReplaceTitle'
+      ),
+      description: t(
+        category === 'mascot'
+          ? 'core.setting.basic.mascotReplaceContent'
+          : 'core.setting.basic.appearanceReplaceContent',
+        { name }
+      ),
+      okText: t('core.setting.basic.replaceAppearance'),
     })
 
   // 本地导入与在线安装共用：同 ID 先确认覆盖，成功后进入预览与应用。
@@ -266,13 +262,14 @@ export function useAppearanceSettings() {
     const id = appearanceId.value
     if (!id) return
     const appearance = appearances.value.find(item => item.id === id)
-    modal.confirm({
+    void confirm({
       ...modalOptions,
+      tone: 'danger',
       title: t('core.setting.basic.removeAppearanceTitle'),
-      content: t('core.setting.basic.removeAppearanceContent', { name: appearance?.name ?? id }),
+      description: t('core.setting.basic.removeAppearanceContent', {
+        name: appearance?.name ?? id,
+      }),
       okText: t('core.setting.basic.removeAppearance'),
-      okButtonProps: { danger: true },
-      cancelText: t('core.common.cancel'),
       onOk: async () => {
         appearanceBusy.value = true
         try {
