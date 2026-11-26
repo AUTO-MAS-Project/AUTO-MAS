@@ -58,6 +58,7 @@ from app.core.config.m9a_legacy.migration import (
 from app.core.config.plugin_upgrade import (
     MAAFW_FAMILY_PLUGINS,
     adapter_package,
+    adapter_plugin_types,
     automatic_plugin_packages,
     backup_legacy_adapter_users,
     backup_legacy_maafw_documents,
@@ -88,9 +89,6 @@ from app.models.config import (
     GlobalConfig,
     HSRConfig,
     HSRUserConfig,
-    MaaEndConfig,
-    MaaEndPlanConfig,
-    MaaEndUserConfig,
     OkNteConfig,
     OkNtePlanConfig,
     OkNteUserConfig,
@@ -632,6 +630,17 @@ class AppConfig:
                 migrate_game_documents, self.config_path, resolve_installation=resolvers
             )
 
+        async def install_adapters_isolated() -> None:
+            """专项插件一个个装：装不上只让它的托管旁挂，不挡启动。"""
+            for name, package in required_adapters.items():
+                try:
+                    await install_adapter_plugin(name, package)
+                except Exception as error:  # noqa: BLE001
+                    logger.opt(exception=True).warning(
+                        f"专项插件 {name} 没能装上或启用，它的托管先原样保留：{error}"
+                    )
+                    self._adapter_plugin_failures[name] = str(error)
+
         async def prepare_plugin_upgrade() -> None:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
             # 发现会新增默认停用的注册项，先区分首次接手与用户已有的选择。
@@ -657,7 +666,11 @@ class AppConfig:
                         )
                         self._adapter_plugin_failures[name] = str(error)
             elif required:
-                await install_adapter_plugins(required)
+                # 更老的格式按同一口径隔离：专项装不上只记下原因、托管与配置原样保留，
+                # 下次启动仍会因所需插件缺失再试；游戏插件没有旁挂区，装不上仍然失败。
+                await install_adapters_isolated()
+                if required_games:
+                    await install_adapter_plugins(required_games)
             if version != "v2.2":
                 prepare_plugin_documents(self.config_path)
 
@@ -796,31 +809,51 @@ class AppConfig:
                     await activate_root(node)
                 if key == "ScriptConfig":
                     self._script_configs_loaded = True
-        if version != "v2.2" and (
-            self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()
-        ):
+        # 这一轮没装上的专项插件接手的托管类型：它们只隔离自己那几条，不挡启动。
+        # 归属按插件表反查，不按类型名猜；没有失败记录的未识别类型照旧拒绝推进。
+        held_types: set[str] = set()
+        for name in self._adapter_plugin_failures:
+            held_types |= adapter_plugin_types(name)
+        held_items = [
+            item
+            for collection in (self.ScriptConfig, self.PlanConfig)
+            for item in collection.unresolved()
+            if item.reason != "load_failed" and item.type_name in held_types
+        ]
+        if version != "v2.2":
             # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进；
             # 读不了的单条（已升级数据只隔离它）在升级阶段同样拒绝推进。
-            # 旁挂成员照旧原样落盘，中止不丢数据。
+            # 这一轮装不上的专项插件按 v2.2 的口径只隔离它的托管：其余照常启动，
+            # 旁挂成员原样落盘，升级停在原版本，下次启动再装再转，中止不丢数据。
             items = [
                 item
                 for collection in (self.ScriptConfig, self.PlanConfig)
                 for item in collection.unresolved()
+                if item.reason == "load_failed" or item.type_name not in held_types
             ]
-            types = sorted(
-                {item.type_name for item in items if item.reason != "load_failed"}
+            if items:
+                types = sorted(
+                    {item.type_name for item in items if item.reason != "load_failed"}
+                )
+                failed = [
+                    f"{item.type_name} {item.uid}（{item.detail}）"
+                    for item in items
+                    if item.reason == "load_failed"
+                ]
+                reasons = []
+                if types:
+                    reasons.append(
+                        "有类型无法识别，所属插件不可用：" + "、".join(types)
+                    )
+                if failed:
+                    reasons.append("有配置读不了：" + "；".join(failed))
+                raise RuntimeError("配置升级时" + "；".join(reasons))
+        if version != "v2.2" and held_items:
+            logger.warning(
+                "以下类型所属专项插件这一轮没装上，托管先原样保留："
+                + "、".join(sorted({item.type_name for item in held_items}))
+                + "；数据升级停在原版本，下次启动会重新安装插件并继续升级"
             )
-            failed = [
-                f"{item.type_name} {item.uid}（{item.detail}）"
-                for item in items
-                if item.reason == "load_failed"
-            ]
-            reasons = []
-            if types:
-                reasons.append("有类型无法识别，所属插件不可用：" + "、".join(types))
-            if failed:
-                reasons.append("有配置读不了：" + "；".join(failed))
-            raise RuntimeError("配置升级时" + "；".join(reasons))
         self._notice_unavailable_managed()
         with startup_stage("后端/配置/专项初始化与保存"):
             if version != "v2.2":
@@ -831,20 +864,21 @@ class AppConfig:
                 await self._initialize_script_config(script)
             await self._absorb_legacy_execution_session()
             await config_manager.flush()
-        if version not in {"v2.0", "v2.1", "v2.2"}:
+        if version not in {"v2.0", "v2.1", "v2.2"} and not held_items:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.0",))
                 database.commit()
             version = "v2.0"
-        if version == "v2.0":
+        if version == "v2.0" and not held_items:
             await asyncio.to_thread(_clear_legacy_history)
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.1",))
                 database.commit()
             version = "v2.1"
-        if version == "v2.1":
+        if version == "v2.1" and not held_items:
             # v2.1→v2.2：对应插件已安装、旧配置已迁移且 flush 成功后才推进。
+            # 有托管因插件装不上被隔离时停在这里，下次启动重跑这一段。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.2",))
                 database.commit()
@@ -1536,11 +1570,14 @@ class AppConfig:
         if isinstance(script, (GeneralConfig, HSRConfig)):
             return {"Info": {"Base": _utils_constants.BASE_NATIVE}}
 
+        # 名单按专项登记的脚本键取值，插件版与内置版共用同一个键；没列入的其它插件
+        # 不在这里放行，仍沿用配置模型自带的缺省值。
         plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
             self.script_classes.get("SRC"),
             self.script_classes.get("BetterGI"),
+            self.script_classes.get("MaaEnd"),
         )
         if not plugin_defaults and not isinstance(
             script,

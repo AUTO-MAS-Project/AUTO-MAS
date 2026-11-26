@@ -75,6 +75,11 @@ def automatic_plugin_packages(
     }
 
 
+def adapter_plugin_types(name: str) -> set[str]:
+    """某个专项插件接手的托管与计划表类型；不是专项插件时为空集。"""
+    return {kind for kind, target in _ADAPTER_PLUGINS.items() if target[0] == name}
+
+
 def _index_types(config_path: Path) -> list[str]:
     """托管与计划集合索引里各条目的类型名，按文件和条目顺序；不读业务字段。"""
     types = []

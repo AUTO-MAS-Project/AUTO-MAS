@@ -148,6 +148,7 @@ def test_startup_installs_before_loading_and_commits_upgrade(
     code = r"""
 import asyncio
 import base64
+import json
 import shutil
 import sqlite3
 import sys
@@ -163,7 +164,7 @@ legacy = sys.argv[3] == "True"
 current = sys.argv[4] == "True"
 sys.path.insert(0, str(source / "plugins/auto_mas_core/src"))
 
-from app.config import NodeState, config_manager
+from app.config import config_manager
 from app.core import Config, Plugin
 from app.plugin import uv
 from app.plugin.runtime import discover
@@ -277,6 +278,9 @@ async def run():
         try:
             if current and failure in {"install", "disabled", "uninstalled"}:
                 # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
+            elif not current and failure == "install":
+                # 老格式按同一口径隔离：托管原样保留，版本停在升级前，下次启动重装插件
+                # 后再继续转换。
                 await Config.check_data(prepare_plugins=prepare)
                 assert Config.ScriptConfig.is_unresolved(sid)
                 assert Config.PlanConfig.is_unresolved(pid)
@@ -288,20 +292,25 @@ async def run():
                     else:
                         assert record is not None and not record.info.enabled
                 assert not Config.managed_configs_loaded()
-                assert io.read_dict_file(script_file) == original_document
+                assert Config._adapter_plugin_failures == {"maa_adapter": "installation unavailable"}
                 with sqlite3.connect(Config.database_path) as db:
-                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.2" if current else "v2.1")
+                if current:
+                    assert io.read_dict_file(script_file) == original_document
+                else:
+                    # 老格式只转换类型标签：托管、账号与计划的内容原样保留、只读旁挂。
+                    saved = io.read_dict_file(script_file)
+                    assert saved["data"][sid]["Info"]["Name"] == "原托管"
+                    assert saved["data"][sid]["users"]["data"][uid]["Info"]["Name"] == "原账号"
+                    plans = io.read_dict_file(Config.config_path / "plans.yaml")
+                    assert plans["data"][pid]["Info"]["Name"] == "原计划"
+                assert "原样保留" in json.dumps(Config.startup_notices, ensure_ascii=False)
                 return
             try:
                 await Config.check_data(prepare_plugins=prepare)
             except OSError as exc:
-                assert failure in ("install", "flush")
-                if failure == "install":
-                    assert str(exc) == "installation unavailable"
-                    assert Config.ScriptConfig.activation_state == NodeState.INACTIVE
-                    assert (Config.config_path / "scripts.yaml").read_bytes() == original
-                else:
-                    assert str(exc) == "save unavailable"
+                assert failure == "flush"
+                assert str(exc) == "save unavailable"
                 with sqlite3.connect(Config.database_path) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.2" if current else "v2.1")
                 return
@@ -359,6 +368,114 @@ asyncio.run(run())
             timeout=45,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected", "quiet"),
+    [
+        ("unknown_type", "有类型无法识别，所属插件不可用：GhostConfig", True),
+        ("mixed", "有类型无法识别，所属插件不可用：GhostConfig", False),
+        ("game_plugin", "installation unavailable", False),
+    ],
+)
+def test_cold_start_still_blocks_on_plugins_without_hold(
+    tmp_path, kind, expected, quiet
+):
+    """老格式只隔离「这一轮装不上的专项插件」的托管：没有失败记录的未识别类型、
+    以及没有旁挂区的游戏插件，装不上仍然拒绝推进版本。"""
+    source_root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import sqlite3
+import sys
+from unittest.mock import AsyncMock, patch
+
+from app.core import Config, Plugin
+from app.plugin import uv
+from app.plugin.runtime import discover
+from app.utils import io
+
+kind = sys.argv[1]
+ghost = "0b7d1b71-6f2f-4c22-9c1e-5f43f4b7a101"
+clash = "0b7d1b71-6f2f-4c22-9c1e-5f43f4b7a102"
+game = "0b7d1b71-6f2f-4c22-9c1e-5f43f4b7a103"
+
+# 发行包安装测试不应命中开发者源码目录中的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (Config.source_path / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+scripts = {"order": [], "data": {}}
+if kind in ("unknown_type", "mixed"):
+    scripts["order"].append({"uid": ghost, "type": "GhostConfig"})
+    scripts["data"][ghost] = {"Info": {"Name": "没人认领的托管"}}
+if kind == "mixed":
+    # 同一轮里另有一条专项装不上：它只该隔离自己那条，不能连 Ghost 一起放行。
+    scripts["order"].append({"uid": clash, "type": "MaaPluginConfig"})
+    scripts["data"][clash] = {"Info": {"Name": "抢手的托管"}}
+io.write_file(Config.config_path / "scripts.yaml", scripts)
+if kind == "game_plugin":
+    io.write_file(Config.config_path / "games.yaml", {
+        "order": [{"uid": game, "type": "MuMuGame"}],
+        "data": {game: {"Info": {"Name": "空的模拟器"}}},
+    })
+with sqlite3.connect(Config.database_path) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES (?)", ("v2.1",))
+
+installed = []
+
+async def install(spec, **kwargs):
+    installed.append(spec)
+    raise OSError("installation unavailable")
+
+async def prepare():
+    await Plugin.initialize()
+
+async def run():
+    with (
+        patch.object(uv, "install", install),
+        patch.object(uv, "prepare_environment", AsyncMock()),
+    ):
+        try:
+            await Config.check_data(prepare_plugins=prepare)
+        except OSError as error:
+            assert kind == "game_plugin", error
+            assert str(error) == "installation unavailable"
+        except RuntimeError as error:
+            assert kind in ("unknown_type", "mixed"), error
+            assert __EXPECTED__ in str(error), str(error)
+            if kind == "mixed":
+                assert "MaaConfig" not in str(error), str(error)
+        else:
+            raise AssertionError("没装上的插件被放行了")
+        finally:
+            with sqlite3.connect(Config.database_path) as db:
+                # 拒绝推进时停在升级前版本，下次启动重跑这一段。
+                assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
+            if __QUIET__:
+                assert installed == [], installed
+            await Plugin.shutdown()
+
+asyncio.run(run())
+""".replace("__EXPECTED__", repr(expected)).replace("__QUIET__", repr(quiet))
+    result = subprocess.run(
+        [sys.executable, "-c", code, kind],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={
+            **os.environ,
+            "PYTHONPATH": str(source_root),
+            "PYTHONIOENCODING": "utf-8",
+            "AUTO_MAS_ENV": "development",
+        },
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.asyncio
