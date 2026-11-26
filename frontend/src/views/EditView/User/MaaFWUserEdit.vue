@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false" class="user-edit-container">
+  <ConfigEditShell :max-width="1400">
     <template #header>
       <MaaFWUserEditHeader
         :save-status="saveStatus"
@@ -15,7 +15,7 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="loading">
+      <StateView :loading="loading">
         <a-form
           v-if="isEdit"
           ref="formRef"
@@ -48,46 +48,48 @@
             @import-from-user="importQueueFromUser"
             @imported="handleShellImported"
           />
-          <TaskQueueSection
-            v-model:add-task-cascader-value="addTaskCascaderValue"
-            v-model:show-preset-modal="showPresetModal"
-            :interface-loading="interfaceLoading"
-            :preview-data="previewData"
-            :interface-dependent-disabled="interfaceDependentDisabled"
-            :available-tasks="availableTasks"
-            :ordered-tasks="orderedTasks"
-            :add-task-cascader-options="addTaskCascaderOptions"
-            :has-new-tasks="hasNewTasks"
-            :preset-templates="presetTemplates"
-            :queue-templates="queueTemplates"
-            :queue-template-draft="queueTemplateDraft"
-            :task-by-name="taskByName"
-            :selected-task="selectedTask"
-            :selected-task-id="selectedQueuedTask?.id || ''"
-            :task-snapshot="taskSnapshot"
-            :effective-controller-name="effectiveControllerName"
-            :effective-resource-name="effectiveResourceName"
-            :managed-task-entries="managedTaskEntries"
-            :deleting-task="deletingTask"
-            @reorder-tasks="applyQueuedTaskIds"
-            @add-task-cascader-change="handleAddTaskCascaderChange"
-            @apply-preset-template="applyPresetTemplate"
-            @save-queue-template="saveQueueTemplate"
-            @apply-queue-template="applyQueueTemplate"
-            @rename-queue-template="renameQueueTemplate"
-            @delete-queue-template="deleteQueueTemplate"
-            @select-task="selectTask"
-            @toggle-task-checked="toggleTaskChecked"
-            @move-task="moveTask"
-            @task-drag-end="handleTaskDragEnd"
-            @task-option-update="handleTaskOptionUpdate"
-            @global-option-update="handleGlobalOptionUpdate"
-            @delete-selected-task="deleteSelectedTask"
-            @delete-task="deleteTask"
-            @duplicate-task="duplicateTask"
-            @rename-task="renameTask"
-            @task-weekdays-update="updateTaskWeekdays"
-          />
+          <SectionCard variant="plain">
+            <TaskQueueSection
+              v-model:add-task-cascader-value="addTaskCascaderValue"
+              v-model:show-preset-modal="showPresetModal"
+              :interface-loading="interfaceLoading"
+              :preview-data="previewData"
+              :interface-dependent-disabled="interfaceDependentDisabled"
+              :available-tasks="availableTasks"
+              :ordered-tasks="orderedTasks"
+              :add-task-cascader-options="addTaskCascaderOptions"
+              :has-new-tasks="hasNewTasks"
+              :preset-templates="presetTemplates"
+              :queue-templates="queueTemplates"
+              :queue-template-draft="queueTemplateDraft"
+              :task-by-name="taskByName"
+              :selected-task="selectedTask"
+              :selected-task-id="selectedQueuedTask?.id || ''"
+              :task-snapshot="taskSnapshot"
+              :effective-controller-name="effectiveControllerName"
+              :effective-resource-name="effectiveResourceName"
+              :managed-task-entries="managedTaskEntries"
+              :deleting-task="deletingTask"
+              @reorder-tasks="applyQueuedTaskIds"
+              @add-task-cascader-change="handleAddTaskCascaderChange"
+              @apply-preset-template="applyPresetTemplate"
+              @save-queue-template="saveQueueTemplate"
+              @apply-queue-template="applyQueueTemplate"
+              @rename-queue-template="renameQueueTemplate"
+              @delete-queue-template="deleteQueueTemplate"
+              @select-task="selectTask"
+              @toggle-task-checked="toggleTaskChecked"
+              @move-task="moveTask"
+              @task-drag-end="handleTaskDragEnd"
+              @task-option-update="handleTaskOptionUpdate"
+              @global-option-update="handleGlobalOptionUpdate"
+              @delete-selected-task="deleteSelectedTask"
+              @delete-task="deleteTask"
+              @duplicate-task="duplicateTask"
+              @rename-task="renameTask"
+              @task-weekdays-update="updateTaskWeekdays"
+            />
+          </SectionCard>
 
           <ExtraScriptSection
             v-model:form-data="formData"
@@ -103,7 +105,7 @@
             @save="handleFieldSave"
           />
         </a-form>
-      </a-card>
+      </StateView>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -120,26 +122,17 @@
       >
         <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
         <template #preview="{ raw }">
-          <NoData
-            v-if="!previewSections(raw).length"
-            :description="t('core.edit.configRestorePreviewEmpty')"
-          />
-          <div v-else>
+          <div v-if="previewSections(raw).length">
             <template v-for="s in previewSections(raw)" :key="s.name">
               <h4 class="maafw-preview-title">{{ s.label }}</h4>
-              <a-descriptions
-                v-if="s.rows && s.rows.length"
-                :column="1"
-                size="small"
-                bordered
-                class="maafw-preview-box"
-              >
+              <a-descriptions v-if="s.rows && s.rows.length" :column="1" size="small" bordered>
                 <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
                   {{ row.value }}
                 </a-descriptions-item>
               </a-descriptions>
             </template>
           </div>
+          <NoData v-else :description="t('core.edit.configRestorePreviewEmpty')" />
         </template>
       </ConfigRestoreSection>
     </template>
@@ -148,7 +141,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { ConfigEditShell } from '@/components/ui'
+import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'

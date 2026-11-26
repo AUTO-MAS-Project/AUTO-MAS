@@ -1,39 +1,31 @@
 <template>
-  <a-card
-    class="plan-config-card app-page-surface"
-    :class="{ 'plan-config-compact': compact }"
-    :bordered="false"
-  >
+  <SectionCard class="plan-config-card" :class="{ 'plan-config-compact': compact }">
     <template #title>
-      <div class="plan-title-container">
-        <div v-if="!isEditingPlanName" class="plan-title-display">
-          <span class="plan-title-text">{{ currentPlanName || t('core.plan.configTitle') }}</span>
-          <a-button
-            type="text"
-            size="small"
-            class="plan-edit-btn"
-            @click="$emit('start-edit-plan-name')"
-          >
-            <template #icon>
-              <EditOutlined />
-            </template>
-          </a-button>
-        </div>
-        <div v-else class="plan-title-edit">
-          <a-input
-            ref="planNameInputRef"
-            :value="currentPlanName"
-            :placeholder="t('core.plan.namePlaceholder')"
-            class="plan-title-input"
-            :maxlength="50"
-            @update:value="$emit('update:current-plan-name', $event)"
-            @blur="$emit('finish-edit-plan-name')"
-            @press-enter="$emit('finish-edit-plan-name')"
-          />
-        </div>
-      </div>
+      <span v-if="!isEditingPlanName" class="plan-title-display">
+        <span class="plan-title-text">{{ currentPlanName || t('core.plan.configTitle') }}</span>
+        <a-button
+          type="text"
+          size="small"
+          class="plan-edit-btn"
+          @click="$emit('start-edit-plan-name')"
+        >
+          <template #icon>
+            <EditOutlined />
+          </template>
+        </a-button>
+      </span>
+      <span v-else class="plan-title-input">
+        <a-input
+          :value="currentPlanName"
+          :placeholder="t('core.plan.namePlaceholder')"
+          :maxlength="50"
+          @update:value="$emit('update:current-plan-name', $event)"
+          @blur="$emit('finish-edit-plan-name')"
+          @press-enter="$emit('finish-edit-plan-name')"
+        />
+      </span>
     </template>
-    <template #extra>
+    <template #actions>
       <a-space :wrap="compact">
         <span class="mode-label">{{ t('core.plan.modeLabel') }}</span>
         <a-segmented
@@ -78,12 +70,13 @@
     <div class="config-table-container">
       <slot />
     </div>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
+import { SectionCard } from '@/components/ui'
 import {
   PLAN_ROTATE_DAYS_MAX,
   PLAN_ROTATE_DAYS_MIN,
@@ -150,28 +143,33 @@ const handleRotateDaysChange = (value: number | string | null) => {
   width: 72px;
 }
 
-.plan-title-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.plan-config-card.ui-section-card {
+  margin-bottom: 0;
 }
 
 .plan-title-display {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.plan-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-edit-btn {
+  flex-shrink: 0;
   color: var(--ant-color-primary);
   padding: 0;
 }
 
 .plan-title-input {
   flex: 1;
+  min-width: 0;
   max-width: 400px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
 }
 
 .config-table-container {
@@ -180,18 +178,17 @@ const handleRotateDaysChange = (value: number | string | null) => {
   /* border: 1px solid var(--ant-color-border-secondary); */
 }
 
-.plan-config-compact :deep(.ant-card-head-wrapper) {
+.plan-config-compact :deep(.section-header) {
+  display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.plan-config-compact :deep(.ant-card-extra) {
-  margin-inline-start: 0;
-}
-
 .plan-title-input :deep(.ant-input) {
+  border-radius: 8px;
   font-size: 16px;
   font-weight: 500;
+  transition: all 0.2s ease;
 }
 
 .plan-title-input :deep(.ant-input:focus) {

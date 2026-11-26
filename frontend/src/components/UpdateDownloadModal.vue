@@ -1,14 +1,14 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="modalVisible"
     :title="t('core.comp.downloadUpdateVersion', { version: latestVersion })"
-    :width="600"
-    :footer="null"
+    footer="none"
     :mask-closable="false"
+    :submitting="installing"
     :closable="status === 'completed' || status === 'failed'"
+    :keyboard="status === 'completed' || status === 'failed'"
     :z-index="9999"
     class="update-download-modal"
-    centered
     @cancel="handleModalCancel"
   >
     <div class="download-container">
@@ -111,16 +111,18 @@
         </a-result>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { Modal } from 'ant-design-vue'
 import { computed } from 'vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const {
   status,
@@ -149,13 +151,12 @@ const {
 const showBuiltinRetry = computed(() => (failureReason.value ?? '').includes('httpx'))
 
 const confirmCancel = () => {
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t('core.comp.cancelUpdateDownload'),
-    content: t('core.comp.cancellingDeletesUnfinishedDownload'),
+    description: t('core.comp.cancellingDeletesUnfinishedDownload'),
     okText: t('core.comp.confirmCancellation'),
     cancelText: t('core.comp.continueDownload'),
-    okType: 'danger',
-    centered: true,
     zIndex: 10001,
     onOk: cancel,
   })

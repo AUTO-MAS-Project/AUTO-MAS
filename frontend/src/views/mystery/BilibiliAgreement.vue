@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { SectionCard } from '@/components/ui'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { handleExternalLink } from '@/utils/openExternal'
 
@@ -29,26 +30,8 @@ onMounted(load)
 </script>
 
 <template>
-  <a-card :title="t('core.setting.func.biliPolicy')">
-    <p>{{ t('core.setting.func.biliIntro') }}</p>
-    <ul>
-      <li>
-        <a href="https://www.bilibili.com/protocal/licence.html" @click="handleExternalLink">
-          {{ t('core.setting.func.biliTerms') }}
-        </a>
-      </li>
-      <li>
-        <a href="https://www.bilibili.com/blackboard/privacy-pc.html" @click="handleExternalLink">
-          {{ t('core.setting.func.biliPrivacy') }}
-        </a>
-      </li>
-      <li>
-        <a href="https://game.bilibili.com/yhxy" @click="handleExternalLink">
-          {{ t('core.setting.func.biliGame') }}
-        </a>
-      </li>
-    </ul>
-    <a-space direction="vertical">
+  <SectionCard :title="t('core.setting.func.biliPolicy')" style="margin-bottom: 0">
+    <template #actions>
       <a-switch
         :checked="enabled"
         :loading="loading"
@@ -56,8 +39,23 @@ onMounted(load)
         :aria-label="t('core.setting.func.biliPolicy')"
         @change="toggle"
       />
+    </template>
+    <p>{{ t('core.setting.func.biliIntro') }}</p>
+    <ul>
+      <li
+        v-for="(label, href) in {
+          'https://www.bilibili.com/protocal/licence.html': t('core.setting.func.biliTerms'),
+          'https://www.bilibili.com/blackboard/privacy-pc.html': t('core.setting.func.biliPrivacy'),
+          'https://game.bilibili.com/yhxy': t('core.setting.func.biliGame'),
+        }"
+        :key="href"
+      >
+        <a :href="href" @click="handleExternalLink">{{ label }}</a>
+      </li>
+    </ul>
+    <a-space direction="vertical">
       <a-alert v-if="error" type="error" show-icon :message="error" />
       <a-button v-if="!loaded && !loading" @click="load">{{ t('core.mystery.retry') }}</a-button>
     </a-space>
-  </a-card>
+  </SectionCard>
 </template>

@@ -1,52 +1,50 @@
 <template>
   <SectionCard variant="plain" :title="t('core.edit.taskConfiguration')">
-    <SectionCard variant="card" class="config-card">
-      <StateView :loading="loading">
-        <a-form layout="vertical" class="config-form">
-          <a-row :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.startTaskTN')"
-                    :hint="t('core.edit.taskNumbersMatchOk')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="taskIndex"
-                  :disabled="disabled"
-                  size="large"
-                  @change="(value: number) => emit('change', value)"
-                >
-                  <a-select-option v-for="item in options" :key="item.value" :value="item.value">
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.currentLaunchArguments')"
-                    :hint="t('core.edit.argumentsGeneratedFromTask')"
-                    variant="form"
-                  />
-                </template>
-                <a-input
-                  :value="startupArguments"
-                  :placeholder="previewError"
-                  :title="previewError"
-                  size="large"
-                  readonly
+    <StateView :loading="loading">
+      <a-form layout="vertical">
+        <a-row :gutter="24">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.startTaskTN')"
+                  :hint="t('core.edit.taskNumbersMatchOk')"
+                  variant="form"
                 />
-              </a-form-item>
-            </a-col>
-          </a-row>
-        </a-form>
-      </StateView>
-    </SectionCard>
+              </template>
+              <a-select
+                v-model:value="taskIndex"
+                :disabled="disabled"
+                size="large"
+                @change="(value: number) => emit('change', value)"
+              >
+                <a-select-option v-for="item in options" :key="item.value" :value="item.value">
+                  {{ item.label }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.currentLaunchArguments')"
+                  :hint="t('core.edit.argumentsGeneratedFromTask')"
+                  variant="form"
+                />
+              </template>
+              <a-input
+                :value="startupArguments"
+                :placeholder="previewError"
+                :title="previewError"
+                size="large"
+                readonly
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+      </a-form>
+    </StateView>
   </SectionCard>
 </template>
 <script setup lang="ts">
@@ -101,10 +99,3 @@ watch(
   { immediate: true }
 )
 </script>
-
-<style scoped>
-.config-card {
-  margin-bottom: 0;
-  padding-block: var(--section-card-padding);
-}
-</style>
