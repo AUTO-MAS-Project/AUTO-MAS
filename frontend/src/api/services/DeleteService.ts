@@ -310,12 +310,12 @@ export class DeleteService {
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError
      */
-    public static whimboxRestoreConfigBackupApiPluginWhimboxAdapterBackupRestorePost(
+    public static srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost(
         requestBody: ConfigBackupRestoreIn,
     ): CancelablePromise<ConfigBackupRestoreOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugin/whimbox_adapter/backup/restore',
+            url: '/api/plugin/src_adapter/backup/restore',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -333,12 +333,12 @@ export class DeleteService {
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError
      */
-    public static srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost(
+    public static whimboxRestoreConfigBackupApiPluginWhimboxAdapterBackupRestorePost(
         requestBody: ConfigBackupRestoreIn,
     ): CancelablePromise<ConfigBackupRestoreOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugin/src_adapter/backup/restore',
+            url: '/api/plugin/whimbox_adapter/backup/restore',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

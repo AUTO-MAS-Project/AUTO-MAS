@@ -21,13 +21,15 @@
 import asyncio
 import shlex
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import psutil
 
 from app.models.config import OkNteConfig
-from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.common.process.operations import iter_processes
+from app.task.pyappify_startup import open_launcher_logs, wait_for_launcher_process
+from app.utils import ProcessInfo, ProcessManager, get_logger, process
+from app.utils.common.process.operations import iter_scoped_process_info
 
 logger = get_logger("OK-NTE 运行入口")
 
@@ -76,17 +78,67 @@ class OkNteProcessManager(ProcessManager):
         )
 
     async def open_oknte(
-        self, program: Path | str, *args: str, use_custom_target: bool = True
+        self,
+        program: Path | str,
+        *args: str,
+        use_custom_target: bool = True,
+        require_runtime: bool = False,
+        on_log: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         """启动上游入口，按自定义条件或实际本体接管生命周期。"""
-        track = self.config.Script.IfTrackProcess
+        track = require_runtime or self.config.Script.IfTrackProcess
         custom = self._custom_target() if track and use_custom_target else None
-        started = time.time()
-        await self.open_process(
-            program, *args, target_process=custom, retain_desktop_descendants=track
+        launcher = (
+            Path(program) == self.root / "ok-nte.exe"
+            and runtime_dir(self.root) != self.root
         )
-        if track and custom is None:
-            await self.search_runtime_process(min_create_time=started)
+        if not track or not launcher:
+            started = time.time()
+            await self.open_process(
+                program, *args, target_process=custom, retain_desktop_descendants=track
+            )
+            if track and custom is None:
+                await self.search_runtime_process(min_create_time=started)
+            return
+
+        log_dir = self.root / "logs"
+        sources = await asyncio.to_thread(open_launcher_logs, log_dir)
+        started = time.monotonic()
+        started_at = time.time()
+        await self.open_process(program, *args, retain_desktop_descendants=True)
+
+        async def search(timeout_seconds: float) -> None:
+            if custom is not None:
+                await self.search_process(
+                    custom, timeout_seconds=timeout_seconds, min_create_time=started_at
+                )
+            else:
+                await self.search_runtime_process(
+                    timeout_seconds=timeout_seconds, min_create_time=started_at
+                )
+
+        async def report(message: str) -> None:
+            if on_log is None:
+                logger.info(message)
+            else:
+                await on_log(message)
+
+        # 启动时检查版本本身不延长无更新时的等待。
+        try:
+            await wait_for_launcher_process(
+                log_dir,
+                sources,
+                app_id="ok-nte",
+                started=started,
+                search_process=search,
+                on_log=report,
+                include_update_check=False,
+            )
+        except BaseException:
+            # 对齐父类显式目标启动失败时的分身进程收尾。
+            if custom is not None and self._desktop_process is not None:
+                await self.clear()
+            raise
 
     async def search_runtime_process(
         self,
@@ -95,27 +147,31 @@ class OkNteProcessManager(ProcessManager):
     ) -> None:
         """自动搜索本次安装的主进程；不改变父类显式目标搜索的契约。"""
 
-        def scan() -> tuple[psutil.Process, float] | None:
+        def scan() -> tuple[psutil.Process, float, str] | None:
             executables = runtime_executables(self.root)
-            candidates: list[tuple[int, float, int, psutil.Process]] = []
-            for proc in iter_processes(["pid", "exe", "cmdline", "create_time"]):
-                info = proc.info
-                if not info["exe"] or not info["cmdline"]:
+            candidates: list[tuple[int, float, int, psutil.Process, str]] = []
+            for proc, info in iter_scoped_process_info(
+                ["exe", "cmdline", "create_time"]
+            ):
+                executable = info["exe"]
+                if not executable or not info["cmdline"]:
                     continue
                 # 冻结包的 multiprocessing worker 与 GUI 共用 EXE，不能当作本体。
                 if "--multiprocessing-fork" in info["cmdline"]:
                     continue
-                exe = Path(info["exe"])
+                exe = Path(executable)
                 created = info["create_time"]
                 if exe not in executables or created is None:
                     continue
                 if min_create_time is not None and created < min_create_time - 2:
                     continue
-                candidates.append((executables.index(exe), created, proc.pid, proc))
+                candidates.append(
+                    (executables.index(exe), created, proc.pid, proc, executable)
+                )
             if not candidates:
                 return None
-            _, created, _, proc = min(candidates)
-            return proc, created
+            _, created, _, proc, executable = min(candidates)
+            return proc, created, executable
 
         # 不依据磁盘残留文件决定模式：源码与冻结包文件可能同时存在。
         # 每轮重算候选，覆盖启动器更新期间才解压出来的新本体。
@@ -123,8 +179,8 @@ class OkNteProcessManager(ProcessManager):
         while time.monotonic() < deadline:
             found = await asyncio.to_thread(scan)
             if found is not None:
-                proc, created = found
-                target = ProcessInfo(exe=proc.info["exe"])
+                proc, created, executable = found
+                target = ProcessInfo(exe=executable)
                 self.target_process = proc
                 self._target_info = target
                 self._target_create_time = created
@@ -162,3 +218,18 @@ class OkNteProcessManager(ProcessManager):
         if track_exe:
             paths.append(Path(track_exe))
         return list(dict.fromkeys(paths))
+
+    async def confirm_stopped(self, *, all_sessions: bool = False) -> bool:
+        """按路径确认启动器、本体和配置的追踪目标已退出。"""
+        stopped = True
+        for exe in self.cleanup_executables():
+            try:
+                if not await process.is_process_stopped(exe, all_sessions=all_sessions):
+                    stopped = False
+                    logger.warning(f"无法确认 OK-NTE 进程已退出: {exe}")
+            except Exception as e:
+                stopped = False
+                logger.opt(exception=True).warning(
+                    f"复核 OK-NTE 进程退出状态失败: {exe}: {e}"
+                )
+        return stopped

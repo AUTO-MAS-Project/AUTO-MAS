@@ -1,49 +1,45 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="hsr"
-      :user-id="userId"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="hsr"
+        :user-id="userId"
+        @cancel="handleCancel"
+      />
+    </template>
+
+    <template v-if="pageWarnings.length" #banner>
+      <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
+      <a-alert type="warning" show-icon :message="pageWarnings[0]">
+        <template v-if="pageWarnings.length > 1" #description>
+          <ul class="page-warning-list">
+            <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
+          </ul>
+        </template>
+      </a-alert>
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
-        <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
-        <a-alert
-          v-if="pageWarnings.length"
-          type="warning"
-          show-icon
-          :message="pageWarnings[0]"
-          style="margin-bottom: 12px"
-        >
-          <template v-if="pageWarnings.length > 1" #description>
-            <ul class="page-warning-list">
-              <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
-            </ul>
-          </template>
-        </a-alert>
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
-          <div class="form-section form-section-flat">
-            <UserAccountHeading
-              :user-name="formData.Info.Name ?? ''"
-              :options="{ isEdit, logoSrc: hsrLogo }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-              <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
-              <div class="section-header-actions">
-                <a-button size="small" @click="restoreOpen = true">
-                  <template #icon>
-                    <HistoryOutlined />
-                  </template>
-                  {{ t('core.edit.configRestoreTitle') }}
-                </a-button>
-              </div>
-            </div>
+          <UserAccountHeading
+            :user-name="formData.Info.Name ?? ''"
+            :options="{ isEdit, logoSrc: hsrLogo }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
+            <template #actions>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('core.edit.configRestoreTitle') }}
+              </a-button>
+            </template>
             <!-- 与其他专项一致：用户名 / 启用 / 剩余天数一行，备注单独一行 -->
             <UserBasicInfoFields
               :name-path="['Info', 'Name']"
@@ -133,7 +129,7 @@
               alert-message=""
               @change="handleConfigModeChange"
             />
-          </div>
+          </SectionCard>
 
           <!-- 任务配置：「共享」来源编辑共享计划，「独立」来源编辑该用户自己的计划；
                模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
@@ -281,45 +277,48 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="HSR_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('core.edit.hsrConfigRestoreUserDesc')"
-      :script-desc="t('core.edit.hsrConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-    >
-      <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewSections(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="hsr-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="hsr-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="HSR_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.hsrConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.hsrConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+      >
+        <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="hsr-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="hsr-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -1279,10 +1278,6 @@ const loadUserData = async () => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
 .user-edit-content {
   max-width: 1400px;
   margin: 0 auto;
@@ -1301,21 +1296,12 @@ const loadUserData = async () => {
   max-width: none;
 }
 
-.form-section {
+div.form-section {
   margin-bottom: 12px;
   padding: 20px 24px;
   background: var(--ant-color-bg-container);
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 12px;
-}
-
-/* 基本信息与体力配置沿用插件版的无卡片布局；标题分隔线仍保留。 */
-.form-section-flat {
-  margin-bottom: 24px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
 }
 
 .section-header {

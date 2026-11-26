@@ -17,6 +17,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import comtypes.client
+from winerror import ERROR_LOGON_FAILURE
 
 from app.utils.windows.desktop_session import audio, credentials
 from app.utils.windows.desktop_session.environment import (
@@ -78,7 +79,6 @@ class Host:
         self.commands: queue.SimpleQueue[dict] = queue.SimpleQueue()
         self.viewer: RdpViewer | None = None
         self.session_id: int | None = None
-        self.adopted = False
         self.next_sample = 0.0
         self.next_audio = 0.0
         self.volume = 0
@@ -242,15 +242,20 @@ class Host:
             if password is not None
             else credentials.load(path, account)
         )
-        started = datetime.now(UTC)
-        try:
-            credentials.validate(credential)
-        except credentials.CredentialError as exc:
-            if exc.native_code is not None:
-                failure = recent_failure(started, account, sid, remote=False)
-                if failure:
-                    self.report("authentication_failure", **failure)
-            raise
+        if credential is not None:
+            started = datetime.now(UTC)
+            try:
+                credentials.validate(credential)
+            except credentials.CredentialError as exc:
+                if password is None and exc.native_code == ERROR_LOGON_FAILURE:
+                    # 账号密码可能已移除，改用当前 Windows 会话自动登录。
+                    credential = None
+                else:
+                    if exc.native_code is not None:
+                        failure = recent_failure(started, account, sid, remote=False)
+                        if failure:
+                            self.report("authentication_failure", **failure)
+                    raise
 
         approved = command.get("adoptSessionId")
         current = child_session()
@@ -265,7 +270,7 @@ class Host:
             )
             return
 
-        if password is not None:
+        if password is not None and credential is not None:
             try:
                 credentials.save(path, account, credentials.encode(credential))
             except credentials.CredentialError as exc:
@@ -276,7 +281,6 @@ class Host:
         def connected() -> None:
             assert self.viewer is not None
             self.session_id = self.viewer.session_id
-            self.adopted = approved is not None
 
         self.viewer = RdpViewer(
             mode=command["mode"],
@@ -299,13 +303,13 @@ class Host:
         self.viewer.open(credential)
 
     def close(
-        self, orphaned_session: int | None = None, *, logoff: bool | None = None
+        self, orphaned_session: int | None = None, *, logoff: bool = False
     ) -> None:
         self.close_session(orphaned_session, logoff=logoff)
         self.report("state", state="idle")
 
     def close_session(
-        self, orphaned_session: int | None, *, logoff: bool | None = None
+        self, orphaned_session: int | None, *, logoff: bool = False
     ) -> None:
         session = self.session_id if orphaned_session is None else orphaned_session
         viewer = self.viewer
@@ -318,8 +322,7 @@ class Host:
         # 只注销本次登录成功后登记的会话，或由 Electron 转交的已登记会话。
         self.viewer = None
         self.rdp_logon = None
-        should_logoff = not self.adopted if logoff is None else logoff
-        if session is not None and should_logoff:
+        if session is not None and logoff and child_session() == session:
             self.session_id = session
             start = time.monotonic()
             logoff_child(session)
@@ -331,7 +334,6 @@ class Host:
                 durationMs=round((time.monotonic() - start) * 1000),
             )
         self.session_id = None
-        self.adopted = False
 
     def command(self, command: dict) -> None:
         action = command["action"]
@@ -344,7 +346,27 @@ class Host:
         elif action == "repair":
             self.repair(frozenset(command["approvedRepairs"]))
         elif action == "close":
-            self.close(command.get("orphanedSessionId"), logoff=command.get("logoff"))
+            orphaned = command.get("orphanedSessionId")
+            only_if_idle = command.get("onlyIfIdle") is True
+            if only_if_idle:
+                from app.utils.windows.desktop_session.inventory import (
+                    has_unmanaged_processes,
+                )
+
+                session = self.session_id if orphaned is None else orphaned
+                if session is not None:
+                    unmanaged = has_unmanaged_processes(session)
+                    if unmanaged is not False:
+                        code = "close_blocked" if unmanaged else "close_unverified"
+                        self.report("command_error", action="close", code=code)
+                        return
+            self.close(
+                orphaned, logoff=command.get("logoff") is True and not only_if_idle
+            )
+        elif action == "park_for_prompt":
+            if self.viewer is not None:
+                self.viewer.set_window_state("hidden")
+            self.report("prompt_parked", promptId=command.get("promptId"))
         elif action == "eof":
             self.dead = True
         elif self.viewer is not None:
@@ -379,6 +401,11 @@ class Host:
                 self.report(
                     "command_error",
                     action=action,
+                    **(
+                        {"promptId": command.get("promptId")}
+                        if action == "park_for_prompt"
+                        else {}
+                    ),
                     code=type(exc).__name__,
                     location=[
                         f"{frame.name}:{frame.lineno}"
@@ -422,7 +449,7 @@ class Host:
                 continue
             viewer.pump_until(lambda: self.viewer is not viewer)
         if self.viewer is not None or self.session_id is not None:
-            self.close()
+            self.close(logoff=False)
 
 
 def main() -> None:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import weakref
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
 from app.config import ConfigCollection, ConfigEntry, ConfigNode
@@ -304,7 +304,7 @@ class ScriptAdapterRuntime(_AdapterRuntime):
         return tuple(
             entry
             for entry in Config.ScriptConfig.values()
-            if isinstance(entry, self.script_type)
+            if type(entry) is self.script_type
         )
 
     def precheck_locks(self) -> None:
@@ -314,7 +314,7 @@ class ScriptAdapterRuntime(_AdapterRuntime):
 
         script_type = self.script_type
         for entry in Config.ScriptConfig.values():
-            if isinstance(entry, script_type) and entry.is_locked:
+            if type(entry) is script_type and entry.is_locked:
                 raise PluginPrecheckError(
                     f"脚本配置 {entry.uid} 已锁定，无法禁用/重载/卸载",
                     payload={
@@ -395,7 +395,11 @@ class ScriptAdapterRuntime(_AdapterRuntime):
 
         # ── 2. 类型目录（仅本适配写入，也仅 disable / rollback 摘掉）──
         assert self.decl is not None
-        Plugin.script_types[self.record.uid] = self.decl
+        decl = self.decl
+        if self.plugin_name == "whimbox_adapter" and decl.supports_game_binding is None:
+            # 已发布的奇想盒自行管理游戏，旧声明没有显式能力标记。
+            decl = replace(decl, supports_game_binding=False)
+        Plugin.script_types[self.record.uid] = decl
 
     async def system_disable(self) -> None:
         """普通禁用：类型表 → 目录 → 清快照。重载语境三步都不做。"""

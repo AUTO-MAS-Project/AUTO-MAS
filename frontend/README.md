@@ -1,142 +1,111 @@
 # AUTO-MAS Frontend
 
-基于 Vue 3 + TypeScript + Ant Design Vue + Electron 的桌面应用程序。
-
-## 功能特性
-
-- 🎨 使用 Ant Design Vue 组件库
-- 🌙 支持深色模式（跟随系统/深色/浅色）
-- 🎨 支持多种主题色切换
-- 📱 响应式侧边栏布局
-- 🔧 内置开发者工具
-- ⚡ 基于 Vite 的快速开发体验
-
-## 项目结构
-
-```
-src/
-├── components/          # 组件
-│   └── AppLayout.vue   # 主布局组件
-├── views/              # 页面
-│   ├── Home.vue        # 主页
-│   ├── Scripts.vue     # 脚本管理
-│   ├── Plans.vue       # 计划管理
-│   ├── Queue.vue       # 调度队列
-│   ├── Scheduler.vue   # 调度中心
-│   ├── History.vue     # 历史记录
-│   └── Settings.vue    # 设置页面
-├── router/             # 路由配置
-├── composables/        # 组合式函数
-│   └── useTheme.ts     # 主题管理
-└── main.ts            # 应用入口
-```
-
-## 开发
-
-### 安装依赖
-
-```bash
-yarn install
-```
-
-如果 Electron 二进制下载缓慢或失败，可以使用 npmmirror 镜像执行一次性安装：
-
-```bash
-yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install
-```
-
-### 开发模式
-
-源码 Electron 使用 Runtime 的 `development` 模式监督当前检出，安装版默认使用 `managed`。
-启动模式不再由设置页保存，存量选择不再生效；开发排障仍可通过 `AUTO_MAS_RUNTIME_MODE` 显式覆盖。
-安装与恢复中的测速和换源由 Runtime 自动完成，桌面端不再读取旧镜像配置或提供手动选源。
-已初始化的安装版若丢失 Runtime，失败页的重试会先补装并完整准备环境，再继续启动后端。
-旧的 `off` 值按构建默认值处理，不再直接启动 Python。应用环境仍独立判断，源码默认为开发环境。
-
-在仓库根目录准备虚拟环境，再从 `frontend/` 启动。Runtime 开发模式不会创建或同步项目 `.venv`：
-
-```powershell
-uv sync --locked --group dev
-Set-Location frontend
-$env:AUTO_MAS_RUNTIME_EXE = 'D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe'
-yarn dev
-```
-
-Runtime 可使用官方发行版，或按 [本地构建说明](../scripts/README.md) 构建。首次启动会准备 Runtime
-自身所需的 uv；Runtime 的状态目录位于开发版 userData 下，源码和配置仍使用当前检出。
-`yarn dev` 使用 Rolldown 转译 Electron，随后并行启动 Electron 与 Vite；页面会等本次 Vite
-就绪后再加载。Electron 类型检查在后台持续运行，不阻塞启动，也不输出编译产物。
-修改主进程后会重新编译，需重启 Electron 才会执行新代码；renderer 继续使用 Vite HMR。
-`yarn dev:fullstack` 与 `yarn dev` 使用同一入口，不会再额外启动一个独立后端。
-开发时可用 `AUTO_MAS_HTTP_PORT` 指定 1024–65535 范围内的端口，Electron 会将它传给 Runtime。
-低端口调试继续使用独立后端与 `yarn web`。
-Electron 退出会经 Runtime 关闭后端及其进程树；缺少 Runtime 时显示启动失败，不回退旧链路。
-
-独立后端与浏览器调试继续保留，不需要 Runtime。在两个终端分别运行：
-
-```powershell
-# 终端一，frontend/ 目录；独立后端默认使用开发环境与 36164 端口。
-yarn backend
-
-# 终端二，frontend/ 目录。
-yarn web
-```
-
-`yarn backend` 固定使用 36164。需要 80 等低端口时，不使用该快捷命令，在两个终端分别执行：
-
-```powershell
-# 终端一：仓库根目录，直接启动独立后端。
-$env:AUTO_MAS_HTTP_PORT = '80'
-uv run --locked python main.py
-
-# 终端二：frontend/ 目录，让浏览器开发服务器连接同一端口。
-$env:AUTO_MAS_HTTP_PORT = '80'
-yarn web
-```
-
-此方式在浏览器里调试共用的 Vue 页面与 HTTP/WebSocket，不启动 Electron，也不验证 preload、
-原生窗口或 Runtime 监督；这些能力继续使用 1024–65535 端口的 `yarn dev` 验证。
-
-浏览器只连接独立后端，关闭预览不会停止它；后端由开发者在终端中管理。
-独立验证生产行为时需显式设置 `AUTO_MAS_ENV=production`。
-
-需要单独调试桌面前端时，在两个终端分别运行：
-
-```powershell
-# 终端一，frontend/ 目录。
-yarn backend
-
-# 终端二，frontend/ 目录，只启动 Electron、Vite 与主进程持续编译。
-yarn dev:frontend
-```
-
-已有 Vite 服务时可用 `yarn electron-dev:frontend` 只启动 Electron。
-该入口显式传入 `--connect-existing-backend`，默认连接 36164，可通过
-`AUTO_MAS_HTTP_PORT` 指定端口。它不需要 Runtime，不安装、更新或重启后端；退出只断开连接，
-保留后端及其任务，断线和系统唤醒后只重连。普通 `yarn dev` 仍负责后端的启动与退出。
-
-### 构建
-
-```bash
-yarn build
-```
+基于 Vue 3 + TypeScript + Ant Design Vue + Electron 的桌面端应用。
 
 ## 技术栈
 
-- **前端框架**: Vue 3 + TypeScript
-- **UI 组件库**: Ant Design Vue 4.x
-- **图标**: @ant-design/icons-vue
-- **路由**: Vue Router 4
-- **前端工具链**: Vite+（Vite、Vitest、Oxlint、Oxfmt）
-- **桌面端**: Electron
-- **包管理**: Yarn
+- **框架**：Vue 3 + TypeScript + Vue Router 4
+- **UI 组件**：Ant Design Vue 4.x、`@ant-design/icons-vue`
+- **工具链**：Vite+（Vite、Vitest、Oxlint、Oxfmt）、Yarn 4
+- **桌面端**：Electron
 
-Vite+ 检查与测试命令
+## 目录结构
 
-```bash
-yarn lint          # 查看问题
-yarn lint:fix      # 自动修复
-yarn format        # Oxfmt 全量格式化（非必须）
-yarn typecheck     # 检查 Vue renderer 类型
-yarn test          # 运行 Vitest 测试
+```text
+src/
+├── api/            # OpenAPI 自动生成的后端客户端（勿手改）
+├── components/     # 公共组件与开发工作台
+├── composables/    # 组合式函数（主题、API、任务运行态等）
+├── i18n/           # 启动期词表与国际化封装
+├── plugins/        # 静态脚本插件入口注册
+├── router/         # 路由配置
+├── services/       # WebSocket、快照与前端服务
+├── styles/         # 全局样式与外观变量
+├── views/          # 业务页面（home / scripts / plan / queue / scheduler / history / setting / taskboard / games / gamesign / plugins 等）
+└── main.ts         # 渲染进程入口
+```
+
+## 安装依赖
+
+```powershell
+yarn install
+```
+
+如果 Electron 二进制下载缓慢或失败，可使用 npmmirror 镜像安装：
+
+```powershell
+yarn cross-env ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" yarn install
+```
+
+## 开发调试
+
+按需要选择以下三种方式之一。所有方式默认均以**开发环境**运行；需要验证生产行为时，显式设置 `AUTO_MAS_ENV=production`。
+
+### 1. 完整桌面端（Electron + Runtime，推荐）
+
+源码 Electron 默认通过 Runtime 的 `development` 模式监督当前检出，端口默认 `36164`（与正式安装版 `36163` 隔离，可同时运行）。Runtime 不会自动创建或同步 `.venv`，需先在仓库根目录准备 Python 环境：
+
+```powershell
+# 仓库根目录
+uv sync --locked --group dev
+
+# 进入 frontend/ 启动桌面端（Windows 首次会自动下载并校验缓存 Runtime）
+Set-Location frontend
+yarn dev
+```
+
+- 如需使用本地编译的 Runtime，再显式设置 `$env:AUTO_MAS_RUNTIME_EXE = '<path/to/auto-mas-runtime.exe>'` 覆盖默认缓存。
+- `yarn dev`（与 `yarn dev:fullstack` 相同）会自动屏蔽宿主 IDE 可能注入的 `ELECTRON_RUN_AS_NODE`，使用 Rolldown 编译主进程并并行启动 Vite 与 Electron，后台持续运行 Electron 类型检查。
+- 渲染层支持 Vite HMR；修改 Electron 主进程代码后需重启 Electron 生效。
+- 默认通过 `AUTO_MAS_HTTP_PORT` 指定端口（1024–65535，默认 `36164`）；退出 Electron 时会经 Runtime 一并关闭后端进程树。如需多 worktree 并行预览，因 `yarn dev` 固定监听 Vite `5173`，请对第二个 worktree 使用 `yarn backend` + `yarn web -- --port <其他端口>`。
+
+### 2. 独立后端 + 浏览器预览（无需 Runtime）
+
+适合快速调试共享的 Vue 页面与 HTTP/WebSocket 交互（不启动 Electron，不覆盖 preload、原生窗口或 Runtime 监督）：
+
+```powershell
+# 终端一（frontend/ 目录）：启动独立后端，默认端口 36164
+yarn backend
+
+# 终端二（frontend/ 目录）：启动浏览器预览
+yarn web
+```
+
+如需使用 80 等低端口，在两个终端手动指定端口启动：
+
+```powershell
+# 终端一（仓库根目录）
+$env:AUTO_MAS_HTTP_PORT = '80'
+uv run --locked python main.py
+
+# 终端二（frontend/ 目录）
+$env:AUTO_MAS_HTTP_PORT = '80'
+yarn web
+```
+
+关闭浏览器标签页不会停止独立后端，由终端自行管理。
+
+### 3. 独立后端 + 桌面端（仅调试前端）
+
+希望前端重启不影响正在运行的后端时，在两个终端分别运行：
+
+```powershell
+# 终端一（frontend/ 目录）
+yarn backend
+
+# 终端二（frontend/ 目录）：只启动 Electron、Vite 与主进程编译
+yarn dev:frontend
+```
+
+若 Vite 已启动，可用 `yarn electron-dev:frontend` 单独拉起 Electron。该入口传入 `--connect-existing-backend`（默认连接 36164，可用 `AUTO_MAS_HTTP_PORT` 覆盖），退出时只断开连接，保留后端及其运行中的任务。
+
+## 常用命令
+
+```powershell
+yarn build         # 构建桌面端产物
+yarn lint          # Oxlint 静态检查
+yarn lint:fix      # 自动修复 lint 问题
+yarn format        # Oxfmt 格式化
+yarn typecheck     # Vue 渲染层类型检查
+yarn test          # 运行 Vitest 单元测试
 ```

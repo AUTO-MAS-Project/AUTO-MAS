@@ -1,4 +1,8 @@
-"""[兼容旧专项] 旧配置 CRUD 回调契约，专项完成插件化后移除；新插件不使用。"""
+"""宿主内部的配置 CRUD 回调契约。
+
+旧专项经登记绑定；插件不直接使用它，而是覆盖 ``ScriptAdapterPlugin`` 的托管生命周期钩子，
+由宿主包装成这里的回调。
+"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -79,7 +83,7 @@ class UserUpdatePreparer(Protocol):
 
 @dataclass(frozen=True, kw_only=True)
 class ScriptConfigHandler:
-    """[兼容旧专项] 存量配置回调与设备字段映射，不属于插件 SDK。"""
+    """存量配置回调与设备字段映射，不属于插件 SDK；插件钩子由宿主转接成它。"""
 
     initialize: Callable[[ConfigEntry], Awaitable[None]] | None = None
     # 复制事务成功后、通用数据复制前执行；失败与取消由专项维持既有语义。
@@ -101,3 +105,10 @@ class ScriptConfigHandler:
     expected_game_kind: Callable[[ConfigEntry, dict[str, Any]], str | None] | None = (
         None
     )
+    supports_game_binding: Callable[[ConfigEntry, dict[str, Any]], bool] | None = None
+    supports_account_game_override: bool = True
+
+
+def game_management_enabled(script: Any, patch: dict[str, Any]) -> bool:
+    """读取存量专项的 MAS 游戏托管开关，编辑时以传入值为准。"""
+    return bool(patch.get("Game", {}).get("Enabled", script.Game.Enabled))

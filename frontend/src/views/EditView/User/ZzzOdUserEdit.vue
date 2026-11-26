@@ -1,94 +1,56 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="zzzod"
-      :user-id="userId"
-      @cancel="handleCancel"
-    >
-      <template #extra-actions>
-        <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="zzzod"
+        :user-id="userId"
+        @cancel="handleCancel"
+      >
+        <template #extra-actions>
+          <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
+            <a-button
+              v-if="!showZzzodConfigMask && !showZzzodViewMask"
+              type="primary"
+              ghost
+              size="middle"
+              :loading="zzzodConfigLoading"
+              :disabled="pageLoading || nativeLoading || !userId || configLocked"
+              @click="handleZzzodConfig"
+            >
+              <template #icon>
+                <SettingOutlined />
+              </template>
+              {{ t('core.edit.zzzodOpenNativeConfig') }}
+            </a-button>
+          </a-tooltip>
           <a-button
-            v-if="!showZzzodConfigMask && !showZzzodViewMask"
-            type="primary"
-            ghost
+            v-if="showZzzodConfigMask"
+            type="default"
             size="middle"
-            :loading="zzzodConfigLoading"
-            :disabled="pageLoading || nativeLoading || !userId || configLocked"
-            @click="handleZzzodConfig"
+            disabled
+            class="configuring-button"
           >
             <template #icon>
               <SettingOutlined />
             </template>
-            {{ t('core.edit.zzzodOpenNativeConfig') }}
+            {{ t('core.edit.configuring') }}
           </a-button>
-        </a-tooltip>
-        <a-button
-          v-if="showZzzodConfigMask"
-          type="default"
-          size="middle"
-          disabled
-          class="configuring-button"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          {{ t('core.edit.configuring') }}
-        </a-button>
-      </template>
-    </UserEditHeader>
-
-    <GuiSessionMask
-      :open="showZzzodConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.zzzodConfiguringTitle')"
-      :description="`${t('core.edit.zzzodConfiguringDesc')}\n${t('core.edit.zzzodConfiguringDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="zzzodWebsocketId"
-          type="primary"
-          size="large"
-          @click="handleSaveZzzodConfig"
-        >
-          {{ t('core.edit.saveSettings') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showZzzodViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.zzzodViewingTitle')"
-      :description="`${t('core.edit.zzzodViewingDesc')}\n${t('core.edit.zzzodViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="zzzodWebsocketId"
-          type="primary"
-          size="large"
-          :loading="stoppingZzzodConfig"
-          @click="handleCloseZzzodView"
-        >
-          {{ t('core.edit.zzzodViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
+        </template>
+      </UserEditHeader>
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-config-provider :component-disabled="configLocked || nativeLoading">
         <a-card class="config-card" :loading="pageLoading">
           <a-form :model="formData" layout="vertical" class="config-form">
-            <div class="form-section">
-              <UserAccountHeading
-                :user-name="formData.userName"
-                :options="{ isEdit, logoSrc: accountIcon }"
-              />
-              <div class="section-header">
-                <h3>{{ t('core.edit.basicInfo') }}</h3>
-              </div>
-
+            <UserAccountHeading
+              :user-name="formData.userName"
+              :options="{ isEdit, logoSrc: accountIcon }"
+            />
+            <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
               <UserBasicInfoFields
                 v-model:user-name="formData.userName"
                 v-model:status="formData.Info.Status"
@@ -426,7 +388,7 @@
                   </a-form-item>
                 </a-col>
               </a-row>
-            </div>
+            </SectionCard>
           </a-form>
         </a-card>
 
@@ -567,6 +529,46 @@
         </a-form>
       </a-card>
 
+      <!-- ══ 任务计划编辑弹窗（体力刷本/恶名狩猎：计划列表 + 主配置）══ -->
+    </ConfigLockPanel>
+
+    <template #overlay>
+      <GuiSessionMask
+        :open="showZzzodConfigMask"
+        :icon="SettingOutlined"
+        :title="t('core.edit.zzzodConfiguringTitle')"
+        :description="`${t('core.edit.zzzodConfiguringDesc')}\n${t('core.edit.zzzodConfiguringDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="zzzodWebsocketId"
+            type="primary"
+            size="large"
+            @click="handleSaveZzzodConfig"
+          >
+            {{ t('core.edit.saveSettings') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showZzzodViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.zzzodViewingTitle')"
+        :description="`${t('core.edit.zzzodViewingDesc')}\n${t('core.edit.zzzodViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="zzzodWebsocketId"
+            type="primary"
+            size="large"
+            :loading="stoppingZzzodConfig"
+            @click="handleCloseZzzodView"
+          >
+            {{ t('core.edit.zzzodViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
       <!-- ══ 配置恢复（通用组件：列表 / 预览 / 查看详细 / 一键恢复）══ -->
       <ConfigRestoreSection
         v-model:open="restoreOpen"
@@ -579,13 +581,12 @@
         :on-restored="handleRestored"
         :on-detail="handleRestoreView"
       />
-
-      <!-- ══ 任务计划编辑弹窗（体力刷本/恶名狩猎：计划列表 + 主配置）══ -->
-    </ConfigLockPanel>
-  </div>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
@@ -619,6 +620,7 @@ import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/util
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ZzzOdPredefinedTeams from '@/components/ZzzOdPredefinedTeams.vue'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useUserApi } from '@/composables/useUserApi'
 import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -865,34 +867,26 @@ const createUserImmediately = async (): Promise<boolean> => {
   return true
 }
 
-// 保存串行化队列：以 promise 链取代布尔互斥，连续保存按序写回不丢
-let saveChain: Promise<boolean> = Promise.resolve(true)
+const {
+  enqueue: enqueueUserSave,
+  isSaving: hasPendingUserSaves,
+  waitForIdle: waitForUserSaves,
+} = useSaveQueue()
 
 const saveField = (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId.value) return Promise.resolve(false)
-
   const patch = buildFieldPatch(key, value)
-
-  if (key === 'Info.Name') {
-    formData.userName = String(value || '')
-  }
-
-  const persist = async (): Promise<boolean> => {
+  if (key === 'Info.Name') formData.userName = String(value || '')
+  return enqueueUserSave(async () => {
     try {
       const ok = await updateUser(scriptId, userId.value, patch)
-      if (!ok) {
-        logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
-      }
+      if (!ok) logger.error(`保存字段「${key}」失败: ${userApiError.value || '未知错误'}`)
       return ok
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       return false
     }
-  }
-
-  const run = saveChain.then(persist, persist)
-  saveChain = run
-  return run
+  }, key)
 }
 
 const handleConfigModeChange = async (value: boolean | string) => {
@@ -1126,16 +1120,17 @@ const trackInstanceWrite = <T>(operation: () => Promise<T>): Promise<T> => {
   return run
 }
 const flushPendingSaves = async () => {
-  let tail: Promise<boolean>
   do {
-    tail = saveChain
     await Promise.all(
-      [tail, flushNativeSaves(), taskEditor.flushAllTaskConfigSaves(), ...instanceWrites].map(run =>
-        run.catch(() => undefined)
-      )
+      [
+        waitForUserSaves(),
+        flushNativeSaves(),
+        taskEditor.flushAllTaskConfigSaves(),
+        ...instanceWrites,
+      ].map(run => run.catch(() => undefined))
     )
   } while (
-    tail !== saveChain ||
+    hasPendingUserSaves.value ||
     hasPendingNativeSaves() ||
     taskEditor.hasPendingSaves() ||
     instanceWrites.size
@@ -1569,13 +1564,6 @@ const clearDeletedInstance = (idx: number) => {
 
 @import './ZzzOdUserEdit/zzzodFormControls.css';
 
-.user-edit-container {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
 .user-edit-content {
   display: flex;
   flex-direction: column;
@@ -1598,7 +1586,7 @@ const clearDeletedInstance = (idx: number) => {
   padding: 32px;
 }
 
-.form-section {
+div.form-section {
   margin-bottom: 12px;
 }
 

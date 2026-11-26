@@ -37,12 +37,10 @@ import asyncio
 import shlex
 from collections.abc import Callable, Iterable
 
-import psutil
-
 from app.utils import constants as _utils_constants
 from app.utils import get_logger
 from app.utils import process as process_tools
-from app.utils.common.process.operations import iter_processes
+from app.utils.common.process.operations import iter_scoped_process_info
 
 logger = get_logger("专项进程清理")
 
@@ -85,12 +83,9 @@ def find_pids_by_name(process_name: str) -> list[int]:
     """按进程名收集 PID（同步全进程扫描，调用方放到线程里跑）。"""
 
     pids: list[int] = []
-    for process in iter_processes(["name"]):
-        try:
-            if process.info["name"] == process_name:
-                pids.append(process.pid)
-        except psutil.Error:
-            continue
+    for process, info in iter_scoped_process_info(["name"]):
+        if info["name"] == process_name:
+            pids.append(process.pid)
     return pids
 
 

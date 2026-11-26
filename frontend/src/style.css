@@ -78,13 +78,3 @@ a:hover {
 }
 
 /* 滚动条统一由 styles/scrollbar.css 提供，避免旧规则覆盖主题样式。 */
-
-/* 全局统一 Tag 边框样式 */
-.ant-tag {
-  border: 1px solid rgba(0, 0, 0, 0.15) !important;
-}
-
-/* 深色模式下调整边框透明度 */
-:root.dark .ant-tag {
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}

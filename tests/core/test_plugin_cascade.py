@@ -1214,4 +1214,92 @@ async def test_reload_checks_locked_indirect_adapter_before_tearing_down(
         assert all(instance.events == ["enable"] for instance in before.values())
     finally:
         await scripts[uid].unlock(ticket)
+        # 连带停用名下还有托管的专项会被拒绝，收尾先删掉托管。
+        scripts.remove(uid)
+        await scripts.commit()
         await manager.disable(records["cascade_a"])
+
+
+@pytest_asyncio.fixture
+async def cascaded_adapter(cascade_plugins, isolated_app_paths, monkeypatch):
+    """上游服务插件 cascade_a 加一个依赖它的专项 cascade_c，托管与计划表集合都是真实集合。"""
+    from app.config import ConfigCollection
+    from app.core import plugin
+    from app.models.config import PlanEntry, ScriptEntry
+
+    class ProbePlan(PlanEntry):
+        pass
+
+    scripts = ConfigCollection[ScriptEntry].build([ScriptEntry])
+    plans = ConfigCollection[PlanEntry].build([PlanEntry, ProbePlan])
+    await scripts.activate()
+    await plans.activate()
+    monkeypatch.setattr(isolated_app_paths, "ScriptConfig", scripts)
+    monkeypatch.setattr(isolated_app_paths, "PlanConfig", plans)
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "cascade_c": ("cascade_a",)}, adapters=("cascade_c",)
+    )
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    await manager.enable(records["cascade_c"])
+    return SimpleNamespace(
+        manager=manager,
+        records=records,
+        scripts=scripts,
+        plans=plans,
+        plan_type=ProbePlan,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["disable", "unload", "uninstall"])
+async def test_teardown_refuses_when_cascaded_adapter_still_has_scripts(
+    cascaded_adapter, action
+):
+    """停用 / 卸载上游时连带的专项名下还有托管：整体拒绝，原因列出专项和托管数，什么都不动。"""
+    from app.plugin.errors import PluginPrecheckError
+
+    env = cascaded_adapter
+    manager, records, scripts = env.manager, env.records, env.scripts
+    uid = scripts.add(records["cascade_c"]._plugin.decl.script_type)
+    await scripts.commit()
+    before = {name: record._plugin for name, record in records.items()}
+    with pytest.raises(PluginPrecheckError) as caught:
+        await getattr(manager, action)(records["cascade_a"])
+    assert "`cascade_c`（1 个托管、0 张计划表）" in caught.value.message
+    assert caught.value.payload == {
+        "inUse": [{"plugin": "cascade_c", "scripts": 1, "plans": 0}]
+    }
+    assert uid in [entry.uid for entry in scripts.values()]
+    assert all(record._plugin is before[name] for name, record in records.items())
+    assert all(record.info.state == PluginState.ENABLED for record in records.values())
+
+    # 重载不删数据，照常放行；删掉托管之后停用照旧连带停用下游。
+    await manager.reload(records["cascade_a"])
+    assert records["cascade_c"].info.state == PluginState.ENABLED
+    scripts.remove(uid)
+    await scripts.commit()
+    assert await manager.disable(records["cascade_a"]) == {"cascade_c": {}}
+    assert records["cascade_c"].info.state == PluginState.DISABLED
+
+
+@pytest.mark.asyncio
+async def test_disable_refuses_when_cascaded_adapter_only_has_plans(
+    cascaded_adapter, monkeypatch
+):
+    """连带的专项名下没有托管、只有计划表时同样拒绝。"""
+    from app.plugin.errors import PluginPrecheckError
+
+    env = cascaded_adapter
+    adapter = env.records["cascade_c"]._plugin
+    monkeypatch.setattr(adapter, "plan_type", env.plan_type)
+    uid = env.plans.add(env.plan_type)
+    await env.plans.commit()
+    try:
+        with pytest.raises(PluginPrecheckError) as caught:
+            await env.manager.disable(env.records["cascade_a"])
+        assert "`cascade_c`（0 个托管、1 张计划表）" in caught.value.message
+        assert env.records["cascade_c"].info.state == PluginState.ENABLED
+    finally:
+        env.plans.remove(uid)
+        await env.plans.commit()
+        monkeypatch.setattr(adapter, "plan_type", None)

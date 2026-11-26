@@ -1,9 +1,10 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="open"
+    size="sm"
     :title="t('core.plan.universal.create')"
-    :confirm-loading="busy || creating"
-    :ok-button-props="{ disabled: !selected || busy || creating }"
+    :submitting="busy || creating"
+    :ok-disabled="!selected || busy || creating"
     :mask-closable="false"
     @ok="confirm"
   >
@@ -19,11 +20,12 @@
       <a-alert type="info" show-icon :message="t('core.plan.universal.scriptHint')" />
       <a-alert v-if="error" type="error" show-icon :message="error" />
     </a-form>
-  </a-modal>
+  </AppModal>
 </template>
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import { useScriptApi } from '@/composables/useScriptApi'
 const { t } = useI18n()
 // 通用脚本计划表仅供 General 使用

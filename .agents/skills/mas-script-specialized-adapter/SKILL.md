@@ -8,179 +8,65 @@ description: >-
   exports. Use when lowering user setup friction, judging whether a change
   stays inside the black-box boundary (barrier first, then capability
   ownership), or changing ScriptType registration, task lifecycle, config
-  ownership, ScriptConfig sessions, Electron integration, frontend edit
-  surfaces, and verification.
+  ownership, ScriptConfig sessions, Desktop Session (桌面分身), Electron
+  integration, frontend edit surfaces, and verification.
 ---
 
 # 专项适配
 
-本 Skill 只写**读代码推不出来的东西**：判据、陷阱、不变量、产品意图。文件清单、字段枚举、端点签名一律现场 `rg` / 读代码确认，不在文档里维护副本——文档里的事实表会过期，过期的表比没有表更危险。
+本 Skill 只写读代码推不出来的红线、判据与陷阱；文件清单、字段与签名一律现场 `rg` / 读源码确认。
 
-## 核心要义
+## 核心红线：先降门槛，再守黑箱
 
-专项适配不是把外部脚本字段逐项搬进 MAS，而是围绕用户完成任务的最短路径做产品化承接。每次适配先回答两件事：
+1. **推进顺序固定**：先降配置门槛（消除安装导入、路径选择、首配与编排手工步骤），再补 MAS 领域缺位。立项前必须答出**消除了用户哪一步手工操作**；禁止把上游原始面板原样搬进 MAS 或新增运行时不消费的字段。
+2. **黑箱边界（详读 [blackbox-boundary.md](references/blackbox-boundary.md)）**：
+   - **上游领域**（游戏内操作、任务执行与成败、脚本配置语义）：有上游入口必须复用；无入口先评估向上游提 PR，受阻才可临时补位并标注「上游实现后移除」。
+   - **MAS 领域**（托管/账号、调度、计划、通知、统计、模拟器、跨脚本编排）：可自实现，但**禁止读取或反推上游内部状态**。
+   - **上游私有格式**：只允许透传读写，不建平行语义模型，上游任务的成败必须取自上游结果面。
 
-1. **降低用户使用门槛**：优先消除安装导入、路径选择、首次配置和高频任务编排中的手工步骤，减少需要用户调整的选项。不要把上游原始配置面板原样搬进来当作完成。
-2. **必要时由 MAS 补位**：缺口确属 MAS 领域（账号、调度、计划、通知、统计、模拟器、跨脚本编排）、且上游没有任何等效入口时，才在适配层补足；不复制脚本引擎，也不重复暴露脚本已有的权威设置。
+## 开工顺序与按需参考
 
-**推进顺序固定：先降门槛，再补缺位。** 立项前必须答出该改动消除了用户当前哪一步手工操作；答不出、或只是把上游配置面板搬进来，一律先重新确认范围。判定细则见 [黑箱边界·推进顺序](references/blackbox-boundary.md)。
+1. 读上游发行版/源码（CLI、进程、日志、配置目录与 UI）。
+2. 按 [script-frontend-architectures.md](references/script-frontend-architectures.md) 归类，**先让用户确认架构线**。
+3. 必读 [adapter-code-norms.md](references/adapter-code-norms.md)，再按需只读对应参考：
+   - 案例：[SRC](references/examples-src.md) · [MaaEnd](references/examples-maaend.md) · [M9A（MFW 特调）](references/examples-m9a.md) · [Okww](references/examples-okww.md) · [OkNte](references/examples-oknte.md) · [HSR](references/examples-hsr.md) · [ZzzOd](references/examples-zzzod.md) · [BAAH](references/examples-baah.md) · [BetterGI](references/examples-bettergi.md) · [Whimbox](references/examples-whimbox.md)
+   - 子能力：日志管线 [logbox-api.md](references/logbox-api.md) · OCR [ocr-tools.md](references/ocr-tools.md) · 归档 [config-archive.md](references/config-archive.md) · 恢复 [config-restore.md](references/config-restore.md) · 问题包 [issue-report.md](references/issue-report.md)
+   - 桌面分身：新增或迁移插件专项、保存执行会话、处理子会话进程时读 [desktop-session.md](references/desktop-session.md)。
+4. 联动 Skill：调度/会话/锁加 `mas-task-scheduler`；前端/UI 加 `mas-frontend-standards` + `mas-frontend-ui`；配置加 `mas-data-model`。
 
-### 黑箱边界参考
+## 关键架构约定
 
-上游脚本视为黑箱。先判**能力归属**，再决定能否实现：
+- **全切面反查**：增改内置 `ScriptType` 时现场 grep 核对配置/schema、`TYPE_BOOK`、任务模块、前端入口、Electron 能力及 OpenAPI 生成（**禁手改 `frontend/src/api/**`**）。独立插件通过自身声明注册，桌面分身复用宿主的通用派发。自动发现、手动选择与后端 `check()` 须用**同一组哨兵文件**。
+- **日志与报告**：`app.utils.log_box` 只提供纯文本处理；专项自持开关、路径、线程/取消收尾与账号归属，增量读复用 `LogSource`，翻译复用 `PoTranslator`，排版复用 `app.core.notify.report`。含采集的专项必查「采集→报告」闭环与账号级开关隔离。
+- **配置备份恢复（新专项标配）**：原语用 `archive.py`，恢复用 `restore.py` + `/backup/*` + `ConfigRestoreSection.vue`，遮罩用 `GuiSessionMask.vue`；**归档三时机**：进编辑页归档原生、退编辑页归档 MAS、运行前归档原生（覆盖操作前强制归档）。
+- **OCR**：新画面文字识别用共享工具 `app/tools/common/ocr/__init__.py`，交互层由专项自持。
+- **独立 PyPI 适配器**：用户可见变更写入插件仓 `CHANGELOG.md` 并核对 `pyproject.toml` 的 `Changelog` URL。
 
-- **上游领域**（游戏内操作、脚本任务的执行与成败、脚本配置语义）：上游已有入口必须复用；上游没有时**先评估向上游提 PR**——上游不受理（作者认为不需要而适配层判断必要）或审核、发布周期过长时，可临时补位，但须标注「临时补位 + 上游实现后移除」。上游补齐后按存量越界处理（改为复用并移除）。
-- **MAS 领域**（托管与账号管理、多脚本/多实例调度、计划表、通知、统计、模拟器生命周期、跨脚本编排）：可自行实现，但不得读取或反推上游内部状态。**「补位」只在 MAS 领域成立。**
-- **上游私有格式**（配置内部字段、计划/队列/运行记录、资源文件）：只允许透传读写，值经手、语义不过手；不在其上建映射表、平行模型或自造判定信号，上游执行的任务成败必须取自上游结果面。
+## `Info.Base` 与覆写常规配置（`Info.IfQuickConfig`）
 
-判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？归 MAS 之后，它是通用能力还是该专项的特色？判据、能力归属表、MAS 内部落点、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
-
-**方案分析时参考黑箱边界**：按需核对能力归属、上游入口和私有格式依赖；相关事实、风险或替代方案可作为参考意见提供给用户，不要求在开工阶段输出固定结论。
-
-代码落点（决定代码放哪、谁是事实来源）：
-
-| 落点 | 情形 | 实施规则 |
-| --- | --- | --- |
-| 复用 | 上游已有稳定入口、配置、结果判定 | 直接调用上游入口；上游配置是唯一事实来源 |
-| 最小封装 | 上游有能力，但入口分散或难安全调用 | 路径发现、默认值、配置会话、原子写回；不建平行配置模型 |
-| MAS 领域实现 | 缺口属 MAS 领域，且上游无任何等效入口 | 在 manager / AutoProxy / 计划层实现；须有输入、失败提示、回退、清理，不读取也不反推上游内部状态 |
-| 明确不支持 | 属上游领域而上游无入口，或需猜上游内部状态才能实现 | 显式提示限制；**不加运行时不消费的字段** |
-
-## 开工顺序
-
-0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner；参考[黑箱边界](references/blackbox-boundary.md)分析能力归属（上游领域 / MAS 领域 / 上游私有格式），必要时将事实依据、风险与替代方案作为参考意见提供给用户。
-1. 读上游仓库/发行版：CLI、`--help`、进程、日志、配置目录、配置 UI。
-2. 按 [架构线判据](references/script-frontend-architectures.md) 归类，**让用户确认架构线**后再动手。
-3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
-   [SRC](references/examples-src.md) ·
-   [MaaEnd/MXU](references/examples-maaend.md) ·
-   [M9A（MaaFW 特调，不是专项）](references/examples-m9a.md) ·
-   [Okww](references/examples-okww.md) ·
-   [OkNte](references/examples-oknte.md) ·
-   [HSR](references/examples-hsr.md) ·
-   [ZzzOd](references/examples-zzzod.md) ·
-   [BAAH](references/examples-baah.md) ·
-   [BetterGI](references/examples-bettergi.md) ·
-   [Whimbox](references/examples-whimbox.md)
-   需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
-4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
-5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
-
-前端任务同时加载 `mas-frontend-standards`；涉及 UI、表单、遮罩、反馈时再加 `mas-frontend-ui`。
-
-涉及调度接入、配置／查看会话、锁与取消时，同时加载 [mas-task-scheduler](../mas-task-scheduler/SKILL.md)。插件采用四级分发，旧 task 在 L2 交原 manager；接入时确认唯一锁所有者，不能让上层锁与 manager 自取锁未经适配便叠加。旧执行器的用户重建和粗粒度锁属于兼容例外，不是新增插件的设计模板。
-
-## 落点自查
-
-新增 / 维护 `ScriptType` 时按需核对下列切面（**具体文件现场 grep 确认，不要照文档抄路径**）：配置与 schema、注册与 API（含 `TYPE_BOOK` 展示文案，漏则调度 KeyError）、任务模块、前端入口（Hub 分支 + 路由 + 创建流片段 + 类型 + 编辑页）、Electron 能力（仅当需注册表/文件系统/进程发现）、OpenAPI 生成代码（**禁止手改**）。
-
-**不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
-
-- 配置与接口契约：`app/models/config/script.py`、包内注册/导出、`app/config/wire.py`；端点模型位于所属 API 模块，公共契约位于 `app/models/schema.py`。字段与调用点遵循[配置框架参考](../mas-data-model/references/config-framework.md)，上游私有配置文件快照与 MAS 事务工作区分别处理
-- 注册与 API：`app/core/config/manager.py`、`app/api/scripts/`、`app/core/task_manager/manager.py`、`app/utils/common/constants.py`；`api/scripts/` 只放薄端点与路由装配，业务在任务模块里实现
-- 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
-- 日志节点与报告：新接入优先使用 [LogFlow 接入与迁移](references/logflow-api.md)，由插件登记具名声明，任务绑定实际托管或账号。常用场景复用 MAS 日志和声明式规则，特殊处理按需扩展。未迁移专项按 [旧 LogBox](references/logbox-api.md) 维护既有链路。核对账号归属、最终报告和取消时的尾部交接，正式通知只保留一个交付入口。
-- 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/common/ocr/__init__.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
-- 配置备份恢复：**新专项一律主动接入**（存量专项改到配置读写时同步补齐）——配置的跨会话持久快照与一键恢复是 MAS 领域标配，不要等「配置被覆盖丢失」才补，仅确无任何配置文件落盘的专项可豁免。**文件级原语用 `app/utils/common/config/archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能用通用服务 `app/utils/common/config/restore.py` + 通用端点 `/backup/*` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项在 `tools/restore_service.py` 声明目标池表（普通函数显式收 `RestoreContext`），core 分发链加一个分支即接入、不改 HTTP 层与 schema，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestorePool.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
-- 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/账号编辑页
-- 问题包导出：新增或改动专项的问题包服务（`frontend/electron/services` 的 `*IssueReportService`）时读 [issue-report.md](references/issue-report.md)——「每安装各自收集」「debug 子目录登记」是硬约束
-- Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
-- 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
-
-## 审查方法
-
-1. 从 `ScriptType`、任务注册、UI 入口**反查全部调用者**。
-2. 对照运行时实际读取的字段查 config / schema / 生成类型 / 表单：**schema 里存在但运行时不消费的字段不是功能，是债**。
-3. 自动发现、手动选择、后端 `check()` 三条路径判定：同一资源必须用**同一组哨兵文件**。
-4. 配置会话的启动、WebSocket 状态、停止、超时、卸载、异常六条路径：确保任务结束、进程退出、锁释放、配置写回。
-5. `final_task` / `on_crash` 的原子配置恢复、账号状态落盘、独立进程清理。
-6. 按 `tests/AGENTS.md` 本地编写并运行最小专项测试验证改动；测试文件的提交规则见根目录 `AGENTS.md`「分支与 PR」；**测试缺口写进结果，不编造验证结果**。
-7. 反查产品边界：没把「脚本该干的活」拿到 MAS 实现，没把 MAS 补位伪装成脚本原生字段，没在上游私有格式上建 MAS 语义层，没为"字段齐全"加无价值入口；MAS 领域实现不读取、不反推上游内部状态。发现相关风险时，可在分析或结果中提供具体事实与替代建议。
-8. 含 `log_box` 采集的专项，反查「采集→报告」闭环：确认采集结果已进入最终报告正文且保留各账号节点归属（多账号时按账号交错），并核对账号级开关关闭的账号确实无节点；只采集不注入 → 报告无节点（ok-nte 曾漏）。注入端点现场反查，不照抄固定路径。
-
-## 配置来源与覆写常规配置
-
-公共配置字段 `Info.Base` 接受 `shared` / `independent` / `native`，标签分别为共享 / 独立 / 原生。字段接受某个值，不代表该适配器真的提供对应来源；同时核对界面可选项、运行与会话的实际读取位置、恢复目标。各适配器的有效语义如下，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），只使用账号任务快照，见 `app/task/MaaFW/AGENTS.md`。
-
-| 专项 | 模式 |
+| 专项 | 来源模式与有效行为 |
 | --- | --- |
-| MAA | 共享 / 独立 / 原生 三态 |
-| SRC | 共享 / 独立 / 原生 三态 |
-| General | 原生来源直接使用脚本原配置；非原生来源恒按账号 `ConfigFile`，兼容值 `shared` 与 `independent` 行为相同，不读共享 `Default` |
-| MaaEnd | 共享 / 独立 / 原生 三态 |
-| MaaFW | 账号任务快照是唯一任务来源；运行不消费 `Info.Base` 或 `Info.IfQuickConfig`，不要按三态或覆写开关写逻辑 |
-| M9A | 不是专项：MaaFW 的特调类型，与 MaaFW 同（见 `app/task/M9A/AGENTS.md`） |
-| Okww | 共享 / 独立 / 原生 三态 |
-| OkNte | 三态均可选且运行消费：共享基础配置读 `Default/ConfigFile`，独立读账号 `ConfigFile`，原生读脚本配置；账号面板另存 `QuickConfig`，开启覆写时临时叠加 |
-| HSR | 共享 / 独立 / 原生 三态（共享来源 = `HSRConfig` 同名组共享计划；**不支持覆写常规配置**，见下） |
-| BetterGI | 界面提供独立 / 原生，共享项禁用；兼容 `shared` 与 `independent` 均按当前账号的 MAS 字段和副本运行，不提供托管级共享配置 |
-| ZzzOd | 界面提供独立 / 原生，共享项禁用；兼容 `shared` 仍按当前账号字段注入绑定槽，不提供账号间共享保证。原生运行一条龙实例配置，物理布局见 examples-zzzod |
-| BAAH | 按账号 `Info.ConfigName` 引用 BAAH JSON；运行不消费 `Info.Base` / `Info.IfQuickConfig`，兼容字段仅供备份预览。运行托管项和账号计划表仍可临时写入并在结束后还原 |
-| Whimbox | 界面保留三项；`shared` / `independent` 都将本账号面板物化到同一原生 `config.json`，没有账号间共享配置保证；`native` 使用原生配置，仅覆写开启时临时物化面板 |
+| MAA / SRC / MaaEnd / Okww / OkNte | 共享（`Default`）/ 独立（账号目录）/ 原生 三态；OkNte 另存 `QuickConfig` 覆写 |
+| General | 原生用脚本原配置；非原生恒按账号 `ConfigFile`（`shared` 等同 `independent`） |
+| HSR | 共享（同名组共享计划）/ 独立 / 原生；**不支持覆写常规配置** |
+| BetterGI / ZzzOd | 界面仅独立 / 原生（禁用共享，不提供独立覆写开关） |
+| Whimbox | 保留三项；`shared`/`independent` 均物化本账号面板至原生 `config.json`；`native` 仅覆写开启时临时物化 |
+| BAAH | 按 `Info.ConfigName` 引用 BAAH JSON；运行不消费 `Base`/`IfQuickConfig` |
+| MaaFW / M9A | 通用引擎非专项，仅用账号任务快照，不消费 `Base`/`IfQuickConfig` |
 
-**对实际实现三态来源的适配器**：共享读取托管级基础配置，独立读取当前账号基础配置，原生读取外部脚本已有配置。表中的兼容值、禁用项和引用型配置按各自契约处理，不能由字段名推断共享或“零写入”。
+- **唯一越界判据**：运行期写入任务结束能还原（overlay）即合法；**不能还原即越界**（整目录快照外的同级文件如 Okww `app.json` 必须自带键级快照）。
+- **`ScriptConfig` 会话**：不得把 overlay 固化进 base；覆盖成功/失败/取消/超时/崩溃全路径快照恢复，保护外侧新修改。旧 `Info.Mode` 仅作输入兼容，新逻辑只用 `Info.Base`。
 
-**支持覆写常规配置的专项，将它作为独立于基础来源的账号级开关与配置面板**：开启时临时覆盖本次运行的对应字段，关闭时使用基础来源。MFW、General、BAAH 不消费该开关；**HSR 不支持覆写常规配置**——SRA/M7A 原生配置由脚本 GUI 维护，MAS 管控字段写入耦合运行器，不存在可独立下发的覆写子集，开关不渲染（见 [examples-hsr](references/examples-hsr.md) 与 `tools/native_control.py`）；**BetterGI 与 ZzzOd 不提供独立覆写开关**，原生来源的存量值归一为关。运行时仍需核对游戏启停、账号切换等各自独立的 MAS 操作。
+## 专项特殊约束
 
-Whimbox 保留三项是为后续功能预留：上游不按账号分档配置，MAS 也无法指定运行账号。当前 `shared` / `independent` 都使用本账号面板，写入同一份原生 `config.json`，并未实现托管级共享配置。覆写常规配置保留并绑定基座开关（`Info.IfQuickConfig`，默认关）：当前唯一额外消费点是原生来源任务前物化本账号面板、任务结束还原；共享/独立值原本就物化本账号面板，开关不再叠加一层行为。
+- **ok-script 家族（Okww / OkNte）**：均提供 REST 动态面板 + `ScriptConfig` 遮罩，保留未知字段与原生键值，严禁跨子项目照搬任务语义。
+- **HSR（唯一一对多）**：编排 M7A + SRA，**无 `ScriptConfig.py`**（仅 `AutoProxy`/`ManualReview`）；任务模块在 `task_mapping.py` 单点声明；托管字段由后端下发动态渲染；备份清单中 `existed=False` 恢复时须**删除任务期新增路径**；切号统一走 SRA StartGame；路径锁冲突抛可读错误。
+- **MAA 配置恢复**：`ScriptConfigTask` 与 `AutoProxy` 必须共用 `_mas_owner`；退出编辑页必须串行 `stopSession → ensure(mas)`；新建账号 `onMounted` 先 `await loadScriptInfo()` 再 `ensure(native)`；`Base` 只进预览不回填；`viewOnly` 结束不回写 MAS 配置。
 
-- **提供来源与覆写开关的专项，原生 + 关闭**：使用外侧原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补，如 Okww 的 `app.json` 的 `auto_start`/`update_method`）。引用型 BAAH 不按这组值决定写入。
-- **提供来源与覆写开关的专项，原生 + 开启**：任务前把面板值写入原生配置，任务结束沿用现有快照机制恢复任务前原生配置。
-- **判据只有一条：这次写入任务结束能不能还原。** 能还原的写入属 overlay——覆盖 base、结束还原，**与来源无关**，三态一律适用；不能还原的才是越界写入。overlay 不限于「面板字段」：运行期需要、且落在快照覆盖范围内的值同样按 overlay 处理（如 Okww 的 `Basic Options.json`）。反之，**不在整目录快照范围内**的目标（如 Okww 的 `app.json`，与 `working/configs` 同级）必须自带键级快照，否则不可还原。
-- **配置会话（`ScriptConfig`）不得把 overlay 固化进 base**：通常不注入账号覆写；Okww 为同步面板与 GUI，编辑会话可临时注入，但须将面板改动回填账号、还原注入文件后再回写 base。只读预览不得注入或回填。
-- 凡触碰原生配置一律沿用现有快照策略，覆盖成功、失败、取消、超时、异常和崩溃；发现外侧新修改时保护该修改，不予覆盖。
+## 验收
 
-`Info.Mode` 及「脚本 / 用户 / 直控」「简洁 / 详细」等旧值仅作历史输入兼容，加载后归一为 `Info.Base`；新逻辑使用当前字段和值（见 [代码规范](references/adapter-code-norms.md)）。
+按 `tests/AGENTS.md` 跑对应最小专项测试（缺测试不硬补，如实报缺口）；涉及任务生命周期或新专项时声明 `mas-e2e` `@real` 前置条件与证据。
 
-## ok-script 家族：配置编辑
+## 日志节点与报告
 
-`ok-script` 是脚本家族，不是单一专项。家族级原则可复用，但 CLI、配置目录、原生 GUI、任务语义必须**逐子项目确认**。Okww 与 OkNte 均提供 REST 动态面板与 ScriptConfig 本体 GUI 两个配置入口：
-
-| | Okww | OkNte |
-| --- | --- | --- |
-| 字段来源 | 原生 JSON 与账号覆写合并，已知字段补充控件元数据，未知字段按值推断 | 从 JSON 值动态推断类型 |
-| 中文标签 | 安装目录 `.po`/`.mo`/`.ts` 优先，前端词条兜底 | 从安装目录 `.po`/`.mo`/`.ts` 自动加载 |
-| 配置入口 | REST 动态面板 + ScriptConfig 遮罩，账号面板配置双向同步 | REST 动态表单 + ScriptConfig 遮罩 |
-| 来源模式 | 三态 | 三态 |
-
-动态面板用于降低配置门槛，不替代上游执行逻辑。保留未知字段和原生键值，配置来源、账号覆写与任务后恢复按各专项契约执行；不得仅因同属 ok-script 就复制另一专项的任务语义。
-
-各自陷阱见 [examples-okww.md](references/examples-okww.md) 与 [examples-oknte.md](references/examples-oknte.md)。
-
-## HSR：唯一的一对多专项
-
-`HSR` 是唯一「一个 `ScriptType` 编排两个上游程序」的专项，不要按其他线的一对一心智读它。只有当上游确实需要多个可互换引擎协同完成同一批任务模块时才归入此线；单一上游即使功能复杂也不属于。
-
-- 编排 M7A 与 SRA 两个独立发行物，各有原生配置，两个路径可只配其一。
-- **没有** `ScriptConfig.py`，没有原生编辑器遮罩会话；不要按 MAA/MaaEnd/Okww 的配置会话模式改造它。任务模式只有 `AutoProxy` 与 `ManualReview`。
-- 任务模块在 `task_mapping.py` **单点声明**，配置项、`check()` 校验、能力快照的 tasks 全从这里派生；新增模块只改这一处。
-- 引擎分配四级回落，每级取值都要过 `supported_scripts` 校验。
-- 托管字段由后端定义下发、前端动态渲染；**新增字段扩展后端定义，不在 Vue 里加硬编码分支**。
-- 直接读写两个上游的真实配置：任务前备份，`final_task` 与 `on_crash` 都要原子恢复。**备份清单中 `existed=False` 的目标在恢复阶段需删除任务期新增路径，而不是跳过。**
-- 路径锁防止多脚本或原生来源导入并发操作同一安装；冲突抛错要转成可读错误而非静默等待。
-- 关卡字段存脚本原生字段 JSON，**不建 MAA 式统一关卡词表**。
-- 切号统一走 SRA StartGame（M7A 模块也依赖该登录路径）。
-
-完整陷阱见 [examples-hsr.md](references/examples-hsr.md)。
-
-## MAA：配置恢复改造要求
-
-MAA 已接入通用配置恢复（mas/native 双池 + 页面字段侧车 + viewOnly 查看会话），后续对其备份、会话、预览的任何改动**必须符合**以下要求；机制细节见 [config-restore.md](references/config-restore.md)（§1.1.3 会话包络、§3.3 预览来源、§5 查看会话）：
-
-- **会话包络 = 运行包络 = 备份目标**：`ScriptConfigTask` 的下发源与回写目标必须与 AutoProxy 运行下发走同一套 owner 规则（共享来源=共享 `Default`、独立来源=独立目录，见 `_mas_owner`）。禁止硬编码账号目录——那会让共享来源账号的会话改动运行时不读（改了白改）、备份采不到会话现场、恢复写不进会话读取的目录。
-- **归档目标要有初始化保证**：mas 快照时目录缺失从 MAA 本体 `config/` 播种（`_seed_mas_dir`）。不在 add_user 时播种——MAA 路径可晚于账号配置，播种失败不挡建账号。
-- **退出编辑页先停会话再归档**：`onUnmounted` 顺序 `stopSession` → `ensure(mas)`，禁止并行（会与 `final_task` 的 rmtree/copytree 回写撞车，归档到半程状态）。后端 stop 会等任务收尾完成才返回，顺序化即闭环。
-- **新建账号首次进入必须先等 userId 就绪再 ensure**：`onMounted` 先 `await loadScriptInfo()` 再 `ensure(native)`，否则新建账号静默跳过归档。
-- **侧车预览双分区**：「MAS 独有配置」在前（MAA GUI 无对应概念、查看详细配置看不到，**全量**：配置文件来源/关卡配置模式/剿灭开始星期/活动关优先+序号+理智药/绿票商店/库存保持计划），「MAA 配置」在后（与 MAA GUI 同口径）。
-- **关卡合成单行**：关卡+备选 1-3 合成一行「具体刷什么本」，全部槽位禁用 = 当前/上次（与配置界面折叠摘要同口径）；哨兵值以界面实际标签为准（`-`=禁用、`*`=当前/上次、空=不选择），**不臆造**——以下拉缓存数据的真实标签为准。
-- **危险字段只预览不回填**：配置文件来源（`Base`）决定恢复目标目录，进侧车与预览、被 `group_overlay` 排除在回填外——回填旧值会静默翻转共享来源/独立来源。
-- **native 预览与 mas 同口径**：从 `gui.new.json` TaskQueue 反读任务开关/战斗参数（标签对齐侧车词表：服务器而非客户端、空 `StagePlan`=当前/上次、吃理智药显示配置数量不按 UseMedicine 归零）；剩余理智是第二个 Fight 任务，**单独成行**不并入理智作战；旧 `gui.json` 只取稳定扁平键。
-- **查看会话（viewOnly）语义**：托管级入口跳过下发（原生目录即备份）、账号级照常下发（目录副本即备份）、结束不回写 MAS 配置（安装 config/ 由 manager 任务前快照还原）。
-
-## 独立发行的适配器
-
-为通过 PyPI 分发的 Adapter 新增或调整用户可见能力时，在适配器仓库的 `CHANGELOG.md` 记录本版变化，并核对发行包元数据中的 `Changelog` 链接。首发或排查市场日志时，按[插件开发文档](../../../docs/plugin-development.md#在市场展示更新日志)验证数据站目录和主程序的展示结果。
-
-## 验证
-
-按 `tests/AGENTS.md` 选被改专项的最小测试入口。没有对应测试时**不为填目录新增脚本**，在结果中说明测试缺口。仅在实际涉及前端时才从 `frontend` 跑前端最小测试；跨模块契约或用户明确要求时才扩大范围。新专项或改动任务生命周期的专项，需在 PR 中声明 `mas-e2e` 真实入口所需的安装、配置、账号和模拟器前置条件，并提供对应的 `@real` 断言或明确记录未覆盖原因。文档修改至少用 `rg` 确认不存在相互冲突的旧规则。
+新接入见 [LogFlow 接入与迁移](references/logflow-api.md)，未迁移专项继续参考 [旧 LogBox](references/logbox-api.md)。

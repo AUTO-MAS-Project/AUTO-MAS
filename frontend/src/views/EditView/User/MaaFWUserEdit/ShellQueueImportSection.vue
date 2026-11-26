@@ -6,13 +6,13 @@
     {{ t('core.edit.shellQueueImport') }}
   </a-button>
 
-  <a-modal
+  <AppModal
     v-model:open="modalOpen"
     :title="t('core.edit.shellQueueImportTitle')"
     :ok-text="t('core.edit.shellQueueImportOk')"
     :cancel-text="t('core.common.cancel')"
-    :ok-button-props="{ disabled: !canApply }"
-    :confirm-loading="applying"
+    :ok-disabled="!canApply"
+    :submitting="applying"
     @ok="apply"
   >
     <a-segmented
@@ -92,18 +92,19 @@
     </template>
 
     <a-alert type="warning" show-icon :message="t('core.edit.shellQueueImportNote')" />
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, h, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import { useRoute } from 'vue-router'
 import { message, notification } from 'ant-design-vue'
 import { ImportOutlined } from '@ant-design/icons-vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
-import type { MaaFWUserQueueImportCandidate } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserQueueImportCandidate } from './sectionProps'
 import MaaFWQueueChips from './MaaFWQueueChips.vue'
 
 /**

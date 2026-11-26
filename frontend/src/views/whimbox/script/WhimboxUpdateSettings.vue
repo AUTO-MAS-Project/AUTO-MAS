@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { CloudDownloadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { WhimboxConfig_Update } from '@/api'
-import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SwitchTile } from '@/components/ui'
 
 defineProps<{ ready: boolean }>()
 const update = defineModel<WhimboxConfig_Update>('update', { required: true })
@@ -15,22 +16,13 @@ const handleEnabled = (enabled: boolean) => {
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.updateTakeover') }}</h3>
-    </div>
-    <a-form-item>
-      <template #label>
-        <FieldLabelWithHint
-          :text="t('core.edit.whimboxUpdateBeforeRun')"
-          :hint="t('core.edit.whimboxUpdateBeforeRunHint')"
-          variant="form"
-        />
-      </template>
-      <a-switch :checked="update.TakeoverEnabled" :disabled="!ready" @change="handleEnabled" />
-    </a-form-item>
-  </div>
+  <SwitchTile
+    :checked="update.TakeoverEnabled ?? false"
+    variant="card"
+    :icon="CloudDownloadOutlined"
+    :title="t('core.edit.whimboxUpdateBeforeRun')"
+    :description="t('core.edit.whimboxUpdateBeforeRunHint')"
+    :disabled="!ready"
+    @change="handleEnabled"
+  />
 </template>
-
-<style scoped src="@/styles/scriptEditForm.css"></style>
-<style scoped src="@/styles/scriptEdit.css"></style>

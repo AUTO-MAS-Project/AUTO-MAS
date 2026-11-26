@@ -20,6 +20,10 @@ withDefaults(
     child?: boolean
     /** 依赖项未启用时整行置灰（控件自身仍需 disabled） */
     disabled?: boolean
+    /** 禁用时展示在标题旁的简短原因，解释为何当前不可修改 */
+    disabledReason?: string
+    /** 字段级校验或保存失败提示，保留用户输入并在控件下方就地展示 */
+    error?: string
   }>(),
   {
     label: '',
@@ -28,6 +32,8 @@ withDefaults(
     stacked: false,
     child: false,
     disabled: false,
+    disabledReason: undefined,
+    error: undefined,
   }
 )
 </script>
@@ -42,13 +48,21 @@ withDefaults(
     }"
   >
     <div v-if="label || $slots.label" class="ui-row-label">
-      <slot name="label">
-        <FieldLabelWithHint :text="label" :hint="hint" variant="form" />
-      </slot>
+      <div class="ui-row-heading">
+        <slot name="label">
+          <FieldLabelWithHint :text="label" :hint="hint" variant="form" />
+        </slot>
+        <span v-if="disabled && disabledReason" class="ui-row-disabled-reason">
+          {{ disabledReason }}
+        </span>
+      </div>
       <p v-if="description" class="ui-row-description">{{ description }}</p>
     </div>
-    <div class="ui-row-control">
-      <slot />
+    <div class="ui-row-control-wrap">
+      <div class="ui-row-control">
+        <slot />
+      </div>
+      <p v-if="error" class="ui-row-error" role="alert">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -72,6 +86,25 @@ withDefaults(
   min-width: 0;
 }
 
+.ui-row-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-row-disabled-reason {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-sm);
+  background: var(--ant-color-fill-secondary);
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .ui-row-label :deep(.field-label-form) {
   font-weight: 500;
 }
@@ -83,13 +116,31 @@ withDefaults(
   line-height: 19px;
 }
 
+.ui-row-control-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+}
+
 .ui-row-control {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+}
+
+.ui-row-error {
+  width: 100%;
+  margin: 0;
+  color: var(--ant-color-error);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: right;
 }
 
 .ui-row--stacked {
@@ -98,8 +149,16 @@ withDefaults(
   gap: 8px;
 }
 
+.ui-row--stacked .ui-row-control-wrap {
+  align-items: flex-start;
+}
+
 .ui-row--stacked .ui-row-control {
   justify-content: flex-start;
+}
+
+.ui-row--stacked .ui-row-error {
+  text-align: left;
 }
 
 /* 从属行：缩进 22px 并画一段细连接线，让「从属于上一行」读得出来而不是纯缩进。 */
@@ -154,8 +213,16 @@ withDefaults(
     gap: 8px;
   }
 
+  .ui-row-control-wrap {
+    align-items: flex-start;
+  }
+
   .ui-row-control {
     justify-content: flex-start;
+  }
+
+  .ui-row-error {
+    text-align: left;
   }
 }
 </style>

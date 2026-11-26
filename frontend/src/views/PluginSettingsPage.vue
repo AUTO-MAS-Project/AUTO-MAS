@@ -5,20 +5,18 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vue'
+import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
-import PageHeader from '@/components/PageHeader.vue'
-import NoData from '@/components/NoData.vue'
-import PageSurface from '@/components/PageSurface.vue'
-import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
-import type { PluginRegistryGetOut } from '@/api'
+import { AppPage, PageHeader, StateView } from '@/components/ui'
+import type { PluginRegistryGetOut, TableHint } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
 import {
   joinSegments,
   pluginSettingsGroups,
+  pluginSettingsTables,
   toInstalledViews,
   toMarketViews,
 } from '@/views/plugins/pluginCenterModel'
@@ -29,7 +27,6 @@ import {
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
-import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -47,13 +44,11 @@ const activeFields = computed(() =>
     .map(item => `${item.group}.${item.field}`)
 )
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
+const tables = ref<TableHint[]>([])
 const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
 
-const pluginId = computed(() =>
-  /* 从路由参数取得当前插件记录标识，支持同页面实例内切换插件。 */ String(
-    route.params.pluginId || ''
-  )
-)
+// 路由切换插件时复用页面实例。
+const pluginId = computed(() => String(route.params.pluginId || ''))
 /** 只读插件中心已经取到的市场目录缓存（不在这里发请求），给名称回落用。 */
 const catalog = usePluginQuery(
   () => pluginCatalogQueryKey(locale.value),
@@ -75,11 +70,7 @@ const headerMeta = computed(() =>
     view.value?.version,
   ])
 )
-const errorMessage = (error: unknown) =>
-  /* 从接口异常中提取可展示原因，缺失时使用插件操作失败提示。 */ apiErrorMessage(
-    error,
-    t('core.plugins.actionFailed')
-  )
+const errorMessage = (error: unknown) => apiErrorMessage(error, t('core.plugins.actionFailed'))
 
 const {
   loading,
@@ -119,6 +110,7 @@ watch(
     configUid.value = ''
     registry.value = null
     groups.value = []
+    tables.value = []
     draft.reset({}, { keepDraft: false })
     return fetchSettings()
   },
@@ -139,6 +131,7 @@ watch(
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
     // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
     groups.value = pluginSettingsGroups<DeclarativeHint>(data)
+    tables.value = pluginSettingsTables(result.config?.ui)
     const next: SettingsValues = {}
     for (const group of groups.value) {
       const source = data[group.name]
@@ -172,7 +165,9 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     if (options.reload) await fetchSettings()
     return true
   } catch (error) {
-    message.error(errorMessage(error))
+    const reason = errorMessage(error)
+    draft.saveFailed(draft.dirtyCount.value === 1 ? reason : t('core.apiErrors.settingsSaveFailed'))
+    message.error(reason)
     return false
   } finally {
     saving.value = false
@@ -183,7 +178,6 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
   // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
   const field = hint.field
   if (
-    value !== true ||
     !field ||
     !configUid.value ||
     hint.editable !== true ||
@@ -192,6 +186,11 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
     activeFields.value.includes(`${group}.${field}`)
   )
     return
+  // 触发器只接受三态命令。这里仅启动任务，false 是取消，null 是跳过。
+  if (value !== true) {
+    message.error(t('core.plugins.actionFailed'))
+    return
+  }
   runningKey.value = `${group}.${field}`
   try {
     const result = await api.runCommand('config', {
@@ -237,32 +236,32 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
 </script>
 
 <template>
-  <main class="plugin-settings-page">
-    <PageHeader class="plugin-settings-header" :title="title || t('core.plugins.settings')">
-      <!-- PageHeader 没有标题下方的插槽：leading 里的内容与标题同属一个网格，副标题用网格行排到标题下面。 -->
+  <AppPage layout="fill">
+    <PageHeader :title="title || t('core.plugins.settings')" :subtitle="headerMeta || undefined">
       <template #leading>
-        <span class="plugin-settings-lead">
-          <a-button
-            type="text"
-            :aria-label="t('core.plugins.back')"
-            @click="router.push({ name: 'Plugins' })"
-            ><ArrowLeftOutlined
-          /></a-button>
-          <PluginAvatar v-if="view" :icon="view.icon" />
-        </span>
-        <span v-if="headerMeta" class="plugin-settings-meta">{{ headerMeta }}</span>
+        <a-button
+          type="text"
+          :aria-label="t('core.plugins.back')"
+          @click="router.push({ name: 'Plugins' })"
+          ><ArrowLeftOutlined
+        /></a-button>
+        <PluginAvatar v-if="view" :icon="view.icon" />
       </template>
     </PageHeader>
-    <PageSurface>
-      <ApiRetryAlert :error="loadError" :loading="loading" @retry="fetchSettings" />
-      <a-spin :spinning="loading">
-        <NoData
-          v-if="!loading && !loadError && !groups.length"
-          :description="t('core.plugins.noSettings')"
-        />
-        <PluginDeclarativeForm
-          v-else-if="groups.length"
+    <div class="plugin-settings-content">
+      <StateView
+        :loading="loading"
+        :error="loadError"
+        :empty="!groups.length"
+        :empty-description="t('core.plugins.noSettings')"
+        overlay-loading
+        @retry="fetchSettings"
+      >
+        <DeclarativeForm
+          v-if="groups.length"
           :groups="groups"
+          :tables="tables"
+          :errors="draft.errors.value"
           :uid="configUid"
           :namespace="`plugins.${view?.pluginId ?? ''}.config`"
           :disabled="saving || runningKey !== null"
@@ -272,7 +271,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           @update:value="draft.update"
           @action="runAction"
         />
-      </a-spin>
+      </StateView>
       <SettingsDirtyBar
         v-if="draft.dirtyCount.value"
         :count="draft.dirtyCount.value"
@@ -281,7 +280,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         @discard="draft.discard"
         @save="save()"
       />
-    </PageSurface>
+    </div>
     <SettingsLeaveModal
       :open="leaveOpen"
       :count="draft.dirtyCount.value"
@@ -290,48 +289,13 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
       @discard="discardAndLeave"
       @save="saveAndLeave"
     />
-  </main>
+  </AppPage>
 </template>
 
 <style scoped>
-.plugin-settings-page {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.plugin-settings-header :deep(.page-header-main) {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 0 8px;
-  align-items: center;
-}
-
-.plugin-settings-header :deep(.app-page-title) {
-  min-width: 0;
-  grid-column: 2;
-  grid-row: 1;
-  overflow-wrap: anywhere;
-}
-
-.plugin-settings-lead {
-  display: flex;
-  align-items: center;
-  grid-column: 1;
-  grid-row: 1 / span 2;
-  gap: 8px;
-}
-
-.plugin-settings-meta {
-  grid-column: 2;
-  grid-row: 2;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 20px;
-  color: var(--ant-color-text-secondary);
-  overflow-wrap: anywhere;
+.plugin-settings-content {
+  flex: 1;
+  overflow: auto;
+  padding: var(--app-page-content-padding);
 }
 </style>

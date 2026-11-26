@@ -1,374 +1,127 @@
 # 匿名使用统计
 
-Electron 主进程按 Aptabase 的单事件协议向
-`https://telemetry.auto-mas.top/api/v0/event` 发送数据。App Key 是公开的客户端写入标识，
-不包含管理或查询凭据。Vue 通过受限 preload / IPC 交给主进程，不初始化 Web 或 Electron SDK。
+Electron 主进程按 Aptabase 单事件协议向 `https://telemetry.auto-mas.top/api/v0/event` 上报匿名统计（App Key 为公开的客户端写入标识，不含管理或查询凭据）。Vue 渲染层通过受限 preload / IPC 交由主进程校验并发送，不直接初始化 Web SDK。
 
-采集环境由 Electron 打包状态和显式开发后端选择决定，并在页面执行前通过 preload 传入 Vue。源码运行或安装版显式设置 `AUTO_MAS_BACKEND_REPO` 时禁报，
-打包运行仍遵守用户遥测开关；Runtime 启动模式与宿主的 `NODE_ENV` 不改变应用环境。
-后端仅在显式收到 `AUTO_MAS_ENV=production` 时启用生产行为，不再依赖 `.env` 文件。
+完整 84 项业务场景与复用台账见 [场景覆盖台账](./analyticsCoverage.md)；扩展或修改业务流程时遵循 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)。所有固定字段枚举统一定义在 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)。
 
-发行版复用源码后端时沿用现有启动、关闭和失败结果观察，不新增事件；开发环境隔离继续禁止实际发送。源码路径和环境变量内容不进入事件属性。
+## 环境隔离、开关与传输策略
 
-后续新增或修改可观察业务流程时，按 [mas-telemetry Skill](../../../.agents/skills/mas-telemetry/SKILL.md)
-主动复用或补齐埋点。首页活动只统计实际开始的新加载批次，busy 跳过不复用旧结果；
-OK-WW 更新继续使用用户 UID 作为业务目标，由入口明确传入固定脚本类型，标识不进入事件属性。
-官方启动器更新复用任务的实际终态；维护跳过沿用脚本运行结果，不采集画面文本或资源档位。
+- **环境隔离**：由 Electron 打包状态和 `AUTO_MAS_BACKEND_REPO` 决定，并在页面执行前经 preload 传入 Vue。源码运行、纯浏览器、CI、单元测试、E2E、以及安装版启用开发源码后端时一律禁报；后端生产行为仅由 `AUTO_MAS_ENV=production` 控制。
+- **用户开关**：复用 `Function.IfEnableTelemetry`（配置缺失或未确认时停采）。运行中关闭立即中止可取消请求并清空随机会话 ID；操作开始前获取的代次在关闭后失效，不补发关闭期间的数据。
+- **隐私红线**：主进程仅接受白名单事件与有限枚举字段，拒绝自由文本、账号、凭据、路径、配置内容、日志或网络地址。事件携带 UTC 时间与内存随机会话 ID（空闲 1 小时或满 24 小时轮换），不使用设备或安装标识。
+- **传输与限频**：固定 HTTPS 目的地、禁重定向、无 Cookie、5 秒超时；不排队、不重试、不落盘、不阻塞应用退出。主进程最多 4 并发，每分钟上限 120 条，单事件族每分钟最多 60 次。`config_write_finished` 的成功结果按 1/10 独立随机抽样（失败全量上报）。
+- **分桶口径**：耗时桶为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`；数量桶为 `0`、`1`、`2-5`、`6-20`、`20+`。
+- **服务端留存**：自建 Aptabase（ClickHouse `default.events`）默认保留正式事件 1825 天（约 5 年），到期后后台清理。
 
-桌面启动由主进程提前编排；`backend_start_finished` 和 Runtime 阶段事件仍由原服务确认结果，窗口接入已有启动任务不重复上报。完整初始化结果仍在界面词表与应用入口就绪后记录。
+## 事件目录
 
-自动恢复最多两轮，共用一次桌面启动作业。后端与 Runtime 阶段事件分别保留实际尝试结果，整体初始化只记录最终结局；自动恢复不记录为用户选择恢复动作。自动业务放行未确认时不记录启动成功，不新增命令、路径或日志属性。
+### 1. 启动、初始化、恢复与桌面生命周期
 
-初始化恢复继续复用 `initialization_recovery_selected` 与命令结果事件。镜像由 Runtime 自动选择，新客户端不再产生手选镜像动作，`mirror_kind` 固定为 `default`；旧动作枚举仅为历史口径保留。设置页不再提供后端运行方式选择，不新增采集。
-
-日常启动缺失 Runtime 时转入运行环境失败页，补装复用完整初始化的 Runtime 对齐与 bootstrap。恢复选择仍记录 `retry`，补装和命令结果由原有主进程阶段事件确认；转入完整准备后 `flow_kind` 为 `update`，不把下载完成视为应用初始化成功。
-
-## 当前采集范围
-
-插件管理继续使用 `plugin_action_finished`：由 `usePluginApi` 在配置保存或独立命令查询确认结果后结束。
-命令受理不计为执行成功，失败、取消及无法确认结果分别记录；不发送插件名、配置或操作 ID。
-插件安装还会等待候选环境在新进程中完成加载确认，再记录最终结果；需要换版已加载依赖时，
-后端重启复用 `backend_restart_finished` 的 `update` 原因，失败后的旧环境恢复使用 `recovery`。
-本轮仅调整命令提交与等待接线，沿用既有 action/outcome 词表及开关，不增加采集字段。
-
-定时唤醒复用 `app_started.launch_kind=scheduled_wakeup` 区分启动来源，复用设置保存事件记录开关变更。两者分别表示进入 ready 和配置保存，不代表硬件唤醒成功；后台计划任务对账不额外采集。
-
-静默启动保存复用 `settings_change_finished`，改用 `silent_start` 区分旧的 `start_minimized` 类别；开机自启仍为 `auto_start`。关闭至托盘的 `close_to_tray` 类别改由 `useAppClosePreferences` 在前端关闭偏好写入成功或失败时确认，设置页和关闭确认框共用同一入口；不再以旧的 `UI.IfToTray` 写入推断关闭行为。窗口最小化和静默隐藏不新增事件，启动来源与正常退出继续复用原主进程观察者。
-
-| 事件 | 含义 | 自定义字段 | 频率 |
-| --- | --- | --- | --- |
-| `app_started` | 主进程进入 ready | `launch_kind`、`runtime_mode`、`release_channel` | 每进程最多一次 |
-| `renderer_ready` | 主窗口完成 Vue 挂载 | `duration_bucket`、`visibility` | 每进程最多一次 |
-| `backend_start_finished` | 串行启动作业的真实结果 | `outcome`、`runtime_mode`、耗时桶 | 合并的启动请求不重复 |
-| `initialization_decided` | 直接进入、完整初始化或强制更新的启动决策 | `decision`、`runtime_mode`、耗时桶 | 每进程最多一次 |
-| `initialization_stage_finished_v2` | Runtime 实际命令的返回结果 | `stage`、`runtime_mode`、`outcome`、`known_code`、`failed_stage`、耗时桶 | 每次实际执行一次，不按进度帧统计 |
-| `initialization_recovery_selected` | 初始化失败后的恢复动作 | `action`、`stage`、`mirror_kind`、耗时桶 | 每次用户选择；后续结果另计 |
-| `initialization_finished_v2` | 初始化尝试的整体结局（含业务词表就绪） | `flow_kind`、`runtime_mode`、`outcome`、`failed_stage`、耗时桶 | 每次尝试一次 |
-| `screen_view` | 白名单业务页面导航成功 | `screen`、`script_type`、`entry_source` | 相邻同类页面去重 |
-| `mcp_retry_requested` | MCP 手动重新加载请求的受理结果 | `outcome`、耗时桶 | 每次实际请求一次；受理不等于加载完成 |
-| `script_create_finished` | 新建、模板导入、复制、项目复用 | `create_kind`、`script_type`、`outcome`、耗时桶 | 每次创建流程一次；自动建号失败时为部分完成 |
-| `user_create_finished` | 自动或手动建号的接口结果 | `script_type`、`outcome`、耗时桶 | 在音效、默认名和导航之前 |
-| `config_write_finished` | 脚本、用户、设置的共享写入结果 | `owner_kind`、`section_kind`、`script_type`、`outcome`、耗时桶、`sample_rate` | 实际写入作业；成功独立随机 1/10 采样 |
-| `task_start_result` | 启动请求受理或失败 | `source`、`mode`、`target_kind`、`outcome`、耗时桶 | 每次实际请求一次 |
-| `task_observed_finished` | 常驻订阅收到已观察任务的完成消息 | `mode`、`script_type`、`outcome`、耗时桶 | 创建、完成都收到的样本 |
-| `task_stop_result` | 共享单任务停止请求的受理结果 | `source`、`mode`、`request_outcome`、耗时桶 | 每次实际请求 |
-| `task_resume_requested` | 指定脚本起点或用户范围的启动请求 | `source`、`resume_kind`、`scope_kind`、`request_outcome`、耗时桶 | 与通用启动事件分开说明用途 |
-| `queue_manage_finished` | 队列及队列项创建、删除、配置与排序 | `action`、`queue_kind`、`count_bucket`、`outcome`、耗时桶 | 每次实际写入；整批排序一次 |
-| `queue_schedule_changed` | 定时、循环及启动调度设置 | `schedule_kind`、`action`、`outcome`、耗时桶 | 实际写入结果，不记录日期时刻 |
-| `plan_manage_finished` | 计划基础记录创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket`、`outcome`、耗时桶 | 每次实际管理请求 |
-| `script_run_started` | 自动代理进入一次脚本执行流程 | `mode`、`script_type` | 顺序队列逐项、循环队列逐轮 |
-| `script_run_finished` | 本窗口观察到该次脚本执行结局 | `mode`、`script_type`、`outcome`、`partial_failure`、耗时桶 | 开始、结束都收到的样本 |
-| `native_config_action_finished` | 原生配置打开、查看、保存/关闭请求及丢弃通知 | `script_type`、`operation`、`outcome`、耗时桶 | 每次实际请求；重复丢弃帧去重 |
-| `config_restore_finished` | MAS/原生备份恢复与强制确认结果 | `script_type`、`target_kind`、`forced`、`outcome`、耗时桶 | 每次实际恢复请求 |
-| `community_login_finished` | 米游社、森空岛扫码会话的终态 | `provider`、`stage`、`outcome`、耗时桶 | 每次生成尝试一个终态，不逐次轮询 |
-| `notification_test_finished` | 已配置通知的总体测试响应 | `test_kind`、`request_outcome`、耗时桶 | 每次实际测试请求 |
-| `notification_channel_changed` | 内置通知渠道启用、停用的保存结果 | `channel_kind`、`action`、`outcome`、耗时桶 | 每次实际写入；包括绑定后的自动启停 |
-| `notification_binding_finished` | QQ 通知绑定、重绑及解绑结果 | `channel_kind`、`action`、`outcome`、耗时桶 | 每次绑定会话一个终态；状态查询不计 |
-| `webhook_test_finished` | 独立 Webhook 测试的返回结果 | `scope_kind`、`outcome`、耗时桶 | 每次测试一次；不含地址或响应正文 |
-| `update_download_finished` | 本窗口发起下载的结局 | `source`、`outcome`、耗时桶 | 完成、取消、失败共用一个终态 |
-| `update_check_finished` | 手动检查结果及首次自动检查摘要 | `trigger_kind`、`outcome`、`update_available`、耗时桶 | 手动按实际共用请求；自动每进程最多一次 |
-| `update_download_started` | 本地下载尝试首次获得进度或请求响应 | `source_kind`、`release_channel`、耗时桶 | 与下载终态共用操作前代次，每次尝试最多一次 |
-| `update_source_changed` | 用户确认换源的结果 | `from_kind`、`to_kind`、`trigger_kind`、`outcome`、耗时桶 | 每次实际换源请求，不按速度帧统计 |
-| `update_install_requested` | 立即或稍后安装的选择 | `choice`、`request_outcome`、耗时桶 | 稍后不发安装请求；受理不代表安装器已启动 |
-| `connection_incident_finished` | 非计划断线的一次恢复事故 | `outcome`、`recovery_kind`、`reason_kind`、耗时桶 | 多轮重连归并为一次 |
-
-首页首帧后的 MCP 自动放行只用于内部启动协调，不单独采集；`renderer_ready` 仍表示 Vue 挂载，
-不改为首页首帧口径。首帧性能标记仅在开发构建中启用，不上传。
-只连接外部后端时不产生后端启动或安装事件，启动与初始化统计的 `runtime_mode` 记为
-`unknown`；断线和系统唤醒恢复沿用现有事件，仅按实际重连结果记录。
-
-完整 84 项入口、共享事件、结果边界及验证限制见 [场景覆盖台账](./analyticsCoverage.md)。
-托盘菜单的显式保存复用 `config_write_finished`，由主进程确认配置写入结果；菜单文本、任务标识、草稿编辑及取消均不采集。
-新增事件的字段固定枚举共用 [analyticsFeaturePolicy.ts](./analyticsFeaturePolicy.ts)，调用类型和主进程验证均从该声明派生。
-
-| 新增事件族 | 含义 | 固定属性（另含 outcome/耗时桶） |
+| 事件 | 含义 | 主要字段（未注明的均含 `outcome` / 耗时桶） |
 | --- | --- | --- |
-| `backend_restart_finished` | 主动更新和故障重启能否恢复 | `reason_kind` |
-| `runtime_alignment_finished` | Runtime 升级、校验、回退是否完成 | `operation`、`release_channel` |
-| `backend_update_finished` | 后端热更新完成或停在什么阶段 | `trigger_kind`、`phase` |
-| `renderer_recovery_decided` | 渲染进程异常退出后选择重载或放弃（仅决策） | `reason_kind`、`recovery_action`、`count_bucket` |
-| `renderer_recovery_finished` | 每次重载的实际观察结果 | `reason_kind`、`result_kind`、`count_bucket` |
-| `renderer_responsiveness_changed` | 卡死后能否恢复响应 | `state` |
-| `app_close_finished` | 正常退出收尾、用户取消、强制退出占比（不含托盘隐藏） | `close_kind` |
-| `tray_action_requested` | 显示、隐藏、启动任务、停止全部任务和退出等托盘入口是否有实际使用 | `action_kind` |
-| `stop_all_requested` | 紧急停止入口的需求 | `source` |
-| `virtual_display_action_finished` | 虚拟屏检查、拆除、用户选择的效果 | `action` |
-| `desktop_session_connection_finished` | 桌面分身连接结果，主进程确认子会话已登记后记成功 | `reason_kind` |
-| `desktop_session_environment_repair_finished` | 桌面分身环境修复与复查结果 | — |
-| `virtual_display_prompt_answered` | 显示器恢复后用户怎样处理提示 | `choice` |
-| `system_resume_recovery_finished` | 电脑唤醒后能否继续使用 | `recovery_kind` |
-| `script_manage_finished` | 复制、删除、重排入口的使用 | `action`、`script_type`、`count_bucket` |
-| `user_manage_finished` | 删除、启停和批量账号管理 | `action`、`script_type`、`count_bucket` |
-| `config_mode_changed` | 托管、原生、查看模式的使用 | `script_type`、`mode` |
-| `queue_time_set_changed` | 时间集合管理使用情况 | `action`、`count_bucket` |
-| `plan_edit_finished` | 简单/复杂视图与轮换计划是否好用 | `plan_type`、`view_kind`、`operation_kind` |
-| `emulator_discovery_finished` | 搜索、导入模拟器是否顺利 | `emulator_family`、`action`、`count_bucket` |
-| `emulator_operation_result` | 启停、显示等操作是否被接受 | `emulator_family`、`operation` |
+| `app_started` | 主进程进入 ready（每进程最多一次） | `launch_kind`（含 `scheduled_wakeup`）、`runtime_mode`、`release_channel` |
+| `renderer_ready` | 主窗口完成 Vue 挂载（每进程最多一次） | `duration_bucket`、`visibility` |
+| `backend_start_finished` | 串行后端启动作业的真实结果 | `runtime_mode` |
+| `backend_restart_finished` | 主动更新或故障重启结果 | `reason_kind`（`update` / `recovery` 等） |
+| `runtime_alignment_finished` | Runtime 升级、校验、回退结果 | `operation`、`release_channel` |
+| `backend_update_finished` | 后端热更新结果与停止阶段 | `trigger_kind`、`phase` |
+| `initialization_decided` | 直接进入、完整初始化或强制更新决策 | `decision`、`runtime_mode` |
+| `initialization_stage_finished_v2` | Runtime 单次命令返回结果 | `stage`、`runtime_mode`、`known_code`、`failed_stage` |
+| `initialization_recovery_selected` | 初始化失败后的用户恢复动作 | `action`、`stage`、`mirror_kind` |
+| `initialization_finished_v2` | 初始化尝试的整体结局（含词表就绪） | `flow_kind`、`runtime_mode`、`failed_stage` |
+| `renderer_recovery_decided` | 渲染进程异常退出后的重载决策 | `reason_kind`、`recovery_action`、`count_bucket` |
+| `renderer_recovery_finished` | 每次实际重载的观察结果 | `reason_kind`、`result_kind`、`count_bucket` |
+| `renderer_responsiveness_changed` | 页面卡死后是否恢复响应 | `state` |
+| `connection_incident_finished` | 非计划断线的一次恢复事故 | `recovery_kind`、`reason_kind` |
+| `system_resume_recovery_finished` | 系统休眠唤醒后的恢复结果 | `recovery_kind` |
+| `app_close_finished` | 正常退出收尾、取消或强制退出（不含隐藏至托盘） | `close_kind` |
+| `tray_action_requested` | 托盘菜单动作使用情况 | `action_kind` |
+| `stop_all_requested` | 全局紧急停止请求 | `source` |
+| `virtual_display_action_finished` | 虚拟显示器检查、拆除与用户选择 | `action` |
+| `virtual_display_prompt_answered` | 显示器恢复提示的用户选择 | `choice` |
+| `desktop_session_connection_finished` | 桌面分身连接结果 | `reason_kind` |
+| `desktop_session_environment_repair_finished` | 桌面分身环境修复与复查结果 | `outcome` / 耗时桶 |
+
+### 2. 脚本、任务、队列、计划与插件
+
+| 事件 | 含义 | 主要字段（未注明的均含 `outcome` / 耗时桶） |
+| --- | --- | --- |
+| `screen_view` | 白名单业务页面导航（相邻去重） | `screen`、`script_type`、`entry_source` |
+| `script_create_finished` | 新建托管、模板导入、复制与项目复用 | `create_kind`、`script_type` |
+| `script_manage_finished` | 托管复制、删除与重排 | `action`、`script_type`、`count_bucket` |
+| `user_create_finished` | 自动或手动建号结果 | `script_type` |
+| `user_manage_finished` | 账号删除、启停与批量管理 | `action`、`script_type`、`count_bucket` |
+| `config_write_finished` | 脚本、用户与设置的共享写入（成功 1/10 采样） | `owner_kind`、`section_kind`、`script_type`、`sample_rate` |
+| `config_mode_changed` | 托管、原生、查看模式切换 | `script_type`、`mode` |
+| `native_config_action_finished` | 原生配置打开、查看、保存/关闭与丢弃 | `script_type`、`operation` |
+| `config_restore_finished` | MAS / 原生备份恢复与强制确认 | `script_type`、`target_kind`、`forced` |
+| `task_start_result` | 任务启动请求受理结果 | `source`、`mode`、`target_kind` |
+| `task_observed_finished` | 常驻订阅观察到的整任务完成结果 | `mode`、`script_type` |
+| `task_stop_result` | 单任务停止请求的受理结果 | `source`、`mode`、`request_outcome` |
+| `task_resume_requested` | 指定脚本起点或用户范围续跑请求 | `source`、`resume_kind`、`scope_kind`、`request_outcome` |
+| `script_run_started` | 自动代理进入一次脚本执行 | `mode`、`script_type` |
+| `script_run_finished` | 本窗口观察到的单次脚本执行结局 | `mode`、`script_type`、`partial_failure` |
+| `queue_manage_finished` | 队列与队列项创建、删除、配置与排序 | `action`、`queue_kind`、`count_bucket` |
+| `queue_schedule_changed` | 启动、定时、循环及星期调度配置 | `schedule_kind`、`action` |
+| `queue_time_set_changed` | 时间集合管理 | `action`、`count_bucket` |
+| `plan_manage_finished` | 计划创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket` |
+| `plan_edit_finished` | 简单/复杂视图与轮换计划编辑 | `plan_type`、`view_kind`、`operation_kind` |
+| `adapter_setup_finished` | 专项配置引导与独有操作（如保存、刷新、预览） | `script_type`、`operation_kind`、`engine_kind` |
+| `plugin_action_finished` | 插件安装、启停、配置保存与市场手动刷新 | `action`、`outcome` / 耗时桶 |
+| `mcp_retry_requested` | MCP 手动重新加载请求受理结果 | `outcome` / 耗时桶 |
+
+### 3. 模拟器、游戏、社区、通知、更新、设置与工具
+
+| 事件 | 含义 | 主要字段（未注明的均含 `outcome` / 耗时桶） |
+| --- | --- | --- |
+| `emulator_discovery_finished` | 模拟器搜索与导入 | `emulator_family`、`action`、`count_bucket` |
+| `emulator_operation_result` | 模拟器启停/显示请求受理结果 | `emulator_family`、`operation` |
 | `emulator_operation_observed_finished` | 前端观察到的模拟器操作结局 | `emulator_family`、`operation` |
-| `emulator_instance_manage_finished` | 实例创建、删除与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
-| `emulator_guard_changed` | 稳定模式和配置守卫是否解决使用障碍 | `guard_kind`、`action` |
-| `game_target_changed` | 游戏目标管理、发现、设置及批量操作结果 | `adapter`、`action` |
-| `game_operation_result` | 插件设备命令是否被受理 | `adapter`、`operation` |
-| `game_operation_observed_finished` | 由唯一操作标识确认的设备操作终态 | `adapter`、`operation` |
-| `avd_root_added` | 自定义 AVD 安装导入完成率 | `reason_kind` |
-| `game_sign_requested` | 手动签到的使用与被占用拒绝 | `trigger_kind` |
-| `community_account_manage_finished` | 签到账号创建、启停、删除 | `action` |
-| `community_activity_requested` | 社区活动工具是否有需求 | `operation_kind` |
-| `settings_change_finished` | 设置修改成功率及主要功能采用情况 | `setting_key`、`value_kind`、`setting_kind`；包含关闭应用二次确认开关及设置页布局偏好 |
-| `appearance_preference_changed` | 主题、语言、低性能模式和自定义光标需求 | `preference_kind`、`preset_value` |
-| `appearance_package_finished` | 本地外观导入、启用、删除是否顺利 | `package_kind`、`action` |
-| `appearance_store_install_finished` | 主题商店发现到安装的转化 | `category_kind` |
-| `appearance_share_finished` | 外观上传与分享是否顺利 | `category_kind` |
-| `mascot_preference_changed` | 桌宠采用率和性能档位选择 | `action`、`fps_preset` |
-| `home_activity_load_finished` | 首页活动信息在哪类来源不可用 | `trigger_kind`、`source_kind`、`cache_kind` |
-| `home_layout_changed` | 首页布局与快速任务入口的使用 | `action`、`layout_preset` |
-| `taskboard_marking_finished` | 每周任务选择与打卡、版本标记能否保存 | `target_kind`、`action`、`count_bucket` |
-| `history_query_finished` | 历史检索能否帮助定位运行结果 | `filter_kind`、`count_bucket` |
-| `diagnostic_export_finished` | 问题包和普通日志能否导出；MaaEnd 已有自动归档时能否打开保存目录 | `bundle_kind`、`script_type`、`incomplete` |
-| `data_backup_export_finished` | 用户能否成功备份 MAS 数据 | 无 |
-| `replay_tool_finished` | 失败录屏连接、手动保存、回放的使用 | `action` |
-| `help_link_requested` | 哪些功能需要文档帮助 | `link_kind`、`entry_source` |
-| `adapter_setup_finished` | 专项配置引导与独有操作 | `script_type`、`operation_kind`、`engine_kind` |
+| `emulator_instance_manage_finished` | 实例增删与批量设置 | `emulator_family`、`action`、`scope`、`count_bucket` |
+| `emulator_guard_changed` | 稳定模式与配置守卫变更 | `guard_kind`、`action` |
+| `game_target_changed` | 游戏目标管理、发现与批量操作 | `adapter`、`action` |
+| `game_operation_result` | 插件设备命令受理结果 | `adapter`、`operation` |
+| `game_operation_observed_finished` | 按唯一操作 ID 确认的设备操作终态 | `adapter`、`operation` |
+| `avd_root_added` | 自定义 AVD 安装导入 | `reason_kind` |
+| `game_sign_requested` | 手动签到触发与被占用拒绝 | `trigger_kind` |
+| `community_account_manage_finished` | 社区签到账号增删与启停 | `action` |
+| `community_login_finished` | 社区凭据获取终态（扫码生成/扫码确认/保存、短信、账密） | `provider`、`stage` |
+| `community_activity_requested` | 社区活动工具调用 | `operation_kind` |
+| `signflow_requested` | 附属插件请求：抽卡查询、抽卡读取与凭据刷新 | `action` |
+| `notification_test_finished` | 总体通知测试响应 | `test_kind`、`request_outcome` |
+| `notification_channel_changed` | 内置通知渠道启停保存 | `channel_kind`、`action` |
+| `notification_binding_finished` | QQ 扫码绑定、手动配置与解绑 | `channel_kind`、`action` |
+| `webhook_test_finished` | 独立 Webhook 测试结果 | `scope_kind` |
+| `update_check_finished` | 手动检查与首次自动检查结果 | `trigger_kind`、`update_available` |
+| `update_download_started` | 本次本地下载首次获得进度或响应 | `source_kind`、`release_channel` |
+| `update_download_finished` | 本地下载最终结局（完成/取消/失败） | `source` |
+| `update_source_changed` | 用户确认换源的结果 | `from_kind`、`to_kind`、`trigger_kind` |
+| `update_install_requested` | 立即安装或稍后安装选择 | `choice`、`request_outcome` |
+| `settings_change_finished` | 主要功能开关与设置保存 | `setting_key`、`value_kind`、`setting_kind` |
+| `appearance_preference_changed` | 主题、语言、低性能模式与自定义光标 | `preference_kind`、`preset_value` |
+| `appearance_package_finished` | 本地主题/桌宠导入、启用与删除 | `package_kind`、`action` |
+| `appearance_store_install_finished` | 主题商店安装结果 | `category_kind` |
+| `appearance_share_finished` | 外观上传与分享 | `category_kind` |
+| `mascot_preference_changed` | 桌宠开关与 FPS 档位选择 | `action`、`fps_preset` |
+| `home_activity_load_finished` | 首页活动信息加载结果与来源 | `trigger_kind`、`source_kind`、`cache_kind` |
+| `home_layout_changed` | 首页布局与快捷任务保存 | `action`、`layout_preset` |
+| `taskboard_marking_finished` | 每周任务打卡与版本主线标记保存 | `target_kind`、`action`、`count_bucket` |
+| `history_query_finished` | 历史记录检索 | `filter_kind`、`count_bucket` |
+| `diagnostic_export_finished` | 问题包与普通日志导出 | `bundle_kind`、`script_type`、`incomplete` |
+| `data_backup_export_finished` | MAS 数据备份导出 | `outcome` / 耗时桶 |
+| `replay_tool_finished` | 失败录屏连接、手动保存与回放 | `action` |
+| `help_link_requested` | 应用内帮助文档入口点击 | `link_kind`、`entry_source` |
 
-养成页手动刷新复用 `adapter_setup_finished`，`operation_kind=data_refresh`，仅在后端完整更新材料与目录后记录成功；自动缓存读取不重复采集。
-全部干员托管开关经字段保存队列复用 `useUserApi.updateUser` 的 `config_write_finished`；开启时以账号快照补入目标后才返回保存结果。每轮自动补充沿用任务终态观察，不采集托管值、账号、干员名单或目标内容。
-养成月卡选项保存复用 `useUserApi.updateUser` 的 `config_write_finished`，不发送月卡状态；材料时间为本地派生展示，不新增重算事件。
+## 关键统计口径
 
-历史附件视频的 `play` 意图由 `playing` 确认成功，缓冲恢复不会重复计数；请求播放前后的关联仅在内存中保存，不上报附件标识或地址。手动保存录屏仅用 `capture_path` 是否存在判断 success/skipped，不上传其内容。
+- **初始化 v2**：从 `v2` 起将取消独立记为 `cancelled`，Runtime 对齐失败记为 `runtime_binary`；确认主连接可用且业务词表就绪才计为成功。自动恢复最多两轮，不计为用户恢复动作；缺失 Runtime 触发的补装按 `flow_kind=update` 记录。
+- **渲染进程恢复**：由主进程 `rendererRecoveryService.ts` 唯一观察，页面加载完成且收到 Vue 挂载就绪 IPC 才记 `success`（30 秒未确认记 `unknown`，退出/关机打断记 `cancelled`）。
+- **任务与逐脚本观察**：整任务 `success` 仅表示执行器正常收尾，不代表每个账号成功；逐脚本 `script_run_finished` 另带 `partial_failure`（`yes` / `no` / `unknown`）。恢复快照不补报样本，仅按成对收到的开始/完成事件计数。
+- **请求受理 vs 执行完成**：安装启动、停止任务、原生配置保存、MCP 重载等无可靠终态信号的接口只记录请求受理（`accepted` / `rejected` / `unknown`），不伪造执行成功。
+- **更新检查与换源**：自动检查每进程最多记一次，不按定时轮询累计；下载中途换源属于同一次下载尝试，不提前结束 `update_download_finished`。
+- **启动硬件统计**：桌面启动时启用每秒一次的只读采样器（最长 10 分钟），并在 `initialization_finished_v2` / `initialization_stage_finished_v2` 附加有限硬件档位字段；关闭遥测后仍仅写入本地 `debug/startup-hardware.log` 供日志包排查。
 
-耗时区间为 `<1s`、`1-5s`、`5-30s`、`30-120s`、`>120s`。
-数量区间为 `0`、`1`、`2-5`、`6-20`、`20+`，排序按一批记录，不按对象逐条发送。
-系统字段仅含应用版本、系统名称和版本、系统语言、Chromium 版本、传输实现版本与生产标记。
-事件带 UTC 时间和内存中的随机会话 ID，不使用安装标识或对象 ID。会话空闲一小时或满 24 小时更换；
-关闭遥测时也清除会话。会话与匿名估算使用量不等于安装量、真实账号数或长期唯一用户。
-
-主界面就绪只表示 Vue 已挂载，不表示初始化、后端或任务已完成。辅助窗口、renderer 重载和第二实例
-不增加同一进程的计数。请求失败也占用这次计数，不重试，因此事件缺失不能解释成应用故障。
-
-初始化准备步骤完成不代表成功；确认主连接可用后才记成功，跳过步骤、强行进入但未确认连接、
-失败分别记录。启动时自动跳过已完成的安装步骤仍需确认连接，单独标记 `flow_kind=skip`。
-
-初始化统计使用版本化事件：旧事件的 failure 包含取消，旧整体事件的 python 也可能是 Runtime 对齐失败；
-从 v2 起取消独立记为 cancelled，对齐失败记为 runtime_binary，不能直接合并新旧分类。
-后端启动明确返回 OPERATION_CANCELLED 时，完整初始化和跳过初始化路径均记录 cancelled；其他异常仍记 failure。
-界面仍使用原有失败步骤，不采集原始错误文本。
-
-阶段统计在主进程执行边界记录：Runtime 自身校验/更新为 `runtime_binary`，完整准备命令为
-`bootstrap`，单项命令对应 `python`、`repository` 或 `dependency`；失败时另带有限枚举的
-`failed_stage`。不把界面补齐的阶段或接管的 pip/Git 算成成功。完整初始化与单步重试均在
-Runtime 实际命令返回时记录。错误码只保留显式白名单，其他一律 `unknown`。
-Electron 后端统一使用 development/managed；off 仅保留为历史统计维度，新启动不再产生。
-启动结果仍由 BackendService 唯一记录，开发环境与浏览器预览继续禁报。
-恢复选择只记录按钮动作、阶段和内置镜像类别，不记录镜像键、地址或诊断内容。
-
-QQ 绑定以当前扫码会话返回网关 `connected` 为完成；取消、替换、过期、失败和卸载分别终结，
-迟到响应不计入新会话。绑定/解绑的结果先于后续渠道开关保存及页面刷新确认，开关写入单独统计。
-Webhook 测试按接口实际响应记录成功或失败，网络异常记 `unknown`，不据此断定对端未收到。
-
-更新检查沿用既有共用请求和取消能力；同一请求每种触发只记一次。自动检查由 renderer 首次
-观察和主进程进程级去重共同限制，不按标题栏十分钟或弹窗四小时轮询累计。手动检查加入
-自动检查的在途请求时，各触发记录一次结果，不能把二者相加当独立网络请求数。结果在接口
-返回时确认，音效或弹窗失败不改写已确认的检查结果。不采集最新版本号、更新公告或错误原文。
-
-下载开始在当前本地尝试的首帧进度或 HTTP 返回时记录；尚未知道后端来源时用 `unknown`，
-不读取额外配置或猜测。版本只归为正式、公测或未知，不发送版本字符串或操作 UUID；重试
-是新尝试，换源仍属于同一次尝试。快照恢复、释放后迟到响应不产生新开始；观察中途丢弃的
-尝试可能没有开始或终态，不能把两者当严格全量漏斗。自动转源不假装用户点击换源；低速提示
-确认与手动入口分开归类，接口确认前不把来源目标当成已切换结果，网络异常记 `unknown`。
-
-安装接口创建后台任务后即响应，因此 `accepted` 只表示请求已受理，不能证明安装器启动、
-新版本安装成功或下次成功启动。稍后安装为 `not_requested`，隐藏后台下载不等于稍后安装。
-失败后的工作区恢复、普通重试和 Runtime 更新各开启新尝试；重复启动回调不重置计时或重复计数，
-恢复耗时包含完整 bootstrap，Runtime 更新后的尝试也包含镜像配置准备。
-脚本模板导入失败时，根据清理结果区分失败与部分完成；项目复用失败但保留基础记录为部分完成。
-脚本和用户写入覆盖共享 API，合并的保存请求不会额外计数；设置遥测开关自身不产生事件。
-专项独有保存、导入与计划编辑使用下述显式事件边界，不把配置内容带入共享统计。
-
-MAA 作业练度分析在 `useMaaCopilotApi` 的分析请求处复用 `adapter_setup_finished` 的
-`preview` 类别，后端完成分析后确认结果；请求异常记 `unknown`。不采集作业来源、
-账号练度、培养名单或分析选项，不记录 checkbox 切换、作业同步轮询或作者搜索。
-
-四种任务模式独立标记；受理不代表执行成功，跨专项整体结果标为 `multi`，不复制为各专项成功。
-整任务 `success` 只表示任务执行器正常收尾，不保证各脚本或账号的执行均成功。
-任务 ID 只用于两个最多 128 项的内存集合，恢复快照不创建观察样本。重复完成与重复创建去重；
-进程重启或集合淘汰后不保证精确一次。没有完整收到创建和完成的任务不推断结局，
-不能以观察完成数除以全部请求数声称全量成功率。
-
-任务启动目标类别由已知脚本或账号入口显式传入，缺少可靠类型时保留 `unknown`；
-首页和桌宠任务列表仅提供名称与 ID，不能推断目标类别。
-
-主要页面白名单包含任务台。停止请求受理不表示任务清理完成，最终取消仍看任务观察结果；
-全局紧急停止单独记录固定入口与请求结果。续跑统计只描述指定脚本起点或用户范围，不推断这是失败重试；
-循环模式忽略的脚本起点不记为续跑，普通配置与更新任务不进入该事件。
-范围只归入全部、脚本用户或队列用户，不发送范围中的 ID 或对象数量明细。
-
-队列配置、循环队列项调度共用显式 API 边界，不改变保存、排序、回读或失败处理；
-“立即运行一次”只是修改下次执行时间，记为 `run_once`，不据此记任务已启动。
-队列和计划类别仅复用已有读取与成功写入，在最多 128 项的本机映射中关联；缺少类别用
-`unknown`，不会额外请求后端。时间集合管理与计划表格编辑已接入，但具体日期和表格内容始终不采集。
-计划 `create` 表示基础记录已创建，默认名称保存另记 `rename`，不是完整配置引导完成；
-名称保存失败不会回改基础记录创建结果，音效或回读失败也不改写已确认的管理结果。
-仅发固定计划类别，不发名称、计划内容、精确时刻、命令或任意字段值。
-
-逐脚本事件沿用 MAS 现有脚本执行边界与结果判定：混合队列分别记录各专项，循环每轮单独记录；
-原生配置和脚本更新不计入。尚未轮到、被禁用或占用而跳过的条目没有开始事件。
-`script_run_started` 表示进入执行流程，可能随后预检失败、无用户或因维护全部跳过，
-不等于游戏内任务已执行或已成功。结束结果分别为 `success`、`failed`、`skipped`、`no_user`、
-`incomplete`、`error`、`cancelled`，复用现有 MAS 状态，不读取上游内部数据。
-`success` 沿用调度口径，包含 BetterGI 的「部分失败」；新增 `partial_failure=yes/no/unknown`
-分别表示 MAS 状态中出现部分失败、未出现部分失败及无法判断；`no` 不保证上游每一步均成功。
-非成功结果、旧后端与历史事件不推断该字段；
-缺少字段的历史 `success` 不能视作 `no`。
-轮次 ID 和任务 ID 仅用于本机 WS 关联与最多 128 项的内存去重，不发送至 Aptabase。
-重复边界不增加次数，恢复快照不补报；缺失开始、断线、退出或关闭遥测造成的样本不推测结局。
-后端逐轮消息通过运行时任务注册表后台发送，最多 32 项在途，拥塞时直接丢弃；
-结束帧等待开始帧的发送结果，但脚本执行和收尾均不等待统计消息。进程关闭取消在途消息。
-整任务完成不提前清掉逐轮观察，以容纳晚到的最后一轮终态。
-
-原生配置的 `open/view/save/close/timeout` 只记录请求受理或失败，不宣称 GUI 已打开或配置已保存；
-六条原生 GUI 会话共用生命周期实现，启动与停止仍由 `useTaskApi` 观察；并发停止共享一次请求，不重复计数。
-手动保存、关闭及自动超时由实际调用入口明确分类，与停止失败时是否保留会话无关。
-主列表保存共用同一入口；仅清理页面观察、没有发出停止请求的超时不虚构请求事件。
-MAA 的改动丢弃消息单独记为 `discard/discarded`，只取固定分类，不取原因正文。
-恢复请求的 `confirmation_required` 表示还需二次确认，强制恢复是另一请求；不传备份时间或文件名。
-已知的 `onedragon` 和 `native` 备份池统一归入 `target_kind=native`，原始恢复参数保持不变。
-扫码会话只记录生成、扫码、保存阶段的最终结果。凭据已由后端确认保存后，即使本地回填失败仍记
-`saved`；无目标账号仅记 `confirmed_unsaved`。过期、取消、重新生成和卸载分别记录，
-票据、二维码地址、凭据及账号标识均不进入事件。旧会话异步响应和关闭期间的会话不补报。
-通知测试仅记录总体请求的 `accepted/rejected/unknown`，网络异常为结果未知，
-不提供逐渠道送达率，不采集通知渠道配置、收件人或正文。Webhook 测试只记现有测试接口结果，不采集模板或端点。
-
-在 Aptabase 的 Release Dashboard 选择 `script_run_started`，属性选择 `script_type`，
-可自动得到时间范围内各专项进入执行流程的次数；切换 `script_run_finished` 可查看结束结果。
-选择 `mode` 可比较顺序与循环，选择 `outcome` 可查看各结果次数，无需导出再手工相加。
-当前官方后台的自定义趋势图只支持按事件名保存，属性分类选择为临时页面状态；
-不提供同时按专项与结果交叉分组的固定图表、成功率公式或定时报表。
-因此这些高级报表仍需后续补展示或分析能力，当前不宣称已有自动成功率看板。
-旧版本只有整任务事件，不能从历史 `multi` 或整轮循环汇总反推出逐脚本次数。
-下载只观察本地启动的操作，取消 API 与 WS 共用一次终态；快照只对账，超时或网络结果不明记
-`observation_unknown`，不推断后台失败。换源沿同一次前端下载继续，内部停止旧源不结束下载观察；
-用户取消或最终完成/失败才结束一次，来源切换仍由 `update_source_changed` 记录。主动关闭、计划内重启和被其他窗口接管不算断线事故；
-自动恢复达到上限标记 `recovery_stopped`，不是后端最终结局。观察中途退出直接丢弃。
-
-主进程最多 4 个并发请求，每分钟总计最多 120 条，每事件族最多接受 60 次调用。
-共享配置写入事件 `config_write_finished` 的成功结果分别以 1/10 概率独立随机抽样；失败不参与此采样，输出
-`sample_rate=10/1`。未入样的成功结果不占事件族调用预算；入样后仍受限频、断网、关闭、并发上限影响，
-不能把乘以采样倍率的数量当精确总数。旧版本按进程内成功序号固定抽取，每个进程的第一次保存必定入样，
-短会话会产生偏差，分析历史数据时不能直接当作随机样本。导航采用相邻去重和同一频率预算。
-没有后台心跳、进度或逐日志事件。
-
-## 开关与传输
-
-- 复用 `Function.IfEnableTelemetry`；使用现有 YAML 优先、仅升级前读取旧 JSON 的配置读取器。
-  不用前端缓存中的 true 覆盖后端选择。配置缺失、损坏或值未确认时停采，不缓存启动事件。
-- 运行中关闭立即中止可取消的请求。开启还须确认后端持久化配置；不补发关闭期间的操作，
-  操作开始前取得的代次在关闭后失效。已经到达服务端的数据无法由本地开关撤回。
-- 开发、纯浏览器、CI、单元测试、E2E 与显式禁用遥测的环境不发送生产统计。
-- 通用遥测 IPC 仅允许主窗口主 frame 与本地入口。虚拟屏询问窗只使用限定窗口/主 frame 的业务桥，
-  由主进程持有拆除请求及结果，不能发送自由事件。主进程验证事件与字段，不接受自由文本、
-  未知字段、嵌套值、账号、路径、配置、日志或网络地址。
-- 固定 HTTPS 目的地，禁止重定向，不携带 Cookie，五秒超时。不排队、不重试、不写磁盘，
-  不等待发送来决定业务或退出结果。退出时直接取消，不为遥测延长关闭流程。
-- 服务端和反向代理会接触连接 IP。正式统计默认保留 1825 天（约 5 年），到期后后台清理；
-  这是服务端策略，客户端开关不负责删除已接收的数据。
-
-## 保留策略核对
-
-2026-10-23 检查 1Panel：运行镜像为官方 `ghcr.io/aptabase/aptabase:main`；
-对实际 ClickHouse 执行只读的 `SHOW CREATE TABLE default.events`，确认表启用了 `TTL ttl`。
-
-当日官方源码在
-[EventRow.cs](https://github.com/aptabase/aptabase/blob/4cca4bb394819c3591c019f758ce09c2844e544e/src/Features/Ingestion/Buffer/EventRow.cs)
-固定声明正式事件保留 `5 * 365` 天、调试事件保留 `182` 天，过期时间从事件时间计算。
-本客户端仅允许正式环境发送，沿用正式事件的默认策略。容器使用浮动 `main` 标签，
-本次没有核验运行中程序集的常量或镜像对应提交；这里记录官方默认值，不作镜像版本一致性的保证。
-未来更换镜像或数据库策略时需重新核对说明。
-
-ClickHouse 在后台处理 TTL，不保证过期时刻立即物理删除。本次没有检查反向代理日志、
-容器日志或备份的留存期限，上述期限仅指统计事件。未修改服务端配置或写入测试事件。
-
-## 扩展约束
-
-后续业务事件需同时增加类型契约和主进程运行时白名单，并重新确定每类事件的限频与去重边界。
-异步操作在开始前获取 context，完成时携带原代次，不在完成后重新获取代次来补报。
-不要把请求受理当作执行成功，不把恢复快照当新事件，不扩展到通用请求或日志拦截器。
-
-协议参考：[Aptabase 单事件实现](https://github.com/aptabase/aptabase-electron/blob/main/src/main.ts)、
-[官方自建 SDK 说明](https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK)。
-
-## 本次验收边界（2026-10-24）
-
-四批代码完成 84 项场景接入，复用 72 个事件族；另修复商店桌宠已安装但选择保存失败时误报安装失败。
-107 项针对性验证、96 项既有前端测试、
-11 项隔离浏览器流程，以及 Renderer/Electron 编译、未签名安装包构建通过。证据以 PR 对应评论为准。
-
-用专用入口运行隔离打包端，统计服务代码未经修改：本地接收器收到全部 72 类契约样本；
-生产目的地只发送一条版本 `0.0.0-telemetry-validation` 的测试进程启动。正式 Release 看板筛选该版本后
-可查询 1 个会话、1 条 `app_started`，不是仅以 HTTP 200 推断入库。关闭状态与运行中关闭后、旧代次和
-额外字段均未增加生产请求。测试完恢复原始 ASAR 与配置，不修改用户安装目录或业务数据。
-
-这不等于 84 个真实业务场景逐一通过：真实游戏、扫码、升级、虚拟屏硬件及真实混合队列/循环逐轮
-运行仍缺作者环境的执行证据。没有完成信号的原生保存和安装仍只报告请求受理。
-
-QQ 官方机器人私聊和群内提及重试脚本、启动普通或循环队列复用 `TaskManager.add_task` 的 `task.created`、脚本开始与完成通知，
-由 `taskAnalytics.ts` 原有观察者记录 `task_observed_finished`、`script_run_started` /
-`script_run_finished`，不增加第二层完成统计。QQ 命令受理、拒绝及回复不单独采集，
-不上传聊天正文、脚本名称或 QQ 标识；没有 Renderer 观察者时不补报。
-
-群成员白名单编辑与“我的ID”查询不单独采集；成员标识属于访问控制信息，不进入遥测。
-
-QQ 高级手动配置复用 `notification_binding_finished`，`action=manual_bind`、`outcome=saved` 仅表示凭据验证并保存，不代表网关 READY 或通知送达；失败记 failure，不采集 AppID、密钥或 OpenID。
-
-脚本更新下载器开关复用 `settings_change_finished`，固定键为 `script_update_takeover`，只记录开关状态与保存结果。
-
-设置页分区目录显隐复用 `settings_change_finished`，由布局组件在前端配置实际保存后记录结果。固定键为 `settings_navigation`、类别为 `other`，显示映射 `enabled`、隐藏映射 `disabled`；初次读取、窗口缩放、列数回流及目录跳转不产生事件，不上传分区标题或位置。
-专项运行前的自动检查、缓存命中、下载进度和重试不逐次采集；任务终态由各专项复用 `script_run_finished` 的原观察者负责。
-
-脚本更新公共入口沿用这一观察边界，不另发完成事件。MFW、M9A、MSS 的自动更新统一在用户任务之前执行；更新时机配置保存仍由 `useScriptApi.updateScript` 观察，目录、版本和调度标识不进入匿名统计。
-官方安装器没有独立、可靠的统计完成契约，不把下载完成或本地包登记当成安装完成，也不上传版本、路径或下载地址。
-
-- MaaEnd 程序更新接管：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；检查、准备回退及安装拦截由现有 `script_run_finished` 观察任务终态。下载进度、哈希和路径不单独采集。
-
-- 奇想盒运行前后端更新：配置保存复用 `useScriptApi.updateScript` 的 `config_write_finished`；更新准备失败继续运行与安装未完成拦截沿用任务终态。后端更新阶段不新增独立事件，不将下载或 pip 受理当作安装成功。
-
-任务树迁移沿用 `useTaskApi.ts` 的请求受理观察和 `taskAnalytics.ts` 的创建/完成观察。
-`ScriptView` 是有限模式类别；队列/托管/用户运行 UUID 只用于本地关联，不进入事件属性。
-只读查看的打开请求仍使用 `native_config_action_finished` 的 `view` 操作；恢复快照不新增执行样本。
-独立维护请求沿用历史 `Update` 统计类别，仅表示受理，不把它加入公共调度模式或将受理记成完成。
-
-队列触发设置复用 queue_schedule_changed：启动、定时、循环可独立启用；队列级间隔保存记录 interval，重置计时请求记录 reset。重置只表示请求受理，不表示新任务启动或完成。队列项星期保存记录 queue_time/days；不采集具体间隔、日期或时间。
-HSR 运行前更新复用公共更新入口和 `script_run_finished` 的任务终态观察；更新选项保存沿用 `useScriptApi.updateScript`，不新增逐包、逐引擎或进度事件，不采集安装路径、版本及 CDK。
-
-## 渲染进程恢复
-
-主进程 `rendererRecoveryService.ts` 是重载结果的唯一观察者。保留
-`renderer_recovery_decided` 的 accepted 含义；新增 `renderer_recovery_finished`，
-每次真正调用重载最多一条。主页面加载完成且 Vue 挂载后的专用就绪 IPC 均收到才记 success；
-主 frame 加载失败、再次退出或 reload 抛错记 failure，30 秒未确认记 unknown；
-窗口关闭、应用退出或 Windows 会话结束打断观察记 cancelled。子 frame 失败与旧导航的
-ERR_ABORTED 不结束当前尝试。系统退出不触发新的恢复决策或崩溃事件，取消关机后恢复识别。
-
-两类统计沿用主进程有限字段、开关代次与限频，不上传退出码、加载地址或错误文本。
-Sentry 的诊断事件另保留退出码、退出次数、耗时和加载错误码的数值白名单；自由文本仍丢弃。
-Sentry 重载结果也绑定开始时的开关代次，关闭再开启不补发旧结果；不等待发送或新增退出 flush。
-
-通用脚本计划表按原有计划管理与原生配置会话边界观察；仅新增计划类型分类 `UniversalPlanConfig`。
-
-OK-WW 动态日常、4C、梦魇、战斗、角色及月卡面板保存复用 `adapter_setup_finished`（`script_type=Okww`、`operation_kind=save`），由 `useOkwwNativeConfigApi` 按保存响应确认结果；字段读取、表单渲染不额外采集，配置内容不进入事件。
-
-后端后台暂存前的插件预检属于定时轮询内部准备，不另行采集；失败原因仅在本地吐司展示，不进入遥测。手动同版本更新的拒绝沿用 backend_update_finished，由更新服务确认失败，不重复记录预检事件。
-
-MaaEnd 协议空间与基质刷取的独立配置复用 `useUserApi.updateUser` 的 `config_write_finished`，执行及送货失败停止后续任务复用 `taskAnalytics.ts` 的运行终态观察。库存目标、关卡及日志不参与上报。
-
-## 启动硬件统计
-
-桌面启动时按一次尝试启用只读采样器，每秒取样，最多十分钟。关闭匿名遥测后继续将实测值和失败前十五秒写入本地 debug/startup-hardware.log，现有日志包会包含它。其他平台和 Windows 探针不可用时使用系统 CPU、内存和卷空间读数；无法读取的 GPU 引擎或磁盘性能保留未知。错误详情只取最近的有效样本。整体与阶段结果使用已有事件，仅主进程附加有限字段。目录按用途映射并归桶；旧 Runtime 沿用原错误。手动重试另起尝试，运行中关闭会撤销上传许可并关闭 Runtime 的取样管道。重新开启从下次尝试开始。
-
-看板选 `initialization_finished_v2`，先按应用版本和 `flow_kind` 筛选，再按 `install_media`、`ram` 或 `cpu_series` 分组。每组确认成败的失败率以 success 和 failure 为分母。总尝试、取消、跳过、未确认和缺样数分别展示。以 `coverage=sampled` 统计有硬件读数的覆盖；旧版本或配置未确认造成的缺失不能当低负载。阶段耗时用 `initialization_stage_finished_v2` 按 stage 和 duration_bucket 分组。
-
-可复验本机日志导出与关闭开关的行为。在 frontend 运行 `yarn build:main` 后运行 `node scripts/check-startup-hardware.cjs`。脚本创建独立临时目录，复用导出收集器生成 logs.zip，上传验证使用本机临时 HTTP 接收器。
-
-下面的 ClickHouse 查询按安装盘和启动场景统计尝试数、失败率和缺样数。应用编号为查询参数。启动前准备材料的时间包含在 startup_duration，原有 duration_bucket 保留界面侧口径。
+### 启动硬件 ClickHouse 参考查询
 
 ```sql
 SELECT app_version,
@@ -388,3 +141,15 @@ WHERE app_id = {app:String} AND timestamp >= now() - INTERVAL 30 DAY
 GROUP BY app_version, flow, disk
 ORDER BY attempts DESC
 ```
+
+整包升级首次启动的自动备份由后端记录 Sentry 计数 `auto_mas.upgrade_backup.attempts`。唯一字段 `outcome` 取 `success` 或 `failure`，归档落盘后才计成功。沿用后端匿名遥测开关。
+
+确认更改备份目录后，后端记录 Sentry 计数 `auto_mas.upgrade_backup.directory_moves`。字段 `outcome` 取 `success`、`failure` 或 `cleanup_pending`。选择或取消不会记录计数。
+
+## 扩展约束
+
+1. 新增事件须同步更新 TypeScript 类型契约与主进程白名单（`analyticsFeaturePolicy.ts`），并明确限频与去重边界。
+2. 异步流程在操作开始前获取 context 代次，结束时携带原代次上报，不在结束后重新取新代次补报。
+3. 不将请求受理等同于执行成功，不把恢复快照当成新事件，不引入通用 HTTP/日志拦截器。
+
+协议参考：[Aptabase 单事件实现](https://github.com/aptabase/aptabase-electron/blob/main/src/main.ts) · [自建 SDK 指南](https://github.com/aptabase/aptabase/wiki/How-to-build-your-own-SDK)

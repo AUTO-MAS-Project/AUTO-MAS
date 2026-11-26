@@ -3,21 +3,20 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-r
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
-import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
-import { buildMaaFWRoutes } from './maafwFlavorRoutes'
+import { buildMaaFWRoutes } from './maafwRoutes'
 import { buildScriptEditorRoutes } from './scriptEditorRoutes'
-import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
+import { MAAFW_FAMILY_ADAPTERS, SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
-// MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
+// MaaFW 家族的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按适配条目生成；
 // 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
 const maafwRoutes = buildMaaFWRoutes(
-  MAAFW_FLAVORS,
-  () => import('../views/EditView/MaaFWFlavor/MaaFWPageHost.vue')
+  MAAFW_FAMILY_ADAPTERS,
+  () => import('../views/EditView/MaaFW/MaaFWPageHost.vue')
 )
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
@@ -89,13 +88,6 @@ const routes = [
     meta: { title: '插件设置' },
   },
   {
-    path: '/plugins/:pluginId/:pageId',
-    name: 'PluginPage',
-    component: () =>
-      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
-    meta: { title: '插件设置' },
-  },
-  {
     path: '/tools',
     name: 'Tools',
     component: () => import('@/views/tools/index.vue'),
@@ -149,7 +141,6 @@ const routes = [
   },
   {
     path: '/games',
-    alias: '/emulators',
     name: 'Games',
     component: () => import('../views/games/index.vue'),
     meta: { title: '游戏管理' },

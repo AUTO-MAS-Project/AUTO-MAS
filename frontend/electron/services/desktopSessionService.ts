@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { mkdirSync, appendFileSync, renameSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -8,20 +9,25 @@ import { desktopSessionControlToken, setDesktopSessionChildId } from './desktopS
 import { DESKTOP_SESSION_REPAIRS } from './desktopSessionProtocol'
 import type {
   DesktopQueueResult,
+  DesktopSessionCloseRisk,
   DesktopSessionRepair,
   DesktopSessionRequest,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
 } from './desktopSessionProtocol'
 
+export type DesktopSessionCloseOutcome = 'closed' | 'blocked' | 'unverified'
+
 type HostEvent = Record<string, unknown> & { event: string }
+type CloseCheck = DesktopSessionCloseRisk & { reserved: boolean }
+type CloseMode = 'inspect' | 'idle' | 'confirmed' | 'release'
 type RuntimeDescription = { python: string; source: string; root: string }
 type StartPrompts = {
-  confirmTakeover: () => Promise<boolean>
+  confirmTakeover: () => Promise<boolean | null>
   confirmTaskDispatch: (targets: {
     desktop: DesktopQueueResult[]
     main: DesktopQueueResult[]
-  }) => Promise<'split' | 'desktop' | 'cancel'>
+  }) => Promise<'split' | 'desktop' | 'cancel' | null>
 }
 type QueueDispatchPlan = {
   queueIds: string[]
@@ -84,6 +90,9 @@ export class DesktopSessionService {
   private stopOperation: Promise<void> | null = null
   private repairOperation: Promise<string | undefined> | null = null
   private monitor: NodeJS.Timeout | undefined
+  private disconnectCleanupPending = false
+  private reportedIdle = 0
+  private retryIdleAt = 0
   private volume = 0
   private logsRoot: string | undefined
   private correlation: string | undefined
@@ -91,7 +100,8 @@ export class DesktopSessionService {
   constructor(
     private readonly changed: (snapshot: DesktopSessionSnapshot) => void,
     private readonly requested: (action: 'minimize' | 'close') => void,
-    private readonly tasksStarted: (tasks: DesktopQueueResult[]) => void
+    private readonly tasksStarted: (tasks: DesktopQueueResult[]) => void,
+    private readonly taskSessionIdle: () => Promise<boolean> = async () => true
   ) {}
 
   get active(): boolean {
@@ -110,7 +120,16 @@ export class DesktopSessionService {
   }
 
   private patch(patch: Partial<DesktopSessionSnapshot>): void {
-    this.snapshot = { ...this.snapshot, ...patch }
+    const previous = this.snapshot
+    this.snapshot = { ...previous, ...patch }
+    if (
+      previous.state !== 'disconnected' &&
+      this.snapshot.state === 'disconnected' &&
+      this.snapshot.sessionId !== undefined
+    ) {
+      // 任务可由后端直接受理，断线时本地的执行标记可能尚未更新。
+      this.disconnectCleanupPending = true
+    }
     this.changed(this.snapshot)
   }
 
@@ -432,8 +451,9 @@ export class DesktopSessionService {
           prompts
         ) {
           await this.closeViewer({ logoff: false })
-          if (!(await prompts.confirmTakeover()))
-            throw new DesktopSessionError('takeover_cancelled')
+          const takeover = await prompts.confirmTakeover()
+          if (takeover === null) throw new DesktopSessionError('prompt_unavailable')
+          if (!takeover) throw new DesktopSessionError('takeover_cancelled')
           await this.updateParentScope(null, true)
           event = await connect(existing)
         }
@@ -447,6 +467,8 @@ export class DesktopSessionService {
         const sessionId = this.snapshot.sessionId
         if (sessionId === undefined) throw new DesktopSessionError('session_changed')
         await this.updateParentScope(sessionId)
+        this.reportedIdle = 0
+        this.retryIdleAt = 0
         publishingConnection = false
         this.changeVolume(this.volume)
         connection?.finish({ outcome: 'success', reason_kind: 'none' })
@@ -540,6 +562,7 @@ export class DesktopSessionService {
     const desktop = preview.filter(target => !target.code)
     const main = preview.filter(target => target.code === 'unsupported_target')
     const choice = main.length ? await prompts.confirmTaskDispatch({ desktop, main }) : 'desktop'
+    if (choice === null) throw new DesktopSessionError('prompt_unavailable')
     if (choice === 'cancel') return
     return {
       queueIds: preview
@@ -569,7 +592,12 @@ export class DesktopSessionService {
 
   private scheduleMonitor(): void {
     clearTimeout(this.monitor)
-    if (this.snapshot.executing && !this.snapshot.closing) {
+    if (
+      (this.snapshot.executing ||
+        this.snapshot.state === 'connected' ||
+        this.disconnectCleanupPending) &&
+      !this.snapshot.closing
+    ) {
       this.monitor = setTimeout(() => void this.monitorExecution(), 1000)
     }
   }
@@ -579,18 +607,28 @@ export class DesktopSessionService {
     const monitor = this.monitor
     try {
       if (this.snapshot.state === 'disconnected') {
+        const executing = this.snapshot.executing
         await this.stopTasks()
-        this.patch({ code: 'executor_interrupted' })
+        if (executing) this.patch({ code: 'executor_interrupted' })
       } else {
-        const { idle } = await request<{ idle: boolean }>(
+        const { idle, admitted } = await request<{ idle: boolean; admitted: number }>(
           getLocalApiEndpoint(),
           internal + 'state',
           desktopSessionControlToken,
           undefined,
           2000
         )
-        if (idle && this.monitor === monitor && !this.startOperation) {
-          this.patch({ executing: false })
+        if (this.monitor === monitor && !this.startOperation && !this.snapshot.closing) {
+          if (this.snapshot.executing === idle) this.patch({ executing: !idle })
+          if (
+            idle &&
+            admitted > this.reportedIdle &&
+            this.snapshot.state === 'connected' &&
+            Date.now() >= this.retryIdleAt
+          ) {
+            if (await this.taskSessionIdle()) this.reportedIdle = admitted
+            else this.retryIdleAt = Date.now() + 3000
+          }
         }
       }
     } catch {
@@ -609,6 +647,7 @@ export class DesktopSessionService {
     )
       .then(({ idle }) => {
         if (!idle) throw new DesktopSessionError('executor_failed')
+        this.disconnectCleanupPending = false
         this.patch({ executing: false })
       })
       .finally(() => {
@@ -617,18 +656,24 @@ export class DesktopSessionService {
     return this.stopOperation
   }
 
-  private async closeViewer({ logoff = !this.adopted }: { logoff?: boolean } = {}): Promise<void> {
+  private async closeViewer({
+    logoff = false,
+    onlyIfIdle,
+  }: { logoff?: boolean; onlyIfIdle?: boolean } = {}): Promise<void> {
     const orphanedSessionId = this.orphanedSessionId
     if (orphanedSessionId !== undefined) await this.ensureHost()
     if (!this.host) return
     const result = await this.exchange(
-      { action: 'close', orphanedSessionId, logoff },
+      { action: 'close', orphanedSessionId, logoff, onlyIfIdle },
       event =>
         (event.event === 'state' && event.state === 'idle') ||
         (event.event === 'command_error' && event.action === 'close'),
       45000
     )
     if (result.event === 'command_error') {
+      if (result.code === 'close_blocked' || result.code === 'close_unverified') {
+        throw new DesktopSessionError(result.code)
+      }
       this.patch({ code: 'logoff_failed' })
       throw new DesktopSessionError('logoff_failed')
     }
@@ -638,7 +683,7 @@ export class DesktopSessionService {
   }
 
   private async stopTasksAndCloseViewer(options?: { logoff?: boolean }): Promise<void> {
-    if (this.snapshot.executing) await this.stopTasks()
+    if (this.snapshot.executing || this.disconnectCleanupPending) await this.stopTasks()
     await this.closeViewer(options)
   }
 
@@ -646,18 +691,83 @@ export class DesktopSessionService {
     await this.startOperation
   }
 
-  async close(options?: { logoff?: boolean }): Promise<void> {
+  private checkClose(sessionId: number, mode: CloseMode, attemptId?: string): Promise<CloseCheck> {
+    return request(
+      getLocalApiEndpoint(),
+      internal + 'close-status',
+      desktopSessionControlToken,
+      { sessionId, mode, attemptId },
+      5000
+    )
+  }
+
+  async closeRisk(): Promise<DesktopSessionCloseRisk> {
+    const sessionId = this.orphanedSessionId ?? this.snapshot.sessionId
+    if (sessionId === undefined) {
+      return { activeTasks: this.snapshot.executing, unmanagedPrograms: this.active ? null : false }
+    }
+    try {
+      return await this.checkClose(sessionId, 'inspect')
+    } catch {
+      return { activeTasks: this.snapshot.executing, unmanagedPrograms: null }
+    }
+  }
+
+  async close(options?: {
+    logoff?: boolean
+    onlyIfIdle?: boolean
+  }): Promise<DesktopSessionCloseOutcome> {
     this.patch({ closing: true })
+    let reservation: { sessionId: number; attemptId: string } | undefined
     try {
       if (this.repairOperation) await this.repairOperation
       if (this.startOperation) await this.startOperation
       await this.startingHost?.catch(() => undefined)
-      await this.stopTasksAndCloseViewer(options)
+      const sessionId = this.orphanedSessionId ?? this.snapshot.sessionId
+      if (sessionId !== undefined && options?.onlyIfIdle !== undefined) {
+        // 响应丢失时后端仍可能已加锁，发送前就记下需要释放的操作。
+        const attemptId = randomUUID()
+        reservation = { sessionId, attemptId }
+        const status = await this.checkClose(
+          sessionId,
+          options.onlyIfIdle ? 'idle' : 'confirmed',
+          attemptId
+        ).catch(error => {
+          if (!options.onlyIfIdle) throw error
+          return undefined
+        })
+        if (!status?.reserved) {
+          if (options.onlyIfIdle) {
+            return status?.activeTasks || status?.unmanagedPrograms === true
+              ? 'blocked'
+              : 'unverified'
+          }
+          throw new DesktopSessionError('session_changed')
+        }
+        if (status.activeTasks) await this.stopTasks()
+      } else if (this.snapshot.executing || this.disconnectCleanupPending) {
+        await this.stopTasks()
+      }
+      await this.closeViewer(options)
+      this.disconnectCleanupPending = false
+      reservation = undefined
       this.host?.stdin.end()
       this.host = null
       this.volume = 0
-      this.patch({ state: 'idle', windowState: 'visible' })
+      this.patch({ state: 'idle', windowState: 'visible', executing: false })
+      return 'closed'
+    } catch (error) {
+      if (options?.onlyIfIdle && error instanceof DesktopSessionError) {
+        if (error.message === 'close_blocked') return 'blocked'
+        if (error.message === 'close_unverified') return 'unverified'
+      }
+      throw error
     } finally {
+      if (reservation !== undefined) {
+        await this.checkClose(reservation.sessionId, 'release', reservation.attemptId).catch(() =>
+          this.log('close_reservation_release_failed')
+        )
+      }
       this.patch({ closing: false })
       this.scheduleMonitor()
     }
@@ -668,7 +778,24 @@ export class DesktopSessionService {
   }
 
   changeWindow(state: DesktopSessionSnapshot['windowState']): void {
-    if (this.host) this.send({ action: 'window', state })
+    if (this.host?.stdin.writable) this.send({ action: 'window', state })
+  }
+
+  async parkForPrompt(promptId: number): Promise<boolean> {
+    if (!this.host) return true
+    try {
+      const result = await this.exchange(
+        { action: 'park_for_prompt', promptId },
+        event =>
+          event.promptId === promptId &&
+          (event.event === 'prompt_parked' ||
+            (event.event === 'command_error' && event.action === 'park_for_prompt')),
+        3000
+      )
+      return result.event === 'prompt_parked'
+    } catch {
+      return false
+    }
   }
 
   changeVolume(volume: number): void {

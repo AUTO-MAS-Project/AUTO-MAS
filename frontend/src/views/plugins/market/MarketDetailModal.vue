@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import PluginReleaseNotes from '../components/PluginReleaseNotes.vue'
 import PluginAvatar from '../components/PluginAvatar.vue'
 import PluginDetailFields from '../components/PluginDetailFields.vue'
@@ -29,8 +30,8 @@ const subtitle = computed(() =>
 </script>
 
 <template>
-  <a-modal :open="entry !== null" :width="560" @cancel="emit('close')">
-    <template #title>
+  <AppModal :open="entry !== null" :width="560" footer="close" @cancel="emit('close')">
+    <template #header>
       <div v-if="entry" class="market-detail-head">
         <PluginAvatar :icon="entry.icon" />
         <div class="market-detail-title">
@@ -49,10 +50,7 @@ const subtitle = computed(() =>
       :notes="entry.updateAvailable ? entry.updateNotes : entry.releaseNotes"
       :upgrade="entry.updateAvailable"
     />
-    <template #footer>
-      <a-button @click="emit('close')">{{ t('core.common.close') }}</a-button>
-    </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

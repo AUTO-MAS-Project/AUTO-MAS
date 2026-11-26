@@ -4,8 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
-import PageHeader from '@/components/PageHeader.vue'
-import PageSurface from '@/components/PageSurface.vue'
+import { AppPage, PageHeader, PageSurface } from '@/components/ui'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
 import { apiErrorMessage } from '@/utils/apiResult'
 import InstalledPane from '@/views/plugins/installed/InstalledPane.vue'
@@ -98,7 +97,7 @@ watch(
 </script>
 
 <template>
-  <main class="plugins-page">
+  <AppPage layout="fill" class="plugins-page">
     <PageHeader :title="t('core.plugins.title')">
       <template #actions>
         <a-button
@@ -157,18 +156,10 @@ watch(
         <UpdatesPane v-else />
       </div>
     </PageSurface>
-  </main>
+  </AppPage>
 </template>
 
 <style scoped>
-.plugins-page {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 .plugin-center {
   display: flex;
   min-width: 0;

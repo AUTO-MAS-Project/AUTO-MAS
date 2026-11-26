@@ -1,53 +1,81 @@
-# 本地打包
+# 脚本与本地验证工具
 
-使用 PowerShell 7 运行 `pwsh -NoProfile -File scripts/build-local-package.ps1`。
-脚本生成的测试包首次初始化会拉取 AUTO-MAS 的 `dev` 后端，之后按同分支更新流程跟进新提交。
+## 本地开发环境诊断与辅助（`dev_doctor.py`）
 
-随桌面安装包分发的 Runtime 版本记录在 `res/runtime-version.txt`，它只是
-**打包时内置的那一版**：CI 从本次构建所选分支读取它，下载对应 Release 的 exe、按同一 Release
-的 `SHA256SUMS.txt` 校验后捆绑进安装包，并拒绝缺少后台更新协议的二进制。内置版本只用于离线
-兜底；用户机器上实际运行哪一版由应用在**完整初始化**时决定。
-
-完整初始化（首次安装、本体更新及初始化重试）会在跑 `bootstrap` 之前，从 CNB / GitHub 的
-Release 列表解析线上最新版本（CNB 优先、GitHub 兜底），比现有 exe 新就下载替换（exe 首选 CNB，
-再 gh-proxy，GitHub 官方兜底；期望哈希只从 GitHub / CNB 的 `SHA256SUMS.txt` 取，代理只负责下
-exe）。只升不降：本地版本更高时保留本地。日常直接启动不检查、不更新 Runtime。
-
-本地验证可直接使用本次源码构建的 Runtime，不必等待 Release：
+检查依赖就绪状态、开发端口（默认 `36164`，与正式版 `36163` 隔离）和当前仓库残留的开发后端进程，支持按需清理开发后端或生成可选的 `.vscode/launch.json` 模板：
 
 ```powershell
-Set-Location D:/Github/AUTO-MAS-Runtime
+uv run --no-sync python scripts/dev_doctor.py                # 诊断依赖、端口与当前仓库开发后端
+uv run --no-sync python scripts/dev_doctor.py --kill-dev     # 仅清理当前仓库的 main.py 开发后端（绝不触碰正式版）
+uv run --no-sync python scripts/dev_doctor.py --init-vscode  # 按需生成极简 .vscode/launch.json（不覆盖已有文件）
+```
+
+## 本地 PR 一键预检（`pr_check.py`）
+
+提 PR 前在仓库根目录执行，按当前改动路径自动运行对应的 CI 门禁（`git diff --check`、`ruff format --check`、`uv lock --check`、Vue 500 行门禁、前端 lint / typecheck / format / i18n、E2E 契约与 `changelog.py check`），失败时直接输出禁止绕过项与精确修复命令：
+
+```powershell
+uv run --no-sync python scripts/pr_check.py                   # 按 diff 自动选门禁
+uv run --no-sync python scripts/pr_check.py --skip-changelog  # 纯文档/测试/CI 改动
+uv run --no-sync python scripts/pr_check.py --all             # 运行全部本地门禁
+uv run --no-sync python scripts/pr_check.py --dry-run         # 仅查看将执行的门禁
+```
+
+如需在每次 `git push` 时自动获得温和提示，可自愿启用仓库内置钩子（默认不阻断推送，并会自动串联本机既有的 `.git/hooks/`）：
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+环境变量：`MAS_SKIP_PR_CHECK=1` 临时跳过；`MAS_PR_CHECK_STRICT=1` 切为失败即阻断。
+
+## 本地打包与 Runtime 验证
+
+在仓库根目录使用 PowerShell 7 运行：
+
+```powershell
+pwsh -NoProfile -File scripts/build-local-package.ps1
+```
+
+生成的测试包首次初始化会拉取 `dev` 分支后端，之后按同分支更新流程跟进新提交；脚本不会自动发布或上传产物。
+
+## Runtime 版本与更新策略
+
+- **打包内置版本**：记录在 `res/runtime-version.txt`。CI 按该文件下载对应 Release 的 Runtime、校验 `SHA256SUMS.txt` 并打入安装包。内置版本**仅作离线兜底**。
+- **完整初始化时的版本决策**：首次安装、本体更新及初始化重试时，应用会在 `bootstrap` 之前解析线上最新 Runtime（CNB 优先、GitHub 兜底；哈希校验只取官方 `SHA256SUMS.txt`）。仅当线上版本高于本地时替换，日常启动不检查 Runtime 更新。
+- **后端自动更新（managed 模式）**：启动后首次检查当前后端分支，之后每 10 分钟检查一次。发现新提交后后台下载并在标题栏提示「下次启动生效」，下次启动时再替换仓库并同步依赖。
+
+## 联调本地编译的 Runtime
+
+可以先编译本地 Runtime 并做快速校验，无需等待官方 Release：
+
+```powershell
+# 1. 编译本地 Runtime
+Set-Location <AUTO-MAS-Runtime 路径>
 $env:GOCACHE = Join-Path $env:TEMP 'auto-mas-runtime-verify'
 go build -buildvcs=false -o bin/auto-mas-runtime.exe ./cmd/auto-mas-runtime
 if ($LASTEXITCODE -ne 0) { throw 'Runtime build failed' }
 
-Set-Location D:/Github/AUTO-MAS
+# 2. 仅校验 Runtime 能力与打包前置条件（不生成完整安装包）
+Set-Location <AUTO-MAS 路径>
 pwsh -NoProfile -File scripts/build-local-package.ps1 `
-  -LocalRuntimePath D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe `
+  -LocalRuntimePath '<AUTO-MAS-Runtime 路径>/bin/auto-mas-runtime.exe' `
   -VerifyRuntimeOnly -SkipInstall
 if ($LASTEXITCODE -ne 0) { throw 'Runtime verification failed' }
 ```
 
-去掉 `-VerifyRuntimeOnly` 后执行完整本地打包。脚本校验源码版本一致性、Runtime SHA-256、
-alpha 后端能力、`workspace stage` 和 `bootstrap --if-needed`，然后生成携带指定 Runtime 的安装包和解压目录。
-`-SkipInstall` 仅适用于前端依赖已经安装的环境；脚本不会发布或上传安装包。
+去掉 `-VerifyRuntimeOnly` 即执行完整本地打包（校验源码版本一致性、Runtime SHA-256、alpha 后端能力、`workspace stage` 与 `bootstrap --if-needed`，并输出安装包与解压目录）。`-SkipInstall` 仅在前端依赖已安装时使用。
 
-**运行 `-LocalRuntimePath` 打出来的包时必须设置 `AUTO_MAS_RUNTIME_EXE`。** 桌面端在完整初始化
-（首次安装、本体更新）时会解析线上最新 Runtime，比现有 exe 新就替换；本地构建的 Runtime 自报
-`dev`，不设置这个变量就会在下次完整初始化时被线上最新版原地覆盖——之后跑的就不是你要验证的
-那一份了。安装包内置的 `res/runtime-version.txt` 只决定兜底版本，改不了这个行为；唯一的逃生口
-是让桌面端认出这是开发者自带的 Runtime（它连版本都不解析、直接启动）：
+## 运行本地验证包的注意事项
+
+运行带 `-LocalRuntimePath` 打出的验证包时，**必须设置 `AUTO_MAS_RUNTIME_EXE` 并从管理员 PowerShell 启动**：
 
 ```powershell
-$env:AUTO_MAS_RUNTIME_EXE = 'D:/Github/AUTO-MAS-Runtime/bin/auto-mas-runtime.exe'
-& 'D:/Github/AUTO-MAS/dist/AUTO-MAS-<版本>-local-<时间戳>/win-unpacked/AUTO-MAS.exe'
+$env:AUTO_MAS_RUNTIME_EXE = '<AUTO-MAS-Runtime 路径>/bin/auto-mas-runtime.exe'
+& '<AUTO-MAS 路径>/dist/AUTO-MAS-<版本>-local-<时间戳>/win-unpacked/AUTO-MAS.exe'
 ```
 
-变量要出现在 `AUTO-MAS.exe` 的进程环境里，所以要**从设置了它的管理员 PowerShell 启动**：
-双击图标不算，从普通终端启动也不算——`AUTO-MAS.exe` 的清单是 `requireAdministrator`，
-未提权时会经 UAC 重新拉起，提权后的进程拿不到调用方的环境变量。
-桌面端用它指向的 exe 启动 Runtime，并跳过随本体更新。
+原因如下：
 
-运行行为：managed 模式启动后首次检查当前后端分支，之后每 10 分钟检查一次；
-发现更新就后台下载，完成后标题栏提示下次启动生效。下载不改变当前后端和环境；
-下次启动替换仓库并同步所需依赖。无更新时跳过依赖同步。依赖同步失败仍需通过已有修复入口重试。
+1. 本地编译的 Runtime 自报版本为 `dev`；若不设置 `AUTO_MAS_RUNTIME_EXE`，下次完整初始化时会被线上最新版原地覆盖。设置该变量后，桌面端会直接启动指定 exe 并跳过随本体更新。
+2. `AUTO-MAS.exe` 的清单要求 `requireAdministrator`。双击图标或从普通终端启动会触发 UAC 重新拉起，导致子进程丢失普通终端里的环境变量。

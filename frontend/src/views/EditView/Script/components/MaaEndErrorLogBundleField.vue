@@ -1,39 +1,39 @@
 <template>
-  <div class="error-log-bundle-fields">
-    <a-form-item class="bundle-item">
-      <template #label>
-        <span class="form-label">
-          {{ t('core.edit.errorLogBundle') }}
-          <a-tooltip :title="t('core.edit.errorLogBundleHint')">
-            <QuestionCircleOutlined class="help-icon" />
-          </a-tooltip>
-        </span>
-      </template>
-      <div class="bundle-controls">
-        <a-switch :checked="run.IfSaveLogBundle" @change="handleSwitchChange" />
-        <a-space-compact block size="large" class="bundle-directory">
+  <a-row :gutter="24">
+    <a-col :xs="24" :md="12">
+      <a-form-item :label="t('core.edit.errorLogBundleDir')">
+        <a-space-compact block>
           <a-input
             :value="run.LogBundlePath ?? ''"
             :placeholder="t('core.edit.errorLogBundleDirPlaceholder')"
             :aria-label="t('core.edit.errorLogBundleDir')"
             :disabled="!run.IfSaveLogBundle"
-            size="large"
             readonly
-            class="bundle-path-input"
+            style="min-width: 0"
           />
-          <a-button size="large" :disabled="!run.IfSaveLogBundle" @click="pickBundleDir">
+          <a-button :disabled="!run.IfSaveLogBundle" @click="pickBundleDir">
             {{ t('core.edit.pickFolder') }}
           </a-button>
         </a-space-compact>
-      </div>
-    </a-form-item>
-  </div>
+      </a-form-item>
+    </a-col>
+  </a-row>
+  <a-row :gutter="24" style="margin-bottom: 12px">
+    <a-col :xs="24" :md="12">
+      <SwitchTile
+        :checked="Boolean(run.IfSaveLogBundle)"
+        :title="t('core.edit.errorLogBundle')"
+        :description="t('core.edit.errorLogBundleHint')"
+        @change="handleSwitchChange"
+      />
+    </a-col>
+  </a-row>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { SwitchTile } from '@/components/ui'
 import type { MaaEndScriptConfig } from '@/types/script'
 
 type RunConfig = MaaEndScriptConfig['Run']
@@ -61,41 +61,3 @@ const handleSwitchChange = (checked: boolean) => {
   emit('save', 'IfSaveLogBundle', checked)
 }
 </script>
-
-<style scoped>
-.error-log-bundle-fields {
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.bundle-item {
-  min-width: 0;
-}
-
-.bundle-controls {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.bundle-directory {
-  flex: 1;
-  min-width: 0;
-}
-
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  cursor: help;
-}
-
-.bundle-path-input {
-  min-width: 0;
-}
-</style>

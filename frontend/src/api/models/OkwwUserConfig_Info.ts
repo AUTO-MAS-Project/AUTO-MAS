@@ -4,6 +4,42 @@
 /* eslint-disable */
 export type OkwwUserConfig_Info = {
     /**
+     * 是否在任务后执行脚本
+     */
+    IfScriptAfterTask?: (boolean | null);
+    /**
+     * 是否在任务前执行脚本
+     */
+    IfScriptBeforeTask?: (boolean | null);
+    /**
+     * 任务后脚本路径
+     */
+    ScriptAfterTask?: (string | null);
+    /**
+     * 任务前脚本路径
+     */
+    ScriptBeforeTask?: (string | null);
+    /**
+     * 账号名称
+     */
+    Name?: (string | null);
+    /**
+     * 备注
+     */
+    Notes?: (string | null);
+    /**
+     * 剩余天数
+     */
+    RemainedDay?: (number | null);
+    /**
+     * 是否启用
+     */
+    Status?: (boolean | null);
+    /**
+     * 账号标签信息
+     */
+    readonly Tag?: (string | null);
+    /**
      * 固定配置或 Okww 计划表
      */
     PlanMode?: (string | null);
@@ -20,44 +56,8 @@ export type OkwwUserConfig_Info = {
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 是否在任务后执行脚本
-     */
-    IfScriptAfterTask?: (boolean | null);
-    /**
-     * 是否在任务前执行脚本
-     */
-    IfScriptBeforeTask?: (boolean | null);
-    /**
-     * 账号名称
-     */
-    Name?: (string | null);
-    /**
-     * 备注
-     */
-    Notes?: (string | null);
-    /**
-     * 剩余天数
-     */
-    RemainedDay?: (number | null);
-    /**
-     * 游戏资源
+     * 游戏服务器
      */
     Resource?: ('官服' | '国际服' | null);
-    /**
-     * 任务后脚本路径
-     */
-    ScriptAfterTask?: (string | null);
-    /**
-     * 任务前脚本路径
-     */
-    ScriptBeforeTask?: (string | null);
-    /**
-     * 账号状态
-     */
-    Status?: (boolean | null);
-    /**
-     * 账号标签列表（JSON字符串，TagItem的dict列表）
-     */
-    readonly Tag?: (string | null);
 };
 

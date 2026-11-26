@@ -1,239 +1,182 @@
 <template>
-  <ScriptEditHeader
-    :script-type="flavor.type"
-    :title="pageTitle"
-    :doc-url="flavor.docUrl"
-    :logo-src="headerLogo"
-    :logo-alt="flavor.typeTagLabel"
-    :logo-fallback-src="flavor.logo"
-    :cancel-disabled="shellImporting"
-    @cancel="handleCancel"
-  />
-
-  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-    <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
-      <template #extra>
-        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
-      </template>
-
-      <a-steps
-        v-if="isWizard"
-        size="small"
-        :current="currentStep"
-        :items="stepItems"
-        class="wizard-steps"
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <ScriptEditHeader
+        script-type="MaaFW"
+        :title="pageTitle"
+        :doc-url="MAS_DOC_URLS.scripts"
+        :logo-src="headerLogo"
+        :logo-alt="metadata.label"
+        :logo-fallback-src="metadata.logo"
+        :cancel-disabled="shellImporting"
+        @cancel="handleCancel"
       />
+    </template>
 
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <div v-show="!isWizard || currentStep === 0">
-          <component
-            :is="sections.basicInfo"
-            :maafw-config="maafwConfig"
-            :form-data="formData"
-            :rules="rules"
-            :preview-data="previewData"
-            :interface-loading="previewLoading"
-            :preview-project-title="previewProjectTitle"
-            :interface-stats="interfaceStats"
-            :update-applying="updateApplying"
-            :embedded-status="embeddedStatus"
-            :embedded-busy="embeddedBusy"
-            :import-percent="importPercent"
-            :import-message="importMessage"
-            :import-error="importError"
-            :preview-error="previewError"
-            :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
-            :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
-            :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
-            :env-preparing="envPreparing"
-            :env-ready="envReady"
-            :env-failed="envFailed"
-            :env-message="envMessage"
-            :env-percent="envPercent"
-            :env-logs="envLogs"
-            :env-agents="envAgents"
-            :env-outcome="envOutcome"
-            :is-wizard="isWizard"
-            @change="handleChange"
-            @select-path="selectMaaFWPath"
-            @preview-interface="handlePreviewInterface"
-            @sync-source="syncFromSource"
-          />
-          <MaaFWFlavorSlot
-            part="scriptPage"
-            name="afterBasicInfo"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @change="handleChange"
-          />
-        </div>
+    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+      <a-spin :spinning="pageLoading">
+        <SectionCard v-if="isWizard" variant="card">
+          <a-steps size="small" :current="currentStep" :items="stepItems" class="wizard-steps" />
+        </SectionCard>
 
-        <div v-show="!isWizard || currentStep === 1">
-          <MaaFWFlavorSlot
-            part="scriptPage"
-            name="beforeControl"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @change="handleChange"
-          />
-          <component
-            :is="sections.control"
-            :script-id="scriptId"
-            :maafw-config="maafwConfig"
-            :preview-data="previewData"
-            :interface-loading="previewLoading"
-            :controller-options="controllerOptions"
-            :effective-controller-name="effectiveControllerName"
-            :effective-controller-type="effectiveControllerType"
-            :is-adb-controller="isAdbController"
-            :is-desktop-controller="isDesktopController"
-            :resource-options="resourceOptions"
-            :effective-resource-name="effectiveResourceName"
-            :adb-control-strategy-items="adbControlStrategyItems"
-            :interface-dependent-disabled="interfaceDependentDisabled"
-            :beside-package-name-count="besidePackageNameCount"
-            @change="handleChange"
-            @controller-change="handleControllerChange"
-            @resource-change="handleResourceChangeWithPackage"
-            @select-launch-path="selectLaunchPath"
-            @select-launcher-path="selectLauncherPath"
-          >
-            <!-- control 分节按组件数每格转发一次，这里渲染第 index 个组件 -->
-            <template v-if="besidePackageNameCount > 0" #besidePackageName="{ index }">
-              <MaaFWFlavorSlot
-                part="scriptPage"
-                name="besidePackageName"
-                :flavor="flavor"
-                :context="flavorSlotContext"
-                :index="index"
-                @change="handleChange"
-              />
-            </template>
-          </component>
-          <MaaFWFlavorSlot
-            part="scriptPage"
-            name="afterControl"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @change="handleChange"
-          />
-        </div>
+        <a-form
+          ref="formRef"
+          :aria-label="pageTitle"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <div v-show="!isWizard || currentStep === 0">
+            <BasicInfoSection
+              :maafw-config="maafwConfig"
+              :form-data="formData"
+              :rules="rules"
+              :preview-data="previewData"
+              :interface-loading="previewLoading"
+              :preview-project-title="previewProjectTitle"
+              :interface-stats="interfaceStats"
+              :update-applying="updateApplying"
+              :embedded-status="embeddedStatus"
+              :embedded-busy="embeddedBusy"
+              :import-percent="importPercent"
+              :import-message="importMessage"
+              :import-error="importError"
+              :preview-error="previewError"
+              :env-preparing="envPreparing"
+              :env-ready="envReady"
+              :env-failed="envFailed"
+              :env-message="envMessage"
+              :env-percent="envPercent"
+              :env-logs="envLogs"
+              :env-agents="envAgents"
+              :env-outcome="envOutcome"
+              :is-wizard="isWizard"
+              @change="handleChange"
+              @select-path="selectMaaFWPath"
+              @preview-interface="handlePreviewInterface"
+              @sync-source="syncFromSource"
+            />
+          </div>
 
-        <div v-show="!isWizard || currentStep === 2">
-          <component
-            :is="sections.update"
-            :script-id="scriptId"
-            :maafw-config="maafwConfig"
-            :preview-data="previewData"
-            :is-auto-update-disabled="isAutoUpdateDisabled"
-            :update-checking="updateChecking"
-            :update-applying="updateApplying"
-            :update-error="updateError"
-            :update-result="updateResult"
-            :update-progress="updateProgress"
-            :cdk-prefilled="cdkPrefilled"
-            :update-source-options="updateSourceOptions"
-            :update-channel-options="updateChannelOptions"
-            @change="handleChange"
-            @check-update="runUpdateCheck"
-            @apply-update="runUpdateApply"
-          />
-          <MaaFWFlavorSlot
-            part="scriptPage"
-            name="afterUpdate"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @change="handleChange"
-          />
-        </div>
+          <div v-show="!isWizard || currentStep === 1">
+            <ControlConfigSection
+              :script-id="scriptId"
+              :maafw-config="maafwConfig"
+              :preview-data="previewData"
+              :interface-loading="previewLoading"
+              :controller-options="controllerOptions"
+              :effective-controller-name="effectiveControllerName"
+              :effective-controller-type="effectiveControllerType"
+              :is-adb-controller="isAdbController"
+              :is-desktop-controller="isDesktopController"
+              :resource-options="resourceOptions"
+              :effective-resource-name="effectiveResourceName"
+              :adb-control-strategy-items="adbControlStrategyItems"
+              :interface-dependent-disabled="interfaceDependentDisabled"
+              @change="handleChange"
+              @controller-change="handleControllerChange"
+              @resource-change="handleResourceChangeWithPackage"
+              @select-launch-path="selectLaunchPath"
+              @select-launcher-path="selectLauncherPath"
+            />
+          </div>
 
-        <div v-show="!isWizard || currentStep === 3">
-          <component
-            :is="sections.run"
-            :maafw-config="maafwConfig"
-            :daily-once-tasks="dailyOnceTasks"
-            :weekly-once-tasks="weeklyOnceTasks"
-            :monthly-once-tasks="monthlyOnceTasks"
-            :period-task-options="periodTaskOptions"
-            :interface-dependent-disabled="interfaceDependentDisabled"
-            @change="handleChange"
-            @period-task-change="handlePeriodTaskChange"
-          />
-          <MaaFWFlavorSlot
-            part="scriptPage"
-            name="afterRun"
-            :flavor="flavor"
-            :context="flavorSlotContext"
-            @change="handleChange"
-          />
-        </div>
-      </a-form>
+          <div v-show="!isWizard || currentStep === 2">
+            <UpdateSettingsSection
+              :script-id="scriptId"
+              :maafw-config="maafwConfig"
+              :preview-data="previewData"
+              :is-auto-update-disabled="isAutoUpdateDisabled"
+              :update-checking="updateChecking"
+              :update-applying="updateApplying"
+              :update-error="updateError"
+              :update-result="updateResult"
+              :update-progress="updateProgress"
+              :cdk-prefilled="cdkPrefilled"
+              :update-source-options="updateSourceOptions"
+              :update-channel-options="updateChannelOptions"
+              @change="handleChange"
+              @check-update="runUpdateCheck"
+              @apply-update="runUpdateApply"
+            />
+          </div>
 
-      <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
-      <component
-        :is="sections.shellImport"
-        v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
-        v-model:selected-ids="selectedShellInstanceIds"
-        v-model:import-hotkeys="importShellHotkeys"
-        :instances="shellInstances"
-        :disabled="shellImporting"
-      />
+          <div v-show="!isWizard || currentStep === 3">
+            <RunConfigSection
+              :maafw-config="maafwConfig"
+              :daily-once-tasks="dailyOnceTasks"
+              :weekly-once-tasks="weeklyOnceTasks"
+              :monthly-once-tasks="monthlyOnceTasks"
+              :period-task-options="periodTaskOptions"
+              :interface-dependent-disabled="interfaceDependentDisabled"
+              @change="handleChange"
+              @period-task-change="handlePeriodTaskChange"
+            />
+          </div>
+        </a-form>
 
-      <div v-if="isWizard" class="wizard-actions">
-        <a-button
-          v-if="currentStep > 0"
-          size="large"
+        <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
+        <ShellInstanceImportSection
+          v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
+          v-model:selected-ids="selectedShellInstanceIds"
+          v-model:import-hotkeys="importShellHotkeys"
+          :instances="shellInstances"
           :disabled="shellImporting"
-          @click="currentStep -= 1"
-        >
-          {{ t('core.edit.previousStep') }}
-        </a-button>
-        <a-button
-          v-if="currentStep < stepItems.length - 1"
-          type="primary"
-          size="large"
-          :disabled="!canLeaveCurrentStep"
-          @click="currentStep += 1"
-        >
-          {{ t('core.edit.next') }}
-        </a-button>
-        <a-button
-          v-else
-          type="primary"
-          size="large"
-          :loading="shellImporting"
-          @click="handleFinishWizard"
-        >
-          {{ finishButtonLabel }}
-        </a-button>
-      </div>
-    </a-card>
-  </ConfigLockPanel>
+        />
+
+        <SectionCard v-if="isWizard" variant="card">
+          <div class="wizard-actions">
+            <a-button v-if="currentStep > 0" :disabled="shellImporting" @click="currentStep -= 1">
+              {{ t('core.edit.previousStep') }}
+            </a-button>
+            <a-button
+              v-if="currentStep < stepItems.length - 1"
+              type="primary"
+              :disabled="!canLeaveCurrentStep"
+              @click="currentStep += 1"
+            >
+              {{ t('core.edit.next') }}
+            </a-button>
+            <a-button v-else type="primary" :loading="shellImporting" @click="handleFinishWizard">
+              {{ finishButtonLabel }}
+            </a-button>
+          </div>
+        </SectionCard>
+      </a-spin>
+    </ConfigLockPanel>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
-import {
-  resolveMaaFWFlavorSlot,
-  useMaaFWSections,
-  usesMaaFWProjectIcon,
-} from '@/composables/useMaaFWFlavor'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
-import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
-// MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+// 通用 MFW 脚本页：只按 interface 渲染，不带任何专项分支（M9A、MSS 各有专属页面）
+import {
+  BasicInfoSection,
+  ControlConfigSection,
+  RunConfigSection,
+  ShellInstanceImportSection,
+  UpdateSettingsSection,
+  useMaaFWScriptPage,
+} from './MaaFWScriptEdit/pageKit'
 
 const { t } = useI18n()
 
 const route = useRoute()
 
 const scriptId = route.params.id as string
+
+const metadata = SCRIPT_METADATA.MaaFW
 
 const formRef = ref<FormInstance>()
 
@@ -246,7 +189,6 @@ const {
   formData,
   rules,
   handleChange,
-  flavor,
   controllerOptions,
   effectiveControllerName,
   effectiveControllerType,
@@ -300,74 +242,20 @@ const {
   finishButtonLabel,
   handleFinishWizard,
   previewProjectTitle,
-  typeTagLabel,
   pageTitle,
   interfaceStats,
   handlePreviewInterface,
   handleCancel,
-  flavorSlotContext,
-} = useMaaFWScriptPage({ scriptId })
+} = useMaaFWScriptPage({ scriptId, type: 'MaaFW' })
 
-// 面包屑图标：特调用自己声明的；通用 MaaFW 与脚本列表同一个口径取项目图标（不等预览），
-// 取不到由 ScriptEditHeader 回退到 MaaFW 图标。每读到一次 interface 换一次地址：
-// 老脚本首次打开时预览才顺手导入、向导里刚导入、更新换了图标，都会重新取一次。
+// 面包屑图标：与脚本列表同一个口径取项目图标（不等预览），取不到由 ScriptEditHeader 回退到
+// MFW 图标。每读到一次 interface 换一次地址：老脚本首次打开时预览才顺手导入、向导里刚导入、
+// 更新换了图标，都会重新取一次。
 const projectIconRevision = ref(0)
 watch(previewData, data => {
   if (data) projectIconRevision.value += 1
 })
-const headerLogo = computed(() =>
-  usesMaaFWProjectIcon(flavor.value)
-    ? buildMaaFWScriptIconUrl(scriptId, projectIconRevision.value)
-    : flavor.value.logo
-)
-
-// 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
-const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
-
-// 包名旁的插入点在 control 分节里面：组件数传给分节（每个组件一格），有组件时才填这个 slot
-const besidePackageNameCount = computed(
-  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length
-)
+const headerLogo = computed(() => buildMaaFWScriptIconUrl(scriptId, projectIconRevision.value))
 </script>
 
-<style scoped>
-.wizard-steps {
-  margin-bottom: 28px;
-}
-
-.wizard-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
-  padding-top: 20px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.script-edit-content {
-  flex: 1;
-}
-
-.config-card {
-  border-radius: 16px;
-  box-shadow: none;
-  border: 1px solid var(--ant-color-border-secondary);
-  overflow: hidden;
-}
-
-.type-tag {
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: none;
-}
-
-.config-form {
-  max-width: none;
-}
-
-.config-form :deep(.ant-form-item) {
-  margin-bottom: 20px;
-}
-</style>
+<style scoped src="./MaaFWScriptEdit/scriptPage.css"></style>

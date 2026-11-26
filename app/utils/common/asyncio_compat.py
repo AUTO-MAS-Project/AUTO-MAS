@@ -1,10 +1,14 @@
-"""Python 3.12 Windows 连接收尾兼容，不改变事件循环或异常上报入口。"""
+"""asyncio 与 WebSocket 连接收尾兼容，不改变事件循环或异常上报入口。"""
 
 import socket
 import sys
 from asyncio import BaseProtocol, sslproto
+from functools import wraps
 from ipaddress import ip_address
+from threading import Lock
 from typing import Any
+
+_WEBSOCKETS_CLEANUP_LOCK = Lock()
 
 _PROTOCOL_KINDS = {
     ("uvicorn.protocols.http.h11_impl", "H11Protocol"): "http",
@@ -102,3 +106,34 @@ def install_windows_connection_cleanup() -> None:
         "_call_connection_lost",
         _call_connection_lost,
     )
+
+
+def install_websockets_connection_cleanup() -> None:
+    """在创建事件循环前安装 websockets 15.0.1 客户端断线兼容。"""
+    from websockets import __version__
+
+    if __version__ != "15.0.1":
+        return
+
+    from websockets.asyncio.client import ClientConnection
+    from websockets.asyncio.messages import Assembler
+
+    with _WEBSOCKETS_CLEANUP_LOCK:
+        original_connection_lost = ClientConnection.connection_lost
+        marker = "_auto_mas_early_disconnect"
+        if getattr(original_connection_lost, marker, False):
+            return
+
+        @wraps(original_connection_lost)
+        def connection_lost(self: ClientConnection, exc: Exception | None) -> None:
+            waiter = self.connection_lost_waiter
+            if waiter.done() and not waiter.cancelled():
+                return
+            if not hasattr(self, "recv_messages"):
+                # 代理 start_tls 失败时可能早于 connection_made 收到断线回调。
+                # 空接收队列无需绑定传输，其余状态由原方法收尾。
+                self.recv_messages = Assembler()
+            original_connection_lost(self, exc)
+
+        setattr(connection_lost, marker, True)
+        setattr(ClientConnection, "connection_lost", connection_lost)

@@ -185,3 +185,51 @@ def test_legacy_json_account_paths_are_mapped_before_schema_conversion(tmp_path)
         mapped["game"]["game_id"] in io.read_dict_file(tmp_path / "games.yaml")["data"]
     )
     assert mapped["Data"] == user["Data"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "target_field", "expected"),
+    [
+        ("Arguments", "-krqlv=sd", "arguments", ["-krqlv=sd"]),
+        ("Type", "Client", "launch_with_launcher", False),
+        ("Path", "other-launcher.exe", "launch_path", "other-launcher.exe"),
+    ],
+    ids=["arguments", "launch-mode", "launcher-path"],
+)
+def test_shared_client_with_different_launch_settings_migrates_separately(
+    tmp_path, field, value, target_field, expected
+):
+    first, second = str(uuid4()), str(uuid4())
+    client = tmp_path / "game.exe"
+    launcher = tmp_path / "launcher.exe"
+    client.touch()
+    launcher.touch()
+    game = {
+        "ClientPath": str(client),
+        "Path": str(launcher),
+        "Type": "Launcher",
+        "Arguments": "-krqlv=hd",
+    }
+    if field == "Path":
+        (tmp_path / value).touch()
+        value = expected = str(tmp_path / value)
+    script_path = tmp_path / "scripts.yaml"
+    io.write_file(
+        script_path,
+        collection(
+            (first, "OkwwConfig", {"Game": game}),
+            (second, "OkwwConfig", {"Game": {**game, field: value}}),
+        ),
+    )
+
+    migrate_game_documents(tmp_path)
+
+    bindings = io.read_dict_file(script_path)["data"]
+    games = io.read_dict_file(tmp_path / "games.yaml")["data"]
+    first_id, second_id = (bindings[uid]["game"]["game_id"] for uid in (first, second))
+    assert first_id != second_id
+    first_info = games[first_id]["info"]
+    assert first_info["arguments"] == ["-krqlv=hd"]
+    assert first_info["launch_with_launcher"] is True
+    assert first_info["launch_path"] == str(launcher)
+    assert games[second_id]["info"][target_field] == expected

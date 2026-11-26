@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.projectUpdate')">
+  <MaaFWFormSection :title="t('core.edit.projectUpdate')" :icon="CloudSyncOutlined">
     <a-alert
       v-if="isAutoUpdateDisabled"
       class="update-alert"
@@ -9,14 +9,15 @@
       :message="autoUpdateDisabledMessage"
     />
     <a-row :gutter="24" class="update-config-row">
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <UpdatePackageMode
           v-model="maafwConfig.Update.PackageMode"
+          size="middle"
           :disabled="isAutoUpdateDisabled"
           @change="emit('change', 'Update', 'PackageMode', $event)"
         />
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.autoUpdateModeTip')">
@@ -28,14 +29,13 @@
           </template>
           <a-select
             v-model:value="maafwConfig.Update.AutoUpdateMode"
-            size="large"
             :disabled="isAutoUpdateDisabled"
             :options="autoUpdateModeOptions"
             @change="(value: string | number) => emit('change', 'Update', 'AutoUpdateMode', value)"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.updateSourceTip')">
@@ -47,26 +47,22 @@
           </template>
           <a-select
             v-model:value="maafwConfig.Update.Source"
-            size="large"
             :options="updateSourceOptions"
             @change="(value: string | number) => emit('change', 'Update', 'Source', value)"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             v-model:value="maafwConfig.Update.Channel"
-            size="large"
             :disabled="isAutoUpdateDisabled"
             :options="updateChannelOptions"
             @change="(value: string | number) => emit('change', 'Update', 'Channel', value)"
           />
         </a-form-item>
       </a-col>
-    </a-row>
-    <a-row :gutter="24" class="update-config-row">
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <!-- 说明全在问号里：悬停看文案，点问号直接去 Mirror 酱取 CDK；输入框下面不再放解释行，
@@ -94,7 +90,6 @@
           <a-input-password
             v-model:value="maafwConfig.Update.MirrorChyanCDK"
             :placeholder="t('core.edit.cdkPlaceholder')"
-            size="large"
             class="modern-input"
             autocomplete="off"
             @blur="handleCdkBlur"
@@ -115,7 +110,7 @@
           </div>
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('core.edit.proxyAddressTip')">
@@ -128,7 +123,6 @@
           <a-input
             v-model:value="maafwConfig.Update.ProxyAddress"
             :placeholder="t('core.edit.proxyAddressPlaceholder')"
-            size="large"
             class="modern-input"
             autocomplete="off"
             @blur="emit('change', 'Update', 'ProxyAddress', maafwConfig.Update.ProxyAddress)"
@@ -178,7 +172,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CloudSyncOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   resolveCdkHint,
   resolveCdkWarning,
@@ -189,16 +183,13 @@ import { handleExternalLink } from '@/utils/openExternal'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import UpdateProcessPanel from './UpdateProcessPanel.vue'
 import UpdatePackageMode from '../components/UpdatePackageMode.vue'
-import type {
-  MaaFWScriptUpdateSectionEmits,
-  MaaFWScriptUpdateSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptUpdateSectionEmits, MaaFWScriptUpdateSectionProps } from './sectionProps'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
 const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
@@ -355,11 +346,11 @@ const cdkHintText = computed(() => {
   margin-top: 4px;
 }
 
-/* 左窄右宽：左列上下两个信息小框撑满面板高度，右列是过程面板；拉窄窗口时按比例缩 */
+/* 左列是当前版本与来源，右列是更新过程；窄屏上下排列 */
 .update-info-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 3fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
   align-items: stretch;
   margin-top: 8px;
 }

@@ -9,7 +9,9 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
  */
 
 import * as fs from 'fs'
-import { resolveHttpPort } from './instanceConfig'
+import { app } from 'electron'
+import { upgradeBackupToken } from '../ipc/upgradeBackupHandlers'
+import { getBackendOwnership, isDevelopmentEnvironment, resolveHttpPort } from './instanceConfig'
 import { desktopSessionControlToken, getDesktopSessionChildId } from './desktopSessionControl'
 
 import {
@@ -35,6 +37,13 @@ import { analyticsDuration } from './analyticsPolicy'
 import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 const logger = getLogger('后端服务')
+
+export function resolveUpgradeBackupVersion(mode: RuntimeLaunchConfig['mode']): string | undefined {
+  if (mode !== 'managed' || isDevelopmentEnvironment() || getBackendOwnership() !== 'owned')
+    return undefined
+  const version = app.getVersion()
+  return toRuntimeVersion(version) === resolveRuntimeTargetVersion() ? version : undefined
+}
 
 // Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
 // BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
@@ -333,6 +342,8 @@ export class BackendService {
       dataRoot: config.dataRoot,
       env: {
         AUTO_MAS_RUNTIME_DEFER_BUSINESS_START: '1',
+        AUTO_MAS_UPGRADE_BACKUP_TOKEN: upgradeBackupToken,
+        AUTO_MAS_DESKTOP_VERSION: resolveUpgradeBackupVersion(config.mode),
         ...getFluxdownInstallEnvironment(),
         AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
         AUTO_MAS_DESKTOP_PARENT_CHILD_SESSION: getDesktopSessionChildId()?.toString(),

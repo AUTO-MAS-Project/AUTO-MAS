@@ -7,6 +7,7 @@ from contextlib import suppress
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from weakref import WeakKeyDictionary
 
 import psutil
 import pywintypes
@@ -23,6 +24,17 @@ from app.utils.common.process.session import (
 )
 
 from ..contracts.process import ElevatedProcess
+
+_desktop_jobs: WeakKeyDictionary["WindowsTaskProcessJob", int] = WeakKeyDictionary()
+
+
+def desktop_task_processes(session_id: int) -> set[int]:
+    return {
+        pid
+        for job, session in tuple(_desktop_jobs.items())
+        if session == session_id
+        for pid in job.process_ids()
+    }
 
 
 class WindowsTaskProcessJob:
@@ -57,6 +69,8 @@ class WindowsTaskProcessJob:
             except BaseException:
                 self.close()
                 raise
+        if (desktop := desktop_process_target.get()) is not None:
+            _desktop_jobs[self] = desktop.session_id
 
     @staticmethod
     def _create_job() -> Any:
@@ -76,6 +90,9 @@ class WindowsTaskProcessJob:
             job.Close()
             raise
         return job
+
+    def inherited_handle(self) -> int:
+        return int(self._handles[False])
 
     def assign(self, pid: int, *, suspended: bool, breakaway: bool) -> None:
         # 安装线程与任务停止共用这把锁，强杀开始后不得再分配或恢复新进程。
@@ -246,6 +263,18 @@ class WindowsTaskProcessJob:
                 errors.append(error)
             if errors:
                 raise ExceptionGroup("部分任务进程组未能强制终止", errors)
+
+    def process_ids(self) -> set[int]:
+        with self._lock:
+            if self._closed:
+                return set()
+            return {
+                pid
+                for job in (*self._handles.values(), *self._adopted)
+                for pid in win32job.QueryInformationJobObject(
+                    job, win32job.JobObjectBasicProcessIdList
+                )
+            }
 
     def has_active_processes(self) -> bool:
         with self._lock:

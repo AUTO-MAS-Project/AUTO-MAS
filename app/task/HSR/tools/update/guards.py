@@ -15,6 +15,7 @@ from pathlib import Path
 import psutil
 
 from app.utils import get_logger
+from app.utils.common.process.operations import iter_process_info
 
 logger = get_logger("HSR 更新守卫")
 
@@ -48,16 +49,16 @@ def check_no_process_running(root: Path) -> GuardFailure | None:
     except OSError:
         return None
 
-    for process in psutil.process_iter(["pid", "name", "exe"]):
+    for _, info in iter_process_info(["pid", "name", "exe"]):
         try:
-            executable = process.info.get("exe")
+            executable = info.get("exe")
             if not executable:
                 continue
             if not _is_within(Path(executable), anchor):
                 continue
-            name = process.info.get("name") or Path(executable).name
+            name = info.get("name") or Path(executable).name
             return GuardFailure(
-                f"{name}（PID {process.info.get('pid')}）正在使用该目录，本轮跳过更新"
+                f"{name}（PID {info.get('pid')}）正在使用该目录，本轮跳过更新"
             )
         except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
             continue

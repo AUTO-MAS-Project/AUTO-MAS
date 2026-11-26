@@ -4,13 +4,16 @@ import { useI18n } from 'vue-i18n'
 import { Service, PlanComboxIn, type ComponentHint } from '@/api'
 import { requestApi, apiErrorMessage } from '@/utils/apiResult'
 
-type Option = { value: string; label: string }
+export type DeclarativeOption = { value: string | number | boolean; label?: string }
+export type DeclarativeHint = Omit<ComponentHint, 'options'> & {
+  options?: DeclarativeOption[] | null
+}
 
 /** 声明式选项复用 QueryClient；目标和依赖变化时切换查询身份。 */
 export function useDeclarativeOptions(
   target: ComputedRef<{
     uid: string
-    ui: { hints?: Record<string, ComponentHint[]> }
+    ui: { hints?: Record<string, DeclarativeHint[]> }
     [key: string]: unknown
   }>
 ) {
@@ -53,7 +56,7 @@ export function useDeclarativeOptions(
             field.endpoint,
             field.dependencies,
           ],
-          queryFn: async (): Promise<Option[]> => {
+          queryFn: async (): Promise<Required<DeclarativeOption>[]> => {
             // 按声明的宿主接口加载游戏、设备、模拟器或计划选项，规范化返回值并过滤无效关联项。
             const fallback = t('core.scripts.optionsLoadFailed')
             let response
@@ -119,14 +122,14 @@ export function useDeclarativeOptions(
       )
     ),
   })
-  const queryFor = (section: string, hint: ComponentHint) => {
+  const queryFor = (section: string, hint: DeclarativeHint) => {
     // 按配置分组和字段定位其当前选项查询状态。
     const index = declarations.value.findIndex(
       field => /* 在动态字段声明中匹配当前分组与字段键。 */ field.key === `${section}.${hint.field}`
     )
     return queries.value[index]
   }
-  const stateFor = (section: string, hint: ComponentHint) => {
+  const stateFor = (section: string, hint: DeclarativeHint) => {
     // 将字段查询状态转换为配置控件使用的加载、错误及重试能力。
     const query = queryFor(section, hint)
     return query
@@ -141,17 +144,15 @@ export function useDeclarativeOptions(
         }
       : undefined
   }
-  const optionsFor = (section: string, hint: ComponentHint): Option[] =>
+  const optionsFor = (section: string, hint: DeclarativeHint): Required<DeclarativeOption>[] =>
     /* 返回动态或静态控件选项，动态选项统一添加无关联占位。 */ hint.endpoint
       ? [
           { value: '-', label: t('core.scripts.noAssociation') },
           ...(queryFor(section, hint)?.data ?? []),
         ]
-      : (hint.options ?? []).map(
-          option => /* 把声明中的静态选项转换为控件可直接使用的字符串标识与标签。 */ ({
-            value: String(option.value),
-            label: option.label ?? String(option.value),
-          })
-        )
+      : (hint.options ?? []).map(option => /* 保留静态选项的原始值，缺少标签时用值的文本展示。 */ ({
+          value: option.value,
+          label: option.label ?? String(option.value),
+        }))
   return { stateFor, optionsFor }
 }

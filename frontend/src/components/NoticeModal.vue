@@ -1,9 +1,10 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="visible"
     :title="t('core.comp.announcement')"
     :width="800"
-    :footer="null"
+    footer="none"
+    scroll="none"
     :closable="false"
     :mask-closable="false"
     class="notice-modal"
@@ -55,7 +56,7 @@
         </div>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -64,6 +65,7 @@ import { ref, computed, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import MarkdownIt from 'markdown-it'
 import { Service } from '@/api/services/Service'
+import AppModal from '@/components/ui/AppModal.vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 
 const { t } = useI18n()

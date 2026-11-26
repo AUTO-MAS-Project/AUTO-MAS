@@ -12,9 +12,11 @@
         :plan-list="planList"
         :active-plan-id="activePlanId"
         :creating="planOperationPending"
+        :remove-plan="handleRemovePlan"
         @add-plan="handleAddPlan"
-        @remove-plan="handleRemovePlan"
       />
+
+      <UnavailablePlanCards v-model:items="unavailablePlans" />
 
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
@@ -70,13 +72,13 @@
 
 <script setup lang="ts">
 import { useConfigLoader } from '@/services/configUiSync'
-import { usePlanFieldSave } from './usePlanFieldSave'
+import { buildNestedObject, usePlanFieldSave } from './usePlanFieldSave'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { usePlanApi } from '@/composables/usePlanApi'
-import { projectPlanList, type PlanListItem } from './planList'
+import { projectPlanList, projectUnavailablePlans, type PlanListItem } from './planList'
 import {
   generateUniquePlanName,
   getPlanTypeLabelKey,
@@ -93,6 +95,8 @@ import {
 import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
 import PlanEmptyState from './components/PlanEmptyState.vue'
+import UnavailablePlanCards from './components/UnavailablePlanCards.vue'
+import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
 
@@ -122,6 +126,8 @@ const loading = ref(true)
 const tableData = ref<Record<string, any>>({})
 const planTable = ref<{ beforeLeave?: () => boolean } | null>(null)
 const planOperationPending = ref(false)
+// 所属插件不可用的计划表：只读卡片，只能删除
+const unavailablePlans = ref<UnavailableConfigCard[]>([])
 const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
 
 onBeforeRouteLeave(() => canLeaveTable())
@@ -333,23 +339,6 @@ const handlePlanChange = async (
   return true
 }
 
-// 辅助函数：根据路径构建嵌套对象
-// 例如 "Info.Name" -> { Info: { Name: value } }
-// 例如 "Monday.stages.stage_1" -> { Monday: { stages: { stage_1: value } } }
-const buildNestedObject = (path: string, value: any): Record<string, any> => {
-  const keys = path.split('.')
-  const result: Record<string, any> = {}
-  let current = result
-
-  for (let i = 0; i < keys.length - 1; i++) {
-    current[keys[i]] = {}
-    current = current[keys[i]]
-  }
-
-  current[keys[keys.length - 1]] = value
-  return result
-}
-
 // 优化计划切换逻辑
 const onPlanChange = async (planId: string) => {
   if (planId === activePlanId.value) return
@@ -522,6 +511,7 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
+    unavailablePlans.value = projectUnavailablePlans(response)
 
     const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
       logger.error(message)

@@ -105,7 +105,22 @@ class PluginRegistryDocument(ConfigPayload[PluginRecord]):
 
     uid: UUID
     ui: PluginConfigUi
-    disableImpact: list[Literal["scripts", "games"]] = Field(default_factory=list)
+    disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
+        default_factory=list,
+        description="停用本插件及其级联下游时会删除的配置领域",
+    )
+    dependsOn: list[str] = Field(
+        default_factory=list, description="直接上游插件名（requires 的提供者）"
+    )
+    missingServices: list[str] = Field(
+        default_factory=list, description="requires 中当前找不到提供者的服务名"
+    )
+    disableCascade: list[str] = Field(
+        default_factory=list, description="停用或重载时会一并拆掉的下游插件名"
+    )
+    uninstallCascade: list[str] = Field(
+        default_factory=list, description="卸载时会一并卸掉的下游插件名"
+    )
 
 
 class PluginCatalogDocument(ConfigPayload[PluginMeta]):
@@ -221,6 +236,7 @@ async def get_plugin_registry(
                     {
                         "uid": uid,
                         "disableImpact": Plugin.disable_impact(col[uid]),
+                        **Plugin.dependency_view(col[uid]),
                         **col[uid].model_dump(mode="json", context={"audience": "api"}),
                     }
                 )

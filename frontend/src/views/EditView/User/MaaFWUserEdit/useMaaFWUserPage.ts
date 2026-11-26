@@ -13,7 +13,8 @@ import {
 } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWApi } from '@/composables/useMaaFWApi'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
@@ -21,12 +22,11 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import {
   isMaaFWFamily,
+  maafwLogo,
   maafwUserConfigTypes,
-  prepareMaaFWFlavorPage,
-  useMaaFWFlavor,
-  usesMaaFWProjectIcon,
-  type MaaFWUserSlotContext,
-} from '@/composables/useMaaFWFlavor'
+  maafwUsesProjectIcon,
+  type MaaFWFamilyType,
+} from '@/plugins/maafwFamily'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -34,7 +34,7 @@ import type {
   MaaFWUserConfig,
   ScriptType,
 } from '@/types/script'
-import { managedMaaFWQueueState } from '../maafwManagedTasks'
+import { managedMaaFWQueueState, type MaaFWManagedAccountTask } from '../maafwManagedTasks'
 import { unselectableMaaFWQueueNotices } from '../maafwUnselectableTasks'
 import { createMaaFWOptionDraftRegistry, MAAFW_OPTION_DRAFTS_KEY } from '../maafwOptionDrafts'
 import { normalizeTaskSnapshot } from './maafwTaskSnapshot'
@@ -48,22 +48,62 @@ import { useMaaFWAddTaskMenu } from './useMaaFWAddTaskMenu'
 import { useMaaFWUserQueueImport } from './useMaaFWUserQueueImport'
 import { useMaaFWQueueTemplates } from './useMaaFWQueueTemplates'
 import { useMaaFWUserConfigRestore } from './useMaaFWUserConfigRestore'
-import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
-import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
+import { maafwRouteLocation } from '@/router/maafwRoutes'
+import { useMaaFWPageHostContext } from '../../MaaFW/pageHostContext'
+
+/** 受管任务：由后端专项全权控制的任务（M9A 的启动游戏、切换账号、关闭游戏） */
+export interface MaaFWManagedTasks {
+  /**
+   * 不许用户自己加的任务（interface 里任务的 entry）：用户页「添加任务」与预设模板里都不出现。
+   * 已经在队列里的照常显示（能看能删），并按 warningKey 在队列上方给一条警告
+   */
+  entries: readonly string[]
+  /**
+   * 受管的切号任务：资源在 resources 里、队列里它的有效实例（目标账号非空）≥ 2 时，后端拒绝
+   * 运行该用户、要求拆成多个用户（与后端同一判据）。没有写 null
+   */
+  accountTask: MaaFWManagedAccountTask | null
+  /** 需要拆用户时的警告（插值 count：个数，accounts：各目标账号）；为空则不显示 */
+  warningKey: string | null
+  /** 其余受管任务残留在队列里时的提示（插值 tasks：任务名；运行照常）；为空则不显示 */
+  noticeKey: string | null
+}
+
+const NO_MANAGED_TASKS: MaaFWManagedTasks = {
+  entries: [],
+  accountTask: null,
+  warningKey: null,
+  noticeKey: null,
+}
 
 export interface MaaFWUserPageOptions {
   scriptId: string
   /** 编辑模式下的用户 id；新建模式为空，加载时现建一个 */
   userId: string
+  /** 页面自己的类型（MaaFW / M9A / MSS）：头像用项目图标还是类型图标按它取 */
+  type: MaaFWFamilyType
+  /** 受管任务；不写就是没有 */
+  managed?: MaaFWManagedTasks
+  /** 任务队列区顶部的提示（t() 用的 key，\n 分行，一行一个框）；不写不显示 */
+  queueHintKey?: string
+  /** 页面加载期间（与读取 interface 并行）调用，给页面独有区块备数据；失败自行兜底，不要抛 */
+  prepare?: () => Promise<void>
 }
 
 /**
- * MFW 用户页的编排层：脚本身份与 flavor、加载（脚本 → interface → 用户 / 新建用户）、
- * 特调提示与插入点上下文、离开确认与生命周期，返回模板要用的全部状态与动作。
+ * MFW 用户页的编排层：脚本身份、加载（脚本 → interface → 用户 / 新建用户）、受管任务与队列提示、
+ * 离开确认与生命周期，返回模板要用的全部状态与动作。
  *
  * `isInitializing` 只在用户数据回填完成（或加载用户出错）时放开，此前两条落盘路径都不写。
  */
-export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
+export function useMaaFWUserPage({
+  scriptId,
+  userId,
+  type,
+  managed = NO_MANAGED_TASKS,
+  queueHintKey,
+  prepare,
+}: MaaFWUserPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW用户编辑')
   const router = useRouter()
@@ -97,11 +137,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   const scriptName = ref('')
   const scriptPath = ref('')
-  // flavor 文案以脚本当前类型为准（MaaFW / M9A / MSS ……），不看路由 meta。
-  // 在页面宿主里时类型是宿主的那一份：写回去宿主才知道要不要换页面。
+  // 脚本类型（MaaFW / M9A / MSS），不看路由 meta：在页面宿主里时以宿主读到的为初值，
+  // 读到脚本详情后以它为准。
   const host = useMaaFWPageHostContext()
-  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
-  const flavor = useMaaFWFlavor(scriptType)
+  const scriptType = ref<ScriptType>(host?.scriptType.value ?? 'MaaFW')
   /** 面包屑回脚本页：按脚本当前类型走它那条线 */
   const scriptRoute = computed(() =>
     maafwRouteLocation(scriptType.value, 'script', { id: scriptId })
@@ -115,17 +154,17 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   )
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
 
-  // 特调用自己声明的图标（模板里回退到 flavor.logo）；通用 MaaFW 与脚本列表同一个口径取项目图标，
-  // 不等 interface 读完（类型由页面宿主先读好，这里一开始就是对的）
+  // M9A、MSS 用自己的图标（模板里回退到类型图标）；通用 MFW 与脚本列表同一个口径取项目图标，
+  // 不等 interface 读完
   const projectIconUrl = computed(() =>
-    usesMaaFWProjectIcon(flavor.value) ? buildMaaFWScriptIconUrl(scriptId) : ''
+    maafwUsesProjectIcon(type) ? buildMaaFWScriptIconUrl(scriptId) : ''
   )
 
   const handleProjectIconError = (event: Event) => {
     const image = event.currentTarget as HTMLImageElement | null
     if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
     image.dataset.maafwIconFallbackApplied = 'true'
-    image.src = flavor.value.logo
+    image.src = maafwLogo(type)
   }
   const taskSnapshot = ref<MaaFWTaskSnapshot>({
     taskOrder: [],
@@ -136,24 +175,19 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { formData, rules, applyUserData } = useMaaFWUserForm()
 
   /** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
-  const flavorQueueHintLines = computed(() =>
-    t(flavor.value.userPage.text.queueHintKey ?? '')
+  const pageQueueHintLines = computed(() =>
+    t(queueHintKey ?? '')
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean)
   )
-
-  const accountRecordTooltip = computed(() => {
-    const key = flavor.value.userPage.text.accountTooltipKey
-    return key ? t(key) : ''
-  })
 
   const context = useMaaFWUserTaskContext({
     previewData,
     scriptConfig,
     preferAdbController,
     interfaceLoading,
-    flavor,
+    managedEntries: managed.entries,
   })
   const { effectiveResourceName, managedTaskEntries, isManagedTaskId, getDisplayName } = context
 
@@ -196,29 +230,26 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       managedEntries: managedTaskEntries.value,
       // MAS 原生登录（Run.LoginMode = Mas）时切号由 MAS 完成，队列里的切号是残留、后端会直接移出，
       // 不会拒跑，也就不给「拆分前不会运行」的警告
-      accountTask:
-        scriptConfig.value?.Run?.LoginMode === 'Mas'
-          ? null
-          : flavor.value.userPage.managed.accountTask,
+      accountTask: scriptConfig.value?.Run?.LoginMode === 'Mas' ? null : managed.accountTask,
       resourceName: effectiveResourceName.value,
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
       displayName: task => getDisplayName(task),
       separator: t('core.edit.maafwUnselectableTaskSeparator'),
     })
-    if (state?.kind === 'split' && flavor.value.userPage.managed.warningKey) {
-      return { type: 'warning', message: t(flavor.value.userPage.managed.warningKey, state) }
+    if (state?.kind === 'split' && managed.warningKey) {
+      return { type: 'warning', message: t(managed.warningKey, state) }
     }
-    if (state?.kind === 'notice' && flavor.value.userPage.managed.noticeKey) {
-      return { type: 'info', message: t(flavor.value.userPage.managed.noticeKey, state) }
+    if (state?.kind === 'notice' && managed.noticeKey) {
+      return { type: 'info', message: t(managed.noticeKey, state) }
     }
     return null
   })
 
-  // 队列里的不可选任务（特调声明，如 M9A 的小游戏）照常显示：同一原因并成一句「运行时会跳过」，
-  // 接在特调的队列提示后面，一句一个框
+  // 队列里的不可选任务（后端专项声明，如 M9A 的小游戏）照常显示：同一原因并成一句「运行时会跳过」，
+  // 接在页面的队列提示后面，一句一个框
   const queueHintLines = computed(() => [
-    ...flavorQueueHintLines.value,
+    ...pageQueueHintLines.value,
     ...unselectableMaaFWQueueNotices(
       presentQueuedTasks.value,
       task => getDisplayName(task),
@@ -226,15 +257,32 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     ).map(notice => t('core.edit.maafwUnselectableTaskNotice', notice)),
   ])
 
-  // 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
-  const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
-    formData,
-    loading: loading.value,
-    // 虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
-    queuedTaskCount: presentQueuedTasks.value.length,
-    previewData: previewData.value,
-    scriptId,
-  }))
+  // 任务队列里的任务实例数：虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
+  const queuedTaskCount = computed(() => presentQueuedTasks.value.length)
+
+  /**
+   * 「配置导入」把外壳里的队列写进了用户：把实际落盘的快照规整成用户页自己的形状换进本地状态就行——
+   * 写库那次请求后端已经做完了，这里再来一次 persistQueuedSnapshot 就是同一个动作写两遍。
+   * 特调整理时一并改掉的账号 / 备注（M9A 把切换账号收进账号）也同步过来，否则页面上还是旧值。
+   */
+  const handleShellImported = (
+    snapshot: Record<string, unknown>,
+    info: Record<string, unknown>
+  ) => {
+    taskSnapshot.value = normalizeTaskSnapshot(snapshot, previewData.value, {
+      keepMissing: true,
+    })
+    // 队列被换掉了，原来选的预设不再对得上（后端那次写入也清了它）
+    formData.Task.SelectedPreset = ''
+    if (typeof info.Id === 'string') formData.Info.Id = info.Id
+    if (typeof info.Notes === 'string') formData.Info.Notes = info.Notes
+  }
+
+  // 页面的 prepare：失败只影响独有区块自己，不拖垮页面加载，也从不往外抛（同步抛出的也收住）
+  const runPrepare = async () => {
+    if (!prepare) return
+    await Promise.allSettled([(async () => prepare())()])
+  }
 
   const loadScriptInfo = async () => {
     pageLoading.value = true
@@ -248,7 +296,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
         handleCancel()
         return
       }
-      // MaaFW 与它的特调类型（M9A / MSS ……）都是同一个页面
+      // 只有 MaaFW 家族（MaaFW / M9A / MSS）的脚本由 MFW 用户页编辑
       if (!isMaaFWFamily(script.type)) {
         message.error(t('core.edit.scriptTypeNotMfw'))
         handleCancel()
@@ -260,8 +308,8 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       const loadedScriptConfig = script.config as MaaFWScriptConfig
       scriptConfig.value = loadedScriptConfig
       scriptPath.value = loadedScriptConfig.Info?.Path || ''
-      // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
-      await Promise.all([reloadInterface(false), prepareMaaFWFlavorPage(flavor.value, 'userPage')])
+      // 页面独有区块的数据和 interface 一起备好，卡片出来时已经齐了
+      await Promise.all([reloadInterface(false), runPrepare()])
 
       if (isEdit.value) {
         await loadUserData()
@@ -313,7 +361,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
           | Partial<MaaFWUserConfig>
           | undefined
 
-        // 特调的用户类是 MaaFWUserConfig 的子类（如 MSS 多一项 Info.PlanMode），同一个页面
+        // M9A、MSS 的用户类是 MaaFWUserConfig 的子类（如 MSS 多一项 Info.PlanMode）
         const isMaaFWUser = Boolean(userIndex && maafwUserConfigTypes().has(userIndex.type))
         if (isMaaFWUser && userData) {
           applyUserData(userData)
@@ -369,15 +417,12 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   // 存完；只有存失败、或有校验不过的草稿时才弹确认，选「继续编辑」就留在本页。
   // 转圈、连点只算一次、放行后不再拦见 createMaaFWLeaveGuard。
   const confirmLeave = () =>
-    new Promise<boolean>(resolve => {
-      Modal.confirm({
-        title: t('core.edit.youHaveUnsavedChanges'),
-        content: t('core.edit.leaveWithoutSavingUnsaved'),
-        okText: t('core.edit.leave'),
-        cancelText: t('core.edit.keepEditing'),
-        onOk: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
+    openConfirm({
+      tone: 'warning',
+      title: t('core.edit.youHaveUnsavedChanges'),
+      description: t('core.edit.leaveWithoutSavingUnsaved'),
+      okText: t('core.edit.leave'),
+      cancelText: t('core.edit.keepEditing'),
     })
 
   const prepareLeave = async () => {
@@ -458,7 +503,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     configLocked,
     scriptName,
     scriptType,
-    flavor,
     scriptRoute,
     previewData,
     interfaceLoading,
@@ -468,9 +512,9 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     formData,
     rules,
     queueHintLines,
-    accountRecordTooltip,
     managedQueueAlert,
-    flavorSlotContext,
+    queuedTaskCount,
+    handleShellImported,
     taskByName: context.taskByName,
     effectiveControllerName: context.effectiveControllerName,
     effectiveResourceName,

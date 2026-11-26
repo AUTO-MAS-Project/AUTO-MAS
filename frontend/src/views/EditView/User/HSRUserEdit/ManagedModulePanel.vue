@@ -62,26 +62,27 @@
                 </span>
               </li>
             </ul>
-            <a-popconfirm
+            <ConfirmActionButton
+              risk="low"
+              tone="danger"
+              size="small"
               :overlay-style="{ maxWidth: '360px' }"
               :title="
                 t('core.edit.clearInvalidManagedOverridesConfirm', { n: droppedOverrides.length })
               "
               :ok-text="t('core.edit.ok')"
               :cancel-text="t('core.edit.cancel')"
-              ok-type="danger"
               :disabled="saving"
-              @confirm="
-                emit(
-                  'clearInvalid',
-                  droppedOverrides.map(item => item.key)
-                )
+              :confirm="
+                () =>
+                  emit(
+                    'clearInvalid',
+                    droppedOverrides.map(item => item.key)
+                  )
               "
             >
-              <a-button size="small" danger :disabled="saving">
-                {{ t('core.edit.clearInvalidManagedOverrides') }}
-              </a-button>
-            </a-popconfirm>
+              {{ t('core.edit.clearInvalidManagedOverrides') }}
+            </ConfirmActionButton>
           </template>
         </template>
       </a-alert>
@@ -125,7 +126,12 @@
     </a-form>
 
     <div class="panel-footer">
-      <a-popconfirm
+      <ConfirmActionButton
+        risk="low"
+        tone="warning"
+        type="link"
+        size="small"
+        class="module-reset"
         :overlay-style="{ maxWidth: '360px' }"
         :title="t('core.edit.hsrModuleResetConfirmTitle', { engine: engineName })"
         :description="
@@ -136,12 +142,10 @@
         :ok-text="t('core.edit.ok')"
         :cancel-text="t('core.edit.cancel')"
         :disabled="loading || saving || !form"
-        @confirm="emit('resetModule')"
+        :confirm="() => emit('resetModule')"
       >
-        <a-button type="link" size="small" class="module-reset" :disabled="saving || !form">
-          {{ t('core.edit.hsrModuleReset', { engine: engineName }) }}
-        </a-button>
-      </a-popconfirm>
+        {{ t('core.edit.hsrModuleReset', { engine: engineName }) }}
+      </ConfirmActionButton>
     </div>
   </div>
 </template>
@@ -149,6 +153,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ConfirmActionButton } from '@/components/ui'
 import {
   getHSRDroppedOverrides,
   type HSRDroppedOverrideReason,

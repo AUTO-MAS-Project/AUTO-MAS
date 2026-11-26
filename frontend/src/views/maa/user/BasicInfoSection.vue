@@ -1,13 +1,10 @@
 <template>
-  <div class="form-section">
-    <UserAccountHeading
-      v-if="heading"
-      :user-name="formData.userName"
-      :options="{ ...heading, logoSrc: accountIcon }"
-    />
-    <div class="section-header">
-      <h3>{{ t('core.edit.basicInfo') }}</h3>
-    </div>
+  <UserAccountHeading
+    v-if="heading"
+    :user-name="formData.userName"
+    :options="{ ...heading, logoSrc: accountIcon }"
+  />
+  <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
     <UserBasicInfoFields
       v-model:user-name="formData.userName"
       v-model:status="formData.Info.Status"
@@ -82,7 +79,7 @@
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -91,6 +88,7 @@ import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import type { UserAccountHeadingOptions } from '@/types/userEditor'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()

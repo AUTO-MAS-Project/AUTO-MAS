@@ -99,18 +99,17 @@
     </a-button>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
-    <a-modal
+    <AppModal
       v-model:open="modalVisible"
       :title="isEditing ? t('core.comp.editWebhook') : t('core.comp.addWebhook')"
       :width="compact ? '560px' : '800px'"
       :get-container="getPopupContainer"
-      :z-index="compact ? 1050 : undefined"
-      :centered="compact"
+      :layer="compact ? 'nested' : 'default'"
       :body-style="compact ? { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } : undefined"
       :ok-text="isEditing ? t('core.comp.webhookUpdate') : t('core.comp.webhookAdd')"
-      :confirm-loading="submitting"
+      :submitting="submitting"
       @ok="handleSubmit"
-      @cancel="handleCancel"
+      @cancel="closeModal"
     >
       <a-form ref="formRef" :model="formData" layout="vertical">
         <!-- 模板选择放在最上面 -->
@@ -221,14 +220,14 @@
           }}</a-checkbox>
         </a-form-item>
       </a-form>
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -237,10 +236,13 @@ import {
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
+import AppModal from '@/components/ui/AppModal.vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { useWebhookTest } from '@/composables/useWebhookTest'
 import { useWebhookList, type WebhookItem } from '@/composables/useWebhookList'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const logger = window.electronAPI.getLogger('Webhook管理器')
 
@@ -446,16 +448,14 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
 // 删除 Webhook
 const deleteWebhook = (webhook: WebhookItem) => {
   // 添加二次确认
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t('core.comp.confirmDeletion'),
-    content: t('core.comp.webhookDeleteConfirm', { name: webhook.name }),
+    description: t('core.comp.webhookDeleteConfirm', { name: webhook.name }),
     okText: t('core.comp.confirmDeletion'),
-    okType: 'danger',
-    cancelText: t('core.comp.cancel'),
     // 确认框挂 body（z 950：在渠道配置弹窗 900 之上、标题栏 1000 之下）——
     // 挂进弹窗 wrap 会按普通流布局排到 wrap 顶部，被标题栏盖住不可见
     zIndex: props.compact ? 950 : undefined,
-    centered: props.compact,
     async onOk() {
       if (props.mode === 'global' || (props.scriptId && props.userId)) {
         // API模式：调用删除接口
@@ -617,11 +617,7 @@ const handleSubmit = async () => {
           message.success(t('core.comp.webhookAdded'))
         }
 
-        modalVisible.value = false
-        // 延迟重置表单，确保弹窗完全关闭后再重置
-        setTimeout(() => {
-          resetForm()
-        }, 100)
+        closeModal()
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`保存Webhook失败: ${errorMsg}`)
@@ -653,11 +649,7 @@ const handleSubmit = async () => {
 
       webhooks.value = newWebhooks
       emit('change')
-      modalVisible.value = false
-      // 延迟重置表单，确保弹窗完全关闭后再重置
-      setTimeout(() => {
-        resetForm()
-      }, 100)
+      closeModal()
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -667,8 +659,7 @@ const handleSubmit = async () => {
   }
 }
 
-// 取消操作
-const handleCancel = () => {
+const closeModal = () => {
   modalVisible.value = false
 
   // 延迟重置表单，确保弹窗完全关闭后再重置

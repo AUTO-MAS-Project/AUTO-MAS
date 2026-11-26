@@ -1,0 +1,59 @@
+#!/bin/sh
+# AUTO-MAS opt-in pre-push hook（通过 git config core.hooksPath .githooks 启用）
+# 默认仅做温和提示、不阻断推送；若本机 .git/hooks/pre-push 存在（如本地 git-guard），会先串联执行。
+# 环境变量：
+#   MAS_SKIP_PR_CHECK=1     临时跳过本次预检
+#   MAS_PR_CHECK_STRICT=1   开启严格模式（预检失败时阻断推送）
+set -u
+
+push_input=$(cat)
+
+# 1. 兼容本机既有的 .git/hooks/pre-push（例如防 force push / 防推 main 的本地 guard）
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null || echo ".git")
+local_hook="$common_dir/hooks/pre-push"
+if [ -f "$local_hook" ] && [ -x "$local_hook" ]; then
+  if [ -n "$push_input" ]; then
+    printf '%s\n' "$push_input" | "$local_hook" "$@"
+  else
+    "$local_hook" "$@" </dev/null
+  fi
+  guard_status=$?
+  if [ "$guard_status" -ne 0 ]; then
+    exit "$guard_status"
+  fi
+fi
+
+# 2. 临时静音开关
+if [ "${MAS_SKIP_PR_CHECK:-0}" = "1" ]; then
+  echo "[pre-push] MAS_SKIP_PR_CHECK=1，已跳过 PR 预检" >&2
+  exit 0
+fi
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+if [ ! -f "$repo_root/scripts/pr_check.py" ]; then
+  exit 0
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "[pre-push] 未检测到 uv，已跳过 PR 预检（手动运行：uv run --no-sync python scripts/pr_check.py）" >&2
+  exit 0
+fi
+
+echo "[pre-push] 正在运行本地 PR 预检（默认只提示不阻断）..." >&2
+(cd "$repo_root" && uv run --no-sync python scripts/pr_check.py)
+check_status=$?
+
+if [ "$check_status" -eq 0 ]; then
+  echo "[pre-push] PR 预检通过。" >&2
+  exit 0
+fi
+
+if [ "${MAS_PR_CHECK_STRICT:-0}" = "1" ]; then
+  echo "[pre-push] 严格模式（MAS_PR_CHECK_STRICT=1）已拦截本次推送，请按上方提示修复后重试。" >&2
+  exit "$check_status"
+fi
+
+echo "" >&2
+echo "[pre-push] 提醒：以上门禁在 PR CI 中会红，建议按上方「修复：」处理后再更新分支。" >&2
+echo "[pre-push] 本次推送默认放行；纯文档/测试 PR 如仅 changelog 提示可忽略，或设 MAS_SKIP_PR_CHECK=1 临时静音。" >&2
+exit 0

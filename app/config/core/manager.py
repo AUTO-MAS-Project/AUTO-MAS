@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import os
 import threading
 import weakref
@@ -20,7 +21,7 @@ from uuid import UUID, uuid4
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
-from ..errors import ConfigAggregateError, ConfigPersistenceError
+from ..errors import ConfigAggregateError, ConfigPersistenceError, ReportableError
 
 logger = get_logger("配置持久化")
 trigger_logger = get_logger("配置触发器")
@@ -116,6 +117,7 @@ class RootRecord:
     node: ConfigNode
     path: Path
     revision: int = 0
+    persisted_revision: int = -1
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,54 @@ class TriggerUnavailable(RuntimeError):
 class TriggerResult:
     state: BackgroundTaskState
     error_code: str | None = None
+    # 仅 ReportableError 填写：写给用户的原因及其附加信息（已保证可 JSON 序列化）。
+    message: str | None = None
+    detail: dict[str, Any] | None = None
+
+
+def _reportable(error: BaseException | None) -> tuple[str | None, dict | None]:
+    """取出可展示异常的原因；其他异常不外露文本，只留类名给 ``error_code``。"""
+    if not isinstance(error, ReportableError):
+        return None, None
+    try:
+        detail = json.loads(json.dumps(error.payload, default=str))
+    except (TypeError, ValueError):
+        detail = None
+    # 包着配置校验错误正文的原因（如插件生命周期包装的异常）同样不带输入值。
+    message = error.message
+    if str(error) == message:
+        message = _trigger_error_text(error)
+    return message, detail if isinstance(detail, dict) else None
+
+
+def _trigger_error_text(error: BaseException | None) -> str:
+    """触发器失败告警里的异常文本：配置校验错误不带输入值，其余异常照原文。
+
+    pydantic 校验错误的正文带着配置原值（密码、令牌、Webhook 地址），换成只有错误类型、
+    字段路径和错误类别的描述（同 ``collection._describe_error``）；聚合错误逐条处理；
+    把校验错误正文原样拼进自己消息的包装异常（如 ``PluginOperationError(str(exc))``），
+    把那段正文换成描述。
+    """
+    from pydantic import ValidationError
+
+    from .collection import _describe_error
+
+    if isinstance(error, ValidationError):
+        return _describe_error(error)
+    if isinstance(error, ConfigAggregateError) and error.errors:
+        return "; ".join(
+            _describe_error(sub)
+            if isinstance(sub, ValidationError)
+            else f"{type(sub).__name__}: {_trigger_error_text(sub)}"
+            for sub in error.errors
+        )
+    text = str(error)
+    cause = error.__cause__ if error is not None else None
+    if isinstance(cause, (ValidationError, ConfigAggregateError)):
+        raw = str(cause)
+        if raw and raw in text:
+            return text.replace(raw, _trigger_error_text(cause))
+    return text
 
 
 @dataclass
@@ -187,6 +237,7 @@ class ConfigManager:
         self._save_loop: asyncio.AbstractEventLoop | None = None
         self._save_event: asyncio.Event | None = None
         self._save_failures: dict[UUID, _SaveFailure] = {}
+        self._persist_blocked_logged: set[UUID] = set()
         self._save_retry_delays = (1.0, 2.0, 4.0, 8.0, 16.0)
         self._trigger_group: BackgroundTaskGroup | None = None
         self._trigger_background: BackgroundTaskRegistry | None = None
@@ -230,6 +281,15 @@ class ConfigManager:
         """登记已原子生效的运行态，例如 asyncio.Lock 的获取。"""
         if self._ui_listener is not None:
             self._publish_ui_commit(self._ui_sources(nodes))
+
+    def mark_persist_changed(self, node: ConfigNode) -> None:
+        """登记不经工作区提交的盘上内容变化（如删掉旁挂成员），让下一轮整轮保存写这个根。
+
+        整轮保存跳过修订号没变的根，只有提交了工作区的事务才推进修订号。
+        """
+        record = self._roots.get(node.root.uid)
+        if record is not None and record.node is node.root:
+            record.revision += 1
 
     def mark_ui_changed(self, node: ConfigNode) -> None:
         """记录工作区变化，随所属根事务提交或丢弃。"""
@@ -370,16 +430,19 @@ class ConfigManager:
             error_code = (
                 type(outcome.error).__name__ if outcome.error is not None else None
             )
+            message, detail = _reportable(outcome.error)
             with self.runtime_transaction(entry):
                 target._trigger_uids.pop(field)
                 self._triggers.pop(handle.uid)
                 self._trigger_results[handle.uid] = TriggerResult(
-                    outcome.state, error_code
+                    outcome.state, error_code, message, detail
                 )
                 if len(self._trigger_results) > 200:
                     self._trigger_results.popitem(last=False)
             if outcome.state in ("failed", "timed_out"):
-                trigger_logger.warning(f"{entry.uid} {group}.{field}: {outcome.error}")
+                trigger_logger.warning(
+                    f"{entry.uid} {group}.{field}: {_trigger_error_text(outcome.error)}"
+                )
 
         with self.runtime_transaction(entry):
             self._triggers[uid] = _RunningTrigger(
@@ -553,6 +616,12 @@ class ConfigManager:
             if not records:
                 target.mkdir(parents=True, exist_ok=True)
                 return
+            blocked = [r.path for r in records if r.node.persist_blocked is not None]
+            if blocked:
+                # 备份不能静默少条目。
+                raise ValueError(
+                    "配置未完整加载，不能导出：" + "、".join(str(p) for p in blocked)
+                )
             paths = [Path(os.path.abspath(record.path)) for record in records]
             base = Path(os.path.commonpath([path.parent for path in paths]))
             destinations = [target / path.relative_to(base) for path in paths]
@@ -1026,10 +1095,19 @@ class ConfigManager:
                             continue
                     elif failure.revision == record.revision:
                         continue
-                elif not full:
+                elif not full or record.persisted_revision == record.revision:
                     continue
             # 构造先登记、激活在后；未激活根没有可保存状态。
             if root.activation_state != NodeState.ACTIVE:
+                continue
+            if root.persist_blocked is not None:
+                # 不抛：退出时的 flush 还要接着收尾；按根只记一次。
+                if root.uid not in self._persist_blocked_logged:
+                    self._persist_blocked_logged.add(root.uid)
+                    logger.error(
+                        f"配置加载出错，不写回以免丢失未加载的内容：{record.path}"
+                        f"（{root.persist_blocked}）"
+                    )
                 continue
             phase: Literal["export", "write"] = "export"
             try:
@@ -1045,6 +1123,7 @@ class ConfigManager:
                 self._record_save_failure(record, error, force=force)
                 errors.append(error)
             else:
+                record.persisted_revision = record.revision
                 with self._execution_condition:
                     recovered = self._save_failures.pop(root.uid, None)
                 if recovered is not None:

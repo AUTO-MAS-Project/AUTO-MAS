@@ -87,16 +87,16 @@
   </div>
   <div
     v-else-if="
-      !scriptListError && !listLoading && !addLoading && loadedOnce && scripts.length === 0
+      !scriptListError &&
+      !listLoading &&
+      !addLoading &&
+      loadedOnce &&
+      scripts.length === 0 &&
+      unavailableScripts.length === 0
     "
     class="empty-state"
   >
-    <NoData :image-style="{ height: '120px' }">
-      <template #description>
-        <h3 class="empty-title">{{ t('core.scripts.empty.title') }}</h3>
-        <p class="empty-description">{{ t('core.scripts.empty.desc') }}</p>
-      </template>
-    </NoData>
+    <ScriptsEmptyState />
   </div>
 
   <div
@@ -124,7 +124,7 @@
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
-    @delete-user="handleDeleteUser"
+    :delete-user="handleDeleteUser"
     @start-maa-config="handleStartMAAConfig"
     @start-src-config="handleStartSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
@@ -133,6 +133,8 @@
     @toggle-user-status="handleToggleUserStatus"
     @scripts-reordered="handleScriptsReordered"
   />
+
+  <UnavailableScriptCards v-model:items="unavailableScripts" />
 
   <ScriptCreateDialog
     v-model:open="scriptCreateVisible"
@@ -168,6 +170,8 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
+import ScriptsEmptyState from '@/views/scripts/components/ScriptsEmptyState.vue'
+import UnavailableScriptCards from '@/views/scripts/components/UnavailableScriptCards.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
 import type { ScriptType } from '@/types/script'
@@ -211,6 +215,7 @@ const router = useRouter()
 const { deleteScript } = useScriptApi()
 const {
   scripts,
+  unavailable: unavailableScripts,
   loadedOnce,
   loadScripts,
   getScriptUsers,
@@ -835,19 +840,6 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   justify-content: center;
   height: calc(100vh - 200px);
   text-align: center;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 
 .header-left {

@@ -42,7 +42,6 @@ from .shared import (
     default_baah_plan_key,
     normalize_baah_plan_key,
     normalize_maaend_plan_key,
-    normalize_mss_plan_key,
     schema_model,
 )
 
@@ -360,129 +359,6 @@ class BAAHPlanConfig(WeeklyKeyPlan):
         return normalized_data
 
 
-class MSSPlanConfig(WeeklyKeyPlan):
-    "MSS 计划表配置：每个日期槽位存一套悬赏试炼配置。"
-
-    class ALLFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    ALL: ALLFields = Field(default_factory=ALLFields)
-
-    class FridayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Friday: FridayFields = Field(default_factory=FridayFields)
-
-    Day1: ALLFields = Field(default_factory=ALLFields)
-    Day2: ALLFields = Field(default_factory=ALLFields)
-    Day3: ALLFields = Field(default_factory=ALLFields)
-    Day4: ALLFields = Field(default_factory=ALLFields)
-    Day5: ALLFields = Field(default_factory=ALLFields)
-    Day6: ALLFields = Field(default_factory=ALLFields)
-    Day7: ALLFields = Field(default_factory=ALLFields)
-    Day8: ALLFields = Field(default_factory=ALLFields)
-    Day9: ALLFields = Field(default_factory=ALLFields)
-    Day10: ALLFields = Field(default_factory=ALLFields)
-    Day11: ALLFields = Field(default_factory=ALLFields)
-    Day12: ALLFields = Field(default_factory=ALLFields)
-    Day13: ALLFields = Field(default_factory=ALLFields)
-    Day14: ALLFields = Field(default_factory=ALLFields)
-    Day15: ALLFields = Field(default_factory=ALLFields)
-    Day16: ALLFields = Field(default_factory=ALLFields)
-    Day17: ALLFields = Field(default_factory=ALLFields)
-    Day18: ALLFields = Field(default_factory=ALLFields)
-    Day19: ALLFields = Field(default_factory=ALLFields)
-    Day20: ALLFields = Field(default_factory=ALLFields)
-    Day21: ALLFields = Field(default_factory=ALLFields)
-    Day22: ALLFields = Field(default_factory=ALLFields)
-    Day23: ALLFields = Field(default_factory=ALLFields)
-    Day24: ALLFields = Field(default_factory=ALLFields)
-    Day25: ALLFields = Field(default_factory=ALLFields)
-    Day26: ALLFields = Field(default_factory=ALLFields)
-    Day27: ALLFields = Field(default_factory=ALLFields)
-    Day28: ALLFields = Field(default_factory=ALLFields)
-    Day29: ALLFields = Field(default_factory=ALLFields)
-    Day30: ALLFields = Field(default_factory=ALLFields)
-    Day31: ALLFields = Field(default_factory=ALLFields)
-
-    class InfoFields(ConfigGroup):
-        RotateDays: Annotated[int, Field(ge=1, le=31)] = Field(
-            default=7, description="多天轮换天数"
-        )
-        Mode: Literal["ALL", "Weekly", "Rotate"] = Field(
-            description="计划表模式", default_factory=lambda: "ALL"
-        )
-
-        Name: str = Field(
-            description="计划表名称", default_factory=lambda: "新 MSS 计划表"
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class MondayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Monday: MondayFields = Field(default_factory=MondayFields)
-
-    class SaturdayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Saturday: SaturdayFields = Field(default_factory=SaturdayFields)
-
-    class SundayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Sunday: SundayFields = Field(default_factory=SundayFields)
-
-    class ThursdayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Thursday: ThursdayFields = Field(default_factory=ThursdayFields)
-
-    class TuesdayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Tuesday: TuesdayFields = Field(default_factory=TuesdayFields)
-
-    class WednesdayFields(ConfigGroup):
-        Key: schema_model.MSSPlanKey = Field(
-            description="MSS 计划表专项 key",
-            default_factory=schema_model.MSSPlanKey,
-        )
-
-    Wednesday: WednesdayFields = Field(default_factory=WednesdayFields)
-
-    @classmethod
-    def normalize_payload(cls, data):
-        normalized_data = super().normalize_payload(data)
-        for group in ["ALL", *calendar.day_name, *(f"Day{i}" for i in range(1, 32))]:
-            group_data = normalized_data.get(group)
-            if isinstance(group_data, dict):
-                normalized_data[group] = {"Key": normalize_mss_plan_key(group_data)}
-        return normalized_data
-
-
 class UniversalPlanConfig(PlanDaysConfig):
     """通用脚本完整原生配置的按日轮换。"""
 
@@ -679,7 +555,6 @@ type PlanConfigType = (
     PlanEntry
     | MaaEndPlanConfig
     | BAAHPlanConfig
-    | MSSPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
     | OkwwPlanConfig
@@ -695,5 +570,4 @@ __all__ = [
     "WeeklyKeyPlan",
     "MaaEndPlanConfig",
     "BAAHPlanConfig",
-    "MSSPlanConfig",
 ]

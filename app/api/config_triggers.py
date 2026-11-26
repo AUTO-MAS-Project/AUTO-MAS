@@ -1,5 +1,6 @@
 """运行时配置触发器的字段写入、在途投影与任务结果。"""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -31,6 +32,12 @@ class TriggerResultIn(BaseModel):
 class TriggerTaskResult(BaseModel):
     state: BackgroundTaskState
     errorCode: str | None = None
+    message: str | None = Field(
+        default=None, description="失败原因，仅可展示的异常（如插件错误）填写"
+    )
+    detail: dict[str, Any] | None = Field(
+        default=None, description="失败原因的结构化附加信息"
+    )
 
 
 class TriggerResultOut(OutBase):
@@ -91,5 +98,10 @@ async def get_config_trigger_result(body: TriggerResultIn) -> TriggerResultOut:
             code=404, status="error", message="trigger_task_not_found"
         )
     return TriggerResultOut(
-        data=TriggerTaskResult(state=result.state, errorCode=result.error_code)
+        data=TriggerTaskResult(
+            state=result.state,
+            errorCode=result.error_code,
+            message=result.message,
+            detail=result.detail,
+        )
     )

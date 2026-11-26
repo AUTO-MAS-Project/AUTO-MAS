@@ -12,7 +12,6 @@
         <a-select
           :value="launchMode"
           :options="launchModeOptions"
-          size="large"
           :disabled="disabled"
           :loading="capabilitiesLoading"
           @change="emit('changeLaunchMode', $event)"
@@ -29,7 +28,7 @@
         <template #label>
           <span class="form-label">{{ t('core.edit.maaEndLauncherPath') }}</span>
         </template>
-        <a-space-compact v-if="usesMasLauncher || source === 'manual'" block size="large">
+        <a-space-compact v-if="usesMasLauncher || source === 'manual'" block>
           <a-input
             :value="path"
             :title="path"
@@ -41,7 +40,6 @@
               )
             "
             :aria-label="t('core.edit.maaEndLauncherPath')"
-            size="large"
             readonly
             :disabled="disabled || !canConfigureLauncher"
             class="launcher-path-input"
@@ -53,7 +51,6 @@
               !canConfigureLauncher ||
               (usesMasLauncher && source === 'auto' && !canDetect)
             "
-            size="large"
             @click="usesMasLauncher && source === 'auto' ? emit('refresh') : emit('selectFile')"
           >
             <template #icon>

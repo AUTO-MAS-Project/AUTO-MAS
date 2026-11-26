@@ -1,67 +1,7 @@
-<template>
-  <a-modal
-    :open="open"
-    :title="modalTitle"
-    :footer="null"
-    :width="360"
-    :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
-    centered
-    @cancel="emit('cancel')"
-  >
-    <div class="qr-login-container">
-      <!-- 二维码 -->
-      <div
-        v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
-        class="qr-code-wrapper"
-      >
-        <img :src="qrCodeDataUrl" :alt="t('core.gamesign.qr.alt')" class="qr-code-img" />
-      </div>
-
-      <!-- 加载中 -->
-      <div v-if="status === 'loading'" class="qr-status">
-        <a-spin />
-        <span style="margin-left: 8px">{{ statusText }}</span>
-      </div>
-
-      <!-- 状态提示 -->
-      <div v-if="status !== 'loading'" class="qr-status">
-        <span v-if="status === 'waiting'" class="qr-status-primary">
-          <ClockCircleOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-        <span v-else-if="status === 'scanned'" class="qr-status-warning">
-          <MobileOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-        <span v-else-if="status === 'exchanging'" class="qr-status-primary">
-          <SettingOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-        <span v-else-if="status === 'done'" class="qr-status-success">
-          <CheckCircleOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-        <span v-else-if="status === 'expired'" class="qr-status-error">
-          <WarningOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-        <span v-else-if="status === 'error'" class="qr-status-error">
-          <CloseCircleOutlined class="qr-status-icon" />{{ statusText }}
-        </span>
-      </div>
-
-      <div v-if="status === 'waiting' || status === 'scanned'" class="qr-hint">
-        {{ modalHint }}
-      </div>
-
-      <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
-        <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
-          <template #icon><ReloadOutlined /></template>
-          {{ t('core.gamesign.qr.retry') }}
-        </a-button>
-      </div>
-    </div>
-  </a-modal>
-</template>
-
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal } from '@/components/ui'
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -104,6 +44,59 @@ const emit = defineEmits<{
 }>()
 </script>
 
+<template>
+  <AppModal :open="open" :title="modalTitle" footer="none" :width="360" @cancel="emit('cancel')">
+    <div class="qr-login-container">
+      <!-- 二维码 -->
+      <div
+        v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
+        class="qr-code-wrapper"
+      >
+        <img :src="qrCodeDataUrl" :alt="t('core.gamesign.qr.alt')" class="qr-code-img" />
+      </div>
+
+      <!-- 加载中 -->
+      <div v-if="status === 'loading'" class="qr-status">
+        <a-spin />
+        <span class="qr-status-text">{{ statusText }}</span>
+      </div>
+
+      <!-- 状态提示 -->
+      <div v-if="status !== 'loading'" class="qr-status">
+        <span v-if="status === 'waiting'" class="qr-status-primary">
+          <ClockCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'scanned'" class="qr-status-warning">
+          <MobileOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'exchanging'" class="qr-status-primary">
+          <SettingOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'done'" class="qr-status-success">
+          <CheckCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'expired'" class="qr-status-error">
+          <WarningOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'error'" class="qr-status-error">
+          <CloseCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+      </div>
+
+      <div v-if="status === 'waiting' || status === 'scanned'" class="qr-hint">
+        {{ modalHint }}
+      </div>
+
+      <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
+        <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
+          <template #icon><ReloadOutlined /></template>
+          {{ t('core.gamesign.qr.retry') }}
+        </a-button>
+      </div>
+    </div>
+  </AppModal>
+</template>
+
 <style scoped>
 .qr-login-container {
   display: flex;
@@ -126,8 +119,13 @@ const emit = defineEmits<{
 .qr-status {
   text-align: center;
   font-size: 14px;
+  line-height: 22px;
   margin-bottom: 12px;
   min-height: 24px;
+}
+
+.qr-status-text {
+  margin-left: 8px;
 }
 
 .qr-status-primary {
@@ -153,6 +151,7 @@ const emit = defineEmits<{
 .qr-hint {
   text-align: center;
   font-size: 12px;
+  line-height: 20px;
   color: var(--ant-color-text-tertiary);
 }
 

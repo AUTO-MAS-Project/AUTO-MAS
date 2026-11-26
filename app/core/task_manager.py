@@ -56,6 +56,7 @@ type _RunIdentity = tuple[UUID, UUID | None]
 class _RecentTask:
     ended_at: float
     tree: dict[str, Any]
+    finished_at: str
     observations: dict[_RunIdentity, NodeObservation] = field(default_factory=dict)
     observation_bytes: int = 0
 
@@ -70,6 +71,10 @@ type PluginExpander = Callable[[TaskScriptItem, ScriptConfigType], UserExpander 
 
 class UnsupportedDesktopTask(ValueError):
     """所选任务包含尚不能在桌面分身执行的操作。"""
+
+    def __init__(self, message, reason="unsupported_config"):
+        super().__init__(message)
+        self.reason = reason
 
 
 def script_config_name(entry: ScriptConfigType) -> str:
@@ -255,6 +260,10 @@ class _TaskManager:
                     raise UnsupportedDesktopTask("桌面分身不支持队列的电源操作")
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
+                if queue is None:
+                    for child in node.children.values():
+                        if Config.ScriptConfig.is_unresolved(child.uid):
+                            raise ValueError(f"托管所属插件不可用：{child.uid}")
                 selections = (
                     [node]
                     if session
@@ -273,16 +282,23 @@ class _TaskManager:
                 for selected in selections:
                     item = queue.QueueItem[UUID(selected.uid)] if queue else None
                     script_id = item.Info.ScriptId if item else str(UUID(selected.uid))
+                    if Config.ScriptConfig.is_unresolved(script_id):
+                        # 托管原样保留着、等所属插件恢复：队列里跳过它，不拖累同队列的其他项。
+                        if item is not None:
+                            logger.warning(
+                                f"队列项引用的托管所属插件不可用，已跳过：{script_id}"
+                            )
+                            continue
+                        raise ValueError(f"托管所属插件不可用：{script_id}")
                     entry = Config.ScriptConfig.get(script_id)
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
                     if desktop:
-                        from app.core.desktop_session.lifecycle import supports_task
+                        from app.core.desktop_session.lifecycle import (
+                            require_task_support,
+                        )
 
-                        if not supports_task(entry):
-                            raise UnsupportedDesktopTask(
-                                "此托管的启动方式暂不支持桌面分身"
-                            )
+                        require_task_support(entry)
                     sid = info.scripts.add(
                         TaskScriptItem,
                         payload={
@@ -540,12 +556,17 @@ class _TaskManager:
         if tree is None:
             return None
         info = tree["info"]
+        # 与 get_task 一样按标准 UUID 取终态缓存，大写等合法写法也能取到结束时间。
+        recent = self._recent.get(UUID(str(task_id)))
         return TaskStatusOut(
             taskId=str(task_id),
             status="running" if info["status"] == "pending" else info["status"],
             mode=info["mode"],
             trigger=info["trigger"],
             detail=info["result"],
+            finishedAt=recent.finished_at
+            if recent and info["status"] != "pending"
+            else None,
         )
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
@@ -605,6 +626,7 @@ class _TaskManager:
         self._recent[info.uid] = _RecentTask(
             ended_at=time.monotonic(),
             tree=TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+            finished_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             observations=observations,
             observation_bytes=sum(
                 item.retained_bytes for item in observations.values()

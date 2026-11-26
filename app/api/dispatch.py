@@ -22,7 +22,7 @@
 
 
 from ipaddress import ip_address
-from typing import Annotated
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -35,6 +35,8 @@ from pydantic import (
 )
 
 from app.core import Power, TaskManager
+from app.core.desktop_session.lifecycle import DesktopSessionDisconnected
+from app.core.task_manager import UnsupportedDesktopTask
 from app.models.schema import (
     OutBase,
     PowerCountdownSnapshot,
@@ -44,6 +46,7 @@ from app.models.schema import (
     TaskTreeData,
 )
 from app.models.task import TaskMode
+from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
 from app.utils.common.log_flow.observation import (
     MAX_NODE_ATTRIBUTE_TEXT,
@@ -73,6 +76,10 @@ class TaskCreateIn(BaseModel):
         description="单入口任务要求树，顶层仅包含索引 0",
     )
 
+    requireDesktopSession: bool = Field(
+        default=False, description="本次只允许在桌面分身执行"
+    )
+
     @field_validator("tasks", mode="before")
     @classmethod
     def validate_indices(cls, value):
@@ -95,6 +102,9 @@ class TaskGetOut(OutBase):
 
 class TaskCreateOut(OutBase):
     taskId: str = Field(..., description="新创建的任务ID")
+    reason: Literal["desktop_session_disconnected", DesktopSessionReason] | None = (
+        Field(default=None, description="启动未受理时可由客户端处理的原因")
+    )
 
 
 class TaskLogCursor(BaseModel):
@@ -291,7 +301,29 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = await TaskManager.start(task.mode, task.tasks)
+        task_id = None
+        if task.mode == TaskMode.AUTO_PROXY:
+            from app.core.desktop_session.lifecycle import DesktopSessionLifecycle
+
+            task_id = await DesktopSessionLifecycle.start_configured_script(
+                task.tasks[0]
+            )
+        if task_id is None:
+            if task.requireDesktopSession:
+                raise RuntimeError("本次任务已不再配置为在桌面分身执行")
+            task_id = await TaskManager.start(task.mode, task.tasks)
+    except UnsupportedDesktopTask as error:
+        return TaskCreateOut(
+            code=409, status="error", message=str(error), taskId="", reason=error.reason
+        )
+    except DesktopSessionDisconnected as error:
+        return TaskCreateOut(
+            code=409,
+            status="error",
+            message=str(error),
+            taskId="",
+            reason="desktop_session_disconnected",
+        )
     except RuntimeError as error:
         return TaskCreateOut(code=409, status="error", message=str(error), taskId="")
     except Exception as e:

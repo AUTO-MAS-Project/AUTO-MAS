@@ -1,16 +1,19 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :title="t('core.edit.taskTimeLimitOverrides')"
     :width="560"
-    destroy-on-close
+    :ok-text="t('core.edit.taskTimeLimitSave')"
+    :cancel-text="t('core.common.cancel')"
+    @ok="handleSave"
     @cancel="emit('update:open', false)"
   >
     <div class="task-limit-modal">
-      <div class="task-limit-row loop-guard-row">
-        <span class="task-limit-label">{{ t('core.edit.loopGuard') }}</span>
-        <a-switch v-model:checked="loopGuardDraft" />
-      </div>
+      <SwitchTile
+        v-model:checked="loopGuardDraft"
+        :title="t('core.edit.loopGuard')"
+        class="loop-guard-row"
+      />
       <div class="task-limit-modal-sub">{{ t('core.edit.taskTimeLimitModalSub') }}</div>
       <!-- 任务列表随弹窗正文滚动，小窗口也能逐项设置。 -->
       <div class="task-limit-modal-list">
@@ -39,30 +42,18 @@
         </div>
       </div>
     </div>
-    <template #footer>
-      <div class="task-limit-footer">
-        <a-button
-          type="link"
-          class="task-limit-reset-all"
-          :disabled="!anyChanged"
-          @click="resetAll"
-        >
-          {{ t('core.edit.taskTimeLimitRestoreAll') }}
-        </a-button>
-        <a-space>
-          <a-button @click="emit('update:open', false)">{{ t('core.common.cancel') }}</a-button>
-          <a-button type="primary" @click="handleSave">
-            {{ t('core.edit.taskTimeLimitSave') }}
-          </a-button>
-        </a-space>
-      </div>
+    <template #footer-left>
+      <a-button type="link" class="task-limit-reset-all" :disabled="!anyChanged" @click="resetAll">
+        {{ t('core.edit.taskTimeLimitRestoreAll') }}
+      </a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { AppModal, SwitchTile } from '@/components/ui'
 import {
   taskLimitDraftToOverrides,
   type TaskTimeLimitDraft,
@@ -137,8 +128,6 @@ const handleSave = () => {
 <style scoped>
 .loop-guard-row {
   margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .task-limit-modal-sub {
@@ -177,13 +166,6 @@ const handleSave = () => {
 
 .task-limit-input {
   width: 120px;
-}
-
-.task-limit-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 8px;
 }
 
 .task-limit-reset-all {

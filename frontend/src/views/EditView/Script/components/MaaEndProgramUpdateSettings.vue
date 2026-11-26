@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import type { MaaEndConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { CloudDownloadOutlined } from '@ant-design/icons-vue'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import UpdatePackageMode from './UpdatePackageMode.vue'
 
 defineProps<{ ready: boolean }>()
@@ -19,20 +21,24 @@ const handleChannel = (channel: 'stable' | 'beta') => {
   update.value = { ...update.value, Channel: channel }
   emit('save', 'Channel', channel)
 }
+function handleTakeoverChange(value: boolean) {
+  update.value.TakeoverEnabled = value
+  emit('save', 'TakeoverEnabled', value)
+}
 </script>
 
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.maaEndProgramUpdate') }}</h3>
-    </div>
+  <SectionCard
+    variant="card"
+    :title="t('core.edit.maaEndProgramUpdate')"
+    :icon="CloudDownloadOutlined"
+  >
     <a-row :gutter="24">
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.updateChannel')">
           <a-select
             :value="update.Channel"
             :disabled="!ready"
-            size="large"
             :options="[
               { label: t('core.setting.channel.stable'), value: 'stable' },
               { label: t('core.setting.channel.beta'), value: 'beta' },
@@ -41,30 +47,14 @@ const handleChannel = (channel: 'stable' | 'beta') => {
           />
         </a-form-item>
       </a-col>
-      <a-col :span="6">
-        <a-form-item>
-          <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.updateTakeoverSwitch')"
-              :hint="t('core.edit.maaEndProgramUpdateHint')"
-              variant="form"
-            />
-          </template>
-          <a-switch
-            v-model:checked="update.TakeoverEnabled"
-            :disabled="!ready"
-            @change="(value: boolean) => emit('save', 'TakeoverEnabled', value)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <UpdatePackageMode
           v-model="packageMode"
           :disabled="!ready || !update.TakeoverEnabled"
           @change="emit('save', 'PackageMode', $event)"
         />
       </a-col>
-      <a-col :span="6">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -76,7 +66,6 @@ const handleChannel = (channel: 'stable' | 'beta') => {
           <a-input-password
             v-model:value="update.MirrorChyanCDK"
             :disabled="!ready || !update.TakeoverEnabled"
-            size="large"
             autocomplete="off"
             :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
             @blur="emit('save', 'MirrorChyanCDK', update.MirrorChyanCDK ?? '')"
@@ -84,7 +73,18 @@ const handleChannel = (channel: 'stable' | 'beta') => {
         </a-form-item>
       </a-col>
     </a-row>
-  </div>
+    <a-row :gutter="24" style="margin-bottom: 12px">
+      <a-col :xs="24" :md="12">
+        <SwitchTile
+          :checked="Boolean(update.TakeoverEnabled)"
+          :title="t('core.edit.updateTakeoverSwitch')"
+          :description="t('core.edit.maaEndProgramUpdateHint')"
+          :disabled="!ready"
+          @change="handleTakeoverChange"
+        />
+      </a-col>
+    </a-row>
+  </SectionCard>
 </template>
 <style scoped src="@/styles/scriptEditForm.css"></style>
 <style scoped src="@/styles/scriptEdit.css"></style>

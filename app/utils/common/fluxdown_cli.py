@@ -52,8 +52,9 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import wraps
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Awaitable, Callable
+from urllib.parse import urlsplit
 
 import psutil
 
@@ -137,6 +138,7 @@ class FluxdownDownloadRecord:
     segments: int = 0
     proxy: str | None = None
     checksum: str | None = None
+    diagnostic: dict[str, object] | None = None
     status: str = (
         ""  # success | failed | checksum_fail | interrupted | fluxdown_fallback
     )
@@ -159,6 +161,7 @@ class FluxdownDownloadRecord:
             "segments": self.segments,
             "proxy": proxy,
             "checksum": self.checksum,
+            "diagnostic": self.diagnostic,
             "status": self.status,
             "error": self.error,
             "timestamp": self.timestamp,
@@ -1379,7 +1382,7 @@ def _map_put(
 def _proxy_hash(proxy: str | None) -> str:
     """本地续传配置指纹，避免将代理认证信息写进任务映射。"""
     import hashlib
-    from urllib.parse import urlsplit, urlunsplit
+    from urllib.parse import urlunsplit
 
     parts = urlsplit(proxy or "")
     endpoint = urlunsplit(parts._replace(netloc=parts.netloc.rsplit("@", 1)[-1]))
@@ -1391,12 +1394,20 @@ def fluxdown_server_forget(cli_exe: Path, url: str, destination: Path) -> None:
     _map_pop(cli_exe, _map_key(url, Path(destination)))
 
 
-def _request_output_paths(request_path: Path) -> tuple[Path, ...]:
-    """兼容 FluxDown 保留或移除 MAS 随机临时文件名前导点。"""
+def _request_output_paths(request_path: Path, *, url: str) -> tuple[Path, ...]:
+    """匹配当前请求独占的名字，并兼容旧版的前导点和 URL 扩展名。"""
     name = request_path.name.removeprefix(".")
-    if re.fullmatch(r"mas-fluxdown-[0-9a-f]{32}(?:\.[^/\\]+)?", name):
-        return (request_path.with_name(name), request_path.with_name(f".{name}"))
-    return (request_path,)
+    if not re.fullmatch(r"mas-fluxdown-[0-9a-f]{32}(?:\.[^/\\]+)?", name):
+        return (request_path,)
+    names = [name, f".{name}"]
+    if "." not in name:
+        # 旧版给下载中心的无后缀缓存文件沿用无后缀的请求名，FluxDown 可能
+        # 补上 URL 文件名的扩展名。只接受同目录、同随机前缀的精确名字。
+        url_path = PurePosixPath(urlsplit(url).path)
+        suffix = url_path.suffix
+        if re.fullmatch(r"\.[A-Za-z0-9]{1,16}", suffix):
+            names.extend((f"{name}{suffix}", f".{name}{suffix}"))
+    return tuple(request_path.with_name(candidate) for candidate in names)
 
 
 def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] | None:
@@ -1412,7 +1423,7 @@ def _matching_task_ids(cli_exe: Path, url: str, destination: Path) -> set[str] |
         return None
     targets = {
         os.path.normcase(str(path.resolve()))
-        for path in _request_output_paths(destination)
+        for path in _request_output_paths(destination, url=url)
     }
     matches = set()
     for task in tasks:
@@ -1847,7 +1858,8 @@ async def _fluxdown_server_download(
                 and st0.get("status") == _TASK_STATUS_DONE
                 and request_path
                 and not any(
-                    path.is_file() for path in _request_output_paths(Path(request_path))
+                    path.is_file()
+                    for path in _request_output_paths(Path(request_path), url=url)
                 )
             ):
                 # 文件归位后、清映射前崩溃，或调用方已经清掉完整包：重新取包，
@@ -1976,9 +1988,10 @@ async def _fluxdown_server_download(
         if task_id is None:
             # 每次 add 使用全新的请求路径。即使网关启动时只返回空快照，
             # 历史同源同名任务也不可能匹配本次身份；原目标保留到下载完成。
-            # FluxDown 会移除文件名前导点，使用普通文件名以保持任务路径一致。
+            # 显式保留后缀，避免 FluxDown 给下载中心的无后缀缓存文件自动补名。
+            suffix = destination.suffix or ".download"
             request_path = destination.with_name(
-                f"mas-fluxdown-{secrets.token_hex(16)}{destination.suffix}"
+                f"mas-fluxdown-{secrets.token_hex(16)}{suffix}"
             )
             args = [
                 "add",
@@ -2257,7 +2270,7 @@ async def _fluxdown_server_download(
     request_path = (_load_task_map(cli_exe).get(key) or {}).get("request_path")
     if request_path and os.path.normcase(str(actual.resolve())) not in {
         os.path.normcase(str(path.resolve()))
-        for path in _request_output_paths(Path(request_path))
+        for path in _request_output_paths(Path(request_path), url=url)
     }:
         raise RuntimeError("FluxDown 返回的输出路径与本次请求不符，拒绝使用该文件")
     if not actual.is_file():

@@ -12,7 +12,7 @@ import {
 } from './maafwAddTaskMenu'
 import type { MaaFWTaskQueue } from './useMaaFWTaskQueue'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
-import type { AddTaskCascaderOption } from '../../MaaFWFlavor/sectionContracts'
+import type { AddTaskCascaderOption } from './sectionProps'
 
 interface MaaFWAddTaskMenuOptions {
   scriptId: string

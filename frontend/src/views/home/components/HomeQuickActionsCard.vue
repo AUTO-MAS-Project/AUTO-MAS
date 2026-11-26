@@ -54,7 +54,7 @@ const quickActions = computed(() => [
   {
     title: t('core.home.quick.emulators'),
     description: t('core.home.quick.emulatorsDesc'),
-    path: '/emulators',
+    path: '/games',
     icon: DatabaseOutlined,
   },
   {

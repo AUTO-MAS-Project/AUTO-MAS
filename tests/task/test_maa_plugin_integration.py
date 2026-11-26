@@ -66,7 +66,7 @@ async def test_maa_public_crud_plan_restore_and_schema(maa_host):
     capabilities = (await client.get("/api/scripts/types")).json()
     assert capabilities["code"] == 200 and "MAA" in capabilities["types"]
     record = Plugin.list_plugins()[0]
-    assert Plugin.disable_impact(record) == ["scripts"]
+    assert Plugin.disable_impact(record) == ["plans", "scripts"]
     record.info.state = PluginState.DISABLING
     assert "MAA" not in (await client.get("/api/scripts/types")).json()["types"]
     record.info.state = PluginState.ENABLED

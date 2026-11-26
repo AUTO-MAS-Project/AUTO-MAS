@@ -169,7 +169,7 @@ class RdpViewer:
             change_style(WS_POPUP)
         self.embedded = embedded
 
-    def open(self, credential: Credential) -> None:
+    def open(self, credential: Credential | None) -> None:
         name = WINDOW_CLASS
         cursor = bind(user32, "LoadCursorW", W.HANDLE, W.HINSTANCE, C.c_void_p)
         cls = WNDCLASS(
@@ -498,7 +498,7 @@ class RdpViewer:
             )
         return default(hwnd, message, wparam, lparam)
 
-    def connect(self, credential: Credential) -> None:
+    def connect(self, credential: Credential | None) -> None:
         from comtypes import GUID, STDMETHOD, COMError, IUnknown
         from comtypes.automation import VARIANT
         from comtypes.client import GetEvents, GetModule
@@ -558,8 +558,10 @@ class RdpViewer:
         nonscriptable.AllowPromptingForCredentials = False
         extended = control.QueryInterface(mstscax.IMsRdpExtendedSettings)
         extended.Property["ConnectToChildSession"] = C.byref(VARIANT(True))
-        rdp.Domain, rdp.UserName = credential.rdp_identity
-        nonscriptable.ClearTextPassword = credential.password
+        # 保持这些属性未设置时，Windows 可从当前会话自动登录子会话。
+        if credential is not None:
+            rdp.Domain, rdp.UserName = credential.rdp_identity
+            nonscriptable.ClearTextPassword = credential.password
         current = child_session()
         if current != self.adopt_session_id:
             # 验证凭据和初始化 ActiveX 期间也可能出现别的子会话。

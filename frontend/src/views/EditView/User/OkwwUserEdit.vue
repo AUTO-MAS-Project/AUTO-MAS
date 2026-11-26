@@ -1,62 +1,29 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="okww"
-      :user-id="userId"
-      :config-label="t('core.edit.configureOkww')"
-      :config-loading="okwwConfigLoading"
-      :config-active="showOkwwConfigMask"
-      :config-disabled="configActionsDisabled"
-      @config="handleOkwwConfig"
-      @cancel="handleCancel"
-    />
-
-    <GuiSessionMask
-      :open="showOkwwConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.okWwSetupProgress')"
-      :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
-    >
-      <template #actions>
-        <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-          {{ t('core.edit.saveSettings') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showOkwwViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.okwwViewingTitle')"
-      :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="okwwTaskId"
-          type="primary"
-          size="large"
-          :loading="stoppingOkwwConfig"
-          @click="handleCloseOkwwView"
-        >
-          {{ t('core.edit.okwwViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="okww"
+        :user-id="userId"
+        :config-label="t('core.edit.configureOkww')"
+        :config-loading="okwwConfigLoading"
+        :config-active="showOkwwConfigMask"
+        :config-disabled="configActionsDisabled"
+        @config="handleOkwwConfig"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <UserAccountHeading
-              :user-name="formData.userName"
-              :options="{ isEdit, logoSrc: accountIcon }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-            </div>
-
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -131,7 +98,7 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
         </a-form>
       </a-card>
 
@@ -214,37 +181,71 @@
       </a-card>
     </ConfigLockPanel>
 
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="OKWW_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewFiles(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="f in previewFiles(raw)" :key="f.name">
-            <h4 class="okww-preview-title">{{ f.label }}</h4>
-            <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
-              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <GuiSessionMask
+        :open="showOkwwConfigMask"
+        :icon="SettingOutlined"
+        :title="t('core.edit.okWwSetupProgress')"
+        :description="`${t('core.edit.finishSetupOkWw')}\n${t('core.edit.clickSaveSettingsWhen')}`"
+      >
+        <template #actions>
+          <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
+            {{ t('core.edit.saveSettings') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showOkwwViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.okwwViewingTitle')"
+        :description="`${t('core.edit.okwwViewingDesc')}\n${t('core.edit.okwwViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="okwwTaskId"
+            type="primary"
+            size="large"
+            :loading="stoppingOkwwConfig"
+            @click="handleCloseOkwwView"
+          >
+            {{ t('core.edit.okwwViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="OKWW_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :script-desc="t('core.edit.okwwConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewFiles(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="f in previewFiles(raw)" :key="f.name">
+              <h4 class="okww-preview-title">{{ f.label }}</h4>
+              <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
+                <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
@@ -258,7 +259,8 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
@@ -276,6 +278,7 @@ import ConfigActionsSection from './ConfigActionsSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
+const { confirm, alert } = useConfirm()
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -408,9 +411,10 @@ const createUserImmediately = async (): Promise<boolean> => {
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建账号失败'
     if (addUserErrorCode.value === 409) {
-      Modal.warning({
+      void alert({
+        tone: 'warning',
         title: t('core.edit.noOkWwSettings'),
-        content: t('core.edit.currentOkWwInstall'),
+        description: t('core.edit.currentOkWwInstall'),
         okText: t('core.edit.backScriptList'),
         onOk: handleCancel,
       })
@@ -594,66 +598,63 @@ const handleRestored = async (target: string) => {
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
 // 与一键恢复同口径：单弹窗文案，跨配置来源时换标题并追加来源切换说明
 // （确认后由基座把配置来源切回备份时点再恢复）。
-const handleRestoreView = (
+const handleRestoreView = async (
   target: string,
   item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
-  if (configLocked.value) return Promise.resolve(false)
+  if (configLocked.value) return false
 
-  return new Promise<boolean>(resolve => {
-    const { title, paragraphs } = buildRestoreConfirm(
-      t,
-      {
-        title: t('core.edit.configRestoreDetailView'),
-        desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
-      },
-      item.base,
-      currentMode
-    )
-    Modal.confirm({
-      title,
-      content: h(
-        'div',
-        paragraphs.map(text =>
-          h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
-        )
-      ),
-      okType: 'danger',
-      okText: t('core.edit.configRestoreConfirmOk'),
-      cancelText: t('core.edit.cancel'),
-      onOk: async () => {
-        if (configLocked.value) {
-          message.error(t('core.edit.configLocked'))
-          resolve(false)
-          return
-        }
+  let restored = false
+  const { title, paragraphs } = buildRestoreConfirm(
+    t,
+    {
+      title: t('core.edit.configRestoreDetailView'),
+      desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+    },
+    item.base,
+    currentMode
+  )
+  await confirm({
+    tone: 'danger',
+    title,
+    description: h(
+      'div',
+      paragraphs.map(text =>
+        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+      )
+    ),
+    okText: t('core.edit.configRestoreConfirmOk'),
+    cancelText: t('core.edit.cancel'),
+    onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('core.edit.configLocked'))
+        return
+      }
 
-        try {
-          const resp = await restoreApi.restore(target, item.time)
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (target === 'mas') {
-            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
-            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
-            await loadUser()
-            await startSession(userId.value, true, 'user')
-          } else {
-            await startSession(scriptId, true, 'script')
-          }
-          resolve(true)
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
-          resolve(false)
+      try {
+        const resp = await restoreApi.restore(target, item.time)
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('core.edit.configRestoreFailed'))
         }
-      },
-      onCancel: () => resolve(false),
-    })
+        restoreOpen.value = false
+        if (target === 'mas') {
+          // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
+          // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
+          await loadUser()
+          await startSession(userId.value, true, 'user')
+        } else {
+          await startSession(scriptId, true, 'script')
+        }
+        restored = true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
+      }
+    },
   })
+  return restored
 }
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
@@ -680,10 +681,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
 .user-edit-content {
   max-width: 1200px;
   margin: 0 auto;

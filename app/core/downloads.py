@@ -25,20 +25,28 @@ from app.core.background_tasks import (
     BackgroundTaskState,
     TaskOutcome,
 )
+from app.core.download_diagnostics import (
+    describe_package,
+    redact_history_error,
+    safe_origin,
+)
 from app.models.config.setting import FluxdownRecord
 from app.models.schema import DownloadRequest, DownloadSnapshot
 from app.services.common.update import fluxdown as _service_update_fluxdown
 from app.services.common.update import transport as _service_update_transport
 from app.utils import fluxdown_cli as _utils_fluxdown_cli
+from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 from app.utils.common.update_files import native_path
+
+logger = get_logger("下载历史")
 
 type Progress = Callable[[int, int, float], Awaitable[None]]
 type Transfer = Callable[[DownloadRequest, Path, Progress], Awaitable[None]]
 
 
 DownloadObserver = Callable[[Path, int, int, float], None]
-# 只由预下载作用域设置；各下载任务继承自己的观察者，不影响其他队列或手动更新。
+# 下载任务在自己的作用域观察传输，不影响其他队列或手动更新。
 download_observer: ContextVar[DownloadObserver | None] = ContextVar(
     "download_observer", default=None
 )
@@ -104,6 +112,68 @@ async def download_file(
         return size
     observer = download_observer.get()
     actual_method = "FluxDown"
+    started_at = monotonic()
+    update = Config.setting.Update
+    frozen_source = source if source is not None else str(update.Source or "")
+    terminal_written = False
+    http_diagnostic: dict[str, object] | None = None
+    original_http_download = http_download or _service_update_fluxdown._httpx_download
+
+    async def inspect_package(path: Path) -> dict[str, object]:
+        try:
+            return await asyncio.to_thread(describe_package, path)
+        except Exception as error:
+            logger.warning(f"读取下载包诊断失败: {type(error).__name__}")
+            return {"schema": 1, "availability": "inspection_failed"}
+
+    async def write_attempt_record(
+        record: _utils_fluxdown_cli.FluxdownDownloadRecord,
+        *,
+        http_status: int | None = None,
+    ) -> None:
+        nonlocal terminal_written
+        record.url = safe_origin(record.url)
+        record.error = redact_history_error(record.error)
+        if record.status != "fluxdown_fallback":
+            terminal_written = True
+            if record.status == "success":
+                details = (
+                    http_diagnostic
+                    if http_diagnostic is not None
+                    else await inspect_package(destination)
+                )
+            else:
+                details = {"schema": 1, "availability": "download_failed"}
+                if http_status is not None:
+                    details["http_status"] = http_status
+            details.update(
+                {
+                    "source": frozen_source[:48] or "unknown",
+                    "downloader": actual_method,
+                    "phase": "download",
+                }
+            )
+            record.diagnostic = details
+        try:
+            await _write_history(record)
+        except Exception as error:
+            logger.warning(f"写入下载历史失败: {type(error).__name__}")
+
+    async def record_result(*, size: int, error: Exception | None = None) -> None:
+        await write_attempt_record(
+            _utils_fluxdown_cli.FluxdownDownloadRecord(
+                url=url,
+                destination=str(destination),
+                size=size,
+                duration_ms=int((monotonic() - started_at) * 1000),
+                status="failed" if error is not None else "success",
+                error=type(error).__name__ if error is not None else None,
+            ),
+            http_status=error.response.status_code
+            if isinstance(error, httpx.HTTPStatusError)
+            else None,
+        )
+
     if observer is not None:
         original_progress = progress
 
@@ -118,49 +188,67 @@ async def download_file(
                 download_method.reset(token)
 
         progress = report
-        original_http_download = (
-            http_download or _service_update_transport.download_file
-        )
 
-        async def observed_http_download(
-            url, destination, *, timeout, proxy=None, progress=None
-        ):
-            """HTTP 回退时切换实际下载器标识，报告开始状态并执行内置传输。"""
-            nonlocal actual_method
-            actual_method = "httpx"
+    async def observed_http_download(
+        url: str,
+        destination: Path,
+        *,
+        timeout: float,
+        proxy: httpx.Proxy | None = None,
+        progress: _service_update_transport.DownloadProgress | None = None,
+    ) -> int:
+        nonlocal actual_method, http_diagnostic
+        actual_method = "httpx"
+        if observer is not None:
             token = download_method.set(actual_method)
             try:
                 observer(destination, 0, 0, 0.0)
             finally:
                 download_method.reset(token)
-            return await original_http_download(
-                url, destination, timeout=timeout, proxy=proxy, progress=progress
-            )
+        size = await original_http_download(
+            url, destination, timeout=timeout, proxy=proxy, progress=progress
+        )
+        # 此时还持有目标文件锁，后续同路径重试不能替换正在检查的包。
+        http_diagnostic = await inspect_package(destination)
+        return size
 
-        http_download = observed_http_download
-    update = Config.setting.Update
-    return await _service_update_fluxdown.download_file(
-        url,
-        destination,
-        timeout=timeout,
-        proxy=proxy,
-        progress=progress,
-        downloader=downloader,
-        source=source,
-        http_download=http_download,
-        options=_service_update_fluxdown.FluxdownOptions(
-            downloader=update.Downloader,
-            source=str(update.Source or ""),
-            cli_path=str(update.FluxdownPath or ""),
-            segments=int(update.FluxdownSegments),
-            server_mode=bool(update.FluxdownServerMode),
-            cli_search_dirs=(
-                Config.install_path / "res" / "fluxdown-cli",
-                Config.resource_path / "fluxdown-cli",
+    try:
+        size = await _service_update_fluxdown.download_file(
+            url,
+            destination,
+            timeout=timeout,
+            proxy=proxy,
+            progress=progress,
+            downloader=downloader,
+            source=source,
+            http_download=observed_http_download,
+            options=_service_update_fluxdown.FluxdownOptions(
+                downloader=update.Downloader,
+                source=str(update.Source or ""),
+                cli_path=str(update.FluxdownPath or ""),
+                segments=int(update.FluxdownSegments),
+                server_mode=bool(update.FluxdownServerMode),
+                cli_search_dirs=(
+                    Config.install_path / "res" / "fluxdown-cli",
+                    Config.resource_path / "fluxdown-cli",
+                ),
             ),
-        ),
-        write_history=_write_history,
-    )
+            write_history=write_attempt_record,
+        )
+    except FluxdownCancelUnconfirmed:
+        # 停写归属未确认时立即交给调度，不能等待诊断或被取消覆盖。
+        raise
+    except Exception as error:
+        if not terminal_written:
+            try:
+                await record_result(size=0, error=error)
+            except asyncio.CancelledError:
+                # 历史提交可取消，但原下载失败仍须传回调用者。
+                pass
+        raise
+    if not terminal_written:
+        await record_result(size=size)
+    return size
 
 
 @dataclass
@@ -170,6 +258,7 @@ class _Artifact:
     snapshot: DownloadSnapshot
     handle: BackgroundTaskHandle[None] | None = None
     error: BaseException | None = None
+    method: str = ""
 
 
 @dataclass
@@ -315,6 +404,14 @@ class DownloadManager:
         """执行文件传输并更新进度，对可恢复的网络错误按退避策略重试，永久失败交由完成回调记录。"""
         from app.services.common.update.fluxdown import FluxdownResumableError
 
+        upstream_observer = download_observer.get()
+
+        def observe(path: Path, downloaded: int, total: int, speed: float) -> None:
+            """记录传输实际使用的下载器，包括 FluxDown 回退到内置下载。"""
+            artifact.method = download_method.get()
+            if upstream_observer is not None:
+                upstream_observer(path, downloaded, total, speed)
+
         async def progress(downloaded: int, total: int, speed: float) -> None:
             """将传输回调中的已下载字节、总量和速度写入本轮下载快照。"""
             artifact.snapshot.downloaded = downloaded
@@ -325,7 +422,11 @@ class DownloadManager:
         for attempt in range(self._attempts):
             artifact.snapshot.state = "running"
             try:
-                await self._transfer(artifact.request, artifact.path, progress)
+                observer_token = download_observer.set(observe)
+                try:
+                    await self._transfer(artifact.request, artifact.path, progress)
+                finally:
+                    download_observer.reset(observer_token)
                 if not artifact.path.is_file():
                     raise FileNotFoundError("下载完成但文件不存在")
                 return
@@ -372,6 +473,12 @@ class DownloadManager:
         )
 
         self._evict()
+
+    def transfer_method(self, request: DownloadRequest) -> str:
+        """返回此文件最近一次观察到的实际下载器，尚未观察到传输时留空。"""
+        entry = self._entries.get(request.cache_key)
+        artifact = entry.artifacts.get(request.identity) if entry else None
+        return artifact.method if artifact is not None else ""
 
     def query(self, request: DownloadRequest) -> DownloadSnapshot:
         """返回指定文件身份的状态副本；成功文件已丢失且仍有使用者时，尝试补交下载。"""

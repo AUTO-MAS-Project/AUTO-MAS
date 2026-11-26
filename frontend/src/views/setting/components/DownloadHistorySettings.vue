@@ -5,6 +5,8 @@ import { message } from 'ant-design-vue'
 import type { GlobalConfig, FluxdownRecord } from '@/api'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import { AppModal } from '@/components/ui'
+import { downloadHistoryExport } from './downloadHistoryExport'
 
 const props = defineProps<{ settings: GlobalConfig }>()
 const { t } = useI18n()
@@ -52,13 +54,17 @@ const formatHistorySize = (size?: number | null) =>
 
 const formatHistoryDuration = (ms?: number | null) => (ms ? `${(ms / 1000).toFixed(1)}s` : '-')
 
-// 失败/回退记录可导出：把这条下载记录存成 JSON 文件
+const canExportHistory = (item: FluxdownRecord) =>
+  Boolean(item.diagnostic || (item.status && item.status !== 'success'))
+
+// 有诊断摘要或失败信息的单条下载记录可导出为 JSON 文件
 const handleExportHistory = async (item: FluxdownRecord) => {
   try {
-    const fileName = `fluxdown-download-${(item.timestamp ?? '').replace(/[: ]/g, '-')}.json`
+    const exported = downloadHistoryExport(item)
+    const fileName = `fluxdown-download-${(exported.timestamp ?? '').replace(/[: ]/g, '-')}.json`
     const result = await window.electronAPI.saveTextFile(
       fileName,
-      JSON.stringify(item, null, 2),
+      JSON.stringify(exported, null, 2),
       [{ name: 'JSON', extensions: ['json'] }],
       {
         dialogTitle: t('core.setting.others.historyExportDialogTitle'),
@@ -93,12 +99,11 @@ const showUpdateHistory = ref(false)
     </a-button>
   </SettingRow>
 
-  <a-modal
+  <AppModal
     v-model:open="showUpdateHistory"
     :title="t('core.setting.others.lastUpdateHistory')"
     :width="700"
-    :footer="null"
-    :destroy-on-close="true"
+    footer="none"
     class="update-history-modal"
   >
     <a-spin :spinning="historyLoading" class="history-loading">
@@ -125,7 +130,7 @@ const showUpdateHistory = ref(false)
             {{ formatHistoryDuration(item.duration_ms) }}
             <span v-if="item.error" class="history-item-error"> — {{ item.error }}</span>
             <a-button
-              v-if="item.status && item.status !== 'success'"
+              v-if="canExportHistory(item)"
               type="link"
               size="small"
               class="history-export-button"
@@ -138,7 +143,7 @@ const showUpdateHistory = ref(false)
       </a-timeline>
       <NoData v-else :description="t('core.setting.others.noHistory')" />
     </a-spin>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

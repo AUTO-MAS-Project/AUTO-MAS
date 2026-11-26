@@ -27,22 +27,23 @@ test.describe('@script-run-limits', () => {
       const section = page.locator('.form-section').filter({
         has: page.getByRole('heading', { name: 'Run configuration', exact: true }),
       })
-      const inputFor = (label: string) =>
-        section
-          .locator('.ant-form-item')
-          .filter({ has: page.getByText(label, { exact: true }) })
-          .getByRole('spinbutton')
+      const itemFor = (label: string) =>
+        section.locator('.ant-form-item').filter({ has: page.getByText(label, { exact: true }) })
       const retryLabel = 'Retry limit'
       const hardLabel = 'Per-account total run limit (minutes)'
 
       // 失焦会修正输入；回归曾把修正前的旧草稿保存，而界面显示新值。
       for (const edit of [
-        { label: retryLabel, key: 'RunTimesLimit', input: '4', value: 4 },
-        { label: retryLabel, key: 'RunTimesLimit', input: '0', value: 1 },
-        { label: hardLabel, key: 'HardTimeLimit', input: '145', value: 145 },
-        { label: hardLabel, key: 'HardTimeLimit', input: '', value: 120 },
+        { label: retryLabel, key: 'RunTimesLimit', input: '4', value: 4, stepper: true },
+        { label: retryLabel, key: 'RunTimesLimit', input: '0', value: 1, stepper: true },
+        { label: hardLabel, key: 'HardTimeLimit', input: '145', value: 145, stepper: false },
+        { label: hardLabel, key: 'HardTimeLimit', input: '', value: 120, stepper: false },
       ]) {
-        const input = inputFor(edit.label)
+        const item = itemFor(edit.label)
+        if (edit.stepper) {
+          await item.locator('.stepper-display').click()
+        }
+        const input = item.getByRole('spinbutton')
         await input.fill(edit.input)
         const saving = responseFor(page, '/api/scripts/update', scriptId)
         await input.blur()
@@ -52,16 +53,18 @@ test.describe('@script-run-limits', () => {
           data: { Run: { [edit.key]: edit.value } },
         })
         expect((await response.json()).code).toBe(200)
-        await expect(input).toHaveValue(String(edit.value))
+        if (edit.stepper) {
+          await expect(item.locator('.stepper-num')).toHaveText(String(edit.value))
+        } else {
+          await expect(input).toHaveValue(String(edit.value))
+        }
       }
 
       const expected = { ...created.data.Run, RunTimesLimit: 1, HardTimeLimit: 120 }
       expect((await post('/api/scripts/get', { scriptId })).data[scriptId].Run).toEqual(expected)
-      const reloaded = responseFor(page, '/api/scripts/get', scriptId)
       await page.reload()
-      expect((await (await reloaded).json()).data[scriptId].Run).toEqual(expected)
-      await expect(inputFor(retryLabel)).toHaveValue('1')
-      await expect(inputFor(hardLabel)).toHaveValue('120')
+      await expect(itemFor(retryLabel).locator('.stepper-num')).toHaveText('1')
+      await expect(itemFor(hardLabel).getByRole('spinbutton')).toHaveValue('120')
       await section.scrollIntoViewIfNeeded()
       await app.evidence('run-limits-blur-regression')
     } finally {

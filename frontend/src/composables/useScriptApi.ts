@@ -1,6 +1,7 @@
 import type { ConfigSnapshot } from '@/services/configUiSync'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
+import { queryRequest } from '@/utils/queryRequest'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
@@ -21,7 +22,7 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/plugins/maafwFamily'
 import {
   analyticsConfigSection,
   analyticsCountBucket,
@@ -51,12 +52,34 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
   WhimboxConfig: 'Whimbox',
-  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  // MaaFW 家族（MaaFW / M9A / MSS）的配置类名登记在适配条目上
   ...maafwScriptTypeByConfigType(),
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
+}
+
+export async function fetchScriptExecutionSession(scriptId: string, signal: AbortSignal) {
+  const [response, environmentSupported] = await Promise.all([
+    queryRequest(signal, () => GetService.getScriptApiScriptsGetPost({ scriptId })),
+    window.electronAPI.desktopSessionSupported?.(),
+  ])
+  if (response.code !== 200) throw new Error(response.message)
+  const run = response.data[scriptId]?.Run
+  const configurable = run != null && 'ExecutionSession' in run
+  const capability = response.index[0]
+  const supported = environmentSupported === true && capability?.desktopSessionSupported === true
+  const reason = environmentSupported
+    ? (capability?.desktopSessionReason ?? 'unsupported_config')
+    : 'environment_unavailable'
+  return {
+    configurable,
+    reason: supported ? undefined : reason,
+    supported,
+    value: configurable ? (run.ExecutionSession ?? 'main') : 'main',
+    uiSources: response.uiSources,
+  }
 }
 
 export function useScriptApi() {
