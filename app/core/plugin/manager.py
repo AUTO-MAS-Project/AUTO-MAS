@@ -1801,8 +1801,8 @@ class _PluginManager:
     def _wrap_script_hooks(handler_cls, decl, plugin, gate, overridden):
         """按旧回调签名经调用门转接插件钩子；同步实现的钩子也照样受理。"""
 
-        async def call(name, *args):
-            result = gate.wrap(getattr(plugin, name))(*args)
+        async def call(name, *args, **kwargs):
+            result = gate.wrap(getattr(plugin, name))(*args, **kwargs)
             return await result if inspect.isawaitable(result) else result
 
         async def clone_script(source, target):
@@ -1824,6 +1824,22 @@ class _PluginManager:
             # 守卫在配置执行门内执行，此时插件调用门已经放开，所以再包一层。
             return None if guard is None else gate.wrap(guard)
 
+        def validate_update(data):
+            # 宿主在保存前同步调用，不等待；插件写成协程就当配置错误报出来。
+            result = gate.wrap(plugin.validate_update)(data)
+            if inspect.isawaitable(result):
+                close = getattr(result, "close", None)
+                if close is not None:
+                    close()
+                raise RuntimeError("托管保存校验必须是同步实现")
+            return result
+
+        async def import_config(script, target_directory, *, user_id=None):
+            await call("import_config", script, target_directory, user_id=user_id)
+
+        async def initialize(script):
+            await call("initialize", script)
+
         # 旧回调字段 → (插件钩子名, 转接函数)
         hooks = {
             "clone_script": ("on_script_cloned", clone_script),
@@ -1831,6 +1847,9 @@ class _PluginManager:
             "prepare_user_read": ("prepare_user_read", prepare_user_read),
             "initialize_user": ("on_user_added", initialize_user),
             "prepare_user_update": ("prepare_user_update", prepare_user_update),
+            "validate_update": ("validate_update", validate_update),
+            "import_config": ("import_config", import_config),
+            "initialize": ("initialize", initialize),
         }
         return handler_cls(
             **{

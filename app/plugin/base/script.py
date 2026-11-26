@@ -15,6 +15,8 @@ from app.task.user_expander import UserExpander
 from .extension import _AdapterPlugin
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from app.utils.common.config.restore import ConfigRestorePool
 
     from .emulator import EmulatorExpect
@@ -157,6 +159,21 @@ class ScriptAdapterPlugin(_AdapterPlugin):
         """
         return None
 
+    def validate_update(self, data: dict[str, Any]) -> None:
+        """保存托管配置前校验补丁；抛异常即拒绝保存。同步调用，不要在这里等待。"""
+
+    async def import_config(
+        self,
+        script: ScriptEntry,
+        target_directory: "Path",
+        *,
+        user_id: str | None = None,
+    ) -> None:
+        """把安装目录里的上游配置导入到 ``target_directory``；由导入接口调用。"""
+
+    async def initialize(self, script: ScriptEntry) -> None:
+        """托管配置激活后的一次性整理，由宿主在启动装配时按提交边界调用。"""
+
     def _validate_decl(self) -> None:
         """校验脚本/用户预声明字段；有计划类型时要求 user.info 含 plan_id。"""
         fields = getattr(self.script_type, "model_fields", {})
@@ -196,4 +213,7 @@ SCRIPT_LIFECYCLE_HOOKS: tuple[str, ...] = (
     "prepare_user_read",
     "on_user_added",
     "prepare_user_update",
+    "validate_update",
+    "import_config",
+    "initialize",
 )
