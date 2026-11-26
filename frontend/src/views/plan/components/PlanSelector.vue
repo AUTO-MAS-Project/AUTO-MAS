@@ -1,12 +1,10 @@
 <template>
-  <a-card class="plan-selector-card app-page-surface" :bordered="false">
+  <SectionCard class="plan-selector-card">
     <template #title>
-      <div class="card-title">
-        <span>{{ t('core.plan.selectLabel') }}</span>
-        <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-          {{ t('core.plan.count', { count: planList.length }, planList.length) }}
-        </a-tag>
-      </div>
+      <span>{{ t('core.plan.selectLabel') }}</span>
+      <a-tag :color="planList.length > 0 ? 'success' : 'default'">
+        {{ t('core.plan.count', { count: planList.length }, planList.length) }}
+      </a-tag>
     </template>
 
     <div class="plan-selection-container">
@@ -77,7 +75,7 @@
         </template>
       </draggable>
     </div>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -85,6 +83,7 @@ import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
+import { SectionCard } from '@/components/ui'
 import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
 
 const { t } = useI18n()
@@ -163,10 +162,8 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
 </script>
 
 <style scoped>
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.plan-selector-card.ui-section-card {
+  margin-bottom: 0;
 }
 
 .plan-buttons-container {

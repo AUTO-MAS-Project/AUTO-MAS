@@ -1,14 +1,16 @@
 <template>
-  <a-card :title="t('core.queue.item.cardTitle')" class="app-page-section queue-item-card">
-    <template #extra>
-      <a-space>
-        <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          {{ t('core.queue.item.add') }}
-        </a-button>
-      </a-space>
+  <SectionCard
+    variant="plain"
+    :title="t('core.queue.item.cardTitle')"
+    class="app-page-section queue-item-card"
+  >
+    <template #actions>
+      <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        {{ t('core.queue.item.add') }}
+      </a-button>
     </template>
 
     <DraggableTableShell
@@ -65,7 +67,7 @@
         </div>
       </template>
     </DraggableTableShell>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -73,7 +75,7 @@ import DragHandle from '@/components/DragHandle.vue'
 import QueueDeleteButton from './QueueDeleteButton.vue'
 import QueueWeekdaysSelect from './QueueWeekdaysSelect.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
-import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -328,54 +330,6 @@ onMounted(() => {
   margin-right: 6px !important;
 }
 
-/* 队列项列表样式 */
-.queue-items-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.queue-item-row {
-  display: flex;
-  align-items: center;
-  padding: 12px 16px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 6px;
-  transition: all 0.2s ease;
-}
-
-.queue-item-row:hover {
-  border-color: var(--ant-color-primary);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.item-left {
-  flex: 0 0 120px;
-}
-
-.item-index {
-  font-weight: 500;
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.item-center {
-  flex: 1;
-  padding: 0 16px;
-}
-
-.script-name {
-  color: var(--ant-color-text);
-  font-size: 14px;
-}
-
-.item-right {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 8px;
-}
-
 /* 拖拽表格业务列样式 */
 .script-cell {
   flex: 3 1 320px;
@@ -402,7 +356,7 @@ onMounted(() => {
   border-radius: 4px;
 }
 
-/* 脚本下拉框样式 - 使用与TimeSetManager.vue状态下拉框相同的样式 */
+/* 脚本下拉框样式 */
 .script-select :deep(.ant-select-selector) {
   background: transparent !important;
   border: none !important;

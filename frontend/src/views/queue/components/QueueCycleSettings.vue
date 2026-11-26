@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { QueueConfig_Cycle, QueueUpdateIn } from '@/api'
+import { SectionCard } from '@/components/ui'
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { queueApi } from '@/composables/useQueueApi'
@@ -68,7 +69,11 @@ function saveInterval() {
 </script>
 
 <template>
-  <a-card :title="t('core.queue.triggers.cycleSettings')" class="queue-cycle-settings">
+  <SectionCard
+    variant="plain"
+    :title="t('core.queue.triggers.cycleSettings')"
+    class="queue-cycle-settings"
+  >
     <a-form layout="vertical" :disabled="saving">
       <a-row :gutter="[24, 0]">
         <a-col :xs="24" :sm="12" :xl="6">
@@ -103,7 +108,7 @@ function saveInterval() {
         </a-col>
       </a-row>
     </a-form>
-  </a-card>
+  </SectionCard>
 </template>
 
 <style scoped>
@@ -111,13 +116,6 @@ function saveInterval() {
   font-weight: 600;
 }
 
-.queue-cycle-settings {
-  margin-bottom: 24px;
-}
-.queue-cycle-settings :deep(.ant-card-head-title) {
-  font-size: 18px;
-  font-weight: 600;
-}
 .queue-cycle-settings :deep(.ant-form-item) {
   margin-bottom: 0;
 }
