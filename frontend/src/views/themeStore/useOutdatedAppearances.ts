@@ -87,12 +87,22 @@ export function useOutdatedAppearances(options: UseOutdatedAppearancesOptions) {
           failed += 1
           continue
         }
+        const expectedId = item.installed?.appearanceId
+        const preparedId = prepared.appearance?.id
+        if (!expectedId || !preparedId || preparedId !== expectedId) {
+          logger.warn(
+            `批量更新跳过 ${item.fileKey}：新版包 ID (${preparedId ?? 'unknown'}) 与本机已安装 ID (${expectedId ?? 'none'}) 不一致`
+          )
+          discardToken(prepared.token, category)
+          failed += 1
+          continue
+        }
         const telemetry = beginAnalyticsOperation('appearance_store_install_finished')
         let outcome: OnlineAppearanceInstallOutcome = 'failed'
         try {
           outcome = await options.install(prepared.token, category, {
             preserveCurrentSelection: true,
-            replaceExisting: true,
+            allowReplaceId: expectedId,
           })
         } finally {
           telemetry.finish({

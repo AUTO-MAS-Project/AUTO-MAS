@@ -3,21 +3,32 @@ import type { OnlineAppearanceItem, OnlineAppearanceListResult } from '@/types/a
 import type { AppearanceCategory } from '@/types/mascotPack'
 import { loadAllOutdatedOnlineAppearances } from './appearanceCatalog'
 
-const { saveConfigMock, setAppearanceMock, installOnlineThemeMock, messageSuccessMock } =
-  vi.hoisted(() => ({
-    saveConfigMock: vi.fn(async (_patch?: { desktopMascotId?: string }) => undefined),
-    setAppearanceMock: vi.fn(async (_id?: string) => undefined),
-    installOnlineThemeMock: vi.fn(async () => ({
-      success: true,
-      appearance: {
-        id: 'theme-b',
-        name: '主题 B',
-        mode: 'light' as const,
-        tokens: { colorPrimary: '#1677ff' },
-      },
-    })),
-    messageSuccessMock: vi.fn(),
-  }))
+const {
+  saveConfigMock,
+  setAppearanceMock,
+  installOnlineThemeMock,
+  messageSuccessMock,
+  modalConfirmMock,
+} = vi.hoisted(() => ({
+  saveConfigMock: vi.fn(async (_patch?: { desktopMascotId?: string }) => undefined),
+  setAppearanceMock: vi.fn(async (_id?: string) => undefined),
+  installOnlineThemeMock: vi.fn(async (_token: string, _replace?: boolean) => ({
+    success: true as boolean,
+    code: undefined as string | undefined,
+    existing: undefined as { id: string; name: string } | undefined,
+    appearance: {
+      id: 'theme-b',
+      name: '主题 B',
+      mode: 'light' as const,
+      tokens: { colorPrimary: '#1677ff' },
+    },
+  })),
+  messageSuccessMock: vi.fn(),
+  modalConfirmMock: vi.fn((opts?: { onCancel?: () => void }) => {
+    opts?.onCancel?.()
+    return { destroy: vi.fn() }
+  }),
+}))
 
 vi.mock('ant-design-vue', () => ({
   message: {
@@ -28,7 +39,7 @@ vi.mock('ant-design-vue', () => ({
   Modal: {
     useModal: () => [
       {
-        confirm: vi.fn(() => ({ destroy: vi.fn() })),
+        confirm: modalConfirmMock,
         info: vi.fn(() => ({ destroy: vi.fn() })),
       },
       () => null,
@@ -246,6 +257,7 @@ describe('资源商店全量待更新扫描与批量更新边界', () => {
       async (fileKey: string, versionNo: number) => ({
         success: true,
         token: `tok:${fileKey}:${versionNo}`,
+        appearance: { id: fileKey, name: fileKey },
       })
     )
 
@@ -283,17 +295,98 @@ describe('资源商店全量待更新扫描与批量更新边界', () => {
     // 批量更新主题时同样不改变当前生效主题
     const themeOutcome = await installPreparedOnlineAppearance('tok:theme-b:2', 'theme', {
       preserveCurrentSelection: true,
-      replaceExisting: true,
+      allowReplaceId: 'theme-b',
     })
     expect(themeOutcome).toBe('installed')
     expect(setAppearanceMock).not.toHaveBeenCalled()
 
     // 单独安装桌宠（不传 preserveCurrentSelection）保留原有切换行为
     const singleOutcome = await installPreparedOnlineAppearance('tok:mascot-b:2', 'mascot', {
-      replaceExisting: true,
+      allowReplaceId: 'mascot-b',
     })
     expect(singleOutcome).toBe('installed')
     expect(activeMascotId).toBe('mascot-b')
     expect(saveConfigMock).toHaveBeenCalledWith({ desktopMascotId: 'mascot-b' })
+  })
+
+  it('新版包 ID 与待升级的本机 ID 不一致时，批量流程拒绝静默覆盖另一份已有本机包', async () => {
+    const electronAPI = (
+      globalThis as unknown as {
+        window: {
+          electronAPI: {
+            listOnlineAppearances: ReturnType<typeof vi.fn>
+            prepareOnlineAppearance: ReturnType<typeof vi.fn>
+            installOnlineAppearance: ReturnType<typeof vi.fn>
+            discardOnlineAppearance: ReturnType<typeof vi.fn>
+          }
+        }
+      }
+    ).window.electronAPI
+
+    electronAPI.listOnlineAppearances.mockImplementation(
+      async (_query: unknown, category: AppearanceCategory) => {
+        if (category === 'mascot') {
+          return {
+            success: true,
+            items: [],
+            pagination: { page: 1, pageSize: 50, total: 0, hasNext: false },
+          }
+        }
+        return {
+          success: true,
+          items: [
+            makeItem({
+              fileKey: 'theme-b',
+              publishedVersionNo: 2,
+              installed: { appearanceId: 'theme-b', versionNo: 1 },
+            }),
+          ],
+          pagination: { page: 1, pageSize: 50, total: 1, hasNext: false },
+        }
+      }
+    )
+
+    // 作者发布 v2 时把包 ID 改成了本机已存在的另一份资源 ID "other-theme"
+    electronAPI.prepareOnlineAppearance.mockResolvedValue({
+      success: true,
+      token: 'tok:theme-b:2',
+      appearance: { id: 'other-theme', name: '误改 ID 的新版' },
+    })
+
+    const { useAppearanceSettings } = await import('@/views/setting/useAppearanceSettings')
+    const { useOutdatedAppearances } = await import('./useOutdatedAppearances')
+    const { installPreparedOnlineAppearance } = useAppearanceSettings()
+    const outdated = useOutdatedAppearances({
+      install: (token, category, opts) => installPreparedOnlineAppearance(token, category, opts),
+    })
+
+    await outdated.refresh()
+    const summary = await outdated.updateAll()
+
+    // 批量入口跳过安装并丢弃临时包，绝不覆盖另一份本机包 other-theme
+    expect(summary).toEqual({ succeeded: 0, failed: 1 })
+    expect(installOnlineThemeMock).not.toHaveBeenCalled()
+    expect(electronAPI.discardOnlineAppearance).toHaveBeenCalledWith('tok:theme-b:2', 'theme')
+
+    // 下层安装函数兜底校验：即使直接调用且传入 allowReplaceId='theme-b'，冲突对象是 other-theme 时也不允许静默覆盖
+    installOnlineThemeMock.mockImplementationOnce(async (_token, replace) => ({
+      success: Boolean(replace),
+      code: replace ? undefined : 'DUPLICATE_ID',
+      existing: { id: 'other-theme', name: '另一份本机主题' },
+      appearance: {
+        id: 'other-theme',
+        name: '另一份本机主题',
+        mode: 'light' as const,
+        tokens: { colorPrimary: '#1677ff' },
+      },
+    }))
+    const directOutcome = await installPreparedOnlineAppearance('tok:theme-b:2', 'theme', {
+      preserveCurrentSelection: true,
+      allowReplaceId: 'theme-b',
+    })
+    expect(directOutcome).toBe('cancelled')
+    expect(modalConfirmMock).toHaveBeenCalledTimes(1)
+    expect(installOnlineThemeMock).toHaveBeenCalledTimes(1)
+    expect(installOnlineThemeMock).toHaveBeenCalledWith('tok:theme-b:2', false)
   })
 })

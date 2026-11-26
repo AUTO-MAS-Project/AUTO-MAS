@@ -153,12 +153,16 @@ export function useAppearanceSettings() {
     category: AppearanceCategory = 'theme',
     options: OnlineAppearanceInstallOptions = {}
   ): Promise<OnlineAppearanceInstallOutcome> => {
-    let result = await install(Boolean(options.replaceExisting))
+    let result = await install(false)
     if (!result.success && result.code === 'DUPLICATE_ID') {
-      const replace = await confirmReplace(
-        result.existing?.name ?? result.existing?.id ?? t('core.setting.basic.appearance'),
-        category
-      )
+      const existingId = result.existing?.id
+      const replace =
+        options.allowReplaceId !== undefined && existingId === options.allowReplaceId
+          ? true
+          : await confirmReplace(
+              result.existing?.name ?? existingId ?? t('core.setting.basic.appearance'),
+              category
+            )
       if (!replace) return 'cancelled'
       result = await install(true)
     }

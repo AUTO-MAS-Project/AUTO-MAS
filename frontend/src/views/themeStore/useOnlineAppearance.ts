@@ -30,8 +30,8 @@ export interface OnlineAppearanceInstallOptions {
   applyImmediately?: boolean
   /** 仅更新资源包本身，不修改当前生效的主题或桌宠选择，也不弹单项预览提示（用于批量更新）。 */
   preserveCurrentSelection?: boolean
-  /** 已知是在更新已安装资源时，直接允许覆盖同 ID，避免批量更新逐条弹确认框。 */
-  replaceExisting?: boolean
+  /** 仅当冲突的本机资源 ID 与此值完全一致时才允许静默覆盖，防止批量升级误覆盖其他本机包。 */
+  allowReplaceId?: string
 }
 
 export type OnlineAppearanceStatus = 'none' | 'installed' | 'outdated'
