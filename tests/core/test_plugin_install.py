@@ -10,10 +10,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
-from app.core.plugin.log_flow import FlowOwner
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
-from app.models.task import TaskUserItem
 from app.plugin import uv
 from app.plugin.errors import PluginPrecheckError
 from app.plugin.runtime import loader
@@ -24,6 +22,7 @@ from app.utils.common.log_flow.contracts import (
     WorkerPluginPackage,
 )
 from app.utils.common.log_flow.observation import ReportEntry
+from app.utils.common.log_flow.session import LogFlowSession
 
 
 def metadata(*, identity="install_probe", version="1.0", sdk=True):
@@ -73,29 +72,26 @@ async def test_install_preserves_packages_read_by_logflow_worker(
         )
 
     write_distribution(site, dependency, "1.0", report_code("1.0"))
-    owner = FlowOwner(lambda: True)
     async with AsyncExitStack() as stack:
         session = None
 
         async def resolve_environment(*, destination, **_kwargs):
             nonlocal session
-            session = await stack.enter_async_context(
-                owner.open(
-                    TaskUserItem(),
-                    PipelineSpec(
-                        accept_push=True,
-                        plugin_package=WorkerPluginPackage(
-                            name="probe",
-                            import_root=str(tmp_path),
-                            dependency_root=str(site),
-                            sdk_root=str(tmp_path),
-                        ),
-                        postprocess=FunctionRef(
-                            name="probe:report", module=dependency, attribute="report"
-                        ),
+            session = await LogFlowSession.open(
+                PipelineSpec(
+                    accept_push=True,
+                    plugin_package=WorkerPluginPackage(
+                        name="probe",
+                        import_root=str(tmp_path),
+                        dependency_root=str(site),
+                        sdk_root=str(tmp_path),
                     ),
-                )
+                    postprocess=FunctionRef(
+                        name="probe:report", module=dependency, attribute="report"
+                    ),
+                ),
             )
+            stack.push_async_callback(session.close_on_exit)
             write_distribution(
                 destination,
                 dependency,
@@ -106,12 +102,12 @@ async def test_install_preserves_packages_read_by_logflow_worker(
             return SimpleNamespace(ok=True)
 
         monkeypatch.setattr(precheck, "resolve_environment", resolve_environment)
-        assert not owner.has_workers
+        assert not LogFlowSession.has_shared_environment_readers()
         expects_restart = dependency_version != "1.0"
         result = await uv.install(
             "install-probe",
             plugin_name="install_probe",
-            has_shared_environment_readers=lambda: owner.has_workers,
+            has_shared_environment_readers=LogFlowSession.has_shared_environment_readers,
         )
         assert dependency not in sys.modules
         assert result is expects_restart
@@ -128,7 +124,7 @@ async def test_install_preserves_packages_read_by_logflow_worker(
         assert summary.complete and summary.report_entries == (
             ReportEntry(node_type="info", text="1.0"),
         )
-    assert not owner.has_workers
+    assert not LogFlowSession.has_shared_environment_readers()
 
 
 @pytest_asyncio.fixture

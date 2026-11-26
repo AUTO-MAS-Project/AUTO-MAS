@@ -28,7 +28,12 @@ from app.config import (
 )
 from app.config.signals import ConfigEvent, FieldChangeEvent
 from app.models.notification.report import TaskNotificationState
-from app.utils.common.log_flow.observation import NodeObservation
+from app.utils.common.log_flow.observation import (
+    CloseReason,
+    Node,
+    SessionSummary,
+    public_log_node,
+)
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -71,8 +76,6 @@ class TaskTriggerReason(StrEnum):
 
 
 class RuntimeEntry(ConfigEntry):
-    _node_observation: NodeObservation | None = PrivateAttr(default=None)
-
     if TYPE_CHECKING:
         # 各具体节点声明自己的 info；保留 ConfigEntry 的开放字段构造签名。
         def __init__(self, **field_values: object) -> None: ...
@@ -84,17 +87,6 @@ class RuntimeEntry(ConfigEntry):
             # ConfigEntry 不固定分组类型；按公开分组名执行通用字段提交。
             setattr(getattr(self, "info"), name, value)
         await self.commit()
-
-    @property
-    def node_observation(self) -> NodeObservation | None:
-        """日志节点随实际运行节点留存，且不进入配置持久化。"""
-        return self._node_observation
-
-    def open_node_observation(self) -> NodeObservation:
-        if self._node_observation is not None:
-            raise ValueError("运行节点已绑定一次日志观察会话")
-        self._node_observation = NodeObservation()
-        return self._node_observation
 
     @property
     def task_info(self) -> TaskItem | None:
@@ -172,6 +164,13 @@ class TaskUserItem(RuntimeEntry):
         params: TaskParams = Field(default_factory=dict)
         result: Virtual[str] = None
 
+    class LogAnalysis(ConfigGroup):
+        """本次账号运行的最终日志分析。"""
+
+        nodes: tuple[Node, ...] = ()
+        close_reason: CloseReason | None = None
+
+    log_analysis: LogAnalysis = Field(default_factory=LogAnalysis)
     info: Info = Field(default_factory=Info)
     logs: ConfigCollection[LogRecord] = collection(LogRecord)
     _config_ref: ReferenceType | None = PrivateAttr(default=None)
@@ -195,6 +194,14 @@ class TaskUserItem(RuntimeEntry):
         if info.get("user_id") == "Default":
             info["user_id"] = "default"
         super().__init__(info=info, **values)
+
+    async def record_log_analysis(self, result: SessionSummary) -> None:
+        """显式保存本次账号的最终分析，任务状态由执行器独立决定。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        self.log_analysis.nodes = tuple(public_log_node(node) for node in result.nodes)
+        self.log_analysis.close_reason = result.reason
+        await self.commit()
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。"""

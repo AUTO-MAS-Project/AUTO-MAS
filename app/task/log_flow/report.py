@@ -32,6 +32,7 @@ class LogFlowTaskReport:
         mode: ReportMode,
         summary: SessionSummary,
     ) -> None:
+        self.validate_run(run)
         self._reports[run.uid] = mode, summary
 
     def details_for(

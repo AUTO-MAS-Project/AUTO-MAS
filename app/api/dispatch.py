@@ -22,11 +22,10 @@
 
 
 from ipaddress import ip_address
-from typing import Annotated, Literal
+from typing import Literal
 from urllib.parse import urlsplit
-from uuid import UUID
 
-from fastapi import APIRouter, Body, Query, Request, Response
+from fastapi import APIRouter, Body, Request, Response
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -48,14 +47,6 @@ from app.models.schema import (
 from app.models.task import TaskMode
 from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
-from app.utils.common.log_flow.observation import (
-    MAX_NODE_ATTRIBUTE_TEXT,
-    CloseReason,
-    InvalidObservationCursor,
-    Node,
-    ObservationCursor,
-)
-from app.utils.common.security import is_sensitive_log_key, sanitize_log_message
 from app.utils.contracts.power import PowerSignal
 
 
@@ -105,18 +96,6 @@ class TaskCreateOut(OutBase):
     reason: Literal["desktop_session_disconnected", DesktopSessionReason] | None = (
         Field(default=None, description="启动未受理时可由客户端处理的原因")
     )
-
-
-class TaskLogCursor(BaseModel):
-    sessionId: UUID
-    sequence: int = Field(ge=0)
-
-
-class TaskLogNodesOut(OutBase):
-    nodes: tuple[Node, ...] = ()
-    cursor: TaskLogCursor | None = None
-    hasMore: bool = False
-    closeReason: CloseReason | None = None
 
 
 class PowerIn(BaseModel):
@@ -191,85 +170,24 @@ def _local_node_reader(request: Request) -> bool:
         return False
 
 
-@router.get(
-    "/task/{task_id}/runs/{script_run_id}/log-nodes",
-    tags=["Get"],
-    summary="按运行分支查询已采集的日志节点",
-    response_model=TaskLogNodesOut,
-    responses={
-        403: {"model": TaskLogNodesOut},
-        404: {"model": TaskLogNodesOut},
-        409: {"model": TaskLogNodesOut},
-    },
-)
-async def get_task_log_nodes(
-    task_id: UUID,
-    script_run_id: UUID,
-    request: Request,
-    response: Response,
-    userRunId: UUID | None = None,
-    sessionId: UUID | None = None,
-    after: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
-) -> TaskLogNodesOut:
-    """首次省略游标；后续传入返回的 sessionId 和 sequence（after）。"""
-    response.headers["Cache-Control"] = "no-store"
-    if not _local_node_reader(request):
-        response.status_code = 403
-        return TaskLogNodesOut(code=403, status="error", message="日志节点仅限本机读取")
-    observation = TaskManager.get_node_observation(
-        task_id, script_run_id, user_run_id=userRunId
-    )
-    if observation is None:
-        response.status_code = 404
-        return TaskLogNodesOut(
-            code=404, status="error", message="该运行没有可读取的日志节点会话"
-        )
-    try:
-        if sessionId is None and after:
-            raise InvalidObservationCursor("缺少会话 ID")
-        cursor = ObservationCursor(sessionId, after) if sessionId is not None else None
-        page = observation.read(after=cursor, limit=limit)
-    except InvalidObservationCursor:
-        response.status_code = 409
-        return TaskLogNodesOut(
-            code=409, status="error", message="游标已失效，请从头读取"
-        )
-    return TaskLogNodesOut(
-        nodes=tuple(_public_log_node(node) for node in page.nodes),
-        cursor=TaskLogCursor(
-            sessionId=page.cursor.session_id, sequence=page.cursor.sequence
-        ),
-        hasMore=page.has_more,
-        closeReason=page.close_reason,
-    )
-
-
-def _public_log_node(node: Node) -> Node:
-    attributes = []
-    for attribute in node.attributes:
-        if is_sensitive_log_key(attribute.key):
-            continue
-        value = attribute.value
-        if isinstance(value, str):
-            attribute = attribute.model_copy(
-                update={"value": sanitize_log_message(value)[:MAX_NODE_ATTRIBUTE_TEXT]}
-            )
-        attributes.append(attribute)
-    return node.model_copy(
-        update={
-            "text": sanitize_log_message(node.text),
-            "attributes": tuple(attributes),
-        }
-    )
-
-
 @router.post("/get", tags=["Get"], response_model=TaskGetOut)
-async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
+async def get_tasks(
+    request: Request, response: Response, body: TaskGetIn = Body(...)
+) -> TaskGetOut:
+    include_log_analysis = bool(body.taskId) and _local_node_reader(request)
+    if include_log_analysis:
+        response.headers["Cache-Control"] = "no-store"
     ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
     try:
         data = {
-            uid: tree for uid in ids if (tree := TaskManager.get_task(uid)) is not None
+            uid: tree
+            for uid in ids
+            if (
+                tree := TaskManager.get_task(
+                    uid, include_log_analysis=include_log_analysis
+                )
+            )
+            is not None
         }
     except ValueError:
         return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")

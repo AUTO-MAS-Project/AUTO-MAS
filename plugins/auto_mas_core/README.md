@@ -163,27 +163,9 @@ result = await Notify.send_global(
 
 ## LogFlow 日志节点
 
-在专项插件类登记一条 `log_flows` 声明，可使用 MAS 原生日志。以下声明定义一个成功节点。
+在 L4 账号执行器内显式调用 `auto_mas_core.log_flow.analyze_logs`。传入本次运行的日志来源和声明，停止或排空日志后读取最终结果并写入该账号运行节点。托管层使用任务通知桥接，在结束时统一发送报告。
 
-```python
-from auto_mas_core.log_flow import (
-    LineRule,
-    PluginFlowDeclaration,
-    SimpleFlowDeclaration,
-)
-
-log_flows = {
-    "progress": PluginFlowDeclaration(
-        rules=SimpleFlowDeclaration(
-            rules=(LineRule(match=r"^完成：", node_type="步骤", status="success"),),
-        ),
-    ),
-}
-```
-
-将声明放在现有插件类上。账号执行器用 `self.open_log_flow(plugin, "progress", monitor=monitor, task_report=task_report)` 绑定当前账号。用 `auto_mas_core.log_flow.LogMonitor` 创建监控器，在退出会话前停止它以交接尾部。托管结束后由 `LogFlowTaskReport.send()` 交给 Notify。
-
-混合来源、主动上报、实时查询、自定义处理器和专项验收见 [LogFlow 接入与迁移](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/dev/.agents/skills/mas-script-specialized-adapter/references/logflow-api.md)。
+完整 L4 范例、来源组合和查询方法见 [LogFlow 接入与迁移](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/dev/.agents/skills/mas-script-specialized-adapter/references/logflow-api.md)。
 
 ## 静态类型与开发环境
 

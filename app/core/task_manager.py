@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -41,15 +42,12 @@ from app.models.task import (
 from app.task.registration import ManagerFactory
 from app.task.script_expander import ScriptExpander
 from app.utils import get_logger
-from app.utils.common.log_flow.observation import NodeObservation
 from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
-_RECENT_OBSERVATION_BYTES = 16 * 1024 * 1024
-
-type _RunIdentity = tuple[UUID, UUID | None]
+_RECENT_ANALYSIS_BYTES = 16 * 1024 * 1024
 
 
 @dataclass
@@ -57,8 +55,7 @@ class _RecentTask:
     ended_at: float
     tree: dict[str, Any]
     finished_at: str
-    observations: dict[_RunIdentity, NodeObservation] = field(default_factory=dict)
-    observation_bytes: int = 0
+    analysis_sizes: dict[tuple[str, str], int]
 
 
 if TYPE_CHECKING:
@@ -476,33 +473,18 @@ class _TaskManager:
                 break
             self._recent.popitem(last=False)
 
-        # 优先保留较新的任务；同一任务内按运行树倒序保留能放下的会话。
-        remaining = _RECENT_OBSERVATION_BYTES
+        remaining = _RECENT_ANALYSIS_BYTES
         for task in reversed(self._recent.values()):
-            if task.observation_bytes <= remaining:
-                remaining -= task.observation_bytes
-                continue
-            for run_id in tuple(reversed(task.observations)):
-                size = task.observations[run_id].retained_bytes
+            for path in reversed(tuple(task.analysis_sizes)):
+                size = task.analysis_sizes[path]
                 if size <= remaining:
                     remaining -= size
                 else:
-                    del task.observations[run_id]
-                    task.observation_bytes -= size
-
-    def get_node_observation(
-        self, task_id: UUID, script_run_id: UUID, *, user_run_id: UUID | None
-    ) -> NodeObservation | None:
-        """读取指定运行分支；使用运行 UUID，避免重复执行同一配置时串号。"""
-        if (run := self._running.get(task_id)) is not None:
-            script = run.task_info.scripts.get(script_run_id)
-            if script is None:
-                return None
-            entry = script if user_run_id is None else script.users.get(user_run_id)
-            return entry.node_observation if entry is not None else None
-        self._prune_recent()
-        recent = self._recent.get(task_id)
-        return recent.observations.get((script_run_id, user_run_id)) if recent else None
+                    script_id, user_id = path
+                    task.tree["scripts"]["data"][script_id]["users"]["data"][
+                        user_id
+                    ].pop("log_analysis", None)
+                    del task.analysis_sizes[path]
 
     def describe_lock_holders(self, config: ConfigNode, *, cascade: bool) -> str:
         """只诊断当前冲突票据；从实际执行器查询占用者，不建立另一份锁登记。"""
@@ -532,20 +514,67 @@ class _TaskManager:
             holders.append("其他配置操作（占用者未知）")
         return "、".join(holders)
 
-    def get_task(self, task_id: str | UUID) -> dict[str, Any] | None:
-        """按运行 UUID 查询完整任务树，包含全部日志；找不到时返回 None。
+    @staticmethod
+    def _export_task(
+        info: TaskItem, *, include_log_analysis: bool = False
+    ) -> dict[str, Any]:
+        tree = info.model_dump()
+        for script in tree["scripts"]["data"].values():
+            for user in script["users"]["data"].values():
+                analysis = user.get("log_analysis")
+                if (
+                    not include_log_analysis
+                    or not analysis
+                    or analysis["close_reason"] is None
+                ):
+                    user.pop("log_analysis", None)
+        return tree
 
-        优先读取运行中的热态树，再查询尚未过期的最近终态；非法 UUID 向外报错。
-        """
+    @staticmethod
+    def _omit_cached_analysis(tree: dict[str, Any]) -> dict[str, Any]:
+        scripts = tree["scripts"]
+        return {
+            **tree,
+            "scripts": {
+                **scripts,
+                "data": {
+                    script_id: {
+                        **script,
+                        "users": {
+                            **script["users"],
+                            "data": {
+                                user_id: {
+                                    key: value
+                                    for key, value in user.items()
+                                    if key != "log_analysis"
+                                }
+                                for user_id, user in script["users"]["data"].items()
+                            },
+                        },
+                    }
+                    for script_id, script in scripts["data"].items()
+                },
+            },
+        }
+
+    def get_task(
+        self, task_id: str | UUID, *, include_log_analysis: bool = False
+    ) -> dict[str, Any] | None:
+        """按运行 UUID 查询运行中或最近完成的任务树。"""
         uid = UUID(str(task_id))
-        run = self._running.get(uid)
-        if run is not None:
-            return TaskTreeData.model_validate(run.task_info.model_dump()).model_dump(
-                mode="json"
+        if (run := self._running.get(uid)) is not None:
+            tree = self._export_task(
+                run.task_info, include_log_analysis=include_log_analysis
             )
+            return TaskTreeData.model_validate(tree).model_dump(mode="json")
         self._prune_recent()
-        recent = self._recent.get(uid)
-        return recent.tree if recent else None
+        if (recent := self._recent.get(uid)) is None:
+            return None
+        return (
+            recent.tree
+            if include_log_analysis or not recent.analysis_sizes
+            else self._omit_cached_analysis(recent.tree)
+        )
 
     def get_task_status(self, task_id: str) -> TaskStatusOut | None:
         """从完整任务树生成轻量状态响应，将 pending 映射为 running。
@@ -597,7 +626,7 @@ class _TaskManager:
                             )
                             for script in info.scripts.values()
                         ],
-                        "task": info.model_dump(),
+                        "task": self._export_task(info),
                         **info.get_log_snapshot(),
                     }
                 )
@@ -616,21 +645,21 @@ class _TaskManager:
             return
         self._running.pop(info.uid, None)
         info.clear_log_cursor()
-        observations: dict[_RunIdentity, NodeObservation] = {}
-        for script in info.scripts.values():
-            if (observation := script.node_observation) is not None:
-                observations[script.uid, None] = observation
-            for user in script.users.values():
-                if (observation := user.node_observation) is not None:
-                    observations[script.uid, user.uid] = observation
+        tree = TaskTreeData.model_validate(
+            self._export_task(info, include_log_analysis=True)
+        ).model_dump(mode="json")
         self._recent[info.uid] = _RecentTask(
             ended_at=time.monotonic(),
-            tree=TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+            tree=tree,
             finished_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            observations=observations,
-            observation_bytes=sum(
-                item.retained_bytes for item in observations.values()
-            ),
+            analysis_sizes={
+                (script_id, user_id): len(
+                    json.dumps(analysis, ensure_ascii=False).encode("utf-8")
+                )
+                for script_id, script in tree["scripts"]["data"].items()
+                for user_id, user in script["users"]["data"].items()
+                if (analysis := user.get("log_analysis")) is not None
+            },
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)

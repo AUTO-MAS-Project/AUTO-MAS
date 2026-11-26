@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from app.core.background_tasks import BackgroundTaskGroup
     from app.models.config import PluginConfig, PluginRecord
     from app.plugin.services import ServiceResolver
-    from app.utils.common.log_flow.declaration import PluginFlowDeclaration
 
 
 class BasePlugin:
@@ -25,7 +24,6 @@ class BasePlugin:
     provides_services: ClassVar[Mapping[str, str]] = MappingProxyType({})
     config_class: ClassVar[type[PluginConfig] | None] = None
     api_router: ClassVar[APIRouter | None] = None
-    log_flows: ClassVar[Mapping[str, PluginFlowDeclaration]] = MappingProxyType({})
     services: ServiceResolver
 
     def __init__(

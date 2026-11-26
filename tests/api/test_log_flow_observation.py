@@ -1,7 +1,6 @@
-"""调度发起的采集会话可在断线和任务结束后补读。"""
+"""调度树查询账号本次运行的最终日志分析。"""
 
 import asyncio
-from uuid import uuid4
 
 import httpx
 import pytest
@@ -11,37 +10,47 @@ from app.api import dispatch
 from app.core import task_manager
 from app.models.config import GeneralConfig
 from app.models.task import TaskMode
-from app.task.log_flow.binding import open_for_run
-from app.utils.common.log_flow.contracts import PipelineSpec, ReportedRecord
+from app.utils.common.log_flow.analysis import analyze_logs
+from app.utils.common.log_flow.declaration import SimpleFlowDeclaration
 from app.utils.common.log_flow.observation import NodeAttribute
 from tests.support.scheduler import Builtin
 from tests.support.scheduler import scheduler as scheduler
 
 
 @pytest.mark.asyncio
-async def test_recent_budget_keeps_sessions_that_fit_after_multi_account_run(
-    scheduler, monkeypatch
+@pytest.mark.parametrize("cache_budget", [1024, 16 * 1024 * 1024])
+async def test_final_results_follow_account_run_in_dispatch_tree(
+    scheduler, monkeypatch, cache_budget
 ):
     manager, _, _, script_id = scheduler
     monkeypatch.setattr(dispatch, "TaskManager", manager)
-    monkeypatch.setattr(task_manager, "_RECENT_OBSERVATION_BYTES", 1024)
+    monkeypatch.setattr(task_manager, "_RECENT_ANALYSIS_BYTES", cache_budget)
     app = FastAPI()
     app.include_router(dispatch.router)
+    first_recorded = asyncio.Event()
+    finish = asyncio.Event()
 
-    class ObservedScript(Builtin):
+    class AnalyzingScript(Builtin):
         async def main_task(self):
             for user in self.script_info.users.values():
-                session = await open_for_run(user, PipelineSpec(accept_push=True))
-                try:
-                    assert (
-                        session.push_reporter().node("普通", user.info.name + "x" * 600)
-                        == "accepted"
+                async with analyze_logs(
+                    SimpleFlowDeclaration(), accept_push=True
+                ) as analysis:
+                    assert analysis.reporter is not None
+                    result = analysis.reporter.node(
+                        "step",
+                        user.info.name + "x" * 600,
+                        attributes=(NodeAttribute(key="token", value="hidden"),),
                     )
-                finally:
-                    await session.close()
+                    assert result == "accepted"
+                assert analysis.result is not None
+                await user.record_log_analysis(analysis.result)
+                if user.info.name == "first":
+                    first_recorded.set()
+                    await finish.wait()
             await super().main_task()
 
-    monkeypatch.setattr(manager, "manager_factories", {GeneralConfig: ObservedScript})
+    monkeypatch.setattr(manager, "manager_factories", {GeneralConfig: AnalyzingScript})
     task_id = await manager.start(
         TaskMode.AUTO_PROXY,
         {0: {"uid": "-", "children": {0: {"uid": str(script_id)}}}},
@@ -49,187 +58,51 @@ async def test_recent_budget_keeps_sessions_that_fit_after_multi_account_run(
     run = manager.task_handler[task_id]
     script = next(run.task_info.scripts.values())
     first, second = script.users.values()
-    await asyncio.wait_for(run.accomplish.wait(), 5)
+
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
-        path = f"/api/dispatch/task/{task_id}/runs/{script.uid}/log-nodes"
-        assert (
-            await client.get(path, params={"userRunId": str(first.uid)})
-        ).status_code == 404
-        response = await client.get(path, params={"userRunId": str(second.uid)})
-        assert response.status_code == 200
-        [node] = response.json()["nodes"]
-        assert node["text"] == second.info.name + "x" * 600
+
+        async def read_users(*, targeted=True, headers=None):
+            query = {"taskId": str(task_id)} if targeted else {}
+            response = await client.post(
+                "/api/dispatch/get", json=query, headers=headers
+            )
+            assert response.status_code == 200
+            payload = response.json()
+            assert payload["code"] == 200
+            return payload["data"][str(task_id)]["scripts"]["data"][str(script.uid)][
+                "users"
+            ]["data"]
+
+        try:
+            await asyncio.wait_for(first_recorded.wait(), 5)
+            users = await read_users()
+            analysis = users[str(first.uid)]["log_analysis"]
+            assert analysis["close_reason"] == "complete"
+            assert analysis["nodes"][0]["attributes"] == []
+            assert analysis["nodes"][0]["text"] == first.info.name + "x" * 600
+            assert "log_analysis" not in users[str(second.uid)]
+            assert all(
+                "log_analysis" not in row
+                for row in (await read_users(targeted=False)).values()
+            )
+            remote = await read_users(headers={"Origin": "https://example.com"})
+            assert all("log_analysis" not in row for row in remote.values())
+            snapshot = manager.get_runtime_snapshot().model_dump(mode="json")
+            assert "log_analysis" not in str(snapshot["tasks"][0]["task"])
+        finally:
+            finish.set()
+
+        await asyncio.wait_for(run.accomplish.wait(), 5)
+        users = await read_users()
+        final = users[str(second.uid)]["log_analysis"]
+        assert final["nodes"][0]["text"] == second.info.name + "x" * 600
+        assert ("log_analysis" in users[str(first.uid)]) is (cache_budget > 1024)
         assert (await client.get(f"/api/dispatch/task/{task_id}")).json()[
             "status"
         ] == "success"
-
-
-@pytest.mark.asyncio
-async def test_observe_run_before_and_after_scheduler_completion(
-    scheduler, monkeypatch
-):
-    manager, _, _, script_id = scheduler
-    monkeypatch.setattr(dispatch, "TaskManager", manager)
-    first_emitted = asyncio.Event()
-    finish = asyncio.Event()
-    app = FastAPI()
-    app.include_router(dispatch.router)
-
-    class ObservedScript(Builtin):
-        async def main_task(self):
-            user = next(self.script_info.users.values())
-            session = await open_for_run(user, PipelineSpec(accept_push=True))
-            try:
-                reporter = session.push_reporter()
-                assert (
-                    reporter.node(
-                        "error",
-                        "invalid attributes",
-                        attributes=(NodeAttribute(key="attempt", value=1),) * 17,
-                    )
-                    == "invalid"
-                )
-                assert (
-                    reporter.node(
-                        "error",
-                        "token=private",
-                        node_id="retry",
-                        status="exception",
-                        attributes=(
-                            NodeAttribute(key="attempt", value=1),
-                            NodeAttribute(key="detail", value="token=private"),
-                            NodeAttribute(key="probe.token", value="private"),
-                            NodeAttribute(key="sendkey", value="fixture"),
-                            NodeAttribute(key="notify.pushkey", value="fixture"),
-                            NodeAttribute(key="appToken", value="fixture"),
-                        ),
-                    )
-                    == "accepted"
-                )
-                async with asyncio.timeout(3):
-                    while not session.snapshot():
-                        await asyncio.sleep(0.01)
-                first_emitted.set()
-                await finish.wait()
-                assert (
-                    reporter.node(
-                        "success",
-                        "step two",
-                        node_id="retry",
-                        status="running",
-                        attributes=(NodeAttribute(key="attempt", value=2),),
-                    )
-                    == "accepted"
-                )
-                assert session.submit(
-                    ReportedRecord(node_type="success", text="step three")
-                )
-                assert reporter.withdraw("retry") == "accepted"
-            finally:
-                await session.close()
-            await super().main_task()
-
-    monkeypatch.setattr(manager, "manager_factories", {GeneralConfig: ObservedScript})
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://localhost"
-    ) as client:
-        task_id = await manager.start(
-            TaskMode.AUTO_PROXY,
-            {0: {"uid": "-", "children": {0: {"uid": str(script_id)}}}},
+        old = await client.get(
+            f"/api/dispatch/task/{task_id}/runs/{script.uid}/log-nodes"
         )
-        run = manager.task_handler[task_id]
-        script = next(run.task_info.scripts.values())
-        first_user, second_user = script.users.values()
-        path = f"/api/dispatch/task/{task_id}/runs/{script.uid}/log-nodes"
-        params = {"userRunId": str(first_user.uid), "limit": 1}
-        try:
-            await asyncio.wait_for(first_emitted.wait(), 5)
-            assert (
-                await client.get(
-                    path, params=params, headers={"Origin": "https://example.com"}
-                )
-            ).status_code == 403
-            assert (
-                await client.get(path, params={"userRunId": str(second_user.uid)})
-            ).status_code == 404
-            response = await client.get(path, params=params)
-            assert response.status_code == 200
-            assert response.headers["Cache-Control"] == "no-store"
-            page = response.json()
-            assert [(node["sequence"], node["text"]) for node in page["nodes"]] == [
-                (1, "token=***")
-            ]
-            assert page["closeReason"] is None
-            assert page["nodes"][0]["revision"] == 1
-            assert page["nodes"][0]["status"] == "exception"
-            assert page["nodes"][0]["attributes"] == [
-                {"key": "attempt", "value": 1},
-                {"key": "detail", "value": "token=***"},
-            ]
-            local_observation = first_user.node_observation
-            assert local_observation is not None
-            assert local_observation.snapshot()[0].attributes[-1] == NodeAttribute(
-                key="appToken", value="fixture"
-            )
-            cursor = page["cursor"]
-            assert (
-                await client.get(path, params={**params, "after": 1})
-            ).status_code == 409
-            assert (
-                await client.get(path, params={**params, "sessionId": str(uuid4())})
-            ).status_code == 409
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app, client=("192.0.2.9", 1234)),
-                base_url="http://localhost",
-            ) as remote:
-                assert (await remote.get(path, params=params)).status_code == 403
-        finally:
-            finish.set()
-        await asyncio.wait_for(run.accomplish.wait(), 5)
-
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://localhost"
-    ) as reconnected:
-        response = await reconnected.get(
-            path,
-            params={
-                **params,
-                "sessionId": cursor["sessionId"],
-                "after": cursor["sequence"],
-            },
-        )
-        assert response.status_code == 200
-        page = response.json()
-        assert [(node["sequence"], node["text"]) for node in page["nodes"]] == [
-            (2, "step two")
-        ]
-        assert page["nodes"][0]["node_id"] == "push/retry"
-        assert page["nodes"][0]["revision"] == 2
-        assert page["nodes"][0]["status"] == "running"
-        assert page["nodes"][0]["attributes"] == [{"key": "attempt", "value": 2}]
-        assert page["closeReason"] == "complete" and page["hasMore"] is True
-        last = (
-            await reconnected.get(
-                path,
-                params={
-                    **params,
-                    "sessionId": cursor["sessionId"],
-                    "after": page["cursor"]["sequence"],
-                    "limit": 2,
-                },
-            )
-        ).json()
-        assert [node["sequence"] for node in last["nodes"]] == [3, 4]
-        assert last["nodes"][1]["node_id"] == "push/retry"
-        assert last["nodes"][1]["revision"] == 3 and last["nodes"][1]["withdrawn"]
-        assert last["nodes"][1]["attributes"] == []
-        assert [node.text for node in first_user.node_observation.snapshot()] == [
-            "step three"
-        ]
-        assert last["hasMore"] is False
-        assert (await reconnected.get(f"/api/dispatch/task/{task_id}")).json()[
-            "status"
-        ] == "success"
+        assert old.status_code == 404

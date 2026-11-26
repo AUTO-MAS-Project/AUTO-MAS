@@ -104,6 +104,7 @@ class LogFlowSession:
     """每个进程服务一次会话，宿主上报走有界待发队列。"""
 
     _unconfirmed_workers: ClassVar[set[LogFlowSession]] = set()
+    _shared_environment_readers: ClassVar[int] = 0
 
     def __init__(
         self,
@@ -118,6 +119,7 @@ class LogFlowSession:
     ) -> None:
         self._process = process
         self._job = job
+        self._reads_shared_environment = False
         self._accept_push = accept_push
         self._accept_mas = accept_mas
         self._outbox: asyncio.Queue[bytes | None] | None = (
@@ -165,6 +167,9 @@ class LogFlowSession:
                 else (str(_SOURCE_ROOT),)
             ),
         }
+        reads_shared_environment = config.plugin_package is not None
+        if reads_shared_environment:
+            cls._shared_environment_readers += 1
         session: LogFlowSession | None = None
         job: TaskProcessJob | None = None
         try:
@@ -195,6 +200,7 @@ class LogFlowSession:
                     if observation is not None
                     else NodeObservation(),
                 )
+                session._reads_shared_environment = reads_shared_environment
                 if job is not None:
                     # 先加入 Job 再恢复；Windows venv 启动器派生的解释器也由 Job 持有。
                     job.assign(process.pid, suspended=True, breakaway=False)
@@ -214,8 +220,11 @@ class LogFlowSession:
                 await session.close_on_exit(timeout=0)
             raise
         finally:
-            if session is None and job is not None:
-                job.close()
+            if session is None:
+                if reads_shared_environment:
+                    cls._shared_environment_readers -= 1
+                if job is not None:
+                    job.close()
         if session._outbox is not None:
             session._writer = asyncio.create_task(
                 session._write_records(session._outbox)
@@ -364,6 +373,10 @@ class LogFlowSession:
         return bool(cls._unconfirmed_workers)
 
     @classmethod
+    def has_shared_environment_readers(cls) -> bool:
+        return cls._shared_environment_readers > 0
+
+    @classmethod
     async def retry_unconfirmed_workers(cls) -> None:
         """环境变更前并行复查一次，保留仍无法确认的进程。"""
         await asyncio.gather(
@@ -413,6 +426,9 @@ class LogFlowSession:
         return True
 
     def _release_job(self) -> None:
+        if self._reads_shared_environment:
+            self._reads_shared_environment = False
+            type(self)._shared_environment_readers -= 1
         if self._job is not None:
             job, self._job = self._job, None
             try:

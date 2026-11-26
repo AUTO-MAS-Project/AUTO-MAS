@@ -101,7 +101,6 @@ import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { TaskboardStateOut } from '../models/TaskboardStateOut';
 import type { TaskGetIn } from '../models/TaskGetIn';
 import type { TaskGetOut } from '../models/TaskGetOut';
-import type { TaskLogNodesOut } from '../models/TaskLogNodesOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -866,47 +865,6 @@ export class GetService {
                 'task_id': taskId,
             },
             errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按运行分支查询已采集的日志节点
-     * 首次省略游标；后续传入返回的 sessionId 和 sequence（after）。
-     * @param taskId
-     * @param scriptRunId
-     * @param userRunId
-     * @param sessionId
-     * @param after
-     * @param limit
-     * @returns TaskLogNodesOut Successful Response
-     * @throws ApiError
-     */
-    public static getTaskLogNodesApiDispatchTaskTaskIdRunsScriptRunIdLogNodesGet(
-        taskId: string,
-        scriptRunId: string,
-        userRunId?: (string | null),
-        sessionId?: (string | null),
-        after?: number,
-        limit: number = 50,
-    ): CancelablePromise<TaskLogNodesOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/dispatch/task/{task_id}/runs/{script_run_id}/log-nodes',
-            path: {
-                'task_id': taskId,
-                'script_run_id': scriptRunId,
-            },
-            query: {
-                'userRunId': userRunId,
-                'sessionId': sessionId,
-                'after': after,
-                'limit': limit,
-            },
-            errors: {
-                403: `Forbidden`,
-                404: `Not Found`,
-                409: `Conflict`,
                 422: `Validation Error`,
             },
         });

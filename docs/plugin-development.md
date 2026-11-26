@@ -62,7 +62,7 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 - **导入优先级**：启动时把库的 `src` 放到导入路径最前，优先于共享环境里的同名发行包。改库代码要重启后端，库不支持热重载。
 - **联调**：先卸掉共享环境里的同名发行包，否则 `importlib.metadata` 读到的仍是发行包的版本。
 
-专项新增或迁移日志节点时，按 [LogFlow 接入与迁移](../.agents/skills/mas-script-specialized-adapter/references/logflow-api.md) 声明采集规则、绑定实际运行并验收节点和报告。
+专项新增或迁移日志节点时，按 [LogFlow 接入与迁移](../.agents/skills/mas-script-specialized-adapter/references/logflow-api.md) 在 L4 显式分析本次运行的日志，写入账号节点并验收报告。
 
 ## 前端静态页面归属
 

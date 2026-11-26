@@ -7,6 +7,8 @@ from uuid import UUID, uuid4
 
 from pydantic import AfterValidator, BaseModel, Field, StrictBool, StrictInt
 
+from app.utils.common.security import is_sensitive_log_key, sanitize_log_message
+
 type NodeSource = Literal["file", "push", "mas", "custom"]
 type CloseReason = Literal["complete", "timeout", "worker_error", "capacity"]
 type ReportedNodeKey = Annotated[str, Field(pattern=r"^[A-Za-z0-9_.:-]{1,96}$")]
@@ -44,6 +46,26 @@ class Node(BaseModel, frozen=True):
     withdrawn: bool = False
     status: NodeDisplayStatus = "info"
     attributes: NodeAttributes = ()
+
+
+def public_log_node(node: Node) -> Node:
+    """过滤对外节点的凭据及敏感字段。"""
+    attributes = []
+    for attribute in node.attributes:
+        if is_sensitive_log_key(attribute.key):
+            continue
+        value = attribute.value
+        if isinstance(value, str):
+            attribute = attribute.model_copy(
+                update={"value": sanitize_log_message(value)[:MAX_NODE_ATTRIBUTE_TEXT]}
+            )
+        attributes.append(attribute)
+    return node.model_copy(
+        update={
+            "text": sanitize_log_message(node.text),
+            "attributes": tuple(attributes),
+        }
+    )
 
 
 def _validate_timestamp(timestamp: float) -> float:

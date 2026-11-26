@@ -19,13 +19,8 @@ import pytest
 from auto_mas_core.log_flow import SubmitResult
 
 from app.core.notify.report import render_scatter_push_log
-from app.core.plugin.log_flow import FlowOwner
 from app.models.task import TaskUserItem
-from app.task.log_flow.binding import (
-    open_custom_flow,
-    open_for_run,
-    open_simple_flow,
-)
+from app.utils.common.log_flow.analysis import analyze_logs
 from app.task.MaaEnd.push_log import (
     MAAEND_PUSH_RULES,
     maaend_plain_text,
@@ -62,6 +57,7 @@ from app.utils.common.log_flow.declaration import (
 )
 from app.utils.common.log_flow.observation import (
     InvalidObservationCursor,
+    NodeObservation,
     ObservationCursor,
     ReportEntry,
 )
@@ -155,15 +151,12 @@ async def test_declared_preprocessor_keeps_maaend_rich_text_report_compatible():
         "<span>[2026-11-19 09:01:03.456] 路线 1：样本采集失败</span>",
         "<span>[2026-11-19 09:01:04.567] 任务失败: 🎁补给</span>",
     ]
-    run = TaskUserItem()
-    async with open_custom_flow(
-        declaration, run=run, accept_push=True, mode="汇总"
-    ) as flow:
+    async with analyze_logs(declaration, accept_push=True) as flow:
         assert flow.reporter is not None
         for line in lines:
             legacy.feed(line, timestamp=1.0)
             assert flow.reporter.text(line, timestamp=1.0) == SubmitResult.ACCEPTED
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     summary = observation.summary
     assert summary.complete
@@ -328,69 +321,6 @@ async def test_invalid_rule_prevents_worker_readiness(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_repeated_start_cancellation_keeps_worker_registered(
-    tmp_path, monkeypatch
-):
-    pid_path = tmp_path / "worker.pid"
-    run = TaskUserItem()
-    owner = FlowOwner(lambda: True)
-    stopping = asyncio.Event()
-    release_stop = asyncio.Event()
-    terminate = LogFlowSession._terminate_worker
-
-    async def pause_before_termination(session):
-        stopping.set()
-        await release_stop.wait()
-        return await terminate(session)
-
-    monkeypatch.setattr(LogFlowSession, "_terminate_worker", pause_before_termination)
-    spec = PipelineSpec(
-        source=WorkerFactorySpec(
-            factory=FunctionRef(
-                name="probe:start",
-                module="tests.support.log_flow_functions",
-                attribute="blocking_start_source",
-            ),
-            options={"pid_path": str(pid_path)},
-        )
-    )
-
-    async def start():
-        async with owner.open(run, spec):
-            pytest.fail("worker 启动尚未完成")
-
-    starting = asyncio.create_task(start())
-    closing = None
-    try:
-        async with asyncio.timeout(5):
-            while not pid_path.exists() or not (pid := pid_path.read_text()).strip():
-                await asyncio.sleep(0.01)
-        process = psutil.Process(int(pid))
-        starting.cancel()
-        await asyncio.wait_for(stopping.wait(), 3)
-        starting.cancel()
-        closing = asyncio.create_task(owner.close())
-        await asyncio.wait({starting, closing}, timeout=0.05)
-        assert owner.has_workers and not closing.done()
-
-        release_stop.set()
-        with pytest.raises(asyncio.CancelledError):
-            await starting
-        await asyncio.wait_for(closing, 3)
-        await asyncio.to_thread(process.wait, timeout=2)
-        assert not owner.has_workers
-        assert run.node_observation is not None
-        assert run.node_observation.summary is not None
-        assert not run.node_observation.summary.complete
-    finally:
-        release_stop.set()
-        starting.cancel()
-        await asyncio.gather(starting, return_exceptions=True)
-        if closing is not None:
-            await asyncio.gather(closing, return_exceptions=True)
-
-
-@pytest.mark.asyncio
 async def test_custom_processor_releases_resources_after_a_processing_error(tmp_path):
     marker = tmp_path / "released.txt"
     session = await LogFlowSession.open(
@@ -432,14 +362,11 @@ async def test_worker_closes_extensions_with_a_partial_open_failure(
         ),
         options={"path": str(marker), "mode": "fail_open"},
     )
-    run = TaskUserItem()
     rules = SimpleFlowDeclaration(
         processor=factory if component == "processor" else None
     )
-    async with open_custom_flow(
+    async with analyze_logs(
         rules,
-        run=run,
-        mode="关闭",
         accept_push=True,
         source=factory if component == "source" else None,
         sink=factory if component == "sink" else None,
@@ -449,7 +376,7 @@ async def test_worker_closes_extensions_with_a_partial_open_failure(
         assert submitted == (
             SubmitResult.ACCEPTED if component == "sink" else SubmitResult.CLOSED
         )
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     summary = observation.summary
     if component == "sink":
@@ -464,22 +391,18 @@ async def test_worker_closes_extensions_with_a_partial_open_failure(
 @pytest.mark.asyncio
 async def test_unavailable_worker_does_not_prevent_execution_inside_flow():
     run = TaskUserItem()
-    reports = []
     declaration = SimpleFlowDeclaration(rules=(LineRule(match="(", node_type="普通"),))
-    async with open_custom_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
-        mode="汇总",
-        receive_report=reports.append,
         accept_push=True,
     ) as flow:
-        assert flow.read_nodes().close_reason == "worker_error"
+        assert flow._observation.read().close_reason == "worker_error"
         assert flow.reporter is not None
         assert flow.reporter.node("普通", "no worker") == SubmitResult.CLOSED
         await run.set_state(status="完成")
 
     assert run.info.status == "完成"
-    assert reports == [["⚠️ 节点采集不完整"]]
+    assert flow.report_lines(mode="汇总") == ["⚠️ 节点采集不完整"]
 
 
 @pytest.mark.asyncio
@@ -708,17 +631,14 @@ async def test_worker_preserves_withdrawal_at_observation_capacity(budget):
 async def test_mixed_session_drains_accepted_records_and_rejects_late_input(tmp_path):
     path = tmp_path / "script.log"
     file_spec = pipeline(path)
-    # 两次执行可使用同一账号配置，观察信息仍按真实运行对象隔离。
-    run = TaskUserItem(user_id="same")
-    another_run = TaskUserItem(user_id="same")
-    unrelated = another_run.open_node_observation()
-    session = await open_for_run(
-        run, PipelineSpec(file=file_spec.file, rules=file_spec.rules, accept_push=True)
+    unrelated = NodeObservation()
+    session = await LogFlowSession.open(
+        PipelineSpec(file=file_spec.file, rules=file_spec.rules, accept_push=True)
     )
     try:
         append(path, "done:1\n")
         await wait_for_first_node(session)
-        observation = run.node_observation
+        observation = session.observation
         assert observation is not None
         before = observation.read()
         assert [node.text for node in before.nodes] == ["1"]
@@ -742,7 +662,6 @@ async def test_mixed_session_drains_accepted_records_and_rejects_late_input(tmp_
         assert after.nodes == summary.nodes[1:]
         assert after.close_reason == "complete"
         assert after.nodes[-1].timestamp == 123.0
-        assert run.info.status == "等待"
     finally:
         await session.close()
 
@@ -817,17 +736,13 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
         pass
 
     monitor = LogMonitor((0, 0), "", save_display)
-    run = TaskUserItem()
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="^step ", node_type="普通"),)
     )
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="关闭",
-        receive_report=lambda _: None,
-    ):
+    ) as flow:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -837,7 +752,7 @@ async def test_simple_flow_handles_stdout_burst_from_real_log_monitor():
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
 
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None
     assert observation.read().close_reason == "complete"
     assert len(observation.snapshot()) == 1024
@@ -854,18 +769,14 @@ async def test_native_process_flow_drains_pipe_on_stop(monkeypatch, hold_pipe_op
     if hold_pipe_open:
         monkeypatch.setattr(monitor_module, "_STOP_DRAIN_SECONDS", 0.3)
     monitor = LogMonitor((0, 0), "", display)
-    run = TaskUserItem()
-    reports = []
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="^done:", extract=r"$(done:(\w+))", node_type="普通"),)
     )
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="逐条",
-        receive_report=reports.append,
-    ) as read_nodes:
+    ) as flow:
+        read_nodes = flow._observation.read
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -892,7 +803,10 @@ async def test_native_process_flow_drains_pipe_on_stop(monkeypatch, hold_pipe_op
     page = read_nodes()
     assert [node.text for node in page.nodes] == ["tail"]
     assert page.close_reason == ("worker_error" if hold_pipe_open else "complete")
-    assert reports == [["tail", *(["⚠️ 节点采集不完整"] if hold_pipe_open else [])]]
+    assert flow.report_lines(mode="逐条") == [
+        "tail",
+        *(["⚠️ 节点采集不完整"] if hold_pipe_open else []),
+    ]
 
 
 @pytest.mark.asyncio
@@ -901,18 +815,13 @@ async def test_native_stdout_skips_an_entire_oversized_line_and_reports_a_gap():
         pass
 
     monitor = LogMonitor((0, 0), "", display)
-    run = TaskUserItem()
-    reports = []
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="^done:", extract=r"$(done:(\w+))", node_type="普通"),)
     )
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="逐条",
-        receive_report=reports.append,
-    ):
+    ) as flow:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -924,8 +833,8 @@ async def test_native_stdout_skips_an_entire_oversized_line_and_reports_a_gap():
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
 
-    assert reports == [["before", "after", "⚠️ 节点采集不完整"]]
-    observation = run.node_observation
+    assert flow.report_lines(mode="逐条") == ["before", "after", "⚠️ 节点采集不完整"]
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     assert [node.text for node in observation.snapshot()] == ["before", "after"]
     assert observation.summary.reason == "worker_error"
@@ -953,18 +862,13 @@ async def test_native_file_flow_drains_last_poll_on_stop(
     if slow_callback:
         monkeypatch.setattr(monitor_module, "_STOP_DRAIN_SECONDS", 0.3)
     monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
-    run = TaskUserItem()
-    reports = []
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
     )
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="逐条",
-        receive_report=reports.append,
-    ):
+    ) as flow:
         await monitor.start_monitor_file(
             lambda: path, datetime.now() - timedelta(seconds=10)
         )
@@ -976,7 +880,7 @@ async def test_native_file_flow_drains_last_poll_on_stop(
         finally:
             await asyncio.wait_for(monitor.stop(), 2)
 
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None
     assert [node.text for node in observation.snapshot()] == [
         "first",
@@ -986,13 +890,11 @@ async def test_native_file_flow_drains_last_poll_on_stop(
     assert observation.read().close_reason == (
         "worker_error" if slow_callback else "complete"
     )
-    assert reports == [
-        [
-            "first",
-            "tail",
-            "unfinished",
-            *(["⚠️ 节点采集不完整"] if slow_callback else []),
-        ]
+    assert flow.report_lines(mode="逐条") == [
+        "first",
+        "tail",
+        "unfinished",
+        *(["⚠️ 节点采集不完整"] if slow_callback else []),
     ]
 
 
@@ -1013,17 +915,13 @@ async def test_native_file_flow_keeps_incomplete_lines_until_they_are_written(tm
             saw_final.set()
 
     monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
-    run = TaskUserItem()
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
     )
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="关闭",
-        receive_report=lambda _: None,
-    ):
+    ) as flow:
         await monitor.start_monitor_file(
             lambda: path, datetime.now() - timedelta(seconds=10)
         )
@@ -1032,7 +930,7 @@ async def test_native_file_flow_keeps_incomplete_lines_until_they_are_written(tm
         finally:
             await monitor.stop()
 
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None
     assert [node.text for node in observation.snapshot()] == [
         "first",
@@ -1143,13 +1041,10 @@ async def test_native_file_monitor_does_not_replay_append_when_ctime_changes(
 
     monkeypatch.setattr(Path, "stat", stat_with_changed_ctime)
     monitor = LogMonitor((0, 19), "%Y-%m-%d %H:%M:%S", display)
-    run = TaskUserItem()
     flow = SimpleFlowDeclaration(
         rules=(LineRule(match="done:", extract=r"$(done:(\w+))", node_type="普通"),)
     )
-    async with open_simple_flow(
-        flow, run=run, monitor=monitor, mode="关闭", receive_report=lambda _: None
-    ):
+    async with analyze_logs(flow, monitor=monitor) as flow:
         await monitor.start_monitor_file(
             lambda: path, datetime.now() - timedelta(seconds=10)
         )
@@ -1157,8 +1052,8 @@ async def test_native_file_monitor_does_not_replay_append_when_ctime_changes(
             await asyncio.wait_for(saw_append.wait(), 5)
         finally:
             await monitor.stop()
-    assert run.node_observation is not None
-    assert [node.text for node in run.node_observation.snapshot()] == [
+    assert flow._observation is not None
+    assert [node.text for node in flow._observation.snapshot()] == [
         "first",
         "second",
     ]
@@ -1319,13 +1214,11 @@ async def test_native_file_monitor_resumes_date_path_by_identity(
 async def test_webui_flow_counts_blank_lines_in_multiline_windows():
     pattern = {"type": "multiline", "start": "^BEGIN", "end": "^END", "maxLines": 3}
     declaration = GeneralFlowDeclaration(patterns=json.dumps([pattern]))
-    async with open_custom_flow(
-        declaration, run=TaskUserItem(), mode="关闭", accept_push=True
-    ) as flow:
+    async with analyze_logs(declaration, accept_push=True) as flow:
         assert flow.reporter is not None
         for line in ["BEGIN", " ", "part", "END", "BEGIN", "unclosed"]:
             assert flow.reporter.text(line + "\r\n") is SubmitResult.ACCEPTED
-    snapshot = flow.snapshot_nodes()
+    snapshot = flow._observation.capture()
     assert snapshot.close_reason == "complete"
     assert [node.text for node in snapshot.nodes] == [
         "BEGIN\n\npart",
@@ -1339,7 +1232,6 @@ async def test_webui_notifications_keep_general_log_time_prefix():
         pass
 
     monitor = LogMonitor((0, 8), "%H:%M:%S", discard_display)
-    run = TaskUserItem()
     declaration = GeneralFlowDeclaration(
         patterns=json.dumps(
             [
@@ -1352,7 +1244,7 @@ async def test_webui_notifications_keep_general_log_time_prefix():
         )
     )
     lines = ["09:15:37 done:timed", "no clock done:untimed"]
-    async with open_custom_flow(declaration, run=run, monitor=monitor, mode="汇总"):
+    async with analyze_logs(declaration, monitor=monitor) as flow:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -1363,7 +1255,7 @@ async def test_webui_notifications_keep_general_log_time_prefix():
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
 
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     summary = observation.summary
     assert summary.complete
@@ -1383,10 +1275,7 @@ async def test_webui_notifications_keep_general_log_time_prefix():
 
 @pytest.mark.asyncio
 async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
-    run = TaskUserItem()
-    async with open_custom_flow(
-        SimpleFlowDeclaration(), run=run, accept_push=True, mode="汇总"
-    ) as flow:
+    async with analyze_logs(SimpleFlowDeclaration(), accept_push=True) as flow:
         reporter = flow.reporter
         assert reporter is not None
         assert (
@@ -1401,21 +1290,21 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
             reporter.node("普通", "discard", node_id="discard") == SubmitResult.ACCEPTED
         )
         async with asyncio.timeout(5):
-            while (snapshot := flow.snapshot_nodes()).cursor.sequence < 3:
+            while (snapshot := flow._observation.capture()).cursor.sequence < 3:
                 await asyncio.sleep(0.01)
         assert snapshot.close_reason is None
         assert [node.text for node in snapshot.nodes] == ["step", "discard"]
         assert reporter.withdraw("discard") == SubmitResult.ACCEPTED
         assert reporter.withdraw("invalid/key") == SubmitResult.INVALID
 
-    latest = flow.snapshot_nodes()
-    delta = flow.read_nodes(after=snapshot.cursor)
+    latest = flow._observation.capture()
+    delta = flow._observation.read(after=snapshot.cursor)
     assert latest.close_reason == delta.close_reason == "complete"
     assert latest.cursor == delta.cursor
     assert len(delta.nodes) == 1 and delta.nodes[0].withdrawn
     assert delta.nodes[0].node_id == "push/discard"
     assert len(latest.nodes) == 1 and latest.nodes[0].status == "success"
-    observation = run.node_observation
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     summary = observation.summary
     assert summary.nodes == latest.nodes
@@ -1437,11 +1326,8 @@ async def test_report_consumes_current_nodes_after_correction_and_withdrawal():
     ],
 )
 async def test_report_order_is_independent_of_observation(order, postprocess, expected):
-    run = TaskUserItem()
     declaration = SimpleFlowDeclaration(report_order=order, postprocess=postprocess)
-    async with open_custom_flow(
-        declaration, run=run, accept_push=True, mode="汇总"
-    ) as flow:
+    async with analyze_logs(declaration, accept_push=True) as flow:
         assert flow.reporter is not None
         for key, text, status in [
             ("a", "A1", "running"),
@@ -1454,13 +1340,18 @@ async def test_report_order_is_independent_of_observation(order, postprocess, ex
                 is SubmitResult.ACCEPTED
             )
 
-    assert [node.text for node in flow.snapshot_nodes().nodes] == ["A2", "B", "C"]
-    assert [node.text for node in flow.read_nodes().nodes] == ["A1", "B", "A2", "C"]
-    observation = run.node_observation
+    assert [node.text for node in flow._observation.capture().nodes] == ["A2", "B", "C"]
+    assert [node.text for node in flow._observation.read().nodes] == [
+        "A1",
+        "B",
+        "A2",
+        "C",
+    ]
+    observation = flow._observation
     assert observation is not None and observation.summary is not None
     assert render_node_details(observation.summary, mode="汇总") == expected
     assert render_node_details(
-        observation.summary, mode="逐条", statuses={"running"}
+        observation.summary, mode="汇总", statuses={"running"}
     ) == ["⏳ 进行中: C"]
 
 
@@ -1504,9 +1395,7 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
             else None
         ),
     )
-    run = TaskUserItem(user_id="test")
     display: list[str] = []
-    reports: list[list[str]] = []
 
     async def save_display(lines, latest_time):
         display[:] = lines
@@ -1517,9 +1406,10 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
         save_display,
         line_hook=lambda line: "显示已改写" if line else None,
     )
-    async with open_simple_flow(
-        declaration, run=run, monitor=monitor, mode=mode, receive_report=reports.append
-    ) as read_nodes:
+    async with analyze_logs(
+        declaration, monitor=monitor, prepare_report=mode != "关闭"
+    ) as flow:
+        read_nodes = flow._observation.read
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -1532,15 +1422,14 @@ async def test_default_flow_shares_live_nodes_and_delivers_selected_report(
         async with asyncio.timeout(5):
             while not (page := read_nodes()).nodes:
                 await asyncio.sleep(0.01)
-        observation = run.node_observation
+        observation = flow._observation
         assert observation is not None
         assert page == observation.read()
         assert [(node.source, node.text, node.status) for node in page.nodes] == [
             ("mas", "7", "success")
         ]
         assert page.close_reason is None
-        assert reports == []
-    assert reports == expected
+    assert flow.report_lines(mode=mode) == (expected[0] if expected else [])
     assert monitor.on_raw_line is None
     closed = read_nodes(after=page.cursor)
     assert closed.close_reason == "complete"
@@ -1559,20 +1448,16 @@ async def test_simple_flow_can_replace_only_the_text_processor():
             options={"prefix": "✅ 成功: "},
         )
     )
-    run = TaskUserItem(user_id="test")
-    reports: list[list[str]] = []
 
     async def display(_lines, _latest_time):
         pass
 
     monitor = LogMonitor((0, 0), "", display)
-    async with open_simple_flow(
+    async with analyze_logs(
         declaration,
-        run=run,
         monitor=monitor,
-        mode="汇总",
-        receive_report=reports.append,
-    ) as read_nodes:
+    ) as flow:
+        read_nodes = flow._observation.read
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-c",
@@ -1584,34 +1469,27 @@ async def test_simple_flow_can_replace_only_the_text_processor():
         async with asyncio.timeout(5):
             while len((page := read_nodes()).nodes) < 2:
                 await asyncio.sleep(0.01)
-        assert run.node_observation is not None
-        assert page == run.node_observation.read()
+        assert flow._observation is not None
+        assert page == flow._observation.read()
         assert [(node.source, node.text) for node in page.nodes] == [
             ("mas", "✅ 成功: 7"),
             ("mas", "✅ 成功: 8"),
         ]
-        assert reports == []
     assert [node.text for node in read_nodes(after=page.cursor).nodes] == ["合计: 2"]
-    assert reports == [["✅ 成功: 7", "✅ 成功: 8", "合计: 2"]]
+    assert flow.report_lines(mode="汇总") == ["✅ 成功: 7", "✅ 成功: 8", "合计: 2"]
 
 
 @pytest.mark.asyncio
 async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
     path = tmp_path / "script.log"
     path.write_text("done:old\n", encoding="utf-8")
-    run = TaskUserItem(user_id="same")
-    other = TaskUserItem(user_id="same")
 
     async def display(_lines, _latest_time):
         pass
 
     monitor = LogMonitor((0, 0), "", display)
-    reports = []
-    async with open_custom_flow(
+    async with analyze_logs(
         SimpleFlowDeclaration(rules=(LineRule(match="^done:", node_type="普通"),)),
-        run=run,
-        mode="逐条",
-        receive_report=reports.append,
         file=FileInput(path=str(path)),
         monitor=monitor,
         accept_push=True,
@@ -1627,36 +1505,29 @@ async def test_custom_flow_keeps_all_sources_bound_to_one_run(tmp_path):
         )
         await asyncio.wait_for(monitor.monitor_process(process, "stdout"), 5)
         assert await process.wait() == 0
-    async with open_custom_flow(
+    async with analyze_logs(
         SimpleFlowDeclaration(),
-        run=other,
-        mode="关闭",
-        receive_report=reports.append,
         accept_push=True,
     ) as next_flow:
         assert reporter.node("普通", "late") == SubmitResult.CLOSED
         assert next_flow.reporter is not None
         assert next_flow.reporter.node("普通", "next run") == SubmitResult.ACCEPTED
-    assert [n.text for n in next_flow.read_nodes().nodes] == ["next run"]
-    page = flow.read_nodes()
+    assert [n.text for n in next_flow._observation.read().nodes] == ["next run"]
+    page = flow._observation.read()
     assert page.close_reason == "complete"
     assert {(n.source, n.text) for n in page.nodes} == {
         ("file", "done:file"),
         ("mas", "done:mas"),
         ("push", "from push"),
     }
-    assert run.node_observation is not None and run.node_observation.read() == page
-    assert len(reports) == 1 and len(reports[0]) == 3
+    assert flow._observation is not None and flow._observation.read() == page
+    assert len(flow.report_lines(mode="逐条")) == 3
 
 
 @pytest.mark.asyncio
 async def test_push_rejects_timestamp_that_cannot_be_rendered():
-    reports: list[list[str]] = []
-    async with open_custom_flow(
+    async with analyze_logs(
         SimpleFlowDeclaration(),
-        run=TaskUserItem(),
-        mode="逐条",
-        receive_report=reports.append,
         accept_push=True,
     ) as flow:
         reporter = flow.reporter
@@ -1673,21 +1544,16 @@ async def test_push_rejects_timestamp_that_cannot_be_rendered():
             SubmitResult.ACCEPTED
         )
 
-    assert flow.read_nodes().close_reason == "complete"
-    assert reports == [["10:04 - valid time"]]
+    assert flow._observation.read().close_reason == "complete"
+    assert flow.report_lines(mode="逐条") == ["10:04 - valid time"]
 
 
 @pytest.mark.asyncio
 async def test_custom_flow_delivers_report_when_execution_raises():
-    run = TaskUserItem()
-    reports: list[list[str]] = []
     execution_error = RuntimeError("script failed")
     with pytest.raises(RuntimeError) as failure:
-        async with open_custom_flow(
+        async with analyze_logs(
             SimpleFlowDeclaration(),
-            run=run,
-            mode="逐条",
-            receive_report=reports.append,
             accept_push=True,
         ) as flow:
             assert flow.reporter is not None
@@ -1698,29 +1564,25 @@ async def test_custom_flow_delivers_report_when_execution_raises():
             raise execution_error
 
     assert failure.value is execution_error
-    assert flow.read_nodes().close_reason == "complete"
-    assert reports == [["node before failure"]]
+    assert flow._observation.read().close_reason == "complete"
+    assert flow.report_lines(mode="逐条") == ["node before failure"]
 
 
 @pytest.mark.asyncio
 async def test_repeated_execution_cancellation_delivers_frozen_report(tmp_path):
-    run = TaskUserItem()
-    owner = FlowOwner(lambda: True)
     sink_log = tmp_path / "sink.txt"
     module = "tests.support.log_flow_functions"
-    reports: list[list[str]] = []
     submitted = asyncio.Event()
+    flow = None
 
     async def execute():
-        async with open_custom_flow(
+        nonlocal flow
+        async with analyze_logs(
             SimpleFlowDeclaration(
                 postprocess=FunctionRef(
                     name="sample:report", module=module, attribute="sample_report"
                 )
             ),
-            run=run,
-            mode="汇总",
-            receive_report=reports.append,
             accept_push=True,
             sink=WorkerFactorySpec(
                 factory=FunctionRef(
@@ -1728,7 +1590,6 @@ async def test_repeated_execution_cancellation_delivers_frozen_report(tmp_path):
                 ),
                 options={"path": str(sink_log), "mode": "block_close"},
             ),
-            owner=owner,
         ) as flow:
             assert flow.reporter is not None
             assert flow.reporter.node("普通", "collected") == SubmitResult.ACCEPTED
@@ -1747,14 +1608,13 @@ async def test_repeated_execution_cancellation_delivers_frozen_report(tmp_path):
                 await asyncio.shield(execution)
 
         assert execution.cancelled()
-        assert reports == [["sample report", "⚠️ 节点采集不完整"]]
-        assert run.node_observation is not None
-        assert run.node_observation.read().close_reason == "timeout"
-        assert not owner.has_workers
+        assert flow is not None
+        assert flow.report_lines(mode="汇总") == ["sample report", "⚠️ 节点采集不完整"]
+        assert flow._observation is not None
+        assert flow._observation.read().close_reason == "timeout"
     finally:
         if not execution.done():
             execution.cancel()
-        await owner.close()
         await asyncio.gather(execution, return_exceptions=True)
 
 
