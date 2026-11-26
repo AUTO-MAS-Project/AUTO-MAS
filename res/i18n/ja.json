@@ -2013,7 +2013,6 @@
   "core.edit.run": "実行",
   "core.edit.run1920x1080WindowedMode": "実行時に 1920×1080 のウィンドウモードにする",
   "core.edit.runConfiguration": "実行設定",
-  "core.edit.runLimits": "実行の制限",
   "core.edit.runOnceNewUser": "新規アカウントは 1 回実行する",
   "core.edit.runTimeoutMinutes": "代行のタイムアウト（分）",
   "core.edit.runTimeoutMinutes2": "実行のタイムアウト（分）",

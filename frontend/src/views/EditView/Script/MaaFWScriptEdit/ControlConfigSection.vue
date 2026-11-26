@@ -1,6 +1,7 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <MaaFWFormSection :title="t('core.edit.controlConfiguration')" :icon="ControlOutlined">
+    <slot name="notice" />
     <!-- 模拟器的包名和等待时间之后，按专属页传来的顺序插入 besidePackageName 字段 -->
     <a-row :gutter="24" align="stretch" class="controller-resource-row">
       <a-col :xs="24" :md="12">
