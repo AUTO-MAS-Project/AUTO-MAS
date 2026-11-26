@@ -2013,7 +2013,6 @@
   "core.edit.run": "执行",
   "core.edit.run1920x1080WindowedMode": "运行时设为 1920×1080 窗口模式",
   "core.edit.runConfiguration": "运行配置",
-  "core.edit.runLimits": "执行限制",
   "core.edit.runOnceNewUser": "新账号先执行一次",
   "core.edit.runTimeoutMinutes": "代理超时限制（分钟）",
   "core.edit.runTimeoutMinutes2": "运行超时限制（分钟）",

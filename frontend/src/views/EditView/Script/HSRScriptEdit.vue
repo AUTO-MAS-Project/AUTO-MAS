@@ -1,365 +1,344 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <ScriptEditHeader
-        script-type="HSR"
-        :title="t('core.edit.editHsrScript')"
-        @cancel="handleCancel"
+  <ScriptEditLayout
+    :script-id="scriptId"
+    :loading="pageLoading"
+    :header="{ scriptType: 'HSR', title: t('core.edit.editHsrScript') }"
+    :form="{ model: formData }"
+    :form-label="t('core.edit.hsrScriptConfiguration')"
+    @cancel="handleCancel"
+  >
+    <template #notice>
+      <a-alert
+        v-for="warning in pageLoading ? [] : visibleCapabilityWarnings"
+        :key="warning"
+        type="warning"
+        show-icon
+        class="capability-warning"
+        :message="warning"
       />
     </template>
 
-    <template v-if="!pageLoading && visibleCapabilityWarnings.length" #banner>
-      <a-space direction="vertical" class="capability-warnings">
-        <a-alert
-          v-for="warning in visibleCapabilityWarnings"
-          :key="warning"
-          type="warning"
-          show-icon
-          :message="warning"
-        />
-      </a-space>
+    <template #basic>
+      <ScriptBasicInfoCard
+        v-model:name="formData.infoName"
+        :name-field="null"
+        :name-hint="t('core.edit.giveHsrScriptName')"
+        @save-name="handleChange('Info', 'Name', $event)"
+      >
+        <template #actions>
+          <a-tag color="purple">{{ t('core.edit.hsrMarch7thSra') }}</a-tag>
+        </template>
+      </ScriptBasicInfoCard>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content" game-binding="none">
-      <GameBindingSection :script-id="scriptId" variant="card" />
-      <a-spin :spinning="pageLoading">
-        <a-form
-          :aria-label="t('core.edit.hsrScriptConfiguration')"
-          :model="formData"
-          layout="vertical"
-          class="config-form"
-        >
-          <!-- 脚本名称 -->
-          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
-            <template #actions>
-              <a-tag color="purple">{{ t('core.edit.hsrMarch7thSra') }}</a-tag>
-            </template>
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.scriptName')"
-                      :hint="t('core.edit.giveHsrScriptName')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="formData.infoName"
-                    :placeholder="t('core.edit.enterScriptName')"
-                    @blur="handleChange('Info', 'Name', formData.infoName)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
+    <template #game-config>
+      <!-- M7A / SRA / 游戏路径 -->
+      <SectionCard
+        variant="card"
+        :title="t('core.edit.scriptGameConfiguration')"
+        :icon="ControlOutlined"
+      >
+        <a-alert
+          v-if="isCloud"
+          type="info"
+          show-icon
+          :message="t('core.edit.hsrCloudIntro')"
+          class="cloud-intro"
+        />
+        <div class="engine-path-hint">
+          <a-typography-text type="secondary">
+            {{ t('core.edit.fillingPathEnablesThat') }}
+          </a-typography-text>
+        </div>
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.hsrGamePlatform')"
+                  :hint="t('core.edit.hsrGamePlatformTip')"
+                  variant="form"
+                />
+              </template>
+              <a-segmented
+                block
+                :value="hsrConfig.Game.Platform"
+                :options="platformOptions"
+                data-testid="hsr-game-platform"
+                @change="handlePlatformChange"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.march7thPath')"
+                  :hint="t('core.edit.march7thAssistantInstallDirectory')"
+                  variant="form"
+                />
+              </template>
+              <PathPickerField
+                v-model="hsrConfig.Info.M7APath"
+                mode="folder"
+                :placeholder="t('core.edit.pickMarch7thFolderContains')"
+                :pick-label="t('core.edit.pickFolder')"
+                @pick="selectPath('M7APath')"
+              >
+                <template #after-pick>
+                  <a-button
+                    v-if="hsrConfig.Info.M7APath"
+                    :title="t('core.edit.clearMarch7thPath')"
+                    :aria-label="t('core.edit.clearMarch7thPath')"
+                    class="path-clear-button"
+                    @click="clearPath('M7APath')"
+                  >
+                    ×
+                  </a-button>
+                </template>
+              </PathPickerField>
+            </a-form-item>
+          </a-col>
 
-          <!-- M7A / SRA / 游戏路径 -->
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.scriptGameConfiguration')"
-            :icon="ControlOutlined"
-          >
-            <a-alert
-              v-if="isCloud"
-              type="info"
-              show-icon
-              :message="t('core.edit.hsrCloudIntro')"
-              class="cloud-intro"
-            />
-            <div class="engine-path-hint">
-              <a-typography-text type="secondary">
-                {{ t('core.edit.fillingPathEnablesThat') }}
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.sraPath')"
+                  :hint="t('core.edit.starrailassistantInstallDirectoryContain')"
+                  variant="form"
+                />
+              </template>
+              <PathPickerField
+                v-model="hsrConfig.Info.SRAPath"
+                mode="folder"
+                :placeholder="t('core.edit.pickSraFolderContains')"
+                :pick-label="t('core.edit.pickFolder')"
+                @pick="selectPath('SRAPath')"
+              >
+                <template #after-pick>
+                  <a-button
+                    v-if="hsrConfig.Info.SRAPath"
+                    :title="t('core.edit.clearSraPath')"
+                    :aria-label="t('core.edit.clearSraPath')"
+                    class="path-clear-button"
+                    @click="clearPath('SRAPath')"
+                  >
+                    ×
+                  </a-button>
+                </template>
+              </PathPickerField>
+              <!-- 云平台保留 SRA 路径（外部脚本更新照常），但任务不经 SRA -->
+              <a-typography-text v-if="isCloud" type="secondary" class="field-hint">
+                {{ t('core.edit.hsrCloudNoSra') }}
               </a-typography-text>
-            </div>
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.hsrGamePlatform')"
-                      :hint="t('core.edit.hsrGamePlatformTip')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-segmented
-                    block
-                    :value="hsrConfig.Game.Platform"
-                    :options="platformOptions"
-                    data-testid="hsr-game-platform"
-                    @change="handlePlatformChange"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.march7thPath')"
-                      :hint="t('core.edit.march7thAssistantInstallDirectory')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="hsrConfig.Info.M7APath"
-                    mode="folder"
-                    :placeholder="t('core.edit.pickMarch7thFolderContains')"
-                    :pick-label="t('core.edit.pickFolder')"
-                    @pick="selectPath('M7APath')"
-                  >
-                    <template #after-pick>
-                      <a-button
-                        v-if="hsrConfig.Info.M7APath"
-                        :title="t('core.edit.clearMarch7thPath')"
-                        :aria-label="t('core.edit.clearMarch7thPath')"
-                        class="path-clear-button"
-                        @click="clearPath('M7APath')"
-                      >
-                        ×
-                      </a-button>
-                    </template>
-                  </PathPickerField>
-                </a-form-item>
-              </a-col>
+            </a-form-item>
+          </a-col>
+        </a-row>
 
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.sraPath')"
-                      :hint="t('core.edit.starrailassistantInstallDirectoryContain')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="hsrConfig.Info.SRAPath"
-                    mode="folder"
-                    :placeholder="t('core.edit.pickSraFolderContains')"
-                    :pick-label="t('core.edit.pickFolder')"
-                    @pick="selectPath('SRAPath')"
-                  >
-                    <template #after-pick>
-                      <a-button
-                        v-if="hsrConfig.Info.SRAPath"
-                        :title="t('core.edit.clearSraPath')"
-                        :aria-label="t('core.edit.clearSraPath')"
-                        class="path-clear-button"
-                        @click="clearPath('SRAPath')"
-                      >
-                        ×
-                      </a-button>
-                    </template>
-                  </PathPickerField>
-                  <!-- 云平台保留 SRA 路径（外部脚本更新照常），但任务不经 SRA -->
-                  <a-typography-text v-if="isCloud" type="secondary" class="field-hint">
-                    {{ t('core.edit.hsrCloudNoSra') }}
-                  </a-typography-text>
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- 云·星穹铁道：付费时长、排队与登录等待，映射到三月七的 cloud_game_* -->
-            <a-row v-if="isCloud" :gutter="24" style="margin-top: 16px">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.hsrCloudMaxQueue')"
-                      :hint="t('core.edit.hsrCloudMaxQueueTip')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="hsrConfig.Cloud.MaxQueueMinutes"
-                    :min="1"
-                    :max="9999"
-                    :addon-after="t('core.edit.hsrCloudMinutes')"
-                    style="width: 100%"
-                    data-testid="hsr-cloud-max-queue"
-                    @change="handleCloudConfigChange('MaxQueueMinutes', $event ?? 60)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.hsrCloudLoginWait')"
-                      :hint="t('core.edit.hsrCloudLoginWaitTip')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="hsrConfig.Cloud.LoginTimeoutMinutes"
-                    :min="1"
-                    :max="9999"
-                    :addon-after="t('core.edit.hsrCloudMinutes')"
-                    style="width: 100%"
-                    data-testid="hsr-cloud-login-wait"
-                    @change="handleCloudConfigChange('LoginTimeoutMinutes', $event ?? 20)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- SRA 配置档案只对已填 SRA 路径的客户端脚本有意义，没填或云平台不渲染 -->
-            <a-row v-if="hsrConfig.Info.SRAPath && !isCloud" :gutter="24">
-              <a-col :xs="24" :md="{ span: 12, offset: 12 }">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.sraProfile')"
-                      :hint="t('core.edit.sraProfileTooltip')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    :value="hsrConfig.Info.SRAProfile || ''"
-                    :options="sraProfileOptions"
-                    :disabled="Boolean(sraProfileDisabledReason)"
-                    :loading="sraProfilesLoading"
-                    style="width: 100%"
-                    @change="handleSraProfileChange"
-                  />
-                  <a-typography-text
-                    v-if="sraProfileDisabledReason"
-                    type="secondary"
-                    class="field-hint"
-                  >
-                    {{ sraProfileDisabledReason }}
-                  </a-typography-text>
-                  <a-typography-text
-                    v-else-if="sraProfiles?.fallback && sraProfiles.fallback_reason"
-                    type="warning"
-                    class="field-hint"
-                  >
-                    {{ sraProfiles.fallback_reason }}
-                  </a-typography-text>
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <!-- 游戏路径、启动等待、分辨率只在 MAS 管理本地客户端时有用，否则整块不渲染 -->
-            <a-row v-if="hsrConfig.Game.Enabled && !isCloud" :gutter="24" style="margin-top: 16px">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.gamePath')"
-                      :hint="t('core.edit.starRailGameRoot')"
-                      variant="form"
-                    />
-                  </template>
-                  <BoundGamePathField />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.maximumGameLaunchWait')"
-                      :hint="t('core.edit.howLongMasWaits')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="hsrConfig.Game.WaitTime"
-                    :min="0"
-                    :max="9999"
-                    :addon-after="t('core.edit.seconds')"
-                    style="width: 100%"
-                    @change="handleGameConfigChange('WaitTime', $event)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-
-            <a-row v-if="isCloud" :gutter="[24, 12]" class="switch-row">
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  :checked="hsrConfig.Cloud.UsePaidTime"
-                  :title="t('core.edit.hsrCloudUsePaidTime')"
-                  :description="t('core.edit.hsrCloudUsePaidTimeHint')"
-                  data-testid="hsr-cloud-use-paid-time"
-                  @change="handleCloudConfigChange('UsePaidTime', $event)"
+        <!-- 云·星穹铁道：付费时长、排队与登录等待，映射到三月七的 cloud_game_* -->
+        <a-row v-if="isCloud" :gutter="24" style="margin-top: 16px">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.hsrCloudMaxQueue')"
+                  :hint="t('core.edit.hsrCloudMaxQueueTip')"
+                  variant="form"
                 />
-              </a-col>
-            </a-row>
-            <!-- 云·星穹铁道没有本地客户端，「MAS 管理游戏」及其下属字段整块不渲染 -->
-            <a-row v-else :gutter="[24, 12]" class="switch-row">
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  :checked="Boolean(hsrConfig.Game.Enabled)"
-                  :title="t('core.edit.masManagesGame')"
-                  :description="t('core.edit.turnThisOffWhen')"
-                  @change="handleGameEnabledChange"
+              </template>
+              <a-input-number
+                v-model:value="hsrConfig.Cloud.MaxQueueMinutes"
+                :min="1"
+                :max="9999"
+                :addon-after="t('core.edit.hsrCloudMinutes')"
+                style="width: 100%"
+                data-testid="hsr-cloud-max-queue"
+                @change="handleCloudConfigChange('MaxQueueMinutes', $event ?? 60)"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.hsrCloudLoginWait')"
+                  :hint="t('core.edit.hsrCloudLoginWaitTip')"
+                  variant="form"
                 />
-              </a-col>
-              <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :md="12">
-                <SwitchTile
-                  :checked="Boolean(hsrConfig.Game.ForceResolution1920x1080)"
-                  :title="t('core.edit.run1920x1080WindowedMode')"
-                  :description="
-                    [
-                      t('core.edit.writtenCurrentUserS'),
-                      t('core.edit.restoreOriginalRegistryValue'),
-                    ].join(' ')
-                  "
-                  @change="handleGameResolutionChange"
-                />
-              </a-col>
-              <!-- M7A 自带兑换码去重、不走指纹闸门，这个开关只作用于 SRA -->
-              <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :md="12">
-                <SwitchTile
-                  :checked="Boolean(hsrConfig.Game.RedeemCodesOnlyWhenChanged)"
-                  :title="t('core.edit.redeemCodesRunOnly')"
-                  :description="
-                    [t('core.edit.runsOncePerUser'), t('core.edit.runOnceNewUser')].join(' ')
-                  "
-                  @change="handleRedeemCodePolicyChange"
-                />
-              </a-col>
-            </a-row>
-          </SectionCard>
+              </template>
+              <a-input-number
+                v-model:value="hsrConfig.Cloud.LoginTimeoutMinutes"
+                :min="1"
+                :max="9999"
+                :addon-after="t('core.edit.hsrCloudMinutes')"
+                style="width: 100%"
+                data-testid="hsr-cloud-login-wait"
+                @change="handleCloudConfigChange('LoginTimeoutMinutes', $event ?? 20)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
 
-          <HSRRunConfigSection
-            v-model:run="hsrConfig.Run"
-            :show-low-performance="!!hsrConfig.Info.M7APath"
-            @save="(key, value) => handleChange('Run', key, value)"
-          />
+        <!-- SRA 配置档案只对已填 SRA 路径的客户端脚本有意义，没填或云平台不渲染 -->
+        <a-row v-if="hsrConfig.Info.SRAPath && !isCloud" :gutter="24">
+          <a-col :xs="24" :md="{ span: 12, offset: 12 }">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.sraProfile')"
+                  :hint="t('core.edit.sraProfileTooltip')"
+                  variant="form"
+                />
+              </template>
+              <a-select
+                :value="hsrConfig.Info.SRAProfile || ''"
+                :options="sraProfileOptions"
+                :disabled="Boolean(sraProfileDisabledReason)"
+                :loading="sraProfilesLoading"
+                style="width: 100%"
+                @change="handleSraProfileChange"
+              />
+              <a-typography-text
+                v-if="sraProfileDisabledReason"
+                type="secondary"
+                class="field-hint"
+              >
+                {{ sraProfileDisabledReason }}
+              </a-typography-text>
+              <a-typography-text
+                v-else-if="sraProfiles?.fallback && sraProfiles.fallback_reason"
+                type="warning"
+                class="field-hint"
+              >
+                {{ sraProfiles.fallback_reason }}
+              </a-typography-text>
+            </a-form-item>
+          </a-col>
+        </a-row>
 
-          <HSRProgramUpdateSettings
-            :script-id="scriptId"
-            :update="hsrConfig.Update"
-            :m7a-path="hsrConfig.Info.M7APath || ''"
-            :sra-path="hsrConfig.Info.SRAPath || ''"
-            :capability-snapshot="capabilitySnapshot"
-            @change="(key, value) => handleChange('Update', key, value)"
-            @updated="loadCapabilities"
-          />
-        </a-form>
-      </a-spin>
-    </ConfigLockPanel>
-  </ConfigEditShell>
+        <!-- 游戏路径、启动等待、分辨率只在 MAS 管理本地客户端时有用，否则整块不渲染 -->
+        <a-row v-if="hsrConfig.Game.Enabled && !isCloud" :gutter="24" style="margin-top: 16px">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.gamePath')"
+                  :hint="t('core.edit.starRailGameRoot')"
+                  variant="form"
+                />
+              </template>
+              <BoundGamePathField />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.maximumGameLaunchWait')"
+                  :hint="t('core.edit.howLongMasWaits')"
+                  variant="form"
+                />
+              </template>
+              <a-input-number
+                v-model:value="hsrConfig.Game.WaitTime"
+                :min="0"
+                :max="9999"
+                :addon-after="t('core.edit.seconds')"
+                style="width: 100%"
+                @change="handleGameConfigChange('WaitTime', $event)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
+        <a-row v-if="isCloud" :gutter="[24, 12]" class="switch-row">
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              :checked="hsrConfig.Cloud.UsePaidTime"
+              :title="t('core.edit.hsrCloudUsePaidTime')"
+              :description="t('core.edit.hsrCloudUsePaidTimeHint')"
+              data-testid="hsr-cloud-use-paid-time"
+              @change="handleCloudConfigChange('UsePaidTime', $event)"
+            />
+          </a-col>
+        </a-row>
+        <!-- 云·星穹铁道没有本地客户端，「MAS 管理游戏」及其下属字段整块不渲染 -->
+        <a-row v-else :gutter="[24, 12]" class="switch-row">
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              :checked="Boolean(hsrConfig.Game.Enabled)"
+              :title="t('core.edit.masManagesGame')"
+              :description="t('core.edit.turnThisOffWhen')"
+              @change="handleGameEnabledChange"
+            />
+          </a-col>
+          <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :md="12">
+            <SwitchTile
+              :checked="Boolean(hsrConfig.Game.ForceResolution1920x1080)"
+              :title="t('core.edit.run1920x1080WindowedMode')"
+              :description="
+                [
+                  t('core.edit.writtenCurrentUserS'),
+                  t('core.edit.restoreOriginalRegistryValue'),
+                ].join(' ')
+              "
+              @change="handleGameResolutionChange"
+            />
+          </a-col>
+          <!-- M7A 自带兑换码去重、不走指纹闸门，这个开关只作用于 SRA -->
+          <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :md="12">
+            <SwitchTile
+              :checked="Boolean(hsrConfig.Game.RedeemCodesOnlyWhenChanged)"
+              :title="t('core.edit.redeemCodesRunOnly')"
+              :description="
+                [t('core.edit.runsOncePerUser'), t('core.edit.runOnceNewUser')].join(' ')
+              "
+              @change="handleRedeemCodePolicyChange"
+            />
+          </a-col>
+        </a-row>
+      </SectionCard>
+    </template>
+
+    <template #run>
+      <HSRRunConfigSection
+        v-model:run="hsrConfig.Run"
+        :show-low-performance="!!hsrConfig.Info.M7APath"
+        @save="(key, value) => handleChange('Run', key, value)"
+      />
+    </template>
+
+    <template #program-update>
+      <HSRProgramUpdateSettings
+        :script-id="scriptId"
+        :update="hsrConfig.Update"
+        :m7a-path="hsrConfig.Info.M7APath || ''"
+        :sra-path="hsrConfig.Info.SRAPath || ''"
+        :capability-snapshot="capabilitySnapshot"
+        @change="(key, value) => handleChange('Update', key, value)"
+        @updated="loadCapabilities"
+      />
+    </template>
+  </ScriptEditLayout>
 </template>
 
 <script setup lang="ts">
-import { AppstoreOutlined, ControlOutlined } from '@ant-design/icons-vue'
-import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
-import GameBindingSection from '@/components/GameBindingSection.vue'
+import { ControlOutlined } from '@ant-design/icons-vue'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import PathPickerField from '@/components/PathPickerField.vue'
 import HSRRunConfigSection from './components/HSRRunConfigSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import ScriptBasicInfoCard from '@/components/ScriptBasicInfoCard.vue'
+import ScriptEditLayout from '@/components/ScriptEditLayout.vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import {
@@ -767,8 +746,8 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 
-.capability-warnings {
-  width: 100%;
+.capability-warning {
+  margin-bottom: 16px;
 }
 
 .engine-path-hint {

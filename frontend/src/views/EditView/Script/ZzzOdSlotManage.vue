@@ -266,7 +266,8 @@ html:not(.dark):not(.appearance-custom) .slot-manage-section {
 
 .slot-manage-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 24px;
   font-weight: 600;
   display: flex;
   align-items: center;
