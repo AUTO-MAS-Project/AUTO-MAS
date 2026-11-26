@@ -18,6 +18,7 @@
 ## 已有 Skill
 
 - `mas-skills`：统一入口，用于按任务类型分发并组合工程规范类 Skill。
+- `mas-worktree`：AI 建立或使用工作树前先检查现有环境，复用兼容解释器；仅在确认 AI 本次误建了重复环境后按保护条件清理。
 - `mas-frontend-standards`：用于约束 Vue 3、TypeScript、Vite、Electron renderer、路由、API composable、状态、样式、表单与前端验证。
 - `mas-frontend-ui`：用于约束 Ant Design Vue UI、桌面端业务布局、视觉 token、表单、表格、弹窗、反馈、拖拽与深色模式；修改 UI 前须用 Playwright 生成概念图，经用户确认视觉效果后再实现。
 - `mas-api-contract`：用于约束 FastAPI 接口与 WebSocket 的请求、响应和错误契约。

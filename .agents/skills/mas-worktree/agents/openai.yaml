@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAS Worktree 环境检查"
+  short_description: "先只读检查，再复用兼容的共享 Python 环境；只清理已确认的重复副本"
+  default_prompt: "用 $mas-worktree 检查当前工作树能否复用已准备的环境。"
