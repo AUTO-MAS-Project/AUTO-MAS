@@ -81,11 +81,26 @@ async def test_final_results_follow_account_run_in_dispatch_tree(
                 "users"
             ]["data"]
 
+        async def read_analysis(user):
+            return await client.post(
+                "/api/dispatch/get",
+                json={
+                    "taskId": str(task_id),
+                    "logAnalysis": {
+                        "scriptRunId": str(script.uid),
+                        "userRunId": str(user.uid),
+                    },
+                },
+            )
+
         try:
             await asyncio.wait_for(first_recorded.wait(), 5)
             users = await read_users()
-            analysis = users[str(first.uid)]["log_analysis"]
-            assert analysis["close_reason"] == "complete"
+            assert all("log_analysis" not in row for row in users.values())
+            response = await read_analysis(first)
+            assert response.status_code == 200
+            analysis = response.json()["logAnalysis"]
+            assert analysis["closeReason"] == "complete"
             assert analysis["nodes"][0]["attributes"] == []
             assert analysis["nodes"][0]["text"] == first.info.name + "x" * 600
             assert "log_analysis" not in users[str(second.uid)]
@@ -102,9 +117,16 @@ async def test_final_results_follow_account_run_in_dispatch_tree(
 
         await asyncio.wait_for(run.accomplish.wait(), 5)
         users = await read_users()
-        final = users[str(second.uid)]["log_analysis"]
-        assert final["nodes"][0]["text"] == second.info.name + "x" * 600
-        assert ("log_analysis" in users[str(first.uid)]) is (cache_budget > 1024)
+        assert all("log_analysis" not in row for row in users.values())
+        response = await read_analysis(second)
+        assert response.status_code == 200
+        assert (
+            response.json()["logAnalysis"]["nodes"][0]["text"]
+            == second.info.name + "x" * 600
+        )
+        assert (await read_analysis(first)).status_code == (
+            200 if cache_budget > 1024 else 404
+        )
         assert (await client.get(f"/api/dispatch/task/{task_id}")).json()[
             "status"
         ] == "success"

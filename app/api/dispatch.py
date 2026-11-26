@@ -269,20 +269,10 @@ async def get_tasks(
         return _get_log_analysis(
             body.taskId, body.logAnalysis, request=request, response=response
         )
-    include_log_analysis = bool(body.taskId) and _local_node_reader(request)
-    if include_log_analysis:
-        response.headers["Cache-Control"] = "no-store"
     ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
     try:
         data = {
-            uid: tree
-            for uid in ids
-            if (
-                tree := TaskManager.get_task(
-                    uid, include_log_analysis=include_log_analysis
-                )
-            )
-            is not None
+            uid: tree for uid in ids if (tree := TaskManager.get_task(uid)) is not None
         }
     except ValueError:
         return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")

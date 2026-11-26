@@ -54,11 +54,7 @@ L4 把独立分析显式绑定到本次账号。框架或专项从该账号运�
 
 ## 查询结果
 
-本机调用现有的 `POST /api/dispatch/get`，在请求正文传 `{"taskId":"<运行 UUID>"}`。通过 `data[taskId].scripts.data[scriptRunId].users.data[userRunId].log_analysis` 读取结果。树里的账号键是本轮运行 UUID，账号配置 ID 仍在 `info.user_id`。
-
-- `nodes` 是最终有效节点，已撤回节点从结果中移除。
-- `close_reason` 可为 `complete`、`timeout`、`worker_error` 或 `capacity`。没有结果时该账号省略 `log_analysis`。
-- 当前任务与最近完成任务均可查询。最近结果受任务数量、保留时长和缓存容量限制。节点文本和附加字段在公开查询前做脱敏。
+普通任务详情只传任务 ID 时省略节点。本机调用现有的 `POST /api/dispatch/get`，按下面的方式选择具体账号，即可读取该账号的当前节点或最终结果。
 
 ### 运行中查询和断线补读
 
