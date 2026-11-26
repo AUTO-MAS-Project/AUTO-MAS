@@ -23,6 +23,11 @@ class LogAnalysis:
     reporter: PushReporter | None
 
     @property
+    def observation(self) -> NodeObservation:
+        """向本次运行的拥有者交接分析观察对象。"""
+        return self._observation
+
+    @property
     def result(self) -> SessionSummary | None:
         return self._observation.summary
 

@@ -32,6 +32,7 @@ try:
     async with analyze_logs(
         RULES, monitor=monitor, prepare_report=report_mode != "关闭"
     ) as analysis:
+        self.user_info.bind_log_analysis(analysis)
         try:
             await self.run_script_with_monitor(monitor)
         finally:
@@ -43,6 +44,13 @@ finally:
 ```
 
 `analyze_logs` 使用独立分析进程，默认收尾等待两秒。超时会返回已采集节点和 `reason="timeout"`，报告末尾注明采集不完整。执行器按专项自己的结果来源判断任务成败。取消时，专项的监控收尾须覆盖已启动的日志流，工作进程在有界收尾后向调用方继续传播取消。
+
+## 在框架里观察运行中的节点
+
+L4 把独立分析显式绑定到本次账号。框架或专项从该账号运行节点调用
+`capture_log_analysis()`，可在任务仍运行时取得当前有效节点和同一时点的游标。
+用 `node_id` 识别同一个节点，用 `revision` 判断是否已更新。采集是否结束由
+`close_reason` 表示，账号执行状态仍由 `info.status` 表示。
 
 ## 查询结果
 

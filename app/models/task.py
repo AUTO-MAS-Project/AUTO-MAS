@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -31,6 +32,8 @@ from app.models.notification.report import TaskNotificationState
 from app.utils.common.log_flow.observation import (
     CloseReason,
     Node,
+    NodeObservation,
+    ObservationSnapshot,
     SessionSummary,
     public_log_node,
 )
@@ -39,6 +42,7 @@ from app.utils.contracts.power import PowerSignal
 if TYPE_CHECKING:
     # [兼容旧专项] 旧类型导出；新执行器直接使用 app.task.lifecycle.TaskBase。
     from app.task.legacy import TaskExecuteBase as TaskExecuteBase
+    from app.utils.common.log_flow.analysis import LogAnalysis
 
 # 数组保留递归类型；对象的文档投影展开为开放字典，避开生成器的循环 Record 别名。
 # 实际参数仍递归校验全部 JSON 值。
@@ -173,6 +177,7 @@ class TaskUserItem(RuntimeEntry):
     log_analysis: LogAnalysis = Field(default_factory=LogAnalysis)
     info: Info = Field(default_factory=Info)
     logs: ConfigCollection[LogRecord] = collection(LogRecord)
+    _log_observation: NodeObservation | None = PrivateAttr(default=None)
     _config_ref: ReferenceType | None = PrivateAttr(default=None)
     # [兼容旧专项] 仅在完成摘要中展示格式化后的 LogBox 节点。
     _completion_details: tuple[str, ...] = PrivateAttr(default=())
@@ -195,8 +200,32 @@ class TaskUserItem(RuntimeEntry):
             info["user_id"] = "default"
         super().__init__(info=info, **values)
 
+    def bind_log_analysis(self, analysis: LogAnalysis) -> None:
+        """由 L4 将独立分析关联到本次账号运行，供框架读取实时节点。"""
+        observation = analysis.observation
+        if (
+            self._log_observation is not None
+            and self._log_observation is not observation
+        ):
+            raise ValueError("账号运行已绑定其他日志分析")
+        self._log_observation = observation
+
+    def capture_log_analysis(self) -> ObservationSnapshot | None:
+        """读取同一时点的账号节点、采集状态及补读起点。"""
+        if self._log_observation is None:
+            return None
+        snapshot = self._log_observation.capture()
+        return replace(
+            snapshot, nodes=tuple(public_log_node(node) for node in snapshot.nodes)
+        )
+
     async def record_log_analysis(self, result: SessionSummary) -> None:
         """显式保存本次账号的最终分析，任务状态由执行器独立决定。"""
+        if (
+            self._log_observation is not None
+            and self._log_observation.summary is not result
+        ):
+            raise ValueError("最终结果不属于账号运行已绑定的日志分析")
         if self.activation_state.value == "inactive":
             await self.activate()
         self.log_analysis.nodes = tuple(public_log_node(node) for node in result.nodes)

@@ -63,6 +63,7 @@ def public_log_node(node: Node) -> Node:
     return node.model_copy(
         update={
             "text": sanitize_log_message(node.text),
+            "node_id": node.node_id or f"sequence/{node.sequence}",
             "attributes": tuple(attributes),
         }
     )

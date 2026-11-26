@@ -324,6 +324,7 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
         async def main_logic(self):
             monitor = LogMonitor((0, 0), "", discard_display)
             async with analyze_logs(declaration, monitor=monitor) as flow:
+                self.user_info.bind_log_analysis(flow)
                 try:
                     process = await asyncio.create_subprocess_exec(
                         sys.executable,
@@ -335,6 +336,15 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
                         monitor.monitor_process(process, "stdout"), 5
                     )
                     assert await process.wait() == 0
+                    async with asyncio.timeout(2):
+                        while True:
+                            snapshot = self.user_info.capture_log_analysis()
+                            if snapshot is not None and snapshot.nodes:
+                                break
+                            await asyncio.sleep(0.01)
+                    assert snapshot.close_reason is None
+                    assert snapshot.nodes[0].node_id == "sequence/1"
+                    assert self.user_info.log_analysis.close_reason is None
                 finally:
                     await monitor.stop()
             result = flow.result
@@ -351,7 +361,10 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
     await worker.run()
     assert worker.error is None
     assert account.status == "完成"
-    assert account.log_analysis.close_reason == "complete"
+    final = account.capture_log_analysis()
+    assert final is not None
+    assert final.close_reason == account.log_analysis.close_reason == "complete"
+    assert final.nodes == account.log_analysis.nodes
     assert [node.text for node in account.log_analysis.nodes] == ["done:claim"]
     assert report.details_for(account) == ["✅ 成功: done:claim"]
 
