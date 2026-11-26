@@ -337,9 +337,10 @@ def _run_pipeline(
         else:
             emit_processed(record, source_name=source_name, timestamp=None)
 
+    next_poll = time.monotonic()
     while True:
         try:
-            record = inbox.get(timeout=_POLL_SECONDS)
+            record = inbox.get(timeout=max(0.0, next_poll - time.monotonic()))
         except Empty:
             record = None
             closing = False
@@ -352,6 +353,9 @@ def _run_pipeline(
             if source_name not in processors:
                 raise ValueError("该会话未声明消息来源")
             process_record(record, source_name=source_name)
+        now = time.monotonic()
+        if not closing and now < next_poll:
+            continue
         while source is not None:
             try:
                 lines = source.read_new()
@@ -382,6 +386,7 @@ def _run_pipeline(
                     input_capacity_error = str(exc)
         if closing:
             break
+        next_poll = time.monotonic() + _POLL_SECONDS
     reader.join()
     for processor_source in tuple(processors):
         processor = processors.pop(processor_source)

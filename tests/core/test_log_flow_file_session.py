@@ -1956,3 +1956,47 @@ def test_source_loader_resolves_package_root_before_comparison(tmp_path, monkeyp
     finder = SourceFinder(package.name, root / "path-alias" / ".." / package.name)
     spec = finder.find_spec(package.name)
     assert spec is not None and isinstance(spec.loader, SourceLoader)
+
+
+def test_mixed_worker_polls_file_on_schedule_and_flushes_at_close(
+    tmp_path, monkeypatch
+):
+    from io import BytesIO
+
+    from app.utils.common.log_flow import worker
+
+    path = tmp_path / "script.log"
+    path.touch()
+    total_push = 200
+
+    def feed(inbox):
+        for index in range(total_push):
+            inbox.put(ReportedRecord(node_type="push", text=str(index)))
+        append(path, "done:123\n")
+        inbox.put(None)
+
+    polls = []
+    read_new = FlowFileSource.read_new
+
+    def count_poll(source):
+        polls.append(True)
+        return read_new(source)
+
+    monkeypatch.setattr(worker, "_read_inbox", feed)
+    monkeypatch.setattr(
+        worker, "time", SimpleNamespace(monotonic=lambda: 0, time=lambda: 0)
+    )
+    monkeypatch.setattr(FlowFileSource, "read_new", count_poll)
+    spec = pipeline(path).model_copy(update={"accept_push": True})
+    output = BytesIO()
+    worker._collect(spec, output)
+    nodes = [
+        message.node
+        for frame in output.getvalue().splitlines()
+        if isinstance(message := WORKER_MESSAGE.validate_json(frame), Observed)
+    ]
+    assert [node.text for node in nodes if node.source == "push"] == [
+        str(i) for i in range(total_push)
+    ]
+    assert [node.text for node in nodes if node.source == "file"] == ["123"]
+    assert len(polls) <= 3
