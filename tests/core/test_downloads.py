@@ -13,7 +13,10 @@ from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.downloads import DownloadManager
 from app.models.config import GlobalConfig
 from app.models.schema import DownloadRequest
-from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.fluxdown_cli import (
+    FluxdownCancelConfirmed,
+    FluxdownCancelUnconfirmed,
+)
 from tests.config_support import activate_config
 
 
@@ -165,6 +168,53 @@ async def test_shared_reference_missing_file_and_identity_change(manager):
     assert third.generation != second.generation
     assert await manager.release(old.cache_key, owner="B")
     assert Path(third.path).is_file()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("first_version", "next_version", "expect_resume"),
+    [("v1", "v1", True), ("v1", "v2", False), (None, None, False)],
+)
+async def test_cancelled_download_reuses_only_a_verified_matching_version(
+    manager, monkeypatch, tmp_path, first_version, next_version, expect_resume
+):
+    started = asyncio.Event()
+    paths = []
+    discarded = []
+    monkeypatch.setattr(
+        host._utils_fluxdown_cli, "_server_data_dir", lambda _: tmp_path / "fluxdown"
+    )
+    monkeypatch.setattr(
+        host._utils_fluxdown_cli,
+        "fluxdown_server_discard",
+        lambda _, path, search_dirs: discarded.append(path),
+    )
+
+    async def transfer(request, path, progress):
+        paths.append(path)
+        partial = path.with_suffix(".partial")
+        if len(paths) == 1:
+            partial.write_bytes(b"partial")
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                raise FluxdownCancelConfirmed() from None
+        assert partial.exists() is expect_resume
+        assert paths[0].with_suffix(".partial").exists() is expect_resume
+        path.write_bytes(b"completed")
+
+    manager._transfer = transfer
+    original = DownloadRequest(url="https://example.test/package", rid=first_version)
+    replacement = original.model_copy(update={"rid": next_version})
+    assert manager.request(original, owner="first")
+    await asyncio.wait_for(started.wait(), 2)
+    assert await manager.release(original.cache_key, owner="first")
+    assert manager.request(replacement, owner="second")
+    result = await manager.wait(replacement)
+    assert result.state == "succeeded", result
+    assert (paths[0] == paths[1]) is expect_resume
+    assert discarded == ([] if expect_resume else [paths[0]])
 
 
 @pytest.mark.asyncio

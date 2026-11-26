@@ -259,6 +259,8 @@ class _Artifact:
     handle: BackgroundTaskHandle[None] | None = None
     error: BaseException | None = None
     method: str = ""
+    resume_request: DownloadRequest | None = None
+    discard_pending: bool = False
 
 
 @dataclass
@@ -372,11 +374,35 @@ class DownloadManager:
         resource_key = hashlib.sha256(request.cache_key.encode()).hexdigest()
         kind, identity = request.identity
         identity_key = hashlib.sha256(json.dumps(request.identity).encode()).hexdigest()
-        path = Path(
-            native_path(
-                self._root / resource_key / f"{kind}-{identity_key}-{generation}"
+        old = entry.artifacts.get(request.identity)
+        paused = old.resume_request if old is not None else None
+        resume = (
+            old is not None
+            and paused is not None
+            and kind != "null"
+            and old.snapshot.state == "cancelled"
+            and paused.url == request.url
+            and paused.downloader == request.downloader
+            and paused.content_hash == request.content_hash
+        )
+        path = (
+            old.path
+            if resume and old is not None
+            else Path(
+                native_path(
+                    self._root
+                    / resource_key
+                    / f"{kind}-{identity_key}-{generation}"
+                    / "package"
+                )
             )
         )
+        obsolete = [
+            previous
+            for previous in entry.artifacts.values()
+            if previous.snapshot.state == "cancelled"
+            and (previous is not old or not resume)
+        ]
         artifact = _Artifact(
             request,
             path,
@@ -388,19 +414,23 @@ class DownloadManager:
                 generation=generation,
                 state="pending",
             ),
+            resume_request=paused if resume else None,
         )
-        handle = self._group.spawn(lambda: self._run(artifact))
+        handle = self._group.spawn(lambda: self._run(artifact, entry))
         if handle is None:
             return None
-        old = entry.artifacts.get(request.identity)
-        if old is not None:
+        for previous in obsolete:
+            previous.discard_pending = True
+            del entry.artifacts[previous.request.identity]
+            entry.retired.append(previous)
+        if old is not None and not resume and old not in obsolete:
             entry.retired.append(old)
         entry.artifacts[request.identity] = artifact
         artifact.handle = handle
         handle.add_done_callback(lambda done: self._complete(artifact, done))
         return artifact
 
-    async def _run(self, artifact: _Artifact) -> None:
+    async def _run(self, artifact: _Artifact, entry: _Entry) -> None:
         """执行文件传输并更新进度，对可恢复的网络错误按退避策略重试，永久失败交由完成回调记录。"""
         from app.services.common.update.fluxdown import FluxdownResumableError
 
@@ -418,13 +448,23 @@ class DownloadManager:
             artifact.snapshot.total = total
             artifact.snapshot.speed = speed
 
+        for previous in tuple(entry.retired):
+            if previous.discard_pending:
+                await self._discard_partial(previous)
+                if previous in entry.retired:
+                    entry.retired.remove(previous)
         artifact.path.parent.mkdir(parents=True, exist_ok=True)
         for attempt in range(self._attempts):
             artifact.snapshot.state = "running"
             try:
                 observer_token = download_observer.set(observe)
+                request = artifact.request
+                artifact.resume_request = None
                 try:
-                    await self._transfer(artifact.request, artifact.path, progress)
+                    await self._transfer(request, artifact.path, progress)
+                except _utils_fluxdown_cli.FluxdownCancelConfirmed:
+                    artifact.resume_request = request
+                    raise
                 finally:
                     download_observer.reset(observer_token)
                 if not artifact.path.is_file():
@@ -446,6 +486,25 @@ class DownloadManager:
                 artifact.error = error
                 artifact.snapshot.state = "retrying"
                 await asyncio.sleep(self._retry_delay * (2**attempt))
+
+    async def _discard_partial(self, artifact: _Artifact) -> None:
+        """Remove an inactive generation and its FluxDown task before starting a replacement."""
+        cli = Path(Config.setting.Update.FluxdownPath or "")
+        async with _utils_fluxdown_cli.fluxdown_destination_lock(cli, artifact.path):
+            await _utils_fluxdown_cli._to_thread_strong(
+                _utils_fluxdown_cli.fluxdown_server_discard,
+                cli,
+                artifact.path,
+                (
+                    Config.install_path / "res" / "fluxdown-cli",
+                    Config.resource_path / "fluxdown-cli",
+                ),
+                propagate_cancel=True,
+            )
+            try:
+                shutil.rmtree(artifact.path.parent)
+            except FileNotFoundError:
+                pass
 
     def _complete(
         self, artifact: _Artifact, handle: BackgroundTaskHandle[None]
