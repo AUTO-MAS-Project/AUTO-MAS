@@ -831,7 +831,6 @@
   "core.edit.clientPathOptionalHint": "Optional: leave empty to match the client by process name; setting it makes running-process detection and cleanup at task end more precise",
   "core.edit.clientPathReset": "Auto-location restored",
   "core.edit.clientPathSaved": "Wuthering Waves client path saved",
-  "core.edit.close": "Close",
   "core.edit.closeGameAfterTask": "Close the game after the task",
   "core.edit.closeGameAfterTask2": "Close the game after the task",
   "core.edit.cnServersEnter11": "For CN servers, enter the 11-digit phone number. If it contains \"*\", switching only matches the already-signed-in account list",
