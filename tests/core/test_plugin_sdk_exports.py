@@ -48,6 +48,8 @@ def test_facade_exports_host_object(facade: str, name: str, host_module: str) ->
     ("facade", "name", "host_module"),
     [
         ("utils", "process_platform", _PLATFORM_PROCESS),
+        ("utils_common", "game_window", "app.utils.common.game_window"),
+        ("services_gi_updater", "genshin", "app.services.common.gi_updater.genshin"),
         ("services", "telemetry", "app.services.common.telemetry"),
         ("services_common_update", "transport", "app.services.common.update.transport"),
     ],

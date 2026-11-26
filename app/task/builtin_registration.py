@@ -34,8 +34,6 @@ def build_builtin_script_capabilities(
     """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
     with startup_stage("后端/专项注册导入/BAAH.registration"):
         from app.task.BAAH.registration import REGISTRATION as baah
-    with startup_stage("后端/专项注册导入/BetterGI.registration"):
-        from app.task.BetterGI.registration import REGISTRATION as bettergi
     with startup_stage("后端/专项注册导入/general.registration"):
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
@@ -52,7 +50,6 @@ def build_builtin_script_capabilities(
     capabilities = build_script_capabilities(
         (
             maaend_registration(maaend=maaend),
-            bettergi,
             zzzod_registration(zzzod=zzzod),
             okww,
             general,

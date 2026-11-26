@@ -39,7 +39,7 @@ export type ScriptGetOut = {
     /**
      * 托管数据字典, key来自于index列表的uid
      */
-    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | M9AConfig | MaaConfig | MaaFWConfig | MSSConfig | SrcConfig | WhimboxConfig)>;
+    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | HSRConfig | ZzzOdConfig | BAAHConfig | BetterGIConfig | M9AConfig | MaaConfig | MaaFWConfig | MSSConfig | SrcConfig | WhimboxConfig)>;
     /**
      * 所属插件不可用的托管，只在获取全部托管时给出；只能删除
      */

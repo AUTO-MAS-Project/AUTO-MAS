@@ -27,7 +27,6 @@ _CLOSE_RESERVATION_SECONDS = 180
 def _support_probe(config: object) -> bool | Callable[[], bool]:
     """同步读取能力参数，按需构造只读取上游资源的检查。"""
     from app.models.config import (
-        BetterGIConfig,
         GeneralConfig,
         HSRConfig,
         MaaEndConfig,
@@ -62,10 +61,6 @@ def _support_probe(config: object) -> bool | Callable[[], bool]:
         return check_maaend
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return True
-    if isinstance(config, BetterGIConfig):
-        return (
-            not config.Run.UseAdmin or IS_ELEVATED
-        ) and not config.Update.TakeoverEnabled
     return isinstance(config, ZzzOdConfig) and IS_ELEVATED
 
 

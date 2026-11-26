@@ -117,10 +117,6 @@ def run_action(pipe) -> None:
     from app.utils.windows.desktop_session.native import set_dpi_awareness
 
     actions = {
-        "bettergi_switch_account": (
-            "BetterGI.tools.account_switch_native",
-            "account_switch",
-        ),
         "okww_switch_account": ("Okww.tools.account_switch", "account_switch"),
         "oknte_switch_account": ("OkNte.tools.account_switch", "account_switch"),
         "oknte_start_game": ("OkNte.tools.launcher_start", "start_game_via_launcher"),
@@ -304,6 +300,15 @@ def run_action(pipe) -> None:
 
         text = detect_game_maintenance_text()
         code = 0
+    elif action == "bettergi_switch_account":
+        import sys
+
+        search_path = arguments.pop("plugin_path")
+        sdk = Path(__file__).resolve().parents[2] / "plugins" / "auto_mas_core" / "src"
+        sys.path[:0] = [str(sdk), search_path]
+        from bettergi_adapter.tools.account_switch_native import account_switch
+
+        code = int(not account_switch(**arguments, on_log=on_log))
     else:
         module, name = actions[action]
         operation = getattr(import_module(f"app.task.{module}"), name)

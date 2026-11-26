@@ -52,12 +52,6 @@ BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
 BAAHUserConfigInput = ConfigInput[_config_models.BAAHUserConfig]
 
 
-BetterGIUserConfig = ConfigPayload[_config_models.BetterGIUserConfig]
-
-
-BetterGIUserConfigInput = ConfigInput[_config_models.BetterGIUserConfig]
-
-
 GeneralUserConfig = ConfigPayload[_config_models.GeneralUserConfig]
 
 
@@ -104,7 +98,6 @@ class UserIndexItem(BaseModel):
                 "OkNteUserConfig",
                 "MaaEndUserConfig",
                 "HSRUserConfig",
-                "BetterGIUserConfig",
                 "ZzzOdUserConfig",
                 "BAAHUserConfig",
             ]
@@ -139,7 +132,6 @@ class UserGetOut(ConfigSnapshotOut):
             OkNteUserConfig,
             MaaEndUserConfig,
             HSRUserConfig,
-            BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
         ],
@@ -155,7 +147,6 @@ class UserCreateOut(OutBase):
         OkNteUserConfig,
         MaaEndUserConfig,
         HSRUserConfig,
-        BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
     ] = Field(..., description="账号配置数据")
@@ -170,7 +161,6 @@ class UserUpdateIn(UserInBase):
         OkNteUserConfigInput,
         MaaEndUserConfigInput,
         HSRUserConfigInput,
-        BetterGIUserConfigInput,
         ZzzOdUserConfigInput,
         BAAHUserConfigInput,
     ] = Field(..., description="账号更新数据")

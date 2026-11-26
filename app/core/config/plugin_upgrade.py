@@ -14,6 +14,7 @@ from app.utils import io as _utils_io
 
 # 只列入已经完成插件化的专项；后续专项迁移随对应的数据升级段落扩展。
 _ADAPTER_PLUGINS = {
+    "BetterGIConfig": ("bettergi_adapter", "auto-mas-bettergi-adapter"),
     "SrcConfig": ("src_adapter", "auto-mas-src-adapter"),
     "WhimboxConfig": ("whimbox_adapter", "auto-mas-whimbox-adapter"),
     "MaaConfig": ("maa_adapter", "auto-mas-maa-adapter"),
@@ -83,6 +84,8 @@ def required_adapter_plugins(config_path: Path) -> dict[str, str]:
         required["maa_adapter"] = "auto-mas-maa-adapter"
     if any(config_path.glob("WhimboxConfig/*/config.json")):
         required["whimbox_adapter"] = "auto-mas-whimbox-adapter"
+    if any(config_path.glob("BetterGIConfig/*/config.json")):
+        required["bettergi_adapter"] = "auto-mas-bettergi-adapter"
     return required
 
 
@@ -164,16 +167,18 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         raise RuntimeError(f"适配插件未启用：{name}")
 
 
-def backup_legacy_src_users(config_path: Path) -> None:
-    """首次接手 SRC 索引时备份原文件，正文的加载和校验交给配置集合。"""
+def backup_legacy_adapter_users(
+    config_path: Path, adapter: str, config_type: str
+) -> None:
+    """首次接手内置托管索引时备份原文件，正文的加载和校验交给配置集合。"""
     for name in ("scripts.yaml", "ScriptConfig.json"):
         path = config_path / name
-        backup = config_path / "legacy-src-plugin" / name
+        backup = config_path / f"legacy-{adapter}-plugin" / name
         if backup.exists() or not path.is_file() or is_blank_file(path):
             continue
         document = _utils_io.read_dict_file(path)
         index = document.get("order", document.get("instances", []))
-        if any(item["type"] == "SrcConfig" for item in index):
+        if any(item["type"] == config_type for item in index):
             backup.parent.mkdir(parents=True, exist_ok=True)
             _utils_io.atomic_write(backup, path.read_bytes())
 

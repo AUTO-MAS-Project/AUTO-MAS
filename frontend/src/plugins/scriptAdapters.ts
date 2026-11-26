@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 import type { ScriptType } from '@/types/script'
 import type { ScriptMetadata } from '@/utils/scriptMetadata'
 import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
+import bettergi from '@/views/bettergi/entry'
 import maa from '@/views/maa/entry'
 import m9a from '@/views/m9a/entry'
 import maafw from '@/views/maafw/entry'
@@ -56,7 +57,7 @@ export interface ScriptFrontendAdapter {
 }
 
 /** 普通专项：按 editors 生成路由，进插件中心统计 */
-const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, src]
+const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, src, bettergi]
 
 /**
  * MaaFW 家族，顺序固定为 MaaFW、M9A、MSS。路由名与普通专项同形（`${type}ScriptEdit` 等），

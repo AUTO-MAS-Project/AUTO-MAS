@@ -28,6 +28,6 @@ export type UserUpdateIn = {
     /**
      * 账号更新数据
      */
-    data: (GeneralUserConfigInput | OkwwUserConfigInput | OkNteUserConfigInput | MaaEndUserConfigInput | HSRUserConfigInput | BetterGIUserConfigInput | ZzzOdUserConfigInput | BAAHUserConfigInput | M9AUserConfigInput | MaaUserConfigInput | MaaFWUserConfigInput | MSSUserConfigInput | SrcUserConfigInput | WhimboxUserConfigInput);
+    data: (GeneralUserConfigInput | OkwwUserConfigInput | OkNteUserConfigInput | MaaEndUserConfigInput | HSRUserConfigInput | ZzzOdUserConfigInput | BAAHUserConfigInput | BetterGIUserConfigInput | M9AUserConfigInput | MaaUserConfigInput | MaaFWUserConfigInput | MSSUserConfigInput | SrcUserConfigInput | WhimboxUserConfigInput);
 };
 

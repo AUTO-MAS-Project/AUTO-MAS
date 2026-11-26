@@ -65,7 +65,7 @@ async def main() -> None:
                 ),
             )
     else:
-        for name in ("maa_adapter", "src_adapter"):
+        for name in ("maa_adapter", "src_adapter", "bettergi_adapter"):
             if (repo_plugins / name / "pyproject.toml").is_file():
                 continue
             if not (test_plugins / name).is_dir():
@@ -81,7 +81,7 @@ async def main() -> None:
     # 首次配置升级会清理旧历史，先走正式迁移，再写入现行格式的种子。
     bind_script_handlers()
     await Config.check_data(prepare_plugins=Plugin.initialize)
-    for name in ("maa_adapter", "src_adapter"):
+    for name in ("maa_adapter", "src_adapter", "bettergi_adapter"):
         await Plugin.enable(Config.plugin_registry.by_name(name))
     if source_projects:
         for name in (

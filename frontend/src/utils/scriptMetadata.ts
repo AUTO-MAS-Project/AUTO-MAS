@@ -1,7 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
-import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
 import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
 import maaEndIcon from '@/assets/MaaEnd.png'
@@ -48,24 +47,7 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  BetterGI: {
-    logo: bettergiIcon,
-    label: 'BetterGI',
-    typeTagColor: 'gold',
-    routeSuffix: 'bettergi',
-    routeTitles: {
-      script: '编辑BetterGI脚本',
-      userAdd: '添加BetterGI用户',
-      userEdit: '编辑BetterGI用户',
-    },
-    createOrder: 9,
-    create: {
-      titleKey: 'core.scripts.type.BetterGI',
-      descriptionKey: 'core.scripts.create.typeDesc.BetterGI',
-      keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
-      group: 'specialized',
-    },
-  },
+  BetterGI: SCRIPT_ADAPTER_METADATA.BetterGI,
   General: {
     logo: generalIcon,
     label: 'AUTO-MAS',
