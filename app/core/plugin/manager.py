@@ -1490,26 +1490,25 @@ class _PluginManager:
                 self._precheck_cascade_data(tree)
                 await self._precheck_teardown(tree)
                 await LogFlowSession.retry_unconfirmed_workers()
-                if LogFlowSession.has_shared_environment_readers():
-                    raise PluginBusyError("仍有独立进程使用插件环境，请稍后重试")
-                deps = await self.unload(record, held=True, remove_record=False)
-                from app.core.config import Config
-
-                try:
+                with LogFlowSession.block_new_shared_environment_readers():
                     if LogFlowSession.has_shared_environment_readers():
                         raise PluginBusyError("仍有独立进程使用插件环境，请稍后重试")
-                    await uv_tool.uninstall(package)
-                    (Config.config_path / "plugins" / f"{name}.yaml").unlink(
-                        missing_ok=True
-                    )
-                except Exception as exc:
-                    record.info.state = PluginState.FAULT_LOAD
-                    record.info.last_error = str(exc)
-                    await record.commit()
-                    raise
-                Config.plugin_registry.remove(record.uid)
-                await Config.plugin_registry.commit()
-                return deps
+                    deps = await self.unload(record, held=True, remove_record=False)
+                    from app.core.config import Config
+
+                    try:
+                        await uv_tool.uninstall(package)
+                        (Config.config_path / "plugins" / f"{name}.yaml").unlink(
+                            missing_ok=True
+                        )
+                    except Exception as exc:
+                        record.info.state = PluginState.FAULT_LOAD
+                        record.info.last_error = str(exc)
+                        await record.commit()
+                        raise
+                    Config.plugin_registry.remove(record.uid)
+                    await Config.plugin_registry.commit()
+                    return deps
 
     async def refresh_market(self) -> None:
         """全量刷新市场目录（写 ``Config.plugin_catalog``）。"""

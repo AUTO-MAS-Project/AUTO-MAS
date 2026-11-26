@@ -668,6 +668,57 @@ async def test_shared_environment_kept_until_log_flow_worker_exit_is_confirmed(
 
 
 @pytest.mark.asyncio
+async def test_uninstall_blocks_new_shared_environment_readers(
+    cascade_plugins, monkeypatch
+):
+    from app.plugin import uv
+
+    manager, records = await cascade_plugins(
+        {"being_removed": (), "separate_reader": ()}, source="installed"
+    )
+    await manager.enable(records["being_removed"])
+    await manager.enable(records["separate_reader"])
+    uninstalling = asyncio.Event()
+    finish_uninstall = asyncio.Event()
+
+    async def remove(_package):
+        uninstalling.set()
+        await finish_uninstall.wait()
+
+    monkeypatch.setattr(uv, "uninstall", remove)
+    removal = asyncio.create_task(manager.uninstall(records["being_removed"]))
+    package = WorkerPluginPackage(
+        name="separate_reader",
+        import_root=str(records["separate_reader"]._project_dir),
+        dependency_root=str(uv.site_dir(activate=False)),
+        sdk_root=str(Path("plugins/auto_mas_core/src").resolve()),
+    )
+    try:
+        await asyncio.wait_for(uninstalling.wait(), timeout=5)
+        async with analyze_logs(
+            SimpleFlowDeclaration(), accept_push=True, plugin_package=package
+        ) as blocked:
+            assert blocked.reporter is not None
+            assert blocked.reporter.text("line") is SubmitResult.CLOSED
+        assert blocked.result is not None and blocked.result.reason == "worker_error"
+
+        async with analyze_logs(SimpleFlowDeclaration(), accept_push=True) as built_in:
+            assert built_in.reporter is not None
+            assert built_in.reporter.text("line") is SubmitResult.ACCEPTED
+        assert built_in.result is not None and built_in.result.complete
+    finally:
+        finish_uninstall.set()
+        await asyncio.wait_for(removal, timeout=5)
+
+    async with analyze_logs(
+        SimpleFlowDeclaration(), accept_push=True, plugin_package=package
+    ) as resumed:
+        assert resumed.reporter is not None
+        assert resumed.reporter.text("line") is SubmitResult.ACCEPTED
+    assert resumed.result is not None and resumed.result.complete
+
+
+@pytest.mark.asyncio
 async def test_reload_restore_failure_keeps_enable_intent_for_restricted_plugin(
     cascade_plugins, monkeypatch
 ):

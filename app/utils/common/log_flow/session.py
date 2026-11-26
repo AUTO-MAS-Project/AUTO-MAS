@@ -6,8 +6,8 @@ import asyncio
 import os
 import subprocess
 import sys
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import ClassVar
 
@@ -105,6 +105,7 @@ class LogFlowSession:
 
     _unconfirmed_workers: ClassVar[set[LogFlowSession]] = set()
     _shared_environment_readers: ClassVar[int] = 0
+    _shared_environment_write_depth: ClassVar[int] = 0
 
     def __init__(
         self,
@@ -169,6 +170,8 @@ class LogFlowSession:
         }
         reads_shared_environment = config.plugin_package is not None
         if reads_shared_environment:
+            if cls._shared_environment_write_depth:
+                raise SessionOpenError("插件环境正在变更，暂时无法启动日志分析")
             cls._shared_environment_readers += 1
         session: LogFlowSession | None = None
         job: TaskProcessJob | None = None
@@ -371,6 +374,16 @@ class LogFlowSession:
     def has_unconfirmed_workers(cls) -> bool:
         """退出待确认的 worker 仍可能读取共享插件环境。"""
         return bool(cls._unconfirmed_workers)
+
+    @classmethod
+    @contextmanager
+    def block_new_shared_environment_readers(cls) -> Iterator[None]:
+        """卸载会异步变更共享文件，期间暂停新的子进程读者。"""
+        cls._shared_environment_write_depth += 1
+        try:
+            yield
+        finally:
+            cls._shared_environment_write_depth -= 1
 
     @classmethod
     def has_shared_environment_readers(cls) -> bool:
