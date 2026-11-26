@@ -129,15 +129,20 @@ def verified_shared_python() -> Path | None:
             ],
             cwd=REPO_ROOT,
             capture_output=True,
-            encoding="utf-8",
             check=False,
         )
     except OSError as error:
         raise ValueError(f"无法启动共享环境预检：{error}") from error
     if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip()
+        # 诊断可能混有原生工具的本地编码；替换只用于渲染，不用于路径。
+        detail = (result.stderr.strip() or result.stdout.strip()).decode(
+            "utf-8", errors="replace"
+        )
         raise ValueError(detail or f"共享环境预检退出码为 {result.returncode}。")
-    output = result.stdout.strip()
+    try:
+        output = result.stdout.decode("utf-8").rstrip("\r\n")
+    except UnicodeDecodeError as error:
+        raise ValueError("共享环境预检返回的解释器路径不是有效的 UTF-8。") from error
     python = Path(output)
     if not python.is_absolute() or not python.is_file():
         raise ValueError("共享环境预检未返回可用的 Python 解释器路径。")

@@ -80,8 +80,10 @@ function Invoke-Child([string]$File, [string[]]$Arguments, [hashtable]$Environme
 if (($Mode -ne 'Check' -and $Target -ne 'Runtime') -or ($AppRoot -and ($Mode -eq 'Test' -or $Target -eq 'Test'))) {
     throw '仅 Check 可以指定 -Target；-AppRoot 仅适用于 Runtime。'
 }
-if ($PythonPathOnly -and $Mode -ne 'Check') {
-    throw '仅 Check 支持 -PythonPathOnly。'
+if ($PythonPathOnly) {
+    if ($Mode -ne 'Check') { throw '仅 Check 支持 -PythonPathOnly。' }
+    # stdout 是供 dev_doctor 读取的路径，不能随 Windows 控制台代码页变化。
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 }
 $test = ($Mode -eq 'Test' -or $Target -eq 'Test')
 
@@ -126,7 +128,7 @@ if ($test) {
 
 $python = Get-VenvPython $venv
 $verifier = Join-Path $PSScriptRoot 'verify-dev-backend.py'
-$arguments = @('-I', '-B', $verifier, '--repo', $repo, '--venv', $venv,
+$arguments = @('-I', '-B', '-X', 'utf8', $verifier, '--repo', $repo, '--venv', $venv,
     '--uv', $uv.Source, '--platform', $platform, '--architecture', $architecture, '--version', $version)
 if ($test) {
     $arguments += @('--test', '--pool-root', $env:AUTO_MAS_DEV_ENV_ROOT)
