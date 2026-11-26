@@ -1,5 +1,5 @@
 <template>
-  <a-card class="config-card">
+  <SectionCard variant="card" class="config-card">
     <a-form :model="task" :disabled="disabled" layout="vertical" class="config-form">
       <div class="form-section">
         <a-tabs :tab-position="screens.md ? 'left' : 'top'" default-active-key="daily">
@@ -58,13 +58,14 @@
         </a-tabs>
       </div>
     </a-form>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { Grid } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import { SectionCard } from '@/components/ui'
 import OkwwNativeTaskConfig from './OkwwNativeTaskConfig.vue'
 import OkwwArgumentsConfig from './OkwwArgumentsConfig.vue'
 import type { OkwwPanelKind } from '@/types/nativeConfig'
@@ -95,3 +96,10 @@ function setBusy(kind: OkwwPanelKind, value: boolean) {
   emit('busy', Object.values(busy).some(Boolean))
 }
 </script>
+
+<style scoped>
+.config-card {
+  margin-bottom: 0;
+  padding-block: var(--section-card-padding);
+}
+</style>
