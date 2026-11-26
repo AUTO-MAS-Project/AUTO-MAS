@@ -37,12 +37,14 @@ import type { MSSPlanConfig_Day9Input } from './MSSPlanConfig_Day9Input';
 import type { MSSPlanConfig_FridayInput } from './MSSPlanConfig_FridayInput';
 import type { MSSPlanConfig_InfoInput } from './MSSPlanConfig_InfoInput';
 import type { MSSPlanConfig_MondayInput } from './MSSPlanConfig_MondayInput';
+import type { MSSPlanConfig_plugin_infoInput } from './MSSPlanConfig_plugin_infoInput';
 import type { MSSPlanConfig_SaturdayInput } from './MSSPlanConfig_SaturdayInput';
 import type { MSSPlanConfig_SundayInput } from './MSSPlanConfig_SundayInput';
 import type { MSSPlanConfig_ThursdayInput } from './MSSPlanConfig_ThursdayInput';
 import type { MSSPlanConfig_TuesdayInput } from './MSSPlanConfig_TuesdayInput';
 import type { MSSPlanConfig_WednesdayInput } from './MSSPlanConfig_WednesdayInput';
 export type MSSPlanConfigInput = {
+    info?: (MSSPlanConfig_plugin_infoInput | null);
     ALL?: (MSSPlanConfig_ALLInput | null);
     Friday?: (MSSPlanConfig_FridayInput | null);
     Day1?: (MSSPlanConfig_Day1Input | null);

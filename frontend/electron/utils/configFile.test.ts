@@ -1,8 +1,13 @@
 import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
-import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
-import { patchConfigFile } from './configFile'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { clearAppearanceConfigIfCurrent, patchConfigFile } from './configFile'
+
+vi.mock('fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('fs')>()
+  return { ...actual, renameSync: vi.fn(actual.renameSync) }
+})
 
 let testRoot: string
 let configPath: string
@@ -54,5 +59,38 @@ describe('主进程配置补丁写入', () => {
       Runtime: { LaunchMode: 'on' },
       custom: 'latest',
     })
+    expect(fs.readdirSync(path.dirname(configPath))).toEqual([path.basename(configPath)])
+  })
+
+  it.each(['[]', 'null', '"text"', '42', 'false'])('拒绝覆盖非对象 JSON %s', raw => {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    fs.writeFileSync(configPath, raw, 'utf8')
+
+    expect(() => patchConfigFile(configPath, { language: 'en-US' })).toThrow('JSON 对象')
+    expect(() => clearAppearanceConfigIfCurrent(configPath, 'old', () => true)).toThrow('JSON 对象')
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(raw)
+  })
+
+  it('外观清理替换失败时保留原文件、清理临时文件，并可重试', () => {
+    const original = { appearanceId: 'old', themeColor: 'green' }
+    const updated = { ...original, appearanceId: null }
+    fs.mkdirSync(path.dirname(configPath), { recursive: true })
+    fs.writeFileSync(configPath, JSON.stringify(original), 'utf8')
+    vi.mocked(fs.renameSync).mockImplementationOnce(tempPath => {
+      expect(path.dirname(String(tempPath))).toBe(path.dirname(configPath))
+      expect(JSON.parse(fs.readFileSync(tempPath, 'utf8'))).toEqual(updated)
+      expect(readConfig()).toEqual(original)
+      throw new Error('目标文件被占用')
+    })
+
+    expect(() => clearAppearanceConfigIfCurrent(configPath, 'old', () => true)).toThrow(
+      '目标文件被占用'
+    )
+    expect(readConfig()).toEqual(original)
+    expect(fs.readdirSync(path.dirname(configPath))).toEqual([path.basename(configPath)])
+
+    expect(clearAppearanceConfigIfCurrent(configPath, 'old', () => true).cleared).toBe(true)
+    expect(readConfig()).toEqual(updated)
+    expect(fs.readdirSync(path.dirname(configPath))).toEqual([path.basename(configPath)])
   })
 })

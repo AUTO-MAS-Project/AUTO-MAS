@@ -1,5 +1,5 @@
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
-import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, maafwLabel } from '@/plugins/maafwFamily'
 
 const normalizeSearchValue = (value: unknown) =>
   String(value ?? '')
@@ -15,9 +15,7 @@ const matchesUser = (user: ScriptListUser, keyword: string) =>
 // MFW 家族卡片上的类型标签显示的是项目名（Info.ProjectLabel），没有时是类型标签（MFW / M9A …）：
 // 看得见的名字都要能搜到
 const scriptDisplayValues = (script: ScriptListItem): unknown[] =>
-  isMaaFWFamily(script.type)
-    ? [script.projectLabel, resolveMaaFWFlavor(script.type).typeTagLabel]
-    : []
+  isMaaFWFamily(script.type) ? [script.projectLabel, maafwLabel(script.type)] : []
 
 export const filterScriptsByKeyword = (
   scripts: ScriptListItem[],

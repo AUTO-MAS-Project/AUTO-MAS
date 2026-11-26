@@ -54,12 +54,12 @@ import { SectionCard } from '@/components/ui'
 import type {
   MaaFWUserQueueHeaderSectionEmits,
   MaaFWUserQueueHeaderSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+} from './sectionProps'
 import ShellQueueImportSection from './ShellQueueImportSection.vue'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 defineProps<MaaFWUserQueueHeaderSectionProps>()
 
 const emit = defineEmits<MaaFWUserQueueHeaderSectionEmits>()

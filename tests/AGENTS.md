@@ -30,12 +30,11 @@ uv run --no-sync python -m pytest tests/models/test_queue_config.py -q
 uv run --no-sync python -m pytest tests -q
 ```
 
-## 核心受保护回归（MaaFW）
+## 核心最小回归（MFW 族）
 
-`tests/task/test_maafw_core.py` 守护 MaaFW 通用引擎（`app/task/MaaFW/tools/core/`，覆盖 M9A 及全部 `interface.json` 项目），**长期保留、清理测试时不可删除**。
+MFW 通用引擎（两块库与三块积木）和 MFW、M9A、MSS 三个专项已改由插件包提供，源码在 [AUTO-MAS-MaaFW](https://github.com/AUTO-MAS-Project/AUTO-MAS-MaaFW) 与三个专项仓库；原先的 `tests/task/test_maafw_core.py` 核心最小回归随实现一起交给积木仓库维护，宿主不再放 MFW 引擎的测试。
 
-- 仅覆盖核心契约（worker / agent 启动、跨进程数据传递、版本对齐等），保持秒级、无网络、无真 venv、无中文文案断言。
-- 修改 `tools/core/` 后优先运行：`uv run --no-sync python -m pytest tests/task/test_maafw_core.py -q`。确需调整核心边界时显式更新白名单并在 PR 说明，不删测试。
+- 宿主只守升级链路：识别旧的 MFW 族托管与计划表类型、首次接手前的专属备份、插件装不上时托管旁挂保留，用例在 `tests/core/test_plugin_config_upgrade.py`。
 
 ## 编写与隔离规范
 

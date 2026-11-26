@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.models.config import OkNteConfig
-from app.models.script_contracts import ScriptConfigHandler
+from app.models.script_contracts import ScriptConfigHandler, game_management_enabled
 from app.task.registration import ScriptRegistration
 
 if TYPE_CHECKING:
@@ -37,7 +37,10 @@ def build_manager(script_item: ScriptItem) -> TaskExecuteBase:
 def build_config_handler() -> ScriptConfigHandler:
     from app.models.config import OkNteUserConfig
 
-    return ScriptConfigHandler(user_config_class=OkNteUserConfig)
+    return ScriptConfigHandler(
+        user_config_class=OkNteUserConfig,
+        supports_game_binding=game_management_enabled,
+    )
 
 
 def load_restore_pools() -> list[ConfigRestorePool]:

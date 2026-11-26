@@ -69,7 +69,7 @@
 | 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染（共享 / 独立来源各写各的 owner） |
 | 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
 
-M9A 不在此表：它是 MaaFW 的特调类型，前端用 MaaFW 的组件（见 `app/task/M9A/AGENTS.md`）。
+M9A、MSS 不在此表：它们是 MaaFW 家族的类型，前端是用 MaaFW 分节与编排层拼的专属页面（`frontend/src/views/m9a/`、`frontend/src/views/mss/`，由各自 `entry.ts` 登记），见 `app/task/M9A/AGENTS.md`、`app/task/MSS/AGENTS.md`。
 
 ## 前端表面通用约定
 

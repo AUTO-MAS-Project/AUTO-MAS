@@ -4,24 +4,24 @@
 /* eslint-disable */
 export type OkwwUserConfig_DataInput = {
     /**
-     * 上次运行的 ok-ww 任务名称；空值沿用历史任务序号
+     * 上次代理状态
      */
-    LastTaskName?: ('' | 'DailyTask' | 'MultiAccountConfigTask' | null);
+    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | '运行中' | null);
     /**
      * 上次代理日期
      */
     LastProxyDate?: (string | null);
     /**
-     * 上次代理状态（未知/成功/失败）
+     * 代理次数
      */
-    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | null);
+    ProxyTimes?: (number | null);
+    /**
+     * 上次运行的 ok-ww 任务名称；空值沿用历史任务序号
+     */
+    LastTaskName?: ('' | 'DailyTask' | 'MultiAccountConfigTask' | null);
     /**
      * 上次运行的 ok-ww 任务序号（-t N）
      */
     LastTaskIndex?: (number | null);
-    /**
-     * 代理次数
-     */
-    ProxyTimes?: (number | null);
 };
 

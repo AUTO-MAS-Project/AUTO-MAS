@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: python-tests-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  group: python-tests-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
@@ -36,16 +36,49 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Detect backend changes
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          if [ -z "$changed" ]; then
+            echo "run_python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          run_python="false"
+          while IFS= read -r file; do
+            case "$file" in
+              frontend/*|docs/*|changelog.d/*|*.md|.agents/*|.vscode/*)
+                ;;
+              *)
+                run_python="true"
+                break
+                ;;
+            esac
+          done <<< "$changed"
+          echo "run_python=$run_python" >> "$GITHUB_OUTPUT"
+          if [ "$run_python" = "false" ]; then
+            echo "仅改动前端/文档/日志碎片，跳过后端 pytest 与平台类型检查。"
+          fi
+
       - name: Set up uv
+        if: steps.scope.outputs.run_python == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
 
       - name: Install locked development dependencies
+        if: steps.scope.outputs.run_python == 'true'
         run: uv sync --locked --group dev
 
       - name: Run full pytest suite
+        if: steps.scope.outputs.run_python == 'true'
         # 集成回归按摘要准备插件发行包，不依赖开发者的本地源码目录。
         # SDK 与宿主运行依赖仍来自本次提交及 uv.lock。
         run: |
@@ -53,6 +86,7 @@ jobs:
           uv run --no-sync python -m pytest tests -q
 
       - name: Check platform contracts for Windows, Linux and macOS
+        if: steps.scope.outputs.run_python == 'true'
         run: |
           uv run --no-sync mypy --config-file mypy-platform.ini --platform win32
           uv run --no-sync mypy --config-file mypy-platform.ini --platform linux

@@ -40,113 +40,6 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ActionService {
     /**
-     * 从索引全量刷新目录并写入配置（读列表请再调 get）
-     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
-     * @param locale
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-        requestBody?: PluginCatalogRefreshIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/refresh',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Prepare Plugin Installation Restart
-     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/restart',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Resume After Plugin Installation Restart
-     * 前端未能重启后端时归还资格，候选环境继续保留。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/resume',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Write Config Trigger
-     * 写入三态命令并立即返回受影响的任务 UUID。
-     * @param requestBody
-     * @returns TriggerWriteOut Successful Response
-     * @throws ApiError
-     */
-    public static writeConfigTriggerApiConfigTriggersWritePost(
-        requestBody: TriggerWriteIn,
-    ): CancelablePromise<TriggerWriteOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/config/triggers/write',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 手动触发游戏社区签到
-     * 手动触发游戏社区签到
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign',
-        });
-    }
-    /**
      * 确认通知
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -370,6 +263,18 @@ export class ActionService {
         });
     }
     /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
      * 试存 OBS 回放
      * @returns ObsReplaySaveOut Successful Response
      * @throws ApiError
@@ -564,6 +469,101 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/ocr/click/text',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Write Config Trigger
+     * 写入三态命令并立即返回受影响的任务 UUID。
+     * @param requestBody
+     * @returns TriggerWriteOut Successful Response
+     * @throws ApiError
+     */
+    public static writeConfigTriggerApiConfigTriggersWritePost(
+        requestBody: TriggerWriteIn,
+    ): CancelablePromise<TriggerWriteOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/write',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从索引全量刷新目录并写入配置（读列表请再调 get）
+     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
+     * @param locale
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+        requestBody?: PluginCatalogRefreshIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/refresh',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

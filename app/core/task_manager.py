@@ -78,7 +78,9 @@ class _TaskManager:
         )
         self._factories_bound = False
         self._running: dict[UUID, ScriptExpander] = {}
-        self._recent: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+        self._recent: OrderedDict[str, tuple[float, dict[str, Any], str]] = (
+            OrderedDict()
+        )
         self._stopping_all = False
         self._restart_pending = False
         self._creating = 0
@@ -241,6 +243,10 @@ class _TaskManager:
                     raise UnsupportedDesktopTask("桌面分身不支持队列的电源操作")
                 if not session and queue is None and not node.children:
                     raise ValueError("不选择队列时必须显式指定托管")
+                if queue is None:
+                    for child in node.children.values():
+                        if Config.ScriptConfig.is_unresolved(child.uid):
+                            raise ValueError(f"托管所属插件不可用：{child.uid}")
                 selections = (
                     [node]
                     if session
@@ -259,6 +265,14 @@ class _TaskManager:
                 for selected in selections:
                     item = queue.QueueItem[UUID(selected.uid)] if queue else None
                     script_id = item.Info.ScriptId if item else str(UUID(selected.uid))
+                    if Config.ScriptConfig.is_unresolved(script_id):
+                        # 托管原样保留着、等所属插件恢复：队列里跳过它，不拖累同队列的其他项。
+                        if item is not None:
+                            logger.warning(
+                                f"队列项引用的托管所属插件不可用，已跳过：{script_id}"
+                            )
+                            continue
+                        raise ValueError(f"托管所属插件不可用：{script_id}")
                     entry = Config.ScriptConfig.get(script_id)
                     if entry is None:
                         raise ValueError(f"托管不存在：{script_id}")
@@ -441,7 +455,7 @@ class _TaskManager:
         由任务结束或查询触发，使用单调时钟计算年龄；与持久化执行历史分开。
         """
         while self._recent:
-            _, (at, _) = next(iter(self._recent.items()))
+            _, (at, _, _) = next(iter(self._recent.items()))
             if len(self._recent) <= 200 and time.monotonic() - at <= 1800:
                 break
             self._recent.popitem(last=False)
@@ -498,12 +512,15 @@ class _TaskManager:
         if tree is None:
             return None
         info = tree["info"]
+        # 与 get_task 一样按标准 UUID 取终态缓存，大写等合法写法也能取到结束时间。
+        recent = self._recent.get(str(UUID(str(task_id))))
         return TaskStatusOut(
             taskId=str(task_id),
             status="running" if info["status"] == "pending" else info["status"],
             mode=info["mode"],
             trigger=info["trigger"],
             detail=info["result"],
+            finishedAt=recent[2] if recent and info["status"] != "pending" else None,
         )
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
@@ -556,6 +573,7 @@ class _TaskManager:
         self._recent[info.task_id] = (
             time.monotonic(),
             TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)

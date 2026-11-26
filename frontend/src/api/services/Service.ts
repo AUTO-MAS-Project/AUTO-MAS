@@ -134,6 +134,7 @@ import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OkNtePlanConfigsOut } from '../models/OkNtePlanConfigsOut';
+import type { OkNteTaskArgumentOut } from '../models/OkNteTaskArgumentOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
@@ -309,743 +310,6 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class Service {
-    /**
-     * 查询插件注册表配置
-     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
-     * @param requestBody
-     * @param locale
-     * @returns PluginRegistryGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginRegistryApiPluginRegistryGetPost(
-        requestBody: PluginRegistryGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginRegistryGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_registry/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询插件目录配置
-     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
-     * @param requestBody
-     * @param locale
-     * @returns PluginCatalogGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginCatalogApiPluginCatalogGetPost(
-        requestBody: PluginCatalogGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginCatalogGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 提交目录项的安装触发器
-     * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePluginCatalogApiPluginCatalogUpdatePost(
-        requestBody: PluginCatalogUpdateIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/update',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从索引全量刷新目录并写入配置（读列表请再调 get）
-     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
-     * @param locale
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-        requestBody?: PluginCatalogRefreshIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/refresh',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询插件自有配置（凭注册表项定位）
-     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
-     * @param requestBody
-     * @param locale
-     * @returns PluginConfigGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginConfigApiPluginConfigGetPost(
-        requestBody: PluginConfigGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginConfigGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_config/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 修改插件自有配置（凭注册表项定位）
-     * 按插件实际配置类型校验并保存局部补丁，返回配置更新结果。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updatePluginConfigApiPluginConfigUpdatePost(
-        requestBody: PluginConfigUpdateIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_config/update',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出已加载插件（运行时）
-     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
-     * @param locale
-     * @returns PluginRuntimeListOut Successful Response
-     * @throws ApiError
-     */
-    public static listPluginsApiPluginListPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginRuntimeListOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/list',
-            query: {
-                'locale': locale,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Plugin Game Options
-     * 将宿主已登记的游戏配置转换为插件配置控件可选择的标签与标识。
-     * @param locale
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static pluginGameOptionsApiPluginOptionsGamesPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/options/games',
-            query: {
-                'locale': locale,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Plugin Device Options
-     * 按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表。
-     * @param requestBody
-     * @param locale
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static pluginDeviceOptionsApiPluginOptionsDevicesPost(
-        requestBody: PluginGameDevicesIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/options/devices',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Plugin Plan Options
-     * 按已登记计划类型筛选选项，不另登记专项消费方标识。
-     * @param locale
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static pluginPlanOptionsApiPluginOptionsPlansPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-        requestBody?: PluginPlanOptionsIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/options/plans',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Plugin Installation
-     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginInstallationApiPluginInstallationGetPost(
-        requestBody: PluginInstallationGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Prepare Plugin Installation Restart
-     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/restart',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Resume After Plugin Installation Restart
-     * 前端未能重启后端时归还资格，候选环境继续保留。
-     * @param requestBody
-     * @param locale
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
-        requestBody: PluginInstallationRestartIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/resume',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Write Config Trigger
-     * 写入三态命令并立即返回受影响的任务 UUID。
-     * @param requestBody
-     * @returns TriggerWriteOut Successful Response
-     * @throws ApiError
-     */
-    public static writeConfigTriggerApiConfigTriggersWritePost(
-        requestBody: TriggerWriteIn,
-    ): CancelablePromise<TriggerWriteOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/config/triggers/write',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Active Config Triggers
-     * 读取当前占用的配置触发器字段。
-     * @returns ActiveTriggersOut Successful Response
-     * @throws ApiError
-     */
-    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/config/triggers/active',
-        });
-    }
-    /**
-     * Get Config Trigger Result
-     * 读取任务执行状态和近期终态。
-     * @param requestBody
-     * @returns TriggerResultOut Successful Response
-     * @throws ApiError
-     */
-    public static getConfigTriggerResultApiConfigTriggersResultPost(
-        requestBody: TriggerResultIn,
-    ): CancelablePromise<TriggerResultOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/config/triggers/result',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Request Download
-     * 申请指定身份的下载并登记使用者，返回受理结果和当前状态；取消未确认或中心不可用时返回对应错误。
-     * @param requestBody
-     * @returns DownloadAcquireOut Successful Response
-     * @throws ApiError
-     */
-    public static requestDownloadApiDownloadRequestPost(
-        requestBody: DownloadAcquireIn,
-    ): CancelablePromise<DownloadAcquireOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/download/request',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Query Download
-     * 按自定义 key 或 URL 及文件身份查询下载，返回状态、进度及成功产物路径。
-     * @param requestBody
-     * @returns DownloadOut Successful Response
-     * @throws ApiError
-     */
-    public static queryDownloadApiDownloadQueryPost(
-        requestBody: DownloadRequest,
-    ): CancelablePromise<DownloadOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/download/query',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Wait Download
-     * 等待指定下载结束并返回结果快照，失败或取消通过快照状态交给前端处理。
-     * @param requestBody
-     * @returns DownloadOut Successful Response
-     * @throws ApiError
-     */
-    public static waitDownloadApiDownloadWaitPost(
-        requestBody: DownloadRequest,
-    ): CancelablePromise<DownloadOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/download/wait',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * List Downloads
-     * 按可选使用者筛选下载记录，返回各任务的最新状态。
-     * @param requestBody
-     * @returns DownloadListOut Successful Response
-     * @throws ApiError
-     */
-    public static listDownloadsApiDownloadListPost(
-        requestBody: DownloadListIn,
-    ): CancelablePromise<DownloadListOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/download/list',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Release Download
-     * 释放使用者的资源引用；自定义 key 优先于 URL，最后一次释放等待下载停写。
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static releaseDownloadApiDownloadReleasePost(
-        requestBody: DownloadReleaseIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/download/release',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询工具配置
-     * 获取工具设置
-     * @returns ToolsGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/get',
-        });
-    }
-    /**
-     * 更新工具配置
-     * 更新工具配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updateToolsApiToolsUpdatePost(
-        requestBody: ToolsUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 手动触发游戏社区签到
-     * 手动触发游戏社区签到
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign',
-        });
-    }
-    /**
-     * 查询游戏社区日常活跃度
-     * 查询游戏社区日常活动，不占用签到流程锁。
-     * @param requestBody
-     * @returns CommunityActivityOut Successful Response
-     * @throws ApiError
-     */
-    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
-        requestBody: CommunityActivityQueryIn,
-    ): CancelablePromise<CommunityActivityOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/community/activity/query',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取所有游戏社区账号组
-     * 获取所有游戏社区账号组
-     * @returns GameSignAccountsListOut Successful Response
-     * @throws ApiError
-     */
-    public static listGameSignAccountsApiToolsSignAccountListPost(): CancelablePromise<GameSignAccountsListOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/list',
-        });
-    }
-    /**
-     * 添加游戏社区账号组
-     * 添加游戏社区账号组
-     * @returns GameSignAccountCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/add',
-        });
-    }
-    /**
-     * 更新游戏社区账号组配置
-     * 更新游戏社区账号组配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static updateGameSignAccountApiToolsSignAccountUpdatePost(
-        requestBody: GameSignAccountUpdateIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 删除游戏社区账号组
-     * 删除游戏社区账号组
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static deleteGameSignAccountApiToolsSignAccountDeletePost(
-        requestBody: GameSignAccountDeleteIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 调整游戏社区账号组顺序
-     * 调整游戏社区账号组顺序
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderGameSignAccountsApiToolsSignAccountReorderPost(
-        requestBody: GameSignAccountReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/reorder',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 塔吉多账号密码登录
-     * 一次性使用账号密码换取并保存塔吉多 Token，不保存密码。
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static loginTaygedoApiToolsSignAccountTaygedoLoginPost(
-        requestBody: TaygedoLoginIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/taygedo/login',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 创建二维码
-     * @returns QrCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/create',
-        });
-    }
-    /**
-     * 轮询扫码状态
-     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
-     * @param requestBody
-     * @returns QrCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCheckApiToolsSignMiyousheQrCheckPost(
-        requestBody: QrCheckIn,
-    ): CancelablePromise<QrCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 保存 cookie 到账号配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static qrSaveApiToolsSignMiyousheQrSavePost(
-        requestBody: QrSaveIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/miyoushe/qr/save',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 创建二维码
-     * @returns SklandQrCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/create',
-        });
-    }
-    /**
-     * 轮询扫码状态
-     * 确认后返回短时 scanCode，由前端随后提交保存。
-     * @param requestBody
-     * @returns SklandQrCheckOut Successful Response
-     * @throws ApiError
-     */
-    public static qrCheckApiToolsSignSklandQrCheckPost(
-        requestBody: SklandQrCheckIn,
-    ): CancelablePromise<SklandQrCheckOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/check',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 保存森空岛 Token
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static qrSaveApiToolsSignSklandQrSavePost(
-        requestBody: SklandQrSaveIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/skland/qr/save',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
     /**
      * 获取后端就绪状态
      * 返回核心 API 与后台初始化状态，供 AUTO-MAS-Runtime 等外部监督器判定就绪与身份。
@@ -2149,380 +1413,6 @@ export class Service {
             url: '/api/scripts/maaend/options',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查看 MFW 脚本的内嵌副本状态
-     * @param requestBody
-     * @returns MaaFWEmbeddedStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
-        requestBody: MaaFWEmbeddedIn,
-    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/embedded/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按来源目录导入（或重新导入）副本
-     * 托管页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
-     *
-     * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
-     * @param requestBody
-     * @returns MaaFWEmbeddedStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
-        requestBody: MaaFWEmbeddedReimportIn,
-    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/embedded/reimport',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 立即从来源目录同步（跟随来源目录 / 源码形态）
-     * 托管页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
-     *
-     * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
-     * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
-     * @param requestBody
-     * @returns MaaFWEmbeddedStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost(
-        requestBody: MaaFWEmbeddedIn,
-    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/embedded/sync',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出可作为克隆来源的其它 MFW 脚本
-     * 新建托管对话框里「复用已有托管的项目」的候选：有健康副本的 MFW / M9A 托管。
-     *
-     * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
-     * @param requestBody
-     * @returns MaaFWEmbeddedSourcesOut Successful Response
-     * @throws ApiError
-     */
-    public static listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
-        requestBody?: MaaFWEmbeddedSourcesIn,
-    ): CancelablePromise<MaaFWEmbeddedSourcesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/embedded/sources',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本
-     * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
-     * 重新投影，来源目录已经删了也能建。
-     *
-     * 副本从源托管的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
-     * ``Info.Path`` 与 ``Embedded.*`` 沿用源托管的记录；类型随项目（M9A 项目 → M9A）。
-     * 用户、任务队列与运行设置不带——那是「复制托管」的事。
-     * @param requestBody
-     * @returns MaaFWEmbeddedStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost(
-        requestBody: MaaFWEmbeddedCloneIn,
-    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/embedded/clone',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
-     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
-     * @param requestBody
-     * @returns MaaFWShellInstancesOut Successful Response
-     * @throws ApiError
-     */
-    public static listMaafwShellInstancesApiScriptsMaafwShellInstancesPost(
-        requestBody: MaaFWShellInstancesIn,
-    ): CancelablePromise<MaaFWShellInstancesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 把选中的外壳配置实例导入成用户
-     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
-     *
-     * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
-     * @param requestBody
-     * @returns MaaFWShellInstanceImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost(
-        requestBody: MaaFWShellInstanceImportIn,
-    ): CancelablePromise<MaaFWShellInstanceImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 把一份外壳配置的任务队列覆盖到已有账号
-     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
-     *
-     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
-     * 覆盖的是任务队列与任务选项，账号名称不动。
-     * @param requestBody
-     * @returns MaaFWShellInstanceApplyOut Successful Response
-     * @throws ApiError
-     */
-    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
-        requestBody: MaaFWShellInstanceApplyIn,
-    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances/apply',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按所选 resource 推断 MFW 项目的安卓游戏包名
-     * 托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
-     *
-     * 只看 resource 的 pipeline，不带账号任务的 pipeline_override（编辑脚本时还没有
-     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
-     * @param requestBody
-     * @returns MaaFWGamePackageOut Successful Response
-     * @throws ApiError
-     */
-    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
-        requestBody: MaaFWGamePackageIn,
-    ): CancelablePromise<MaaFWGamePackageOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/game-package',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 预览 MFW interface
-     * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
-     * @param requestBody
-     * @returns MaaFWInterfacePreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static previewMaafwInterfaceApiScriptsMaafwPreviewPost(
-        requestBody: MaaFWInterfacePreviewIn,
-    ): CancelablePromise<MaaFWInterfacePreviewOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 检查或执行 MFW 项目更新
-     * 按脚本 ``Update.*`` 配置检查或应用 MaaFW 项目目录更新。
-     *
-     * ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
-     * ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
-     * ``apply`` 在后台执行：同一脚本进行中再发起只等同一份，请求断开不影响更新，
-     * 过程与结果可经 ``/maafw/update/job`` 取回。
-     * @param requestBody
-     * @returns MaaFWProjectUpdateOut Successful Response
-     * @throws ApiError
-     */
-    public static updateMaafwProjectApiScriptsMaafwUpdatePost(
-        requestBody: MaaFWProjectUpdateIn,
-    ): CancelablePromise<MaaFWProjectUpdateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 MFW 项目手动更新的过程与结果
-     * 脚本当前或最近一次手动更新（``apply``）的状态、已推送的进度事件与结果。
-     *
-     * 页面刷新或重新打开后用它接回：先取快照重放进度，再带 ``wait=true`` 等结果。
-     * 只保留在后端进程内，下一次手动更新开始或后端重启后不再有上一次的记录。
-     * @param requestBody
-     * @returns MaaFWProjectUpdateJobOut Successful Response
-     * @throws ApiError
-     */
-    public static getMaafwProjectUpdateJobApiScriptsMaafwUpdateJobPost(
-        requestBody: MaaFWProjectUpdateJobIn,
-    ): CancelablePromise<MaaFWProjectUpdateJobOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/update/job',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 MFW 项目的 Mirror 酱 CDK 状态
-     * 托管编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
-     *
-     * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
-     * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
-     * @param requestBody
-     * @returns MaaFWMirrorCdkOut Successful Response
-     * @throws ApiError
-     */
-    public static queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost(
-        requestBody: MaaFWMirrorCdkIn,
-    ): CancelablePromise<MaaFWMirrorCdkOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/mirror-cdk',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 预备 MFW 运行环境
-     * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
-     *
-     * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
-     * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
-     * 在请求内完成，首次冷启动可能耗时数分钟。
-     *
-     * 编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
-     * 准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
-     * 时前端带 ``force``，跳过这层缓存。
-     * @param requestBody
-     * @returns MaaFWAgentEnvPrepareOut Successful Response
-     * @throws ApiError
-     */
-    public static prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost(
-        requestBody: MaaFWAgentEnvPrepareIn,
-    ): CancelablePromise<MaaFWAgentEnvPrepareOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/agent-env/prepare',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 读取 MFW 项目内的图片资源
-     * 把 MFW 项目目录内的图片按需读给前端。
-     *
-     * 任务说明（interface 的 ``doc`` / ``description``）是 markdown，里面的图片写的是
-     * **项目内相对路径**，浏览器没法直接读本地文件，必须由后端转一手。
-     *
-     * 前端侧对应 ``buildMaaFWAssetUrl``：它已经拦掉了绝对路径、UNC、上跳与远程 URL，
-     * 但那只是省一次往返，安全边界在这里 —— 请求可以绕过前端直接打过来。
-     * @param root MFW 项目根目录
-     * @param path 项目根目录内的相对图片路径
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getMaafwAssetApiScriptsMaafwAssetGet(
-        root: string,
-        path: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/maafw/asset',
-            query: {
-                'root': root,
-                'path': path,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 读取 MFW 脚本的项目图标
-     * 托管列表的头像：项目 interface 顶层 ``icon`` 指的图片。
-     *
-     * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
-     * 具体原因只写日志，不放进响应。
-     * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
-     * FileResponse 不处理 If-None-Match，每次都完整返回。
-     * @param scriptId MFW 托管 ID
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getMaafwScriptIconApiScriptsMaafwIconGet(
-        scriptId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/maafw/icon',
-            query: {
-                'scriptId': scriptId,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -3753,6 +2643,29 @@ export class Service {
         });
     }
     /**
+     * 预览 OK-NTE 任务启动参数
+     * @param scriptId
+     * @param taskIndex
+     * @returns OkNteTaskArgumentOut Successful Response
+     * @throws ApiError
+     */
+    public static getOknteTaskArgumentApiScriptsOknteTaskArgumentGet(
+        scriptId: string,
+        taskIndex: number,
+    ): CancelablePromise<OkNteTaskArgumentOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/oknte/task-argument',
+            query: {
+                'script_id': scriptId,
+                'task_index': taskIndex,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
      * 读写用户覆写常规配置目录，首次从已有来源初始化，不修改来源文件。
@@ -4869,6 +3782,274 @@ export class Service {
         });
     }
     /**
+     * 查询工具配置
+     * 获取工具设置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
+        });
+    }
+    /**
+     * 更新工具配置
+     * 更新工具配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateToolsApiToolsUpdatePost(
+        requestBody: ToolsUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 手动触发游戏社区签到
+     * 手动触发游戏社区签到
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign',
+        });
+    }
+    /**
+     * 查询游戏社区日常活跃度
+     * 查询游戏社区日常活动，不占用签到流程锁。
+     * @param requestBody
+     * @returns CommunityActivityOut Successful Response
+     * @throws ApiError
+     */
+    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
+        requestBody: CommunityActivityQueryIn,
+    ): CancelablePromise<CommunityActivityOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/community/activity/query',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取所有游戏社区账号组
+     * 获取所有游戏社区账号组
+     * @returns GameSignAccountsListOut Successful Response
+     * @throws ApiError
+     */
+    public static listGameSignAccountsApiToolsSignAccountListPost(): CancelablePromise<GameSignAccountsListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/list',
+        });
+    }
+    /**
+     * 添加游戏社区账号组
+     * 添加游戏社区账号组
+     * @returns GameSignAccountCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/add',
+        });
+    }
+    /**
+     * 更新游戏社区账号组配置
+     * 更新游戏社区账号组配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateGameSignAccountApiToolsSignAccountUpdatePost(
+        requestBody: GameSignAccountUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 删除游戏社区账号组
+     * 删除游戏社区账号组
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static deleteGameSignAccountApiToolsSignAccountDeletePost(
+        requestBody: GameSignAccountDeleteIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 调整游戏社区账号组顺序
+     * 调整游戏社区账号组顺序
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static reorderGameSignAccountsApiToolsSignAccountReorderPost(
+        requestBody: GameSignAccountReorderIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/reorder',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 塔吉多账号密码登录
+     * 一次性使用账号密码换取并保存塔吉多 Token，不保存密码。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static loginTaygedoApiToolsSignAccountTaygedoLoginPost(
+        requestBody: TaygedoLoginIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/account/taygedo/login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns QrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignMiyousheQrCreatePost(): CancelablePromise<QrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 轮询状态，确认后返回 Passport App 或 Web 链路的完整 cookies。
+     * @param requestBody
+     * @returns QrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignMiyousheQrCheckPost(
+        requestBody: QrCheckIn,
+    ): CancelablePromise<QrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存 cookie 到账号配置
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignMiyousheQrSavePost(
+        requestBody: QrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/miyoushe/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 创建二维码
+     * @returns SklandQrCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCreateApiToolsSignSklandQrCreatePost(): CancelablePromise<SklandQrCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/create',
+        });
+    }
+    /**
+     * 轮询扫码状态
+     * 确认后返回短时 scanCode，由前端随后提交保存。
+     * @param requestBody
+     * @returns SklandQrCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static qrCheckApiToolsSignSklandQrCheckPost(
+        requestBody: SklandQrCheckIn,
+    ): CancelablePromise<SklandQrCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/check',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 保存森空岛 Token
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static qrSaveApiToolsSignSklandQrSavePost(
+        requestBody: SklandQrSaveIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/sign/skland/qr/save',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询全局 Mirror 酱 CDK 状态与到期时间
      * @param requestBody
      * @returns SettingMirrorCdkOut Successful Response
@@ -5349,6 +4530,849 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/update/fluxdown/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Write Config Trigger
+     * 写入三态命令并立即返回受影响的任务 UUID。
+     * @param requestBody
+     * @returns TriggerWriteOut Successful Response
+     * @throws ApiError
+     */
+    public static writeConfigTriggerApiConfigTriggersWritePost(
+        requestBody: TriggerWriteIn,
+    ): CancelablePromise<TriggerWriteOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/write',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Active Config Triggers
+     * 读取当前占用的配置触发器字段。
+     * @returns ActiveTriggersOut Successful Response
+     * @throws ApiError
+     */
+    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/config/triggers/active',
+        });
+    }
+    /**
+     * Get Config Trigger Result
+     * 读取任务执行状态和近期终态。
+     * @param requestBody
+     * @returns TriggerResultOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigTriggerResultApiConfigTriggersResultPost(
+        requestBody: TriggerResultIn,
+    ): CancelablePromise<TriggerResultOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/result',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Request Download
+     * 申请指定身份的下载并登记使用者，返回受理结果和当前状态；取消未确认或中心不可用时返回对应错误。
+     * @param requestBody
+     * @returns DownloadAcquireOut Successful Response
+     * @throws ApiError
+     */
+    public static requestDownloadApiDownloadRequestPost(
+        requestBody: DownloadAcquireIn,
+    ): CancelablePromise<DownloadAcquireOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/download/request',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Query Download
+     * 按自定义 key 或 URL 及文件身份查询下载，返回状态、进度及成功产物路径。
+     * @param requestBody
+     * @returns DownloadOut Successful Response
+     * @throws ApiError
+     */
+    public static queryDownloadApiDownloadQueryPost(
+        requestBody: DownloadRequest,
+    ): CancelablePromise<DownloadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/download/query',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Wait Download
+     * 等待指定下载结束并返回结果快照，失败或取消通过快照状态交给前端处理。
+     * @param requestBody
+     * @returns DownloadOut Successful Response
+     * @throws ApiError
+     */
+    public static waitDownloadApiDownloadWaitPost(
+        requestBody: DownloadRequest,
+    ): CancelablePromise<DownloadOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/download/wait',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Downloads
+     * 按可选使用者筛选下载记录，返回各任务的最新状态。
+     * @param requestBody
+     * @returns DownloadListOut Successful Response
+     * @throws ApiError
+     */
+    public static listDownloadsApiDownloadListPost(
+        requestBody: DownloadListIn,
+    ): CancelablePromise<DownloadListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/download/list',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Release Download
+     * 释放使用者的资源引用；自定义 key 优先于 URL，最后一次释放等待下载停写。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static releaseDownloadApiDownloadReleasePost(
+        requestBody: DownloadReleaseIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/download/release',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件注册表配置
+     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginRegistryGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginRegistryApiPluginRegistryGetPost(
+        requestBody: PluginRegistryGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRegistryGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_registry/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件目录配置
+     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginCatalogGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginCatalogApiPluginCatalogGetPost(
+        requestBody: PluginCatalogGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginCatalogGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 提交目录项的安装触发器
+     * 按目录配置类型校验并保存局部补丁，命令身份由独立操作入口提供。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginCatalogApiPluginCatalogUpdatePost(
+        requestBody: PluginCatalogUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从索引全量刷新目录并写入配置（读列表请再调 get）
+     * 请求插件管理器重新拉取市场目录，将刷新结果转换为统一接口响应。
+     * @param locale
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static refreshPluginCatalogApiPluginCatalogRefreshPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+        requestBody?: PluginCatalogRefreshIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/refresh',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件自有配置（凭注册表项定位）
+     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
+     * @param requestBody
+     * @param locale
+     * @returns PluginConfigGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginConfigApiPluginConfigGetPost(
+        requestBody: PluginConfigGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginConfigGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改插件自有配置（凭注册表项定位）
+     * 按插件实际配置类型校验并保存局部补丁，返回配置更新结果。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updatePluginConfigApiPluginConfigUpdatePost(
+        requestBody: PluginConfigUpdateIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出已加载插件（运行时）
+     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
+     * @param locale
+     * @returns PluginRuntimeListOut Successful Response
+     * @throws ApiError
+     */
+    public static listPluginsApiPluginListPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRuntimeListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/list',
+            query: {
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Plugin Game Options
+     * 将宿主已登记的游戏配置转换为插件配置控件可选择的标签与标识。
+     * @param locale
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static pluginGameOptionsApiPluginOptionsGamesPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/options/games',
+            query: {
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Plugin Device Options
+     * 按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表。
+     * @param requestBody
+     * @param locale
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static pluginDeviceOptionsApiPluginOptionsDevicesPost(
+        requestBody: PluginGameDevicesIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/options/devices',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Plugin Plan Options
+     * 按已登记计划类型筛选选项，不另登记专项消费方标识。
+     * @param locale
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static pluginPlanOptionsApiPluginOptionsPlansPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+        requestBody?: PluginPlanOptionsIn,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/options/plans',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Plugin Installation
+     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginInstallationApiPluginInstallationGetPost(
+        requestBody: PluginInstallationGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Prepare Plugin Installation Restart
+     * 业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static preparePluginInstallationRestartApiPluginInstallationRestartPost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/restart',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Resume After Plugin Installation Restart
+     * 前端未能重启后端时归还资格，候选环境继续保留。
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static resumeAfterPluginInstallationRestartApiPluginInstallationResumePost(
+        requestBody: PluginInstallationRestartIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/resume',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按来源目录导入（或重新导入）副本
+     * 托管页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     *
+     * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 立即从来源目录同步（跟随来源目录 / 源码形态）
+     * 托管页「立即同步」：按当前来源目录强制重导进脚本的私有渠道，不看签名。
+     *
+     * 只在跟随来源目录（开发者模式或源码形态）时可用；脚本运行中、项目正在更新或被占用时拒绝。
+     * ``message`` 是给用户看的结果：变了哪些文件 / 内容未变化。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sync',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出可作为克隆来源的其它 MFW 脚本
+     * 新建托管对话框里「复用已有托管的项目」的候选：有健康副本的 MFW / M9A 托管。
+     *
+     * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
+     * @param requestBody
+     * @returns MaaFWEmbeddedSourcesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
+        requestBody?: MaaFWEmbeddedSourcesIn,
+    ): CancelablePromise<MaaFWEmbeddedSourcesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sources',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本
+     * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
+     * 重新投影，来源目录已经删了也能建。
+     *
+     * 副本从源托管的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+     * ``Info.Path`` 与 ``Embedded.*`` 沿用源托管的记录；类型随项目（M9A 项目 → M9A）。
+     * 用户、任务队列与运行设置不带——那是「复制托管」的事。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost(
+        requestBody: MaaFWEmbeddedCloneIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/clone',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按所选 resource 推断 MFW 项目的安卓游戏包名
+     * 托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     *
+     * 只看 resource 的 pipeline，不带账号任务的 pipeline_override（编辑脚本时还没有
+     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+     * @param requestBody
+     * @returns MaaFWGamePackageOut Successful Response
+     * @throws ApiError
+     */
+    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
+        requestBody: MaaFWGamePackageIn,
+    ): CancelablePromise<MaaFWGamePackageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/game-package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预览 MFW interface
+     * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
+     * @param requestBody
+     * @returns MaaFWInterfacePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewMaafwInterfaceApiScriptsMaafwPreviewPost(
+        requestBody: MaaFWInterfacePreviewIn,
+    ): CancelablePromise<MaaFWInterfacePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查或执行 MFW 项目更新
+     * 按脚本 ``Update.*`` 配置检查或应用 MaaFW 项目目录更新。
+     *
+     * ``action=check`` 只读取 interface 版本与更新源元数据，返回是否有新版本；
+     * ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
+     * ``apply`` 在后台执行：同一脚本进行中再发起只等同一份，请求断开不影响更新，
+     * 过程与结果可经 ``/maafw/update/job`` 取回。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static updateMaafwProjectApiScriptsMaafwUpdatePost(
+        requestBody: MaaFWProjectUpdateIn,
+    ): CancelablePromise<MaaFWProjectUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 MFW 项目手动更新的过程与结果
+     * 脚本当前或最近一次手动更新（``apply``）的状态、已推送的进度事件与结果。
+     *
+     * 页面刷新或重新打开后用它接回：先取快照重放进度，再带 ``wait=true`` 等结果。
+     * 只保留在后端进程内，下一次手动更新开始或后端重启后不再有上一次的记录。
+     * @param requestBody
+     * @returns MaaFWProjectUpdateJobOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwProjectUpdateJobApiScriptsMaafwUpdateJobPost(
+        requestBody: MaaFWProjectUpdateJobIn,
+    ): CancelablePromise<MaaFWProjectUpdateJobOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/update/job',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询 MFW 项目的 Mirror 酱 CDK 状态
+     * 托管编辑页 CDK 输入框下那行小字：CDK 还剩多久到期，或者为什么不能用。
+     *
+     * 带着 CDK 按「当前版本 = 最新版本」查一次 Mirror 酱，服务端只校验 CDK、不签发下载地址，
+     * 不占当日下载额度。CDK 只放在请求体里。项目不支持或查询失败也按成功返回对应状态。
+     * @param requestBody
+     * @returns MaaFWMirrorCdkOut Successful Response
+     * @throws ApiError
+     */
+    public static queryMaafwMirrorCdkApiScriptsMaafwMirrorCdkPost(
+        requestBody: MaaFWMirrorCdkIn,
+    ): CancelablePromise<MaaFWMirrorCdkOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/mirror-cdk',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预备 MFW 运行环境
+     * 按项目 interface 预备 Runner 运行时与各 agent 的 Python 环境。
+     *
+     * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
+     * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
+     * 在请求内完成，首次冷启动可能耗时数分钟。
+     *
+     * 编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
+     * 准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
+     * 时前端带 ``force``，跳过这层缓存。
+     * @param requestBody
+     * @returns MaaFWAgentEnvPrepareOut Successful Response
+     * @throws ApiError
+     */
+    public static prepareMaafwAgentEnvApiScriptsMaafwAgentEnvPreparePost(
+        requestBody: MaaFWAgentEnvPrepareIn,
+    ): CancelablePromise<MaaFWAgentEnvPrepareOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/agent-env/prepare',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取 MFW 项目内的图片资源
+     * 把 MFW 项目目录内的图片按需读给前端。
+     *
+     * 任务说明（interface 的 ``doc`` / ``description``）是 markdown，里面的图片写的是
+     * **项目内相对路径**，浏览器没法直接读本地文件，必须由后端转一手。
+     *
+     * 前端侧对应 ``buildMaaFWAssetUrl``：它已经拦掉了绝对路径、UNC、上跳与远程 URL，
+     * 但那只是省一次往返，安全边界在这里 —— 请求可以绕过前端直接打过来。
+     * @param root MFW 项目根目录
+     * @param path 项目根目录内的相对图片路径
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwAssetApiScriptsMaafwAssetGet(
+        root: string,
+        path: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maafw/asset',
+            query: {
+                'root': root,
+                'path': path,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取 MFW 脚本的项目图标
+     * 托管列表的头像：项目 interface 顶层 ``icon`` 指的图片。
+     *
+     * 取不到（项目还没导入、没写 icon、文件不在）一律 404，前端回退到类型图标；
+     * 具体原因只写日志，不放进响应。
+     * 项目更新可能原地换掉图标而地址不变，所以带 ``no-cache``，不让浏览器拿缓存的旧图；
+     * FileResponse 不处理 If-None-Match，每次都完整返回。
+     * @param scriptId MFW 托管 ID
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwScriptIconApiScriptsMaafwIconGet(
+        scriptId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/maafw/icon',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
+     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
+     * @param requestBody
+     * @returns MaaFWShellInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwShellInstancesApiScriptsMaafwShellInstancesPost(
+        requestBody: MaaFWShellInstancesIn,
+    ): CancelablePromise<MaaFWShellInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把选中的外壳配置实例导入成用户
+     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
+     *
+     * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
+     * @param requestBody
+     * @returns MaaFWShellInstanceImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost(
+        requestBody: MaaFWShellInstanceImportIn,
+    ): CancelablePromise<MaaFWShellInstanceImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把一份外壳配置的任务队列覆盖到已有账号
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
+     *
+     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+     * 覆盖的是任务队列与任务选项，账号名称不动。
+     * @param requestBody
+     * @returns MaaFWShellInstanceApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
+        requestBody: MaaFWShellInstanceApplyIn,
+    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/apply',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

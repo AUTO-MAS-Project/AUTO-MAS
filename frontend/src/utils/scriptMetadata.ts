@@ -3,13 +3,10 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
-import { SCRIPT_PLUGIN_METADATA } from '@/plugins/scriptAdapters'
+import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
 import maaEndIcon from '@/assets/MaaEnd.png'
-import m9aIcon from '@/assets/M9A.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
-import maafwIcon from '@/assets/maafw.png'
-import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 export interface ScriptMetadata {
@@ -29,8 +26,9 @@ export interface ScriptMetadata {
   }
 }
 
-// 这里只放静态资料，不引入 flavor 或页面，供它们共同读取而不形成依赖环。
-// 枚举顺序沿用原图标表；新建卡片按 createOrder 排列，MFW 特调仍由 flavor 的 after 插入。
+// 这里只放静态资料，不引入页面，供页面与列表共同读取而不形成依赖环。
+// 枚举顺序沿用原图标表；新建卡片（含 MaaFW 家族）一律按 createOrder 排列。
+// 已登记为适配条目（plugins/scriptAdapters.ts，含 MaaFW、M9A、MSS）的类型从条目取。
 export const SCRIPT_METADATA = {
   BAAH: {
     logo: baahIcon,
@@ -104,27 +102,10 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  M9A: {
-    logo: m9aIcon,
-    label: 'M9A',
-    typeTagColor: 'cyan',
-    routeSuffix: 'm9a',
-    routeTitles: {
-      script: '编辑M9A脚本',
-      userAdd: '添加M9A用户',
-      userEdit: '编辑M9A用户',
-    },
-    createOrder: 5,
-    create: {
-      titleKey: 'core.scripts.type.M9A',
-      descriptionKey: 'core.scripts.create.typeDesc.M9A',
-      keywords: ['m9a', '1999', '重返未来'],
-      group: 'specialized',
-    },
-  },
-  MAA: SCRIPT_PLUGIN_METADATA.MAA,
-  SRC: SCRIPT_PLUGIN_METADATA.SRC,
-  Whimbox: SCRIPT_PLUGIN_METADATA.Whimbox,
+  M9A: SCRIPT_ADAPTER_METADATA.M9A,
+  MAA: SCRIPT_ADAPTER_METADATA.MAA,
+  SRC: SCRIPT_ADAPTER_METADATA.SRC,
+  Whimbox: SCRIPT_ADAPTER_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -143,42 +124,8 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  MaaFW: {
-    logo: maafwIcon,
-    label: 'MFW',
-    typeTagColor: 'geekblue',
-    routeSuffix: 'maafw',
-    routeTitles: {
-      script: '编辑MFW脚本',
-      userAdd: '添加 MFW 用户',
-      userEdit: '编辑 MFW 用户',
-    },
-    createOrder: 1,
-    create: {
-      titleKey: 'core.scripts.type.MaaFW',
-      descriptionKey: 'core.scripts.create.typeDesc.MaaFW',
-      keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
-      group: 'general',
-    },
-  },
-  MSS: {
-    logo: mssIcon,
-    label: 'MSS',
-    typeTagColor: 'orange',
-    routeSuffix: 'mss',
-    routeTitles: {
-      script: '编辑MSS脚本',
-      userAdd: '添加MSS用户',
-      userEdit: '编辑MSS用户',
-    },
-    createOrder: 13,
-    create: {
-      titleKey: 'core.scripts.type.MSS',
-      descriptionKey: 'core.scripts.create.typeDesc.MSS',
-      keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
-      group: 'specialized',
-    },
-  },
+  MaaFW: SCRIPT_ADAPTER_METADATA.MaaFW,
+  MSS: SCRIPT_ADAPTER_METADATA.MSS,
   OkNte: {
     logo: okNteIcon,
     label: 'OK-NTE',

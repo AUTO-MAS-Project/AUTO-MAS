@@ -3,10 +3,12 @@
 import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 import pytest
 
-from app.core import Publisher
+from app.config import ConfigCollection, config_manager
+from app.core import Config, Publisher
 from app.core.background_tasks import BackgroundTaskRegistry
 from app.core.ws import protocol
 from app.models.config import (
@@ -138,6 +140,48 @@ async def test_plugin_task_keeps_its_registered_script_type(scheduler, monkeypat
     run = manager.task_handler[uid]
     await asyncio.wait_for(run.accomplish.wait(), 4)
     assert run.task_info.script_list[0].info.script_type == "Whimbox"
+
+
+@pytest.mark.asyncio
+async def test_queue_skips_managed_of_unavailable_plugin(scheduler):
+    """队列里有一项托管的所属插件不可用：跳过它，同队列其余托管照常跑。"""
+    manager, scripts, queues, sid = scheduler
+    ghost = uuid4()
+    kept = ConfigCollection.build(
+        [GeneralConfig],
+        keep_unknown_types=True,
+        payload={
+            "order": [
+                {"uid": str(sid), "type": "GeneralConfig"},
+                {"uid": str(ghost), "type": "GhostConfig"},
+            ],
+            "data": {
+                str(sid): await scripts[sid].to_dict(),
+                str(ghost): {"Info": {"Name": "ghost"}},
+            },
+        },
+    )
+    with (
+        patch.object(Config, "ScriptConfig", kept),
+        patch.dict(config_manager._collections, {"ScriptConfig": kept}),
+    ):
+        await kept.activate()
+        qid = queues.add(QueueConfig, payload={"Info": {"Name": "queue"}})
+        await queues.commit()
+        for target in (sid, ghost, sid):
+            queues[qid].QueueItem.add(
+                QueueItem, payload={"Info": {"ScriptId": str(target)}}
+            )
+        await queues[qid].QueueItem.commit()
+
+        uid = await manager.start(TaskMode.AUTO_PROXY, {0: {"uid": str(qid)}})
+        run = manager.task_handler[uid]
+        await asyncio.wait_for(run.accomplish.wait(), 4)
+        assert run.task_info.status == "success", run.error
+        assert [s.info.script_id for s in run.task_info.script_list] == [
+            str(sid),
+            str(sid),
+        ]
 
 
 @pytest.mark.asyncio

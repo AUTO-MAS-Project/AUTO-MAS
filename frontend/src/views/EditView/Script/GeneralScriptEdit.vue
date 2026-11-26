@@ -13,26 +13,19 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-card
-        :title="t('core.edit.generalScriptConfiguration')"
-        :loading="pageLoading"
-        class="config-card"
-      >
-        <template #extra>
-          <a-tag color="green" class="type-tag"> General </a-tag>
-        </template>
-
+      <a-spin :spinning="pageLoading">
         <a-form
           ref="formRef"
+          :aria-label="t('core.edit.generalScriptConfiguration')"
           :model="formData"
           :rules="rules"
           layout="vertical"
           class="config-form"
         >
           <!-- 基本信息 -->
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
             <a-row :gutter="24">
-              <a-col :span="8">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="name">
                   <template #label>
                     <FieldLabelWithHint
@@ -44,13 +37,12 @@
                   <a-input
                     v-model:value="formData.name"
                     :placeholder="t('core.edit.enterScriptName')"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Info', 'Name', formData.name)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="16">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="rootPath" :rules="rules.rootPath">
                   <template #label>
                     <FieldLabelWithHint
@@ -61,6 +53,7 @@
                   </template>
                   <PathPickerField
                     v-model="formData.rootPath"
+                    size="middle"
                     mode="folder"
                     :placeholder="t('core.edit.pickScriptRootDirectory2')"
                     :pick-label="t('core.edit.pickFolder')"
@@ -72,9 +65,13 @@
           </SectionCard>
 
           <!-- 基础配置 -->
-          <SectionCard variant="plain" :title="t('core.edit.scriptConfiguration')">
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.scriptConfiguration')"
+            :icon="SettingOutlined"
+          >
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="scriptPath" :rules="rules.scriptPath">
                   <template #label>
                     <FieldLabelWithHint
@@ -85,6 +82,7 @@
                   </template>
                   <PathPickerField
                     v-model="formData.scriptPath"
+                    size="middle"
                     mode="file"
                     :placeholder="t('core.edit.pickScriptSMain')"
                     :pick-label="t('core.edit.pickFile')"
@@ -92,7 +90,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -104,116 +102,14 @@
                   <a-input
                     v-model:value="generalConfig.Script.Arguments"
                     :placeholder="t('core.edit.enterScriptLaunchArguments')"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Script', 'Arguments', generalConfig.Script.Arguments)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.trackChildProcesses')"
-                      :hint="t('core.edit.treatScriptAsFinished')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="generalConfig.Script.IfTrackProcess"
-                    size="large"
-                    @change="handleChange('Script', 'IfTrackProcess', $event)"
-                  >
-                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <!-- 追踪子进程配置 -->
-            <a-row v-if="generalConfig.Script.IfTrackProcess" :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.nameTrackedProcess')"
-                      :hint="t('core.edit.nameProcessTrackOpen')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="generalConfig.Script.TrackProcessName"
-                    :placeholder="t('core.edit.enterProcessNameTrack')"
-                    size="large"
-                    class="modern-input"
-                    @blur="
-                      handleChange(
-                        'Script',
-                        'TrackProcessName',
-                        generalConfig.Script.TrackProcessName
-                      )
-                    "
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.pathTrackedProcess')"
-                      :hint="t('core.edit.executablePathProcessTrack')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="generalConfig.Script.TrackProcessExe"
-                    mode="file"
-                    :placeholder="t('core.edit.pickProcessExecutablePath')"
-                    :pick-label="t('core.edit.pickFile')"
-                    @pick="selectTrackProcessExe"
-                  >
-                    <template #after-pick>
-                      <a-button
-                        size="large"
-                        class="path-clear-icon-btn"
-                        :aria-label="t('core.edit.clearPath')"
-                        @click="clearTrackProcessExe"
-                      >
-                        <template #icon>
-                          <DeleteOutlined />
-                        </template>
-                      </a-button>
-                    </template>
-                  </PathPickerField>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.trackedProcessCommandLine')"
-                      :hint="t('core.edit.commandLineProcessTrack')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="generalConfig.Script.TrackProcessCmdline"
-                    :placeholder="t('core.edit.enterProcessCommandLine')"
-                    size="large"
-                    class="modern-input"
-                    @blur="
-                      handleChange(
-                        'Script',
-                        'TrackProcessCmdline',
-                        generalConfig.Script.TrackProcessCmdline
-                      )
-                    "
-                  />
-                </a-form-item>
-              </a-col>
             </a-row>
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="configPath" :rules="rules.configPath">
                   <template #label>
                     <a-tooltip
@@ -231,6 +127,7 @@
                   </template>
                   <PathPickerField
                     v-model="formData.configPath"
+                    size="middle"
                     :mode="generalConfig.Script.ConfigPathMode === 'Folder' ? 'folder' : 'file'"
                     :placeholder="
                       generalConfig.Script.ConfigPathMode === 'Folder'
@@ -246,7 +143,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -257,7 +154,6 @@
                   </template>
                   <a-select
                     v-model:value="generalConfig.Script.ConfigPathMode"
-                    size="large"
                     @change="handleChange('Script', 'ConfigPathMode', $event)"
                   >
                     <a-select-option value="File">{{ t('core.edit.singleFile') }}</a-select-option>
@@ -265,7 +161,7 @@
                   </a-select>
                 </a-form-item>
               </a-col>
-              <a-col :span="6">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -276,7 +172,6 @@
                   </template>
                   <a-select
                     v-model:value="generalConfig.Script.UpdateConfigMode"
-                    size="large"
                     @change="handleChange('Script', 'UpdateConfigMode', $event)"
                   >
                     <a-select-option value="Never">{{ t('core.edit.never') }}</a-select-option>
@@ -287,8 +182,105 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            <a-row :gutter="[24, 12]" class="switch-tile-row">
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="generalConfig.Script.IfTrackProcess"
+                  :title="t('core.edit.trackChildProcesses')"
+                  :description="t('core.edit.treatScriptAsFinished')"
+                  @change="handleChange('Script', 'IfTrackProcess', $event)"
+                />
+              </a-col>
+            </a-row>
+            <!-- 追踪子进程配置 -->
+            <a-row v-if="generalConfig.Script.IfTrackProcess" :gutter="24">
+              <a-col :xs="24" :md="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.nameTrackedProcess')"
+                      :hint="t('core.edit.nameProcessTrackOpen')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="generalConfig.Script.TrackProcessName"
+                    :placeholder="t('core.edit.enterProcessNameTrack')"
+                    class="modern-input"
+                    @blur="
+                      handleChange(
+                        'Script',
+                        'TrackProcessName',
+                        generalConfig.Script.TrackProcessName
+                      )
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.pathTrackedProcess')"
+                      :hint="t('core.edit.executablePathProcessTrack')"
+                      variant="form"
+                    />
+                  </template>
+                  <PathPickerField
+                    v-model="generalConfig.Script.TrackProcessExe"
+                    size="middle"
+                    mode="file"
+                    :placeholder="t('core.edit.pickProcessExecutablePath')"
+                    :pick-label="t('core.edit.pickFile')"
+                    @pick="selectTrackProcessExe"
+                  >
+                    <template #after-pick>
+                      <a-button
+                        danger
+                        :aria-label="t('core.edit.clearPath')"
+                        @click="clearTrackProcessExe"
+                      >
+                        <template #icon>
+                          <DeleteOutlined />
+                        </template>
+                      </a-button>
+                    </template>
+                  </PathPickerField>
+                </a-form-item>
+              </a-col>
+              <a-col :xs="24" :md="12">
+                <a-form-item>
+                  <template #label>
+                    <FieldLabelWithHint
+                      :text="t('core.edit.trackedProcessCommandLine')"
+                      :hint="t('core.edit.commandLineProcessTrack')"
+                      variant="form"
+                    />
+                  </template>
+                  <a-input
+                    v-model:value="generalConfig.Script.TrackProcessCmdline"
+                    :placeholder="t('core.edit.enterProcessCommandLine')"
+                    class="modern-input"
+                    @blur="
+                      handleChange(
+                        'Script',
+                        'TrackProcessCmdline',
+                        generalConfig.Script.TrackProcessCmdline
+                      )
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </SectionCard>
+
+          <SectionCard
+            variant="card"
+            :title="t('core.scheduler.log.title')"
+            :icon="FileTextOutlined"
+          >
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="logPath" :rules="rules.logPath">
                   <template #label>
                     <FieldLabelWithHint
@@ -299,6 +291,7 @@
                   </template>
                   <PathPickerField
                     v-model="formData.logPath"
+                    size="middle"
                     mode="file"
                     :placeholder="t('core.edit.pickLogFile')"
                     :pick-label="t('core.edit.pickFile')"
@@ -306,7 +299,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -322,7 +315,6 @@
                   <a-input
                     v-model:value="generalConfig.Script.LogPathFormat"
                     :placeholder="t('core.edit.logFileNameFormat2')"
-                    size="large"
                     class="modern-input"
                     @blur="
                       handleChange('Script', 'LogPathFormat', generalConfig.Script.LogPathFormat)
@@ -332,16 +324,15 @@
               </a-col>
             </a-row>
 
+            <LogTimestampSelector
+              v-model:form-data="formData"
+              :log-file-path="formData.logPath"
+              :handle-change="handleChange"
+              :rules="rules"
+            />
+
             <a-row :gutter="24">
-              <a-col :span="12">
-                <LogTimestampSelector
-                  v-model:form-data="formData"
-                  :log-file-path="formData.logPath"
-                  :handle-change="handleChange"
-                  :rules="rules"
-                />
-              </a-col>
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
                   <template #label>
                     <FieldLabelWithHint
@@ -353,7 +344,6 @@
                   <a-input
                     v-model:value="formData.logTimeFormat"
                     :placeholder="t('core.edit.enterScriptLogTimestamp')"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                   />
@@ -368,14 +358,8 @@
               </a-col>
             </a-row>
 
-            <LogHookConfig
-              v-model:enabled="generalConfig.Script.LogHookEnabled"
-              v-model:rules="generalConfig.Script.LogHookRules"
-              @change="(group, key, value) => handleChange(group, key, value)"
-            />
-
             <a-row :gutter="24">
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -387,7 +371,6 @@
                   <a-input
                     v-model:value="generalConfig.Script.SuccessLog"
                     :placeholder="successLogPlaceholder"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Script', 'SuccessLog', generalConfig.Script.SuccessLog)"
                   >
@@ -413,7 +396,7 @@
                   </div>
                 </a-form-item>
               </a-col>
-              <a-col :span="12">
+              <a-col :xs="24" :md="12">
                 <a-form-item name="errorLog" :rules="rules.errorLog">
                   <template #label>
                     <FieldLabelWithHint
@@ -425,7 +408,6 @@
                   <a-input
                     v-model:value="formData.errorLog"
                     :placeholder="errorLogPlaceholder"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Script', 'ErrorLog', formData.errorLog)"
                   >
@@ -453,6 +435,11 @@
               </a-col>
             </a-row>
 
+            <LogHookConfig
+              v-model:enabled="generalConfig.Script.LogHookEnabled"
+              v-model:rules="generalConfig.Script.LogHookRules"
+              @change="(group, key, value) => handleChange(group, key, value)"
+            />
             <PushLogConfig
               v-model:enabled="generalConfig.Script.PushLogEnabled"
               v-model:patterns="generalConfig.Script.PushLogPatterns"
@@ -461,28 +448,13 @@
             />
           </SectionCard>
 
-          <SectionCard variant="plain" :title="t('core.edit.gameConfiguration')">
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.gameConfiguration')"
+            :icon="PlayCircleOutlined"
+          >
             <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.enableGameRelatedFeatures')"
-                      :hint="t('core.edit.whetherAutoMasManages')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="generalConfig.Game.Enabled"
-                    size="large"
-                    @change="handleChange('Game', 'Enabled', $event)"
-                  >
-                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="8">
+              <a-col :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -491,11 +463,7 @@
                       variant="form"
                     />
                   </template>
-                  <a-select
-                    v-model:value="generalConfig.Game.Type"
-                    size="large"
-                    @change="handleGameTypeChange"
-                  >
+                  <a-select v-model:value="generalConfig.Game.Type" @change="handleGameTypeChange">
                     <a-select-option value="Emulator">{{
                       t('core.edit.emulator2')
                     }}</a-select-option>
@@ -507,7 +475,7 @@
                 </a-form-item>
               </a-col>
               <!-- PC客户端相关字段 -->
-              <a-col v-if="generalConfig.Game.Type === 'Client'" :span="8">
+              <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -519,9 +487,7 @@
                   <BoundGamePathField />
                 </a-form-item>
               </a-col>
-              <!-- 模拟器相关字段 -->
-
-              <a-col v-if="generalConfig.Game.Type === 'URL'" :span="8">
+              <a-col v-if="generalConfig.Game.Type === 'URL'" :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -534,17 +500,13 @@
                     <a-input
                       v-model:value="generalConfig.Game.URL"
                       :placeholder="t('core.edit.enterUrlEG')"
-                      size="large"
                       @blur="handleChange('Game', 'URL', generalConfig.Game.URL)"
                     />
                   </a-input-group>
                 </a-form-item>
               </a-col>
-            </a-row>
-
-            <!-- PC客户端独有的配置 -->
-            <a-row v-if="generalConfig.Game.Type === 'Client'" :gutter="24">
-              <a-col :span="8">
+              <!-- PC客户端独有的配置 -->
+              <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -556,13 +518,12 @@
                   <a-input
                     v-model:value="generalConfig.Game.Arguments"
                     :placeholder="t('core.edit.enterLaunchArguments')"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Game', 'Arguments', generalConfig.Game.Arguments)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="8">
+              <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -575,36 +536,14 @@
                     v-model:value="generalConfig.Game.WaitTime"
                     :min="0"
                     :max="9999"
-                    size="large"
                     class="modern-number-input"
                     style="width: 100%"
                     @blur="handleChange('Game', 'WaitTime', generalConfig.Game.WaitTime)"
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="8">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.forceGameClose')"
-                      :hint="t('core.edit.whetherGameProcessForce')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="generalConfig.Game.IfForceClose"
-                    size="large"
-                    @change="handleChange('Game', 'IfForceClose', $event)"
-                  >
-                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <!-- 自定义协议独有的选项 -->
-            <a-row v-if="generalConfig.Game.Type === 'URL'" :gutter="24">
-              <a-col :span="8">
+              <!-- 自定义协议独有的选项 -->
+              <a-col v-if="generalConfig.Game.Type === 'URL'" :xs="24" :md="12">
                 <a-form-item>
                   <template #label>
                     <FieldLabelWithHint
@@ -616,17 +555,38 @@
                   <a-input
                     v-model:value="generalConfig.Game.ProcessName"
                     :placeholder="t('core.edit.exampleStarrailExe')"
-                    size="large"
                     class="modern-input"
                     @blur="handleChange('Game', 'ProcessName', generalConfig.Game.ProcessName)"
                   />
                 </a-form-item>
               </a-col>
             </a-row>
+            <a-row :gutter="[24, 12]" class="switch-tile-row">
+              <a-col :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="generalConfig.Game.Enabled"
+                  :title="t('core.edit.enableGameRelatedFeatures')"
+                  :description="t('core.edit.whetherAutoMasManages')"
+                  @change="handleChange('Game', 'Enabled', $event)"
+                />
+              </a-col>
+              <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
+                <SwitchTile
+                  v-model:checked="generalConfig.Game.IfForceClose"
+                  :title="t('core.edit.forceGameClose')"
+                  :description="t('core.edit.whetherGameProcessForce')"
+                  @change="handleChange('Game', 'IfForceClose', $event)"
+                />
+              </a-col>
+            </a-row>
           </SectionCard>
 
           <!-- 运行配置 -->
-          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
+          <SectionCard
+            variant="card"
+            :title="t('core.edit.runConfiguration')"
+            :icon="ThunderboltOutlined"
+          >
             <ScriptRunLimitsSection
               v-model:hard-time-limit="generalConfig.Run.HardTimeLimit"
               v-model:daily-limit="generalConfig.Run.ProxyTimesLimit"
@@ -641,13 +601,13 @@
             />
           </SectionCard>
         </a-form>
-      </a-card>
+      </a-spin>
     </ConfigLockPanel>
   </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import PathPickerField from '@/components/PathPickerField.vue'
@@ -666,7 +626,15 @@ import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
-import { DeleteOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  AppstoreOutlined,
+  DeleteOutlined,
+  FileTextOutlined,
+  PlayCircleOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons-vue'
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'
@@ -1586,36 +1554,8 @@ const selectLogPath = async () => {
 <style scoped src="@/styles/scriptEdit.css"></style>
 
 <style scoped>
-.path-clear-icon-btn {
-  width: 44px;
-  min-width: 44px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 0;
-  border-left: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-container);
-  color: var(--ant-color-error);
-  transition: all 0.3s ease;
-}
-
-.path-clear-icon-btn:hover {
-  background: var(--ant-color-error) !important;
-  color: white !important;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
-}
-
-.path-clear-icon-btn :deep(.anticon) {
-  font-size: 16px;
-  color: inherit;
-}
-
-.path-clear-icon-btn :deep(.anticon svg) {
-  fill: currentColor;
-  stroke: currentColor;
+.switch-tile-row {
+  margin-bottom: 16px;
 }
 
 .format-preview {

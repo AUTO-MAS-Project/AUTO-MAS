@@ -200,11 +200,25 @@ class GameSession:
         from app.core import Config, GameManager
 
         self.selected = True
-        self._account_override = owner is not None and owner.game.game_id != "-"
+        self._account_override = False
+        default = self.config.game
+        has_override = owner is not None and owner.game.game_id != "-"
+        if (
+            not has_override
+            and default.game_id == "-"
+            and not default.unavailable_reason
+        ):
+            await self.release()
+            return
+        capabilities = Config.script_game_binding(self.config, {})
+        if not capabilities.supported:
+            await self.release()
+            return
+        self._account_override = (
+            has_override and capabilities.account_override_supported
+        )
         binding = (
-            owner.game
-            if owner is not None and self._account_override
-            else self.config.game
+            owner.game if owner is not None and self._account_override else default
         )
         if binding.unavailable_reason:
             raise ValueError(binding.unavailable_reason)
@@ -219,12 +233,17 @@ class GameSession:
         if uid is None:
             return
         refusal = await GameManager.validate_binding(
-            str(self.config.uid), {"game": {"game_id": uid}}, owner=owner
+            str(self.config.uid),
+            {"game": {"game_id": uid}},
+            owner=owner if self._account_override else None,
+            script=self.config,
+            capabilities=capabilities,
         )
         if refusal:
             raise ValueError(refusal)
         game_name = Config.GameConfig[uid].info.name
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
+        logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
         self.control, self.ticket = await GameManager.subscribe(uid)
         self.game_uid = uid
@@ -265,6 +284,7 @@ class GameSession:
                     await asyncio.sleep(1)
             self.device_uid = device_uid
         self.script.current.log += f"已获取游戏实例「{game_name}」。\n"
+        logger.info(f"已获取游戏实例「{game_name}」")
         await self.script.set_state(status="运行")
 
     async def release_account(self) -> None:

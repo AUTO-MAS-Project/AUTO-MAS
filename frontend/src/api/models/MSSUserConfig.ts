@@ -7,12 +7,19 @@ import type { MSSUserConfig_Device } from './MSSUserConfig_Device';
 import type { MSSUserConfig_game } from './MSSUserConfig_game';
 import type { MSSUserConfig_Info } from './MSSUserConfig_Info';
 import type { MSSUserConfig_Notify } from './MSSUserConfig_Notify';
+import type { MSSUserConfig_plugin_info } from './MSSUserConfig_plugin_info';
+import type { MSSUserConfig_plugin_notify } from './MSSUserConfig_plugin_notify';
 import type { MSSUserConfig_Task } from './MSSUserConfig_Task';
 export type MSSUserConfig = {
     /**
      * 游戏与设备
      */
     game?: (MSSUserConfig_game | null);
+    info?: (MSSUserConfig_plugin_info | null);
+    /**
+     * 用户通知
+     */
+    notify?: (MSSUserConfig_plugin_notify | null);
     Data?: (MSSUserConfig_Data | null);
     Device?: (MSSUserConfig_Device | null);
     Info?: (MSSUserConfig_Info | null);

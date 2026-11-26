@@ -7,6 +7,7 @@ import type { M9AConfig_EmbeddedInput } from './M9AConfig_EmbeddedInput';
 import type { M9AConfig_GameInput } from './M9AConfig_GameInput';
 import type { M9AConfig_InfoInput } from './M9AConfig_InfoInput';
 import type { M9AConfig_plugin_gameInput } from './M9AConfig_plugin_gameInput';
+import type { M9AConfig_plugin_infoInput } from './M9AConfig_plugin_infoInput';
 import type { M9AConfig_RunInput } from './M9AConfig_RunInput';
 import type { M9AConfig_SelectionInput } from './M9AConfig_SelectionInput';
 import type { M9AConfig_TaskInput } from './M9AConfig_TaskInput';
@@ -16,6 +17,7 @@ export type M9AConfigInput = {
      * 游戏与设备
      */
     game?: (M9AConfig_plugin_gameInput | null);
+    info?: (M9AConfig_plugin_infoInput | null);
     Device?: (M9AConfig_DeviceInput | null);
     Embedded?: (M9AConfig_EmbeddedInput | null);
     Game?: (M9AConfig_GameInput | null);
