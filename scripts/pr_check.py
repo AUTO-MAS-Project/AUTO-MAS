@@ -11,6 +11,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,8 @@ FRONTEND_DIR = REPO_ROOT / "frontend"
 FRONTEND_CODE_SUFFIXES = (".ts", ".tsx", ".vue", ".js", ".mjs", ".cjs", ".css")
 CHANGELOG_TRIGGER_PREFIXES = ("app/", "frontend/src/", "frontend/electron/")
 CHANGELOG_TRIGGER_FILES = ("main.py", "CHANGELOG.md", "res/version.json")
+TEST_PLUGINS_DIR = REPO_ROOT / ".test-plugins"
+TEST_PLUGINS_REQUIREMENTS = REPO_ROOT / "tests" / "requirements-plugins.txt"
 
 
 @dataclass(frozen=True)
@@ -32,10 +35,57 @@ class Gate:
     cwd: Path
     forbid: str
     fix: str
+    # 命令之外的前置条件，返回待办事项描述；非空表示门禁不该运行（多半是环境没准备好）。
+    preflight: Callable[[], list[str]] | None = None
 
 
 def _normalize_path(raw: str) -> str:
     return raw.strip().replace("\\", "/")
+
+
+def parse_locked_test_plugins(requirements: Path) -> list[tuple[str, str]]:
+    """从带摘要的发行包清单解析 (发行名, 版本) 列表，忽略注释与空行。"""
+    if not requirements.exists():
+        return []
+    plugins: list[tuple[str, str]] = []
+    for raw in requirements.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or "==" not in line:
+            continue
+        name, _, version = line.partition("==")
+        plugins.append((name.strip(), version.split()[0].strip()))
+    return plugins
+
+
+def missing_test_plugins(
+    plugins_dir: Path = TEST_PLUGINS_DIR,
+    requirements: Path = TEST_PLUGINS_REQUIREMENTS,
+) -> list[str]:
+    """返回隔离测试目录里缺失或版本不符的锁定插件发行包（形如 name==version）。"""
+    missing: list[str] = []
+    for name, version in parse_locked_test_plugins(requirements):
+        dist_info = (
+            plugins_dir / f"{name.replace('-', '_').lower()}-{version}.dist-info"
+        )
+        if not dist_info.is_dir():
+            missing.append(f"{name}=={version}")
+    return missing
+
+
+def backend_test_preflight(
+    plugins_dir: Path = TEST_PLUGINS_DIR,
+    requirements: Path = TEST_PLUGINS_REQUIREMENTS,
+) -> list[str]:
+    """后端全量测试的前置条件：锁定测试插件必须已装进隔离目录。"""
+    missing = missing_test_plugins(plugins_dir, requirements)
+    if not missing:
+        return []
+    return [
+        "隔离测试目录 .test-plugins/ 缺少清单锁定的发行包：" + "、".join(missing),
+        "这些包由 tests/requirements-plugins.txt 锁定，若缺失会被 pytest 在收集阶段报成 "
+        "ModuleNotFoundError，看起来像业务代码坏掉，实际只是测试依赖没装。",
+        "先运行 uv run --no-sync python scripts/prepare_test_plugins.py 补齐后重跑本门禁。",
+    ]
 
 
 def collect_changed_files(base_ref: str, repo_root: Path = REPO_ROOT) -> list[str]:
@@ -272,7 +322,8 @@ def plan_gates(
                 ),
                 cwd=repo_root,
                 forbid="禁止用 -k 只跑自己关心的用例充当全量结论，也不要改动无关测试来消错。",
-                fix="按失败用例修复实现后在仓库根目录重跑上述命令。",
+                fix="按失败用例修复实现后在仓库根目录重跑上述命令；若提示测试插件缺失，先跑 uv run --no-sync python scripts/prepare_test_plugins.py。",
+                preflight=backend_test_preflight,
             )
         )
 
@@ -329,8 +380,8 @@ def plan_gates(
     return gates
 
 
-def format_failure(gate: Gate, output: str) -> str:
-    """格式化面向人类新手与 AI 的三段式失败提示。"""
+def format_failure(gate: Gate, output: str, hints: Sequence[str] = ()) -> str:
+    """格式化面向人类新手与 AI 的三段式失败提示；hints 为前置条件未满足时的待办说明。"""
     tail = "\n".join(output.strip().splitlines()[-20:])
     lines = [
         f"[FAIL][{gate.id}] {gate.title}",
@@ -338,6 +389,9 @@ def format_failure(gate: Gate, output: str) -> str:
         f"  禁止：{gate.forbid}",
         f"  修复：{gate.fix}",
     ]
+    if hints:
+        lines.append("  待办：")
+        lines.extend(f"    {hint}" for hint in hints)
     if tail:
         lines.append("  输出摘要：")
         for line in tail.splitlines():
@@ -356,6 +410,13 @@ def run_gates(gates: list[Gate], *, dry_run: bool = False) -> int:
     failures: list[str] = []
     for gate in gates:
         print(f"==> [{gate.id}] {gate.title} ...", flush=True)
+        # 前置条件先于可执行文件检查：环境没准备好时，先告诉人该补什么，
+        # 而不是让人去修没坏的业务代码。
+        hints = gate.preflight() if gate.preflight is not None else []
+        if hints:
+            failures.append(format_failure(gate, "", hints))
+            print(f"    FAIL [{gate.id}] (preflight: {'；'.join(hints[:1])})")
+            continue
         resolved = shutil.which(gate.command[0])
         if resolved is None:
             failures.append(
