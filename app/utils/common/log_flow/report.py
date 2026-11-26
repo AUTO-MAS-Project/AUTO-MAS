@@ -4,6 +4,8 @@ from collections.abc import Set
 from datetime import datetime
 from typing import Literal
 
+from app.utils.common.security import sanitize_log_message
+
 from .observation import NodeDisplayStatus, ReportEntry, SessionSummary
 
 type ReportMode = Literal["关闭", "逐条", "汇总"]
@@ -56,7 +58,7 @@ def render_node_details(
 
 
 def _render_entry(entry: ReportEntry) -> str:
-    text = entry.text
+    text = sanitize_log_message(entry.text)
     if (label := _STATUS_LABELS.get(entry.status)) is not None:
         text = f"{label}: {text}"
     if entry.timestamp is not None:
@@ -68,13 +70,14 @@ def _render_groups(entries: list[ReportEntry]) -> list[str]:
     groups: dict[NodeDisplayStatus, list[str]] = {}
     rows: list[str | list[str]] = []
     for entry in entries:
+        text = sanitize_log_message(entry.text)
         if (label := _STATUS_LABELS.get(entry.status)) is None:
-            rows.append(entry.text)
+            rows.append(text)
             continue
         if entry.status not in groups:
-            group = [f"{label}: {entry.text}"]
+            group = [f"{label}: {text}"]
             groups[entry.status] = group
             rows.append(group)
         else:
-            groups[entry.status].append(entry.text)
+            groups[entry.status].append(text)
     return [", ".join(row) if isinstance(row, list) else row for row in rows]

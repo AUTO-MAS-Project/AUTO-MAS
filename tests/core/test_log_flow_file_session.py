@@ -1835,3 +1835,19 @@ async def test_oknte_shadow_report_matches_legacy_aggregation():
         ]
     finally:
         await session.close(timeout=0)
+
+
+@pytest.mark.parametrize("mode", ["逐条", "汇总"])
+def test_rendered_reports_mask_credentials(mode):
+    from app.utils.common.log_flow.observation import Node, SessionSummary
+
+    sample = "task finished token=example_private_value"
+    summary = SessionSummary(
+        reason="complete",
+        nodes=(Node(sequence=1, node_type="step", text=sample, source="push"),),
+        report_entries=(ReportEntry(node_type="step", text=sample, status="success"),),
+    )
+    for result in (summary, SessionSummary(reason="complete", nodes=summary.nodes)):
+        [line] = render_node_details(result, mode=mode)
+        assert "task finished" in line
+        assert "example_private_value" not in line
