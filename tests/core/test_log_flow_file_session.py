@@ -1928,6 +1928,21 @@ def test_rendered_reports_mask_credentials(mode):
         assert "example_private_value" not in line
 
 
+def test_no_inode_rotation_skips_shorter_backup(tmp_path, monkeypatch):
+    from app.utils.common.log import flow_file
+
+    active = tmp_path / "script.log"
+    active.write_text("already-processed-line\n", encoding="utf-8")
+    active.with_suffix(".log.bak").write_text("old backup\n", encoding="utf-8")
+    identities = iter(((0, 1), (0, 2)))
+    monkeypatch.setattr(flow_file, "file_identity", lambda _: next(identities))
+    source = FlowFileSource(active)
+    source.open()
+    active.write_text("new line\n", encoding="utf-8")
+    assert [line.rstrip() for line in source.read_new()] == ["new line"]
+    assert source.rotation_gap
+
+
 def test_source_loader_resolves_package_root_before_comparison(tmp_path, monkeypatch):
     from app.utils.common.source_import import SourceFinder, SourceLoader
 

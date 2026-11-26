@@ -242,8 +242,10 @@ class FlowFileSource:
                 stat = bak.stat()
             except OSError:
                 continue
-            offset = self._offset if self._offset <= stat.st_size else 0
-            if stat.st_size <= offset:
+            if stat.st_size < self._offset:
+                continue
+            offset = self._offset
+            if stat.st_size == offset:
                 return _ReadBatch([], offset)  # 已找到排空的旧文件。
             with open(bak, "rb", opener=LOG_READ_OPENER) as file:
                 return self._read_stream(file, offset)
