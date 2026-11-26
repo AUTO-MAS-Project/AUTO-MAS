@@ -1,2 +1,0 @@
-project: scheduler
-恢复预下载状态中的托管名称和实际下载器
