@@ -48,12 +48,6 @@ from app.models.schema import (
 from app.models.task import TaskMode
 from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
-from app.utils.common.log_flow.observation import (
-    CloseReason,
-    InvalidObservationCursor,
-    Node,
-    ObservationCursor,
-)
 from app.utils.contracts.power import PowerSignal
 
 
@@ -84,23 +78,9 @@ class TaskCreateIn(BaseModel):
         return TaskSelectionNode.validate_indices(value)
 
 
-class TaskLogAnalysisCursor(BaseModel):
-    sessionId: UUID
-    sequence: int = Field(ge=0)
-
-
 class TaskLogAnalysisQuery(BaseModel):
     scriptRunId: UUID
     userRunId: UUID
-    cursor: TaskLogAnalysisCursor | None = None
-    limit: int = Field(default=50, ge=1, le=100)
-
-
-class TaskLogAnalysisPage(BaseModel):
-    nodes: tuple[Node, ...]
-    cursor: TaskLogAnalysisCursor | None
-    hasMore: bool
-    closeReason: CloseReason | None
 
 
 class TaskGetIn(BaseModel):
@@ -114,7 +94,6 @@ class TaskIndexItem(BaseModel):
 
 class TaskGetOut(OutBase):
     index: list[TaskIndexItem] = Field(default_factory=list)
-    logAnalysis: TaskLogAnalysisPage | None = None
     # Config 框架在运行时生成完整树的契约类，静态检查器无法把工厂结果作为类型。
     data: dict[str, TaskTreeData] = Field(default_factory=dict)  # type: ignore[valid-type]  # pyright: ignore[reportInvalidTypeForm]
 
@@ -198,59 +177,6 @@ def _local_node_reader(request: Request) -> bool:
         return False
 
 
-def _get_log_analysis(
-    task_id: str | None,
-    query: TaskLogAnalysisQuery,
-    *,
-    request: Request,
-    response: Response,
-) -> TaskGetOut:
-    response.headers["Cache-Control"] = "no-store"
-    if not _local_node_reader(request):
-        response.status_code = 403
-        return TaskGetOut(code=403, status="error", message="日志节点仅限本机读取")
-    try:
-        uid = UUID(task_id or "")
-    except ValueError:
-        response.status_code = 400
-        return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")
-    after = (
-        ObservationCursor(query.cursor.sessionId, query.cursor.sequence)
-        if query.cursor is not None
-        else None
-    )
-    try:
-        page = TaskManager.read_log_analysis(
-            uid,
-            script_run_id=query.scriptRunId,
-            user_run_id=query.userRunId,
-            after=after,
-            limit=query.limit,
-        )
-    except InvalidObservationCursor:
-        response.status_code = 409
-        return TaskGetOut(
-            code=409, status="error", message="游标已失效，请重新读取快照"
-        )
-    if page is None:
-        response.status_code = 404
-        return TaskGetOut(
-            code=404, status="error", message="该账号运行没有可查询的日志分析"
-        )
-    return TaskGetOut(
-        logAnalysis=TaskLogAnalysisPage(
-            nodes=page.nodes,
-            cursor=TaskLogAnalysisCursor(
-                sessionId=page.cursor.session_id, sequence=page.cursor.sequence
-            )
-            if page.cursor is not None
-            else None,
-            hasMore=page.has_more,
-            closeReason=page.close_reason,
-        ),
-    )
-
-
 @router.post(
     "/get",
     tags=["Get"],
@@ -259,16 +185,31 @@ def _get_log_analysis(
         400: {"model": TaskGetOut, "description": "任务运行 ID 格式错误"},
         403: {"model": TaskGetOut, "description": "日志分析查询仅限本机"},
         404: {"model": TaskGetOut, "description": "账号运行没有可查询的日志分析"},
-        409: {"model": TaskGetOut, "description": "游标失效，需要重新读取快照"},
     },
 )
 async def get_tasks(
     request: Request, response: Response, body: TaskGetIn = Body(...)
 ) -> TaskGetOut:
-    if body.logAnalysis is not None:
-        return _get_log_analysis(
-            body.taskId, body.logAnalysis, request=request, response=response
+    if (selection := body.logAnalysis) is not None:
+        response.headers["Cache-Control"] = "no-store"
+        if not _local_node_reader(request):
+            response.status_code = 403
+            return TaskGetOut(code=403, status="error", message="日志分析仅限本机读取")
+        try:
+            task_id = UUID(body.taskId or "")
+        except ValueError:
+            response.status_code = 400
+            return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")
+        tree = TaskManager.get_task(
+            task_id, analysis_run=(selection.scriptRunId, selection.userRunId)
         )
+        if tree is None:
+            response.status_code = 404
+            return TaskGetOut(
+                code=404, status="error", message="账号运行没有可查询的日志分析"
+            )
+        uid = str(task_id)
+        return TaskGetOut(index=[TaskIndexItem(uid=uid)], data={uid: tree})
     ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
     try:
         data = {

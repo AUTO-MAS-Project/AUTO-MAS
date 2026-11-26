@@ -163,7 +163,7 @@ result = await Notify.send_global(
 
 ## LogFlow 日志节点
 
-在 L4 账号执行器内显式调用 `auto_mas_core.log_flow.analyze_logs`。传入本次运行的日志来源和声明，停止或排空日志后读取最终结果并写入该账号运行节点。托管层使用任务通知桥接，在结束时统一发送报告。
+L4 账号执行器传入本轮日志监视器、当前账号运行节点与规则，使用 `await self.spawn(LogFlow(monitor, self.user_info, rules))` 运行。LogFlow 负责实时更新运行树、排空尾部和提交采集终态。专项按原业务结果决策，并在托管层按需汇总通知。
 
 完整 L4 范例、来源组合和查询方法见 [LogFlow 接入与迁移](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/dev/.agents/skills/mas-script-specialized-adapter/references/logflow-api.md)。
 

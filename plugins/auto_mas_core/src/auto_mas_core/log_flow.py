@@ -1,5 +1,6 @@
 """LogFlow 声明、独立分析、主动上报和任务报告。"""
 
+from app.task.log_flow.run import LogFlow
 from app.task.log_flow.report import LogFlowTaskReport
 from app.utils.common.expression import ExpressionFunction
 from app.utils.common.log.flow_monitor import LogFlowMonitor as LogMonitor
@@ -28,9 +29,6 @@ from app.utils.common.log_flow.observation import (
     NodeAttribute,
     NodeAttributes,
     NodeDisplayStatus,
-    ObservationCursor,
-    ObservationPage,
-    ObservationSnapshot,
     ReportEntry,
     ReportOrder,
 )
@@ -47,15 +45,13 @@ __all__ = [
     "InputRecord",
     "LinePreprocessor",
     "LineRule",
+    "LogFlow",
     "LogFlowTaskReport",
     "LogMonitor",
     "Node",
     "NodeAttribute",
     "NodeAttributes",
     "NodeDisplayStatus",
-    "ObservationCursor",
-    "ObservationPage",
-    "ObservationSnapshot",
     "PostProcessor",
     "ProcessorOutput",
     "PushReporter",

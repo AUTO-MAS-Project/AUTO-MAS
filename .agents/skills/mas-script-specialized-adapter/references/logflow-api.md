@@ -1,18 +1,13 @@
 # 在 L4 接入 LogFlow
 
-适用于已插件化的专项和希望复用 MAS 日志分析的调用方。LogFlow 是宿主提供的工具，专项在账号执行器内调用。未迁移专项继续按 [LogBox 指南](logbox-api.md) 维护。
+LogFlow 是 MAS 内置的日志分析工具。L4 把本轮已经配置好来源的监视器、账号运行节点和规则交给它。分析在独立子进程完成，运行树持有实时和最终节点。未迁移专项继续按 [LogBox 指南](logbox-api.md) 维护。
 
-## 用 MAS 日志采集节点
+## 单账号进程监控
 
-为每次账号执行创建自己的监控器。在启动日志生产端之前打开分析，在退出分析之前停止或排空监控器。下面的执行器片段复用专项已有的日志回调和脚本执行方法。
+让监视器使用专项已有的启动函数。启动函数返回进程对象，所选 stdout 或 stderr 须接到管道。专项仍用其原有的执行结果决定本轮成败。
 
 ```python
-from auto_mas_core.log_flow import (
-    LineRule,
-    LogMonitor,
-    SimpleFlowDeclaration,
-    analyze_logs,
-)
+from auto_mas_core.log_flow import LineRule, LogFlow, LogMonitor, SimpleFlowDeclaration
 
 RULES = SimpleFlowDeclaration(
     rules=(
@@ -25,41 +20,21 @@ RULES = SimpleFlowDeclaration(
     ),
 )
 
-# L4 的执行方法体。report 由托管层创建并在结束时统一发送。
-monitor = LogMonitor((0, 0), "", self.on_log_lines)
-analysis = None
-try:
-    async with analyze_logs(
-        RULES, monitor=monitor, prepare_report=report_mode != "关闭"
-    ) as analysis:
-        self.user_info.bind_log_analysis(analysis)
-        try:
-            await self.run_script_with_monitor(monitor)
-        finally:
-            await monitor.stop()
-finally:
-    if analysis is not None and (result := analysis.result) is not None:
-        await self.user_info.record_log_analysis(result)
-        report.record(self.user_info, report_mode, result)
+# L4 执行方法。launch_script 返回进程，on_log_lines 沿用既有原始日志回调。
+monitor = LogMonitor((0, 0), "", self.on_log_lines, process_factory=self.launch_script)
+flow = LogFlow(monitor, self.user_info, RULES)
+await self.spawn(flow)
+
+nodes = self.user_info.log_analysis.nodes
+reason = self.user_info.log_analysis.close_reason
+exit_code = monitor.source_returncode
 ```
 
-`analyze_logs` 使用独立分析进程，默认收尾等待两秒。超时会返回已采集节点和 `reason="timeout"`，报告末尾注明采集不完整。执行器按专项自己的结果来源判断任务成败。取消时，专项的监控收尾须覆盖已启动的日志流，工作进程在有界收尾后向调用方继续传播取消。
+直接 `await flow.run()` 执行同一生命周期。临时调度组件用 `await self.spawn(flow)` 将取消沿 L4 调用链传递。正常结束或取消由 `TaskBase.final_task` 排空监控尾部、关闭采集进程并提交最后一批节点和采集终态。账号运行状态仍由 L4 决定。
 
-## 在框架里观察运行中的节点
+## 读取运行树中的节点
 
-L4 把独立分析显式绑定到本次账号。框架或专项从该账号运行节点调用
-`capture_log_analysis()`，可在任务仍运行时取得当前有效节点和同一时点的游标。
-用 `node_id` 识别同一个节点，用 `revision` 判断是否已更新。采集是否结束由
-`close_reason` 表示，账号执行状态仍由 `info.status` 表示。
-
-## 查询结果
-
-普通任务详情只传任务 ID 时省略节点。本机调用现有的 `POST /api/dispatch/get`，按下面的方式选择具体账号，即可读取该账号的当前节点或最终结果。
-
-### 运行中查询和断线补读
-
-用同一个 `POST /api/dispatch/get` 请求，在 `taskId` 外传入 `logAnalysis`。
-该模式只返回选中账号的 `logAnalysis`，可用于实时进度界面或本机组件。
+普通 `POST /api/dispatch/get` 只传 `taskId` 时省略分析节点。要读取某个正在运行的账号或最近完成的账号，在同一接口里显式选择托管运行 ID 和账号运行 ID。
 
 ```json
 {
@@ -71,20 +46,12 @@ L4 把独立分析显式绑定到本次账号。框架或专项从该账号运�
 }
 ```
 
-- 省略 `cursor` 时返回当前有效节点及同一时点的游标。分析开始后即使还没有节点，也可能返回有效游标。
-- 补读时把上一响应的 `{sessionId, sequence}` 作为 `logAnalysis.cursor` 原样传回。增量按 `sequence` 顺序返回，`limit` 取 1 至 100，默认 50。`hasMore` 为真时继续读取下一页。
-- 以 `node_id` 更新当前节点表，以 `revision` 跳过已处理的旧版本。`withdrawn: true` 表示移除该节点。重复提交相同游标可重读同一批顺序事件。
-- `closeReason` 表示采集终态。末页可能没有节点但有终态，仍应更新采集状态。脚本任务状态通过现有任务状态查询读取。
-- HTTP `409` 表示游标过期、超前或属于其他运行。清空本地节点表并重新获取快照。变更历史已淘汰时，若最终结果仍在缓存中，首读仍可返回结果，此时 `cursor` 为 `null`。没有可用结果时返回 `404`。
-- 节点查询仅限本机，响应禁止缓存。HTTP 请求携带 Origin 时须为 HTTP 或 HTTPS 回环来源。打包版 Electron 的 file 页面可能产生 null Origin，未来接入时应通过受信任的主进程转发。最终结果与变更历史各有保留预算，随进程重启一起清理。默认任务列表、WebSocket 和 MCP 沿用原有数据范围。
+在 `data[taskId].scripts.data[scriptRunId].users.data[userRunId].log_analysis` 读取 `nodes` 和 `close_reason`。节点每批提交到账号运行树，更正保留同一 `node_id`，撤回从当前 `nodes` 移除。`close_reason` 在采集结束前为空，结束后可为 `complete`、`timeout`、`worker_error` 或 `capacity`。当前查询返回选中账号的快照。
 
+请求必须来自本机。携带 `Origin` 时须为 HTTP 或 HTTPS 回环来源，响应禁止缓存。打包版 Electron 正式接入时须经受信任的主进程转发。普通任务列表和 WebSocket 继续省略分析节点。
 
-## 来源、表达式和扩展
+## 其他来源与通知
 
-- 原生日志传本轮 `LogMonitor`。文件源传 `FileInput(path=...)`，默认从打开时的文件位置跟随。支持和主动上报一起使用。
-- 主动上报传 `accept_push=True`。在上下文内用 `analysis.reporter` 的 `text`、`node`、`withdraw`。`accepted` 表示已入队，`backpressure` 表示有界队列暂满，`closed` 表示分析已经关闭。
-- 专项声明使用 `SimpleFlowDeclaration`。单行规则用 `LineRule`，多行窗口用 `WindowRule`。可选的 `preprocess`、`postprocess` 和 `functions` 用可导入的 `FunctionRef`。通用脚本读取当次 WebUI 快照并用 `GeneralFlowDeclaration(patterns=..., hooks=...)`。
-- 自定义来源和下沉通过 `source`、`sink` 传 `WorkerFactorySpec`。自定义文本处理器配置在 `SimpleFlowDeclaration.processor`。工厂和源码路径随本次调用传给子进程，参见 `WorkerPluginPackage`。扩展应使用可序列化的参数。
-- `LogFlowTaskReport` 由托管层持有。账号执行器用 `record` 写入结果，托管在任务报告定稿后调用一次 `send`。可选用 `LogAnalysis.report_lines(mode=...)` 取得逐条、汇总或关闭模式的文本。若只采集节点，把 `prepare_report` 设为 `False`，可跳过报告归并器。
-
-接入专项时，模拟测试至少覆盖正常结束、取消和超时，逐条与汇总通知，以及两轮调用不会串号。正式迁移再按专项要求对照真实脚本、配置与通知。
+- 监视文件或已有来源时，可给 `LogMonitor` 配置 `source_runner`。它使用监视器启动本轮文件或进程监控并等待业务结束。LogFlow 在收尾时停止监控。由该函数自行启动且未交给监视器持有的业务资源仍按专项现有生命周期管理。
+- `LogFlow` 接受文件、自定义来源和下沉、主动上报及报告归并配置。声明规则、处理器和工厂的参数格式与 `analyze_logs()` 一致。运行期间可用 `flow.reporter` 主动上报。`analyze_logs()` 仍可用于无任务树依赖的独立分析。
+- 托管层可将 `flow.result` 交给 `LogFlowTaskReport.record()`，在托管报告定稿后用 Notify 统一投递。逐条、汇总和关闭模式由调用方选择。

@@ -306,9 +306,12 @@ async def test_explicit_general_flow_uses_current_webui_rules():
 
 
 @pytest.mark.asyncio
-async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
+@pytest.mark.parametrize("cancel", [False, True], ids=["complete", "cancel"])
+async def test_autoproxy_worker_explicitly_records_analysis_for_its_account(
+    cancel, tmp_path
+):
     from auto_mas_core import AutoProxyWorker, UserExpander
-    from auto_mas_core.log_flow import LineRule, LogFlowTaskReport
+    from auto_mas_core.log_flow import LineRule, LogFlow, LogFlowTaskReport
     from app.models.config import GeneralConfig
 
     _, script, account = await create_runtime_tree(user_id="default")
@@ -316,41 +319,33 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
     declaration = SimpleFlowDeclaration(
         rules=(LineRule(match="^done:", node_type="daily", status="success"),),
     )
+    processes = []
+    tail_written = tmp_path / "tail-written"
 
-    async def discard_display(_lines, _latest_timestamp):
+    async def capture_display(_lines, _latest_timestamp):
         pass
+
+    async def launch():
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-c",
+            "from pathlib import Path; import sys; print('done:claim'); sys.stdin.readline(); "
+            "print('done:tail'); Path(sys.argv[1]).touch(); sys.stdin.readline()",
+            str(tail_written),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        processes.append(process)
+        return process
 
     class Worker(AutoProxyWorker):
         async def main_logic(self):
-            monitor = LogMonitor((0, 0), "", discard_display)
-            async with analyze_logs(declaration, monitor=monitor) as flow:
-                self.user_info.bind_log_analysis(flow)
-                try:
-                    process = await asyncio.create_subprocess_exec(
-                        sys.executable,
-                        "-c",
-                        "print('done:claim')",
-                        stdout=asyncio.subprocess.PIPE,
-                    )
-                    await asyncio.wait_for(
-                        monitor.monitor_process(process, "stdout"), 5
-                    )
-                    assert await process.wait() == 0
-                    async with asyncio.timeout(2):
-                        while True:
-                            snapshot = self.user_info.capture_log_analysis()
-                            if snapshot is not None and snapshot.nodes:
-                                break
-                            await asyncio.sleep(0.01)
-                    assert snapshot.close_reason is None
-                    assert snapshot.nodes[0].node_id == "sequence/1"
-                    assert self.user_info.log_analysis.close_reason is None
-                finally:
-                    await monitor.stop()
-            result = flow.result
-            assert result is not None
-            await self.user_info.record_log_analysis(result)
-            report.record(self.user_info, "汇总", result)
+            monitor = LogMonitor((0, 0), "", capture_display, process_factory=launch)
+            flow = LogFlow(monitor, self.user_info, declaration)
+            await self.spawn(flow)
+            assert flow.result is not None and monitor.source_returncode == 0
+            report.record(self.user_info, "汇总", flow.result)
             await self.user_info.set_state(status="完成")
 
     class Expander(UserExpander):
@@ -358,15 +353,46 @@ async def test_autoproxy_worker_explicitly_records_analysis_for_its_account():
             return Worker(self, user, config)
 
     worker = Expander(script, GeneralConfig.build()).build_worker(account, None)
-    await worker.run()
-    assert worker.error is None
-    assert account.status == "完成"
-    final = account.capture_log_analysis()
-    assert final is not None
-    assert final.close_reason == account.log_analysis.close_reason == "complete"
-    assert final.nodes == account.log_analysis.nodes
-    assert [node.text for node in account.log_analysis.nodes] == ["done:claim"]
-    assert report.details_for(account) == ["✅ 成功: done:claim"]
+    worker.start()
+    try:
+        async with asyncio.timeout(5):
+            while not account.log_analysis.nodes:
+                assert not worker.accomplish.is_set(), worker.error
+                await asyncio.sleep(0.01)
+        assert [node.text for node in account.log_analysis.nodes] == ["done:claim"]
+        assert account.log_analysis.close_reason is None
+        [process] = processes
+        assert process.stdin is not None
+        if cancel:
+            process.stdin.write(b"\n")
+            await process.stdin.drain()
+            async with asyncio.timeout(5):
+                while not tail_written.exists():
+                    await asyncio.sleep(0.01)
+            await asyncio.wait_for(worker.stop(), 8)
+        else:
+            process.stdin.close()
+            await asyncio.wait_for(worker.accomplish.wait(), 8)
+        assert worker.error is None, worker.error
+        assert process.returncode is not None
+        assert account.log_analysis.close_reason is not None
+        if cancel:
+            assert account.status == "已取消"
+            assert [node.text for node in account.log_analysis.nodes] == [
+                "done:claim",
+                "done:tail",
+            ]
+        else:
+            assert account.status == "完成"
+            assert account.log_analysis.close_reason == "complete"
+            assert [node.text for node in account.log_analysis.nodes] == [
+                "done:claim",
+                "done:tail",
+            ]
+            assert report.details_for(account) == ["✅ 成功: done:claim, done:tail"]
+    finally:
+        if not worker.accomplish.is_set():
+            await worker.stop()
 
 
 @pytest.mark.asyncio

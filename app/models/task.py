@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextvars import ContextVar
-from dataclasses import replace
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -36,8 +35,6 @@ from app.models.notification.report import TaskNotificationState
 from app.utils.common.log_flow.observation import (
     CloseReason,
     Node,
-    NodeObservation,
-    ObservationSnapshot,
     SessionSummary,
     public_log_node,
 )
@@ -46,7 +43,6 @@ from app.utils.contracts.power import PowerSignal
 if TYPE_CHECKING:
     # [兼容旧专项] 旧类型导出；新执行器直接使用 app.task.lifecycle.TaskBase。
     from app.task.legacy import TaskExecuteBase as TaskExecuteBase
-    from app.utils.common.log_flow.analysis import LogAnalysis as LogFlowAnalysis
 
 # 数组保留递归类型；对象的文档投影展开为开放字典，避开生成器的循环 Record 别名。
 # 实际参数仍递归校验全部 JSON 值。
@@ -64,7 +60,9 @@ type TaskParamValue = (
 )
 type TaskParams = dict[str, TaskParamValue]
 
-_omit_log_analysis = ContextVar("omit_task_log_analysis", default=False)
+_log_analysis_scope: ContextVar[UUID | Literal["all"] | None] = ContextVar(
+    "task_log_analysis_scope", default="all"
+)
 
 # 仅限制 WS 替换包；不裁剪运行树或查询正文。
 _LOG_PUSH_MAX_CHARS = 200_000
@@ -186,14 +184,16 @@ class TaskUserItem(RuntimeEntry):
         def _serialize(
             self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
         ) -> dict[str, Any]:
-            if _omit_log_analysis.get():
-                return {}
+            scope = _log_analysis_scope.get()
+            if scope != "all":
+                account = self.__dict__.get("_entry")
+                if scope is None or account is None or account.uid != scope:
+                    return {}
             return super()._serialize(handler, info)
 
     log_analysis: LogAnalysis = Field(default_factory=LogAnalysis)
     info: Info = Field(default_factory=Info)
     logs: ConfigCollection[LogRecord] = collection(LogRecord)
-    _log_observation: NodeObservation | None = PrivateAttr(default=None)
     _config_ref: ReferenceType | None = PrivateAttr(default=None)
     # [兼容旧专项] 仅在完成摘要中展示格式化后的 LogBox 节点。
     _completion_details: tuple[str, ...] = PrivateAttr(default=())
@@ -216,43 +216,22 @@ class TaskUserItem(RuntimeEntry):
             info["user_id"] = "default"
         super().__init__(info=info, **values)
 
-    def bind_log_analysis(self, analysis: LogFlowAnalysis) -> None:
-        """由 L4 将独立分析关联到本次账号运行，供框架读取实时节点。"""
-        observation = analysis.observation
-        if (
-            self._log_observation is not None
-            and self._log_observation is not observation
-        ):
-            raise ValueError("账号运行已绑定其他日志分析")
-        observation.bind_run(self.uid)
-        self._log_observation = observation
-
-    @property
-    def log_analysis_observation(self) -> NodeObservation | None:
-        """供调度查询读取本次运行保留的观察历史。"""
-        return self._log_observation
-
-    def capture_log_analysis(self) -> ObservationSnapshot | None:
-        """读取同一时点的账号节点、采集状态及补读起点。"""
-        if self._log_observation is None:
-            return None
-        snapshot = self._log_observation.capture()
-        return replace(
-            snapshot, nodes=tuple(public_log_node(node) for node in snapshot.nodes)
-        )
-
-    async def record_log_analysis(self, result: SessionSummary) -> None:
-        """显式保存本次账号的最终分析，任务状态由执行器独立决定。"""
-        if (
-            self._log_observation is not None
-            and self._log_observation.summary is not result
-        ):
-            raise ValueError("最终结果不属于账号运行已绑定的日志分析")
+    async def publish_log_analysis(
+        self, *, nodes: tuple[Node, ...], close_reason: CloseReason | None = None
+    ) -> None:
+        """在调用协程内提交本轮分析字段，保持业务执行状态独立。"""
         if self.activation_state.value == "inactive":
             await self.activate()
-        self.log_analysis.nodes = tuple(public_log_node(node) for node in result.nodes)
-        self.log_analysis.close_reason = result.reason
+        public_nodes = tuple(public_log_node(node) for node in nodes)
+        if self.log_analysis.nodes != public_nodes:
+            self.log_analysis.nodes = public_nodes
+        if close_reason is not None:
+            self.log_analysis.close_reason = close_reason
         await self.commit()
+
+    async def record_log_analysis(self, result: SessionSummary) -> None:
+        """提交最终有效节点和采集结束原因。"""
+        await self.publish_log_analysis(nodes=result.nodes, close_reason=result.reason)
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。"""
@@ -468,13 +447,15 @@ class TaskItem(RuntimeEntry):
     _log_content: str | list[str] | None = PrivateAttr(default=None)
     _log_seq: int = PrivateAttr(default=0)
 
-    def export_for_dispatch(self, *, include_log_analysis: bool) -> dict[str, Any]:
+    def export_for_dispatch(
+        self, *, log_analysis_scope: UUID | Literal["all"] | None
+    ) -> dict[str, Any]:
         """按调度查询范围导出，省略分析时跳过整组节点的序列化。"""
-        token = _omit_log_analysis.set(not include_log_analysis)
+        token = _log_analysis_scope.set(log_analysis_scope)
         try:
             return self.model_dump()
         finally:
-            _omit_log_analysis.reset(token)
+            _log_analysis_scope.reset(token)
 
     def clear_log_cursor(self) -> None:
         """清理已发送日志的私有基线，运行树正文继续保留。"""

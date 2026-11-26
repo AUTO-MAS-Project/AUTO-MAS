@@ -30,6 +30,7 @@ from typing import Awaitable, Callable, Literal
 import aiofiles
 
 from app.utils.common.constants import ANSI_ESCAPE_RE
+from app.utils.common.process.runner import stop_process
 from app.utils.common.tools import decode_bytes
 
 from .flow_file import LOG_READ_OPENER, file_identity
@@ -55,6 +56,10 @@ class LogFlowMonitor(LogMonitor):
         line_hook: Callable[[str], str | None] | None = None,
         *,
         on_raw_line: Callable[[str], None] | None = None,
+        process_factory: Callable[[], Awaitable[asyncio.subprocess.Process]]
+        | None = None,
+        source_runner: Callable[["LogFlowMonitor"], Awaitable[None]] | None = None,
+        stream: Literal["stdout", "stderr"] = "stdout",
     ):
         super().__init__(
             time_stamp_range,
@@ -67,6 +72,37 @@ class LogFlowMonitor(LogMonitor):
         self.on_raw_line = on_raw_line
         self.on_raw_incomplete: Callable[[str], None] | None = None
         self._file_stop: asyncio.Event | None = None
+        if process_factory is not None and source_runner is not None:
+            raise ValueError("请选择一种日志来源启动方式")
+        self._process_factory = process_factory
+        self._source_runner = source_runner
+        self._source_stream = stream
+        self._source_process: asyncio.subprocess.Process | None = None
+
+    async def run_source(self) -> None:
+        """启动本轮已配置的来源并等待其正常结束。"""
+        if self._process_factory is not None:
+            process = await self._process_factory()
+            self._source_process = process
+            await self.start_monitor_process(process, stream=self._source_stream)
+            await process.wait()
+        elif self._source_runner is not None:
+            await self._source_runner(self)
+        else:
+            raise ValueError("日志监视器未配置本轮来源")
+
+    @property
+    def source_returncode(self) -> int | None:
+        return (
+            self._source_process.returncode
+            if self._source_process is not None
+            else None
+        )
+
+    async def stop_owned_source(self) -> None:
+        """关闭由监视器创建且尚未退出的日志生产进程。"""
+        if (process := self._source_process) is not None and process.returncode is None:
+            await stop_process(process, kill_tree=True)
 
     async def monitor_file(
         self,

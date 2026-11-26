@@ -1405,8 +1405,6 @@ export type { TaskItem_execution } from './models/TaskItem_execution';
 export type { TaskItem_info } from './models/TaskItem_info';
 export type { TaskItem_scriptsCollection } from './models/TaskItem_scriptsCollection';
 export type { TaskItemDocument } from './models/TaskItemDocument';
-export type { TaskLogAnalysisCursor } from './models/TaskLogAnalysisCursor';
-export type { TaskLogAnalysisPage } from './models/TaskLogAnalysisPage';
 export type { TaskLogAnalysisQuery } from './models/TaskLogAnalysisQuery';
 export { TaskMode } from './models/TaskMode';
 export type { TaskParams } from './models/TaskParams';
