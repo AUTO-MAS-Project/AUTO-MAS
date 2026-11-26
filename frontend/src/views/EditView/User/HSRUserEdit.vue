@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1400">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -22,8 +22,8 @@
       </a-alert>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
+    <template #default>
+      <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <UserAccountHeading
@@ -133,55 +133,53 @@
 
           <!-- 任务配置：「共享」来源编辑共享计划，「独立」来源编辑该用户自己的计划；
                模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
-          <div v-if="controlMode === 'managed'" class="control-mode-content">
-            <ManagedTaskSection
-              :snapshot="managedConfigSnapshot"
-              :task-switch="planForm.TaskSwitch"
-              :saving="isSaving"
-              :loading="managedConfigLoading"
-              :shared="planOwner === 'script'"
-              :cloud="isCloud"
-              :shown-warnings="visibleCapabilityWarnings"
-              :summaries="moduleSummaries"
-              @task-toggle="handleTaskSwitchToggle"
-              @mapping-change="handleManagedMappingChange"
-              @field-change="handleManagedFieldChange"
-              @field-reset="handleManagedFieldReset"
-              @module-reset="handleManagedModuleReset"
-              @clear-invalid-overrides="handleManagedInvalidOverridesClear"
-            >
-              <template #module-extra="{ task, engine, form }">
-                <StageConfigSection
-                  v-if="task.key === 'Daily' && dailyStageEngine"
-                  :form-data="planForm"
-                  :loading="isSaving"
-                  :daily-engine="dailyStageEngine"
-                  :engine-label="engineDisplayName(dailyStageEngine)"
-                  :build-target-label="findEnabledBuildTargetField(engine, form?.fields)?.label"
-                  :stage-options="hsrStageOptions"
-                  :stage-options-loading="hsrStageOptionsLoading"
-                  :stage-options-error="hsrStageOptionsError"
-                  @save="handleFieldSave"
-                />
-              </template>
-            </ManagedTaskSection>
-          </div>
-          <div v-else class="control-mode-content">
-            <DirectControlSection
-              :available-engines="directEngineCards"
-              :cloud="isCloud"
-              :control="formData.Control"
-              :saving="isSaving"
-              @toggle="handleDirectEngineToggle"
-            />
-          </div>
+          <ManagedTaskSection
+            v-if="controlMode === 'managed'"
+            :snapshot="managedConfigSnapshot"
+            :task-switch="planForm.TaskSwitch"
+            :saving="isSaving"
+            :loading="managedConfigLoading"
+            :shared="planOwner === 'script'"
+            :cloud="isCloud"
+            :shown-warnings="visibleCapabilityWarnings"
+            :summaries="moduleSummaries"
+            @task-toggle="handleTaskSwitchToggle"
+            @mapping-change="handleManagedMappingChange"
+            @field-change="handleManagedFieldChange"
+            @field-reset="handleManagedFieldReset"
+            @module-reset="handleManagedModuleReset"
+            @clear-invalid-overrides="handleManagedInvalidOverridesClear"
+          >
+            <template #module-extra="{ task, engine, form }">
+              <StageConfigSection
+                v-if="task.key === 'Daily' && dailyStageEngine"
+                :form-data="planForm"
+                :loading="isSaving"
+                :daily-engine="dailyStageEngine"
+                :engine-label="engineDisplayName(dailyStageEngine)"
+                :build-target-label="findEnabledBuildTargetField(engine, form?.fields)?.label"
+                :stage-options="hsrStageOptions"
+                :stage-options-loading="hsrStageOptionsLoading"
+                :stage-options-error="hsrStageOptionsError"
+                @save="handleFieldSave"
+              />
+            </template>
+          </ManagedTaskSection>
+          <DirectControlSection
+            v-else
+            :available-engines="directEngineCards"
+            :cloud="isCloud"
+            :control="formData.Control"
+            :saving="isSaving"
+            @toggle="handleDirectEngineToggle"
+          />
 
           <!-- 进度（完成态恒按用户记，共享 / 独立来源都显示；历战余响开始日在体力模块设置里） -->
-          <div v-if="formData.Info.Base !== 'native'" class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.progressReset') }}</h3>
-            </div>
-
+          <SectionCard
+            v-if="formData.Info.Base !== 'native'"
+            variant="plain"
+            :title="t('core.edit.progressReset')"
+          >
             <!-- 历战余响进度 -->
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
@@ -257,7 +255,7 @@
                 </a-space>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
 
           <!-- 额外脚本组件 -->
           <ExtraScriptSection
@@ -274,8 +272,8 @@
             @save="handleFieldSave"
           />
         </a-form>
-      </a-card>
-    </ConfigLockPanel>
+      </ConfigLockPanel>
+    </template>
 
     <template #overlay>
       <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
@@ -1278,36 +1276,6 @@ const loadUserData = async () => {
 </script>
 
 <style scoped>
-.user-edit-content {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: none;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
-div.form-section {
-  margin-bottom: 12px;
-  padding: 20px 24px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-}
-
-.section-header {
-  margin-bottom: 12px;
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .hsr-preview-title {
   font-size: 15px;
@@ -1318,15 +1286,6 @@ div.form-section {
 
 .hsr-preview-box {
   margin-bottom: 8px;
-}
-
-.section-header h3 {
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 22px;
-  background: var(--ant-color-primary);
 }
 
 .form-label {

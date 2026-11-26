@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -16,8 +16,8 @@
       />
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
+    <template #default>
+      <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
         <a-form
           ref="formRef"
           :model="formData"
@@ -50,19 +50,17 @@
             />
           </SectionCard>
 
-          <a-row :gutter="24">
-            <a-col :span="24">
-              <GeneralUserConfigurationSection
-                :model-value="formData.Info.Base ?? 'independent'"
-                :plan-mode="formData.Info.PlanMode"
-                :owner="{ scriptId, userId }"
-                :disabled="loading"
-                :saving="configModeSaving"
-                @change="handleConfigModeChange"
-                @plan-change="formData.Info.PlanMode = $event"
-              />
-            </a-col>
-          </a-row>
+          <SectionCard variant="plain">
+            <GeneralUserConfigurationSection
+              :model-value="formData.Info.Base ?? 'independent'"
+              :plan-mode="formData.Info.PlanMode"
+              :owner="{ scriptId, userId }"
+              :disabled="loading"
+              :saving="configModeSaving"
+              @change="handleConfigModeChange"
+              @plan-change="formData.Info.PlanMode = $event"
+            />
+          </SectionCard>
 
           <!-- 额外脚本 -->
           <ExtraScriptSection
@@ -79,8 +77,8 @@
             @save="handleFieldSave"
           />
         </a-form>
-      </a-card>
-    </ConfigLockPanel>
+      </ConfigLockPanel>
+    </template>
 
     <template #overlay>
       <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
@@ -741,8 +739,6 @@ onUnmounted(() => {
   })()
 })
 </script>
-
-<style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */

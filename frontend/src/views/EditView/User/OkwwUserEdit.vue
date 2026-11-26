@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -17,13 +17,13 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserAccountHeading
-            :user-name="formData.userName"
-            :options="{ isEdit, logoSrc: accountIcon }"
-          />
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+      <StateView :loading="pageLoading">
+        <UserAccountHeading
+          :user-name="formData.userName"
+          :options="{ isEdit, logoSrc: accountIcon }"
+        />
+        <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <a-form :model="formData" layout="vertical">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -53,7 +53,6 @@
                   <a-select
                     v-model:value="formData.Notify.PushLogMode"
                     size="large"
-                    class="modern-select"
                     :options="pushLogModeOptions"
                     @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
@@ -98,16 +97,13 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </SectionCard>
-        </a-form>
-      </a-card>
+          </a-form>
+        </SectionCard>
+      </StateView>
 
-      <a-card class="config-card config-source-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.configurationSource') }}</h3>
-            </div>
+      <StateView :loading="pageLoading">
+        <SectionCard variant="plain" :title="t('core.edit.configurationSource')">
+          <a-form :model="formData" layout="vertical">
             <OkwwConfigSource
               :script-id="scriptId"
               :user-id="userId"
@@ -119,32 +115,28 @@
               @base-change="handleConfigModeChange"
               @quick-change="handleQuickConfigChange"
             />
-            <a-row :gutter="24">
-              <a-col :span="24" class="config-actions-tail">
-                <ConfigActionsSection
-                  :base="formData.Info.Base"
-                  script-label="ok-ww"
-                  :hint-override="
-                    formData.Info.IfQuickConfig
-                      ? {
-                          target: t('core.edit.okwwGuiPanelTarget'),
-                          impact: t('core.edit.okwwGuiPanelImpact'),
-                        }
-                      : undefined
-                  "
-                  :disabled="configActionsDisabled"
-                  :config-loading="okwwConfigLoading"
-                  :configuring="showOkwwConfigMask"
-                  :import-loading="okwwImportLoading"
-                  @configure="handleOkwwConfig"
-                  @import-config="handleImportOkwwConfig"
-                  @script-config="handleScriptConfig"
-                />
-              </a-col>
-            </a-row>
-          </div>
-        </a-form>
-      </a-card>
+            <ConfigActionsSection
+              :base="formData.Info.Base"
+              script-label="ok-ww"
+              :hint-override="
+                formData.Info.IfQuickConfig
+                  ? {
+                      target: t('core.edit.okwwGuiPanelTarget'),
+                      impact: t('core.edit.okwwGuiPanelImpact'),
+                    }
+                  : undefined
+              "
+              :disabled="configActionsDisabled"
+              :config-loading="okwwConfigLoading"
+              :configuring="showOkwwConfigMask"
+              :import-loading="okwwImportLoading"
+              @configure="handleOkwwConfig"
+              @import-config="handleImportOkwwConfig"
+              @script-config="handleScriptConfig"
+            />
+          </a-form>
+        </SectionCard>
+      </StateView>
 
       <OkwwAccountPlan
         v-model="formData"
@@ -158,27 +150,17 @@
         @busy="nativeConfigSaving = $event"
       />
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection
-            v-model:form-data="formData"
-            :loading="pageLoading"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+      <a-form :model="formData" layout="vertical" class="config-form">
+        <ExtraScriptSection v-model:form-data="formData" :loading="pageLoading" @save="saveField" />
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="pageLoading"
-            :script-id="scriptId"
-            :user-id="userId"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="pageLoading"
+          :script-id="scriptId"
+          :user-id="userId"
+          @save="saveField"
+        />
+      </a-form>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -245,7 +227,7 @@
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
 import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
@@ -681,32 +663,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-/* 配置文件来源是独立卡片，与页面其它卡片一样自带上下的 24px 卡片间距
-   （卡片默认首尾相接，该卡片上下的 基本信息卡片 / 任务配置 标题会直接贴住卡边）。 */
-.config-source-card {
-  margin: 24px 0;
-}
-
-/* 该卡片只有一个分区，且尾部是配置操作项：卡片自身的 padding 已是底部留白，
-   去掉分区与操作项的尾距，避免卡片底部多出一整块空白。 */
-.config-source-card :deep(.form-section),
-.config-actions-tail :deep(.ant-form-item) {
-  margin-bottom: 0;
-}
-
-.section-header {
-  border-bottom-width: 1px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -732,11 +688,5 @@ onUnmounted(() => {
 
 .okww-preview-box {
   margin-bottom: 4px;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

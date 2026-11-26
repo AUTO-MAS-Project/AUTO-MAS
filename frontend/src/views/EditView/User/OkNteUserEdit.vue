@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -17,13 +17,13 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserAccountHeading
-            :user-name="formData.userName"
-            :options="{ isEdit, logoSrc: accountIcon }"
-          />
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+      <StateView :loading="pageLoading">
+        <UserAccountHeading
+          :user-name="formData.userName"
+          :options="{ isEdit, logoSrc: accountIcon }"
+        />
+        <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <a-form :model="formData" layout="vertical">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -121,16 +121,15 @@
                   <a-select
                     v-model:value="formData.Notify.PushLogMode"
                     size="large"
-                    class="modern-select"
                     :options="pushLogModeOptions"
                     @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
             </a-row>
-          </SectionCard>
-        </a-form>
-      </a-card>
+          </a-form>
+        </SectionCard>
+      </StateView>
 
       <OkNteTaskConfigSection
         v-model:task-index="formData.Task.TaskIndex"
@@ -142,18 +141,15 @@
         @change="handleTaskIndexChange"
       />
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('core.edit.okNteConfiguration') }}</h3>
-        <a-space>
+      <SectionCard variant="plain" :title="t('core.edit.okNteConfiguration')">
+        <template #actions>
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
             {{ t('core.edit.configRestoreTitle') }}
           </a-button>
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
+        </template>
         <OkNteConfigEditor
-          v-if="activeUserId"
+          v-if="formData.Info.IfQuickConfig && activeUserId"
           ref="configEditor"
           :script-id="scriptId"
           :user-id="activeUserId"
@@ -161,19 +157,17 @@
           @saving-change="configEditorSaving = $event"
           @saved="handleConfigSaved"
         />
-      </a-card>
+      </SectionCard>
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="pageLoading"
-            :script-id="scriptId"
-            :user-id="activeUserId"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+      <a-form :model="formData" layout="vertical" class="config-form">
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="pageLoading"
+          :script-id="scriptId"
+          :user-id="activeUserId"
+          @save="saveField"
+        />
+      </a-form>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -248,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-nte.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -650,8 +644,6 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped src="@/styles/userEditForm.css"></style>
-
 <style scoped>
 .form-label {
   display: flex;
@@ -678,11 +670,5 @@ onUnmounted(() => {
 
 .oknte-preview-box {
   margin-bottom: 4px;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>
