@@ -194,7 +194,7 @@ async def test_prefetch_dispatch_waits_for_real_download_cleanup(
     scheduler, monkeypatch, tmp_path, cancel
 ):
     """通过真实调度验证预下载复查发生在配置锁内，任务结束或取消时等待下载停写并释放引用。"""
-    from app.core.downloads import DownloadManager
+    from app.core.downloads import DownloadManager, download_method, download_observer
     from app.core.notify.lifecycle import NotificationTaskBase
     from app.models.schema import DownloadRequest
     from app.task import prefetch
@@ -206,6 +206,12 @@ async def test_prefetch_dispatch_waits_for_real_download_cleanup(
 
     async def transfer(request, path, progress):
         """模拟可完成或等待取消的下载，并在清理阶段等待测试放行以检查真实停写时机。"""
+        if observer := download_observer.get():
+            token = download_method.set("FluxDown")
+            try:
+                observer(path, 1, 2, 1)
+            finally:
+                download_method.reset(token)
         started.set()
         try:
             if cancel:
@@ -255,6 +261,17 @@ async def test_prefetch_dispatch_waits_for_real_download_cleanup(
         await asyncio.wait_for(started.wait(), 3)
         if cancel:
             await asyncio.wait_for(lock_checked.wait(), 3)
+
+            async def visible_prefetch():
+                while True:
+                    snapshot = run.task_info.current.prefetch
+                    if snapshot is not None and snapshot.method:
+                        return snapshot
+                    await asyncio.sleep(0.01)
+
+            snapshot = await asyncio.wait_for(visible_prefetch(), 3)
+            assert snapshot.target == run.task_info.script_list[0].info.name
+            assert snapshot.method == "FluxDown"
             stop = asyncio.create_task(run.stop())
             await asyncio.wait_for(cleanup.wait(), 3)
             assert not stop.done()
