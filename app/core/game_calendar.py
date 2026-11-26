@@ -34,6 +34,7 @@ SCRIPT_CALENDAR_GAMES = {
         "OkNte": "nte",
         "BAAH": "bluearchive",
     }.items()
+    if script in CLASS_BOOK
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}
 

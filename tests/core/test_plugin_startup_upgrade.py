@@ -932,8 +932,7 @@ async def test_first_restart_adds_host_library_missing_from_pending(
 async def test_first_restart_without_library_still_starts_and_explains(
     isolated_app_paths, monkeypatch, tmp_path, cause
 ):
-    """补不上解析库时照常换入启动；原因记下来，MaaEnd 运行时报错带上原因和恢复办法。"""
-    from app.task.MaaEnd import mfw_parse
+    """补不上解析库时照常换入启动；原因与恢复办法记在 ops.library_failure 里。"""
 
     monkeypatch.setattr(ops, "library_failure", None)
     site, pending = await _pending_without_library(
@@ -949,16 +948,14 @@ async def test_first_restart_without_library_still_starts_and_explains(
     assert _installed_versions(site) == pending
     assert site.with_suffix(".previous").is_dir()
     assert environment.read_installation().progress.state == "applying"
-    with pytest.raises(RuntimeError) as raised:
-        mfw_parse._module("maafw_interface_absent_probe")
-    message = str(raised.value)
+    reason, remedy = ops.library_failure
     if cause == "offline":
-        assert "网络不通或镜像没有响应" in message
-        assert "联网后重启 AUTO-MAS 会自动安装" in message
+        assert "网络不通或镜像没有响应" in reason
+        assert "自动安装" in remedy
     else:
-        assert "依赖解不开，涉及 auto-mas-maafw-interface" in message
-        assert "重启 AUTO-MAS 会再尝试安装" in message
-    assert str(tmp_path) not in message
+        assert "依赖解不开，涉及 auto-mas-maafw-interface" in reason
+        assert "重启 AUTO-MAS 会再尝试安装" in remedy
+    assert str(tmp_path) not in reason + remedy
 
 
 @pytest.mark.asyncio

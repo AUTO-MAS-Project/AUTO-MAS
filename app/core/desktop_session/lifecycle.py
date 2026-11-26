@@ -32,7 +32,6 @@ def _reason_probe(
     from app.models.config import (
         GeneralConfig,
         HSRConfig,
-        MaaEndConfig,
         OkNteConfig,
         OkwwConfig,
         ScriptEntry,
@@ -48,23 +47,6 @@ def _reason_probe(
         if config.Game.Enabled and config.Game.Type == "Emulator":
             return "unsupported_config"
         return None
-    if isinstance(config, MaaEndConfig):
-        from app.task.MaaEnd.resource_loader import load_maaend_controller_protocol
-
-        path = config.Info.Path
-        if path is None:
-            return "unsupported_config"
-        controller = str(config.Game.ControllerType).strip()
-
-        def check_maaend() -> "DesktopSessionReason | None":
-            try:
-                if load_maaend_controller_protocol(path, controller) == "Win32":
-                    return None
-            except (OSError, KeyError, ValueError):
-                return "unsupported_config"
-            return "unsupported_config"
-
-        return check_maaend
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return None
     if isinstance(config, ZzzOdConfig):

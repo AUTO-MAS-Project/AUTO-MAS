@@ -144,7 +144,11 @@ async def install_adapter_plugin(name: str, package: str) -> None:
     """确保适配插件已安装、加载并启用。"""
     from app.core import Config, Plugin
     from app.models.config import PluginMeta
+    from app.plugin.runtime import discover
 
+    # 本地源码插件不会出现在旧注册表里；先按当前来源发现一次，避免把开发工程当成
+    # 未安装而去 PyPI 拉发行包（install 会拒绝与本地工程同名）。
+    await discover.refresh()
     record = Config.plugin_registry.by_name(name)
     minimum = _MINIMUM_ADAPTER_VERSIONS.get(name)
     needs_upgrade = (

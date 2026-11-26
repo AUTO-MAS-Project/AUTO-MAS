@@ -50,7 +50,7 @@ T = TypeVar("T")
 # 操作与标签过滤在 fastapi-mcp 0.4.0 中取并集，因此只用操作白名单。
 # 保留既有工具名；删除、清理、发布、登录和应用更新接口不自动暴露。
 MCP_INCLUDED_OPERATIONS = (
-    # 通用配置、MaaEnd 动态选项与试运行
+    # 通用配置与试运行
     "add_script_api_scripts_add_post",
     "get_script_api_scripts_get_post",
     "update_script_api_scripts_update_post",
@@ -58,7 +58,6 @@ MCP_INCLUDED_OPERATIONS = (
     "get_user_api_scripts_user_get_post",
     "update_user_api_scripts_user_update_post",
     "import_script_config_file_api_scripts_config_import_post",
-    "get_maaend_options_api_scripts_maaend_options_post",
     "get_plan_combox_api_info_combox_plan_post",
     "game_types_api_games_types_post",
     "get_games_api_games_get_post",
@@ -298,15 +297,7 @@ def _validate_mcp(
         if name in tool_names
     }
     for tool in mcp.tools:
-        if tool.name == "get_maaend_options_api_scripts_maaend_options_post":
-            tool.description = (tool.description or "") + (
-                "\n\n先创建 MaaEnd 托管并设置 Info.Path 为已安装的 MaaEnd 目录，"
-                "再用该托管的 scriptId 查询动态选项。"
-                "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
-                "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
-                "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
-            )
-        elif tool.name == "get_task_status_api_dispatch_task__task_id__get":
+        if tool.name == "get_task_status_api_dispatch_task__task_id__get":
             tool.description = (tool.description or "") + (
                 "\n\n按 taskId 单点查询一个任务：运行中返回 running，已结束返回"
                 "success/error/cancelled 及结果文本与错误信息，不返回日志。"
