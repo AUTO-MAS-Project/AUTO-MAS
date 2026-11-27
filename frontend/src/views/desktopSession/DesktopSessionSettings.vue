@@ -61,7 +61,8 @@ const rows = computed(() =>
   targetRows.value.map(row => ({
     ...row,
     kindLabel: row.kind ? text(row.kind === 'queue' ? 'queueLabel' : 'scriptLabel') : undefined,
-    issueText: row.issue ? text(row.issue) : undefined,
+    // 标签里是短语，不带句末标点（词表里这几句同时用在完整的提示句里）
+    issueText: row.issue ? text(row.issue).replace(/[。.]$/, '') : undefined,
   }))
 )
 
@@ -185,7 +186,10 @@ onMounted(async () => {
               <div class="target-main">
                 <span class="target-name">
                   <a-tag v-if="item.kindLabel" class="target-kind">{{ item.kindLabel }}</a-tag>
-                  <span class="target-label" :title="item.name">{{ item.name }}</span>
+                  <!-- 查不到名字时（已删除，或名单还没读回）不把 uid 当名字显示 -->
+                  <span v-if="item.name !== item.id" class="target-label" :title="item.name">{{
+                    item.name
+                  }}</span>
                 </span>
                 <a-tag v-if="item.issueText" color="warning" class="target-issue">
                   {{ item.issueText }}
