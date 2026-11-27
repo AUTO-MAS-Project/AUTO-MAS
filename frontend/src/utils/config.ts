@@ -17,10 +17,10 @@ export interface FrontendConfig {
 
   /** 设置页右侧分区目录的显示偏好。 */
   settingsShowNavigation?: boolean
-  /** 旧版「打开分身时一并启动」的选择；清单已移到后端，只在迁移时读取，原样保留以便降级。 */
+  /** 旧版「打开分身时一并启动」的选择；已移到后端 StartOnOpen，只在迁移时读取，原样保留以便降级。 */
   desktopSessionQueueIds?: string[]
-  /** 旧选择已并入后端清单；只在设置保存成功后置位。 */
-  desktopSessionQueueIdsMigrated?: boolean
+  /** 旧选择已并入 StartOnOpen；只在设置保存成功后置位。 */
+  desktopSessionStartOnOpenMigrated?: boolean
   /** 桌面分身的分辨率；单独启动托管时自动连接也沿用它。 */
   desktopSessionResolution?: '1080p' | 'primary'
   /** 桌面分身的最小化方式；单独启动托管时自动连接也沿用它。 */

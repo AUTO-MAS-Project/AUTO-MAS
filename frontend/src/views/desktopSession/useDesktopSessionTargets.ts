@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch, type ShallowRef } from 'vue'
 import { GetService, PowerSignal, type GlobalConfig, type ScriptIndexItem } from '@/api'
 import {
   fetchTaskTargetSnapshot,
@@ -15,12 +15,23 @@ type Reason = NonNullable<ScriptIndexItem['desktopSessionReason']>
 /** 词表 bootstrap.desktopSession 下的键，由卡片翻译。 */
 export type DesktopSessionTargetIssue = 'powerAction' | 'targetMissing' | `reasons.${Reason}`
 
+/** 托管行的启动方式：随分身启动（StartOnOpen）、单独启动（Targets）或两者。 */
+export type DesktopSessionLaunchMode = 'startOnOpen' | 'standalone' | 'both'
+
+type ListKey = 'Targets' | 'StartOnOpen'
+
 export interface DesktopSessionTargetRow {
   id: string
   kind?: TaskTarget['kind']
   name: string
   issue?: DesktopSessionTargetIssue
   launchable: boolean
+  /** 在单独启动清单 Targets 里。 */
+  standalone: boolean
+  /** 在一并启动清单 StartOnOpen 里。 */
+  startOnOpen: boolean
+  /** 队列和托管名单里认得这一条。 */
+  known: boolean
 }
 
 interface Capability {
@@ -32,8 +43,10 @@ const hasPowerAction = (afterAccomplish?: PowerSignal) =>
   Boolean(afterAccomplish && afterAccomplish !== PowerSignal.NO_ACTION)
 
 /**
- * 桌面分身清单：存在后端 GlobalConfig.DesktopSession.Targets，写入走设置页的保存链路。
- * 卡片显示时读取一次队列和托管，逐个单查清单里托管的分身能力，并把旧键一次性并入清单。
+ * 桌面分身的两份清单，都存在后端 GlobalConfig.DesktopSession，写入走设置页的保存链路：
+ * Targets 是单独启动时进分身的托管，StartOnOpen 是「打开分身并启动任务」一并派发的队列和托管。
+ * 卡片显示时读取一次队列和托管，逐个单查两份清单里托管的分身能力，
+ * 并把旧版卡片勾选一次性并入 StartOnOpen（旧的执行会话由后端并入 Targets）。
  */
 export function useDesktopSessionTargets(options: {
   settings: () => GlobalConfig
@@ -48,18 +61,27 @@ export function useDesktopSessionTargets(options: {
   const pendingCapabilities = new Set<string>()
 
   // 保存未落盘前先按草稿显示，连续增删时以最新草稿为准；保存失败回到设置里的值。
-  const draft = shallowRef<string[] | null>(null)
-  const targets = computed(
-    () => draft.value ?? options.settings().DesktopSession?.Targets ?? ([] as string[])
-  )
-  const atLimit = computed(() => targets.value.length >= MAX_DESKTOP_SESSION_TARGETS)
+  const drafts: Record<ListKey, ShallowRef<string[] | null>> = {
+    Targets: shallowRef(null),
+    StartOnOpen: shallowRef(null),
+  }
+  const list = (key: ListKey) =>
+    computed(() => drafts[key].value ?? options.settings().DesktopSession?.[key] ?? [])
+  const standalone = list('Targets')
+  const startOnOpen = list('StartOnOpen')
+  // 先按一并启动的派发顺序，再接只在单独启动清单里的托管。
+  const ids = computed(() => [...new Set([...startOnOpen.value, ...standalone.value])])
+  const atLimit = computed(() => ids.value.length >= MAX_DESKTOP_SESSION_TARGETS)
 
   const candidates = computed(() => {
-    const listed = new Set(targets.value)
+    const listed = new Set(ids.value)
     return (snapshot.value?.targets ?? [])
       .filter(target => !listed.has(target.value.toLowerCase()))
       .map(target => ({ target, powerAction: hasPowerAction(target.afterAccomplish) }))
   })
+
+  const findTarget = (id: string) =>
+    snapshot.value?.targets.find(item => item.value.toLowerCase() === id)
 
   const rows = computed<DesktopSessionTargetRow[]>(() => {
     const known = new Map(
@@ -68,7 +90,9 @@ export function useDesktopSessionTargets(options: {
     const unavailable = new Map(
       (snapshot.value?.unavailableScripts ?? []).map(item => [item.uid.toLowerCase(), item.name])
     )
-    return targets.value.map(id => {
+    const inStandalone = new Set(standalone.value)
+    const inStartOnOpen = new Set(startOnOpen.value)
+    return ids.value.map(id => {
       const target = known.get(id)
       const capability = capabilities.value[id]
       const unavailableName = unavailable.get(id)
@@ -84,10 +108,16 @@ export function useDesktopSessionTargets(options: {
         name: target?.name ?? unavailableName ?? id,
         issue,
         launchable: Boolean(target) && !issue,
+        standalone: inStandalone.has(id),
+        startOnOpen: inStartOnOpen.has(id),
+        known: Boolean(target),
       }
     })
   })
-  const launchableIds = computed(() => rows.value.filter(row => row.launchable).map(row => row.id))
+  // 一并启动交给后端预检：不支持分身的托管弹拆分确认，带电源操作的队列由后端跳过。
+  const launchIds = computed(() =>
+    rows.value.filter(row => row.startOnOpen && row.known).map(row => row.id)
+  )
 
   async function load() {
     loading.value = true
@@ -111,13 +141,17 @@ export function useDesktopSessionTargets(options: {
   }
 
   // 托管能力随配置变化，每次显示卡片重新单查；最多同时查 4 个。
-  async function refreshCapabilities(ids: string[]) {
-    const queue = ids.filter(id => !(id in capabilities.value) && !pendingCapabilities.has(id))
+  async function refreshCapabilities(scriptIds: string[]) {
+    const queue = scriptIds.filter(
+      id => !(id in capabilities.value) && !pendingCapabilities.has(id)
+    )
     queue.forEach(id => pendingCapabilities.add(id))
     const worker = async () => {
       for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
         try {
-          capabilities.value = { ...capabilities.value, [id]: await readCapability(id) }
+          // 先等结果再展开：并发的单查各自写回，不互相覆盖。
+          const capability = await readCapability(id)
+          capabilities.value = { ...capabilities.value, [id]: capability }
         } catch {
           // 读不到就不标原因，单独启动时后端仍会拦下不支持的托管。
         } finally {
@@ -129,62 +163,124 @@ export function useDesktopSessionTargets(options: {
   }
 
   watch(
-    [targets, snapshot],
+    [ids, snapshot],
     () => {
       const scripts = new Set(
         (snapshot.value?.targets ?? [])
           .filter(target => target.kind === 'script')
           .map(target => target.value.toLowerCase())
       )
-      void refreshCapabilities(targets.value.filter(id => scripts.has(id)))
+      void refreshCapabilities(ids.value.filter(id => scripts.has(id)))
     },
     { immediate: true }
   )
 
-  async function saveTargets(next: string[]): Promise<boolean> {
-    draft.value = next
+  async function saveList(key: ListKey, next: string[]): Promise<boolean> {
+    drafts[key].value = next
     let saved = false
     try {
-      saved = await options.save('DesktopSession', 'Targets', next)
+      saved = await options.save('DesktopSession', key, next)
     } catch {
       // 保存失败由设置页统一提示。
     }
-    if (draft.value === next) draft.value = null
+    if (drafts[key].value === next) drafts[key].value = null
     return saved
   }
 
-  /** 加入清单；托管先单查分身能力，不支持就不加入。 */
-  async function add(value: unknown): Promise<boolean> {
-    if (typeof value !== 'string' || atLimit.value) return false
-    const id = value.toLowerCase()
-    const target = snapshot.value?.targets.find(item => item.value.toLowerCase() === id)
-    if (!target || targets.value.includes(id) || hasPowerAction(target.afterAccomplish))
-      return false
-    if (target.kind === 'script') {
-      adding.value = true
+  /** 单查托管能力（fresh 为 false 时先用已查到的），不支持就提示并返回 false。 */
+  async function ensureSupported(target: TaskTarget, fresh: boolean): Promise<boolean> {
+    const id = target.value.toLowerCase()
+    let capability = fresh ? undefined : capabilities.value[id]
+    if (!capability) {
       try {
-        const capability = await readCapability(target.value)
-        capabilities.value = { ...capabilities.value, [id]: capability }
-        if (!capability.supported) {
-          options.onAddRejected(`reasons.${capability.reason}`)
-          return false
-        }
+        capability = await readCapability(target.value)
       } catch {
         options.onLoadFailed()
         return false
-      } finally {
-        adding.value = false
       }
+      capabilities.value = { ...capabilities.value, [id]: capability }
     }
-    if (targets.value.includes(id)) return false
-    return saveTargets([...targets.value, id])
+    if (!capability.supported) options.onAddRejected(`reasons.${capability.reason}`)
+    return capability.supported
   }
 
-  function remove(id: string): Promise<boolean> {
-    return saveTargets(targets.value.filter(item => item !== id))
+  /** 加入清单：队列只进一并启动；托管先单查分身能力，不支持就不加入，支持则两者都进。 */
+  async function add(value: unknown): Promise<boolean> {
+    if (typeof value !== 'string' || atLimit.value) return false
+    const id = value.toLowerCase()
+    const target = findTarget(id)
+    if (!target || ids.value.includes(id) || hasPowerAction(target.afterAccomplish)) return false
+    if (target.kind === 'queue') return saveList('StartOnOpen', [...startOnOpen.value, id])
+    adding.value = true
+    try {
+      // 加入时总是重查：能力随配置变化，查到的可能已经过期。
+      if (!(await ensureSupported(target, true)) || ids.value.includes(id)) return false
+    } finally {
+      adding.value = false
+    }
+    // 先存一并启动再存单独启动：后一次失败时停在单独启动不进分身的一边。
+    if (!(await saveList('StartOnOpen', [...startOnOpen.value, id]))) return false
+    return saveList('Targets', [...standalone.value, id])
   }
 
-  // 旧版「打开分身时一并启动」的选择在卡片首次显示时并入清单；设置保存成功后才置迁移标记。
+  /**
+   * 切换托管行的启动方式。按「先撤 Targets → 再改 StartOnOpen → 最后加 Targets」写，
+   * 任一步失败就停，半途停下时单独启动留在主会话。
+   */
+  async function setMode(id: string, mode: DesktopSessionLaunchMode): Promise<boolean> {
+    const target = findTarget(id)
+    if (target?.kind !== 'script' || adding.value) return false
+    const wantStandalone = mode !== 'startOnOpen'
+    const wantStartOnOpen = mode !== 'standalone'
+    adding.value = true
+    try {
+      if (
+        wantStandalone &&
+        !standalone.value.includes(id) &&
+        !(await ensureSupported(target, false))
+      )
+        return false
+      if (
+        !wantStandalone &&
+        standalone.value.includes(id) &&
+        !(await saveList(
+          'Targets',
+          standalone.value.filter(item => item !== id)
+        ))
+      )
+        return false
+      if (wantStartOnOpen !== startOnOpen.value.includes(id)) {
+        const next = wantStartOnOpen
+          ? [...startOnOpen.value, id]
+          : startOnOpen.value.filter(item => item !== id)
+        if (!(await saveList('StartOnOpen', next))) return false
+      }
+      if (wantStandalone && !standalone.value.includes(id))
+        return saveList('Targets', [...standalone.value, id])
+      return true
+    } finally {
+      adding.value = false
+    }
+  }
+
+  async function remove(id: string): Promise<boolean> {
+    if (
+      standalone.value.includes(id) &&
+      !(await saveList(
+        'Targets',
+        standalone.value.filter(item => item !== id)
+      ))
+    )
+      return false
+    if (!startOnOpen.value.includes(id)) return true
+    return saveList(
+      'StartOnOpen',
+      startOnOpen.value.filter(item => item !== id)
+    )
+  }
+
+  // 旧版「打开分身时一并启动」的选择在卡片首次显示时并入 StartOnOpen，永不写 Targets；
+  // 设置保存成功后才置迁移标记。
   let migrationStarted = false
   async function migrateLegacySelection(loaded: TaskTargetSnapshot) {
     if (migrationStarted) return
@@ -197,17 +293,17 @@ export function useDesktopSessionTargets(options: {
     } catch {
       return
     }
-    if (config.desktopSessionQueueIdsMigrated === true) return
+    if (config.desktopSessionStartOnOpenMigrated === true) return
     const known = new Set(
       [...loaded.targets.map(target => target.value), ...loaded.unavailableScriptIds].map(id =>
         id.toLowerCase()
       )
     )
-    const current = targets.value
+    const current = startOnOpen.value
     const merged = mergeLegacyDesktopSessionTargets(current, config.desktopSessionQueueIds, known)
-    if (merged.length !== current.length && !(await saveTargets(merged))) return
+    if (merged.length !== current.length && !(await saveList('StartOnOpen', merged))) return
     try {
-      await saveConfig({ desktopSessionQueueIdsMigrated: true })
+      await saveConfig({ desktopSessionStartOnOpenMigrated: true })
     } catch {
       // 标记没写上时下次再并一次，重复的 id 会被去重。
     }
@@ -225,13 +321,15 @@ export function useDesktopSessionTargets(options: {
     snapshot,
     loading,
     adding,
-    targets,
+    standalone,
+    startOnOpen,
     atLimit,
     candidates,
     rows,
-    launchableIds,
+    launchIds,
     load,
     add,
+    setMode,
     remove,
   }
 }

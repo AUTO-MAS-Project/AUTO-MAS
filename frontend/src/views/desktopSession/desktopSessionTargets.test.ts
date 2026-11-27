@@ -3,7 +3,7 @@ import { mergeLegacyDesktopSessionTargets } from './desktopSessionTargets'
 
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`
 
-describe('旧的桌面分身选择并入清单', () => {
+describe('旧的桌面分身选择并入一并启动清单', () => {
   it('只剔除确定已删除的 id，插件不可用的托管保留，顺序沿用旧选择', () => {
     const queue = id(1)
     const unavailable = id(2)
@@ -20,7 +20,7 @@ describe('旧的桌面分身选择并入清单', () => {
     ).toEqual([script, queue, unavailable])
   })
 
-  it('旧键缺失或不是数组时原样返回清单', () => {
+  it('旧键缺失或不是数组时原样返回一并启动清单', () => {
     expect(mergeLegacyDesktopSessionTargets([id(1)], undefined, new Set())).toEqual([id(1)])
     expect(mergeLegacyDesktopSessionTargets([id(1)], 'x', new Set([id(2)]))).toEqual([id(1)])
   })

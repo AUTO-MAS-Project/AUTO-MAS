@@ -8,12 +8,14 @@ import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import { getConfig, saveConfig } from '@/utils/config'
 import type { SettingChangeHandler } from '@/views/setting/settingTypes'
-import { useDesktopSessionTargets } from './useDesktopSessionTargets'
+import { useDesktopSessionTargets, type DesktopSessionLaunchMode } from './useDesktopSessionTargets'
 import type { DesktopSessionRequest } from '../../../electron/services/desktopSessionProtocol'
 
 /**
  * 设置 → 功能里的桌面分身卡片：集中管理在分身里跑的队列和托管。
- * 清单存在后端 GlobalConfig.DesktopSession.Targets，读写走设置页的保存链路；
+ * 两份清单存在后端 GlobalConfig.DesktopSession，读写走设置页的保存链路：
+ * Targets 是单独启动时进分身的托管，StartOnOpen 是「打开分身并启动任务」一并派发的队列和托管；
+ * 托管行用下拉选其一或两者，队列只在 StartOnOpen 里。
  * 分辨率与最小化方式只有 Electron 用，存在 frontend_config。
  */
 const props = defineProps<{
@@ -35,9 +37,10 @@ const {
   atLimit,
   candidates,
   rows: targetRows,
-  launchableIds,
+  launchIds,
   load: loadTargets,
   add: addTarget,
+  setMode,
   remove: removeTarget,
 } = useDesktopSessionTargets({
   settings: () => props.settings,
@@ -57,9 +60,23 @@ const addOptions = computed(() =>
   })
 )
 
+const launchModeOptions = computed(() =>
+  (['startOnOpen', 'standalone', 'both'] as const).map(value => ({
+    value,
+    label: text(
+      { startOnOpen: 'runStartOnOpen', standalone: 'runStandalone', both: 'runBoth' }[value]
+    ),
+  }))
+)
+
 const rows = computed(() =>
   targetRows.value.map(row => ({
     ...row,
+    launchMode: (row.standalone && row.startOnOpen
+      ? 'both'
+      : row.standalone
+        ? 'standalone'
+        : 'startOnOpen') as DesktopSessionLaunchMode,
     kindLabel: row.kind ? text(row.kind === 'queue' ? 'queueLabel' : 'scriptLabel') : undefined,
     // 标签里是短语，不带句末标点（词表里这几句同时用在完整的提示句里）
     issueText: row.issue ? text(row.issue).replace(/[。.]$/, '') : undefined,
@@ -170,6 +187,16 @@ onMounted(async () => {
           <template #renderItem="{ item }">
             <a-list-item>
               <template #actions>
+                <a-select
+                  v-if="item.kind === 'script'"
+                  size="small"
+                  class="mode-select"
+                  :value="item.launchMode"
+                  :options="launchModeOptions"
+                  :disabled="!item.known || adding"
+                  :aria-label="text('launchMode')"
+                  @change="(value: DesktopSessionLaunchMode) => setMode(item.id, value)"
+                />
                 <a-button
                   type="link"
                   size="small"
@@ -212,9 +239,9 @@ onMounted(async () => {
         </a-button>
         <a-button
           type="primary"
-          :disabled="supported !== true || starting !== null || !launchableIds.length"
+          :disabled="supported !== true || starting !== null || !launchIds.length"
           :loading="starting === 'all'"
-          @click="open(launchableIds, 'all')"
+          @click="open(launchIds, 'all')"
         >
           {{ text('openWithTasks') }}
         </a-button>
@@ -248,6 +275,10 @@ onMounted(async () => {
 .target-list :deep(.ant-list-item-action) {
   flex: 0 0 auto;
   margin-inline-start: 0;
+}
+
+.mode-select {
+  width: 112px;
 }
 
 .target-main {

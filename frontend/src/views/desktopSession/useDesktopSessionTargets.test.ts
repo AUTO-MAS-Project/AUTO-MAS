@@ -65,17 +65,22 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+type ListKey = 'Targets' | 'StartOnOpen'
+
 function setup(
   options: {
     targets?: string[]
+    startOnOpen?: string[]
     config?: Partial<FrontendConfig>
-    save?: (next: string[]) => boolean
+    save?: (key: ListKey, next: string[]) => boolean
   } = {}
 ) {
-  const settings = reactive<GlobalConfig>({ DesktopSession: { Targets: options.targets ?? [] } })
-  const save = vi.fn(async (_category: string, _key: string, next: string[]) => {
-    const ok = options.save?.(next) ?? true
-    if (ok) settings.DesktopSession!.Targets = next
+  const settings = reactive<GlobalConfig>({
+    DesktopSession: { Targets: options.targets ?? [], StartOnOpen: options.startOnOpen ?? [] },
+  })
+  const save = vi.fn(async (_category: string, key: ListKey, next: string[]) => {
+    const ok = options.save?.(key, next) ?? true
+    if (ok) settings.DesktopSession![key] = next
     return ok
   })
   const rejected = vi.fn()
@@ -83,7 +88,7 @@ function setup(
   mocks.script.mockImplementation(({ scriptId }: { scriptId: string }) => capability(scriptId))
   mocks.getConfig.mockResolvedValue({
     desktopSessionQueueIds: [],
-    desktopSessionQueueIdsMigrated: true,
+    desktopSessionStartOnOpenMigrated: true,
     ...options.config,
   })
   mocks.saveConfig.mockResolvedValue(undefined)
@@ -107,41 +112,90 @@ const settle = async () => {
   }
 }
 
+const savedKeys = (save: ReturnType<typeof setup>['save']) => save.mock.calls.map(call => call[1])
+
 describe('桌面分身清单', () => {
-  it('旧键只并入一次：剔除已删除的 id，保留插件不可用的托管，保存成功后才置标记', async () => {
+  // 旧版两个选择各自独立：执行会话由后端并入 Targets，卡片勾选由这里并入 StartOnOpen。
+  it.each([
+    ['main', false],
+    ['main', true],
+    ['desktop', false],
+    ['desktop', true],
+  ] as const)(
+    '迁移前后两个入口的派发判断：旧执行会话 %s、旧卡片勾选 %s',
+    async (legacySession, legacyCard) => {
+      const absorbed = legacySession === 'desktop' ? [SCRIPT] : []
+      const { card, save } = setup({
+        targets: absorbed,
+        config: {
+          desktopSessionQueueIds: legacyCard ? [SCRIPT] : [],
+          desktopSessionStartOnOpenMigrated: undefined,
+        },
+      })
+      await card.load()
+      await settle()
+
+      // 单独启动只看 Targets：迁移不动它。
+      expect(card.standalone.value).toEqual(absorbed)
+      expect(savedKeys(save)).not.toContain('Targets')
+      // 卡片全部启动只看 StartOnOpen：只承接旧卡片勾选。
+      expect(card.launchIds.value.includes(SCRIPT)).toBe(legacyCard)
+      const row = card.rows.value.find(item => item.id === SCRIPT)
+      expect(row && [row.standalone, row.startOnOpen]).toEqual(
+        legacySession === 'main' && !legacyCard
+          ? undefined
+          : [legacySession === 'desktop', legacyCard]
+      )
+      if (legacyCard) {
+        expect(save).toHaveBeenCalledTimes(1)
+        expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [SCRIPT])
+      } else {
+        expect(save).not.toHaveBeenCalled()
+      }
+      expect(mocks.saveConfig).toHaveBeenCalledWith({ desktopSessionStartOnOpenMigrated: true })
+
+      mocks.getConfig.mockResolvedValue({
+        desktopSessionQueueIds: legacyCard ? [SCRIPT] : [],
+        desktopSessionStartOnOpenMigrated: true,
+      })
+      const calls = save.mock.calls.length
+      await card.load()
+      await settle()
+      expect(save).toHaveBeenCalledTimes(calls)
+    }
+  )
+
+  it('旧键只并入一并启动清单：剔除已删除的 id，保留插件不可用的托管', async () => {
     const { card, save } = setup({
       targets: [SCRIPT],
       config: {
         desktopSessionQueueIds: [QUEUE.toUpperCase(), DELETED, DETACHED],
-        desktopSessionQueueIdsMigrated: undefined,
+        desktopSessionStartOnOpenMigrated: undefined,
       },
     })
     await card.load()
     await settle()
 
     expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith('DesktopSession', 'Targets', [SCRIPT, QUEUE, DETACHED])
-    expect(mocks.saveConfig).toHaveBeenCalledWith({ desktopSessionQueueIdsMigrated: true })
-
-    await card.load()
-    await settle()
-    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [QUEUE, DETACHED])
+    expect(card.standalone.value).toEqual([SCRIPT])
+    expect(mocks.saveConfig).toHaveBeenCalledWith({ desktopSessionStartOnOpenMigrated: true })
   })
 
-  it('设置保存失败时不置迁移标记，清单回到原值', async () => {
+  it('一并启动清单保存失败时不置迁移标记，清单回到原值', async () => {
     const { card, save } = setup({
-      config: { desktopSessionQueueIds: [QUEUE], desktopSessionQueueIdsMigrated: false },
+      config: { desktopSessionQueueIds: [QUEUE], desktopSessionStartOnOpenMigrated: false },
       save: () => false,
     })
     await card.load()
     await settle()
 
-    expect(save).toHaveBeenCalledWith('DesktopSession', 'Targets', [QUEUE])
+    expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [QUEUE])
     expect(mocks.saveConfig).not.toHaveBeenCalled()
-    expect(card.targets.value).toEqual([])
+    expect(card.startOnOpen.value).toEqual([])
   })
 
-  it('不支持分身的托管加不进清单，受支持的托管和队列追加到末尾', async () => {
+  it('不支持分身的托管加不进清单；托管加入两份清单，队列只进一并启动', async () => {
     const { card, save, rejected } = setup()
     await card.load()
 
@@ -152,17 +206,24 @@ describe('桌面分身清单', () => {
 
     await expect(card.add(SCRIPT.toUpperCase())).resolves.toBe(true)
     await expect(card.add(QUEUE)).resolves.toBe(true)
-    expect(save).toHaveBeenLastCalledWith('DesktopSession', 'Targets', [SCRIPT, QUEUE])
+    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
+      ['StartOnOpen', [SCRIPT]],
+      ['Targets', [SCRIPT]],
+      ['StartOnOpen', [SCRIPT, QUEUE]],
+    ])
     expect(card.candidates.value.map(item => item.target.value)).toEqual([POWER_QUEUE, UNSUPPORTED])
 
+    save.mockClear()
     await card.remove(SCRIPT)
-    expect(save).toHaveBeenLastCalledWith('DesktopSession', 'Targets', [QUEUE])
+    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
+      ['Targets', []],
+      ['StartOnOpen', [QUEUE]],
+    ])
   })
 
-  it('逐行标出问题，只有没问题的条目能启动', async () => {
-    const { card } = setup({
-      targets: [QUEUE, POWER_QUEUE, SCRIPT, UNSUPPORTED, DETACHED, DELETED],
-    })
+  it('逐行标出问题；全部启动交给后端预检，只排除认不出的条目', async () => {
+    const all = [QUEUE, POWER_QUEUE, SCRIPT, UNSUPPORTED, DETACHED, DELETED]
+    const { card } = setup({ startOnOpen: all })
     await card.load()
     await settle()
 
@@ -174,6 +235,59 @@ describe('桌面分身清单', () => {
       ['D', 'reasons.plugin_unavailable', false],
       [DELETED, 'targetMissing', false],
     ])
-    expect(card.launchableIds.value).toEqual([QUEUE, SCRIPT])
+    expect(card.launchIds.value).toEqual([QUEUE, POWER_QUEUE, SCRIPT, UNSUPPORTED])
+  })
+
+  it('只在一并启动清单里的托管也单查能力并标出原因', async () => {
+    const { card } = setup({ targets: [SCRIPT], startOnOpen: [UNSUPPORTED] })
+    await card.load()
+    await settle()
+
+    expect(card.rows.value.map(row => [row.id, row.issue])).toEqual([
+      [UNSUPPORTED, 'reasons.admin_required'],
+      [SCRIPT, undefined],
+    ])
+  })
+
+  it('切换启动方式：先撤单独启动，再改一并启动，最后加单独启动', async () => {
+    const { card, save, rejected } = setup({
+      targets: [SCRIPT],
+      startOnOpen: [SCRIPT, UNSUPPORTED],
+    })
+    await card.load()
+    await settle()
+    const calls = () => save.mock.calls.map(call => call.slice(1))
+
+    await expect(card.setMode(SCRIPT, 'standalone')).resolves.toBe(true)
+    expect(calls()).toEqual([['StartOnOpen', [UNSUPPORTED]]])
+
+    save.mockClear()
+    await expect(card.setMode(SCRIPT, 'startOnOpen')).resolves.toBe(true)
+    expect(calls()).toEqual([
+      ['Targets', []],
+      ['StartOnOpen', [UNSUPPORTED, SCRIPT]],
+    ])
+
+    save.mockClear()
+    await expect(card.setMode(UNSUPPORTED, 'both')).resolves.toBe(false)
+    expect(rejected).toHaveBeenCalledWith('reasons.admin_required')
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('加单独启动那一步失败时停下：一并启动已写入，单独启动回到设置值', async () => {
+    const { card, save } = setup({
+      startOnOpen: [QUEUE, SCRIPT],
+      save: key => key !== 'Targets',
+    })
+    await card.load()
+    await settle()
+
+    await expect(card.setMode(SCRIPT, 'standalone')).resolves.toBe(false)
+    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
+      ['StartOnOpen', [QUEUE]],
+      ['Targets', [SCRIPT]],
+    ])
+    expect(card.startOnOpen.value).toEqual([QUEUE])
+    expect(card.standalone.value).toEqual([])
   })
 })
