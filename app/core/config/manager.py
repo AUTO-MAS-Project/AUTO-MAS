@@ -73,13 +73,13 @@ from app.core.config.upgrade import (
     convert_legacy,
     is_blank_file,
     preserve_pre_upgrade,
+    retire_baah_plans,
     upgrade_json_configs,
 )
 from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
     BAAHConfig,
-    BAAHPlanConfig,
     BAAHUserConfig,
     EmulatorConfig,
     GameSignAccountGroup,
@@ -753,6 +753,8 @@ class AppConfig:
                 prepared_documents=prepared,
                 entry_migrations=entry_migrations,
             )
+        # 先让中断的 JSON→YAML 迁移按原摘要结账，再停用旧计划；必须早于计划集合激活。
+        await asyncio.to_thread(retire_baah_plans, self.config_path)
         for _old, new, key in CONFIG_FILES:
             if key == "EmulatorConfig":
                 continue
@@ -1993,7 +1995,6 @@ class AppConfig:
         uuid.UUID,
         PlanEntry
         | MaaEndPlanConfig
-        | BAAHPlanConfig
         | UniversalPlanConfig
         | OkNtePlanConfig
         | OkwwPlanConfig,

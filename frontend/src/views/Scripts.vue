@@ -36,26 +36,22 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-tooltip :title="t('core.scripts.collapseAllTip')">
-          <a-button
-            size="large"
-            :disabled="scripts.length === 0 || isSearching"
-            @click="handleCollapseAll"
-          >
-            <template #icon><UpOutlined /></template>
-            {{ t('core.scripts.collapseAll') }}
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="t('core.scripts.expandAllTip')">
-          <a-button
-            size="large"
-            :disabled="scripts.length === 0 || isSearching"
-            @click="handleExpandAll"
-          >
-            <template #icon><DownOutlined /></template>
-            {{ t('core.scripts.expandAll') }}
-          </a-button>
-        </a-tooltip>
+        <a-button
+          size="large"
+          :disabled="scripts.length === 0 || isSearching"
+          @click="handleCollapseAll"
+        >
+          <template #icon><UpOutlined /></template>
+          {{ t('core.scripts.collapseAll') }}
+        </a-button>
+        <a-button
+          size="large"
+          :disabled="scripts.length === 0 || isSearching"
+          @click="handleExpandAll"
+        >
+          <template #icon><DownOutlined /></template>
+          {{ t('core.scripts.expandAll') }}
+        </a-button>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />

@@ -60,8 +60,6 @@ OkNtePlanConfigInput = StrictConfigInput[_config_models.OkNtePlanConfig]
 UniversalPlanConfig = ConfigPayload[_config_models.UniversalPlanConfig]
 UniversalPlanConfigInput = StrictConfigInput[_config_models.UniversalPlanConfig]
 
-BAAHPlanConfig = ConfigPayload[_config_models.BAAHPlanConfig]
-BAAHPlanConfigInput = StrictConfigInput[_config_models.BAAHPlanConfig]
 MaaEndPlanConfig = ConfigPayload[_config_models.MaaEndPlanConfig]
 MaaEndPlanConfigInput = StrictConfigInput[_config_models.MaaEndPlanConfig]
 
@@ -79,7 +77,6 @@ class PlanIndexItem(BaseModel):
 
 PlanCreateType = Literal[
     "MaaEndPlan",
-    "BAAHPlan",
     "UniversalPlan",
     "OkNtePlan",
     "OkwwPlan",
@@ -89,7 +86,6 @@ PlanCreateType = Literal[
 type PlanConfigData = (
     SerializeAsAny[BaseModel]
     | MaaEndPlanConfig
-    | BAAHPlanConfig
     | UniversalPlanConfig
     | OkNtePlanConfig
     | OkwwPlanConfig
@@ -97,7 +93,6 @@ type PlanConfigData = (
 type PlanConfigDataInput = SkipValidation[
     SerializeAsAny[BaseModel]
     | MaaEndPlanConfigInput
-    | BAAHPlanConfigInput
     | UniversalPlanConfigInput
     | OkNtePlanConfigInput
     | OkwwPlanConfigInput

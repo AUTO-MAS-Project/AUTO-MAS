@@ -2,11 +2,7 @@
 import { nextTick, ref } from 'vue'
 import { createReusableTemplate } from '@vueuse/core'
 import ConfigEditor from '@/views/plugins/ConfigEditor.vue'
-import {
-  PLAN_CONFIG_TYPES,
-  type getPlanTypeDescriptor,
-  type PlanChangeHandler,
-} from '@/utils/planTypeRegistry'
+import { type getPlanTypeDescriptor, type PlanChangeHandler } from '@/utils/planTypeRegistry'
 import type { PlanMode } from '@/utils/planDays'
 import type { PlanListItem } from '../planList'
 import PlanConfig from './PlanConfig.vue'
@@ -74,7 +70,6 @@ async function finishEditName() {
       v-if="descriptor"
       :is="descriptor.tableComponent"
       ref="planTable"
-      v-bind="plan?.type === PLAN_CONFIG_TYPES.BAAH ? { interactionDisabled: pending } : {}"
       :table-data="tableData"
       :current-mode="mode"
       :view-mode="viewMode"
@@ -98,7 +93,6 @@ async function finishEditName() {
       :supports-schedule="supportsSchedule"
       :supports-simple-view="descriptor?.supportsSimpleView ?? false"
       :is-editing-plan-name="editingName"
-      :compact="plan?.type === PLAN_CONFIG_TYPES.BAAH"
       :disabled="pending"
       @update:current-mode="emit('mode', $event)"
       @update:rotate-days="emit('rotateDays', $event)"

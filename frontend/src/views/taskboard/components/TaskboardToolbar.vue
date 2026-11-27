@@ -49,12 +49,10 @@
       </a-tag>
     </template>
     <span v-else class="tb-no-game">{{ t('core.taskboard.noGames') }}</span>
-    <a-tooltip :title="t('core.taskboard.editGamesTip')">
-      <a-button class="tb-edit-btn" size="large" @click="emit('edit')">
-        <template #icon><PlusOutlined /></template>
-        {{ t('core.taskboard.editGames') }}
-      </a-button>
-    </a-tooltip>
+    <a-button class="tb-edit-btn" size="large" @click="emit('edit')">
+      <template #icon><PlusOutlined /></template>
+      {{ t('core.taskboard.editGames') }}
+    </a-button>
   </div>
 
   <div class="tb-tabs" role="tablist">
