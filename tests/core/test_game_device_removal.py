@@ -431,3 +431,197 @@ async def test_upgraded_tombstone_binding_becomes_device_deleted_on_startup(
     assert len(game.devices) == 1
     assert_cleared(script, game)
     assert script.UserData[user_id].game.game_id == "-"
+
+
+def write_scripts(path, binding):
+    """盘上一条托管：托管与一个账号指向 ``binding``，另一个账号继承托管。"""
+    script_id, own_id, inherited_id = (str(uuid4()) for _ in range(3))
+    io.write_file(
+        path,
+        {
+            "order": [{"uid": script_id, "type": "GeneralConfig"}],
+            "data": {
+                script_id: {
+                    "Game": {"Enabled": True},
+                    "game": binding,
+                    "UserData": {
+                        "order": [
+                            {"uid": own_id, "type": "GeneralUserConfig"},
+                            {"uid": inherited_id, "type": "GeneralUserConfig"},
+                        ],
+                        "data": {own_id: {"game": binding}, inherited_id: {}},
+                    },
+                }
+            },
+        },
+    )
+    return script_id, own_id, inherited_id
+
+
+async def load_sidelined_then_restore(monkeypatch, path, before_restore=None):
+    """专项插件没加载时托管旁挂；插件恢复后经宿主还原入口转正。"""
+    scripts = ConfigCollection.build([], keep_unknown_types=True)
+    monkeypatch.setattr(Config, "ScriptConfig", scripts)
+    plans = ConfigCollection.build(keep_unknown_types=True)
+    monkeypatch.setattr(Config, "PlanConfig", plans)
+    await plans.activate()
+    await activate_config(scripts, path)
+    assert [item.reason for item in scripts.unresolved()] == ["type_unregistered"]
+    if before_restore is not None:
+        await before_restore()
+    scripts.add_type(GeneralConfig)
+    await scripts.commit()
+    await Config.restore_unavailable_managed()
+    return scripts
+
+
+async def load_on_startup(monkeypatch, path):
+    """与正式启动一样：托管集合保留读不了的成员，激活后跑启动维护。"""
+    scripts = ConfigCollection.build([GeneralConfig], keep_unknown_types=True)
+    monkeypatch.setattr(Config, "ScriptConfig", scripts)
+    await activate_config(scripts, path)
+    await GameManager.startup_maintenance()
+    return scripts
+
+
+async def assert_run_refused(script, owner, reason):
+    session = GameSession(TaskScriptItem.build(), script)
+    try:
+        with pytest.raises(ValueError, match=reason):
+            await session.select(owner)
+    finally:
+        await session.release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["restore", "startup"])
+async def test_binding_to_removed_device_still_loads_as_device_deleted(
+    world, tmp_path, monkeypatch, path_kind
+):
+    """托管旁挂期间删掉它绑定的实例（或盘上绑定本就指向不存在的设备）：
+    插件恢复或下次启动时托管照常读进来，绑定改为「设备已删除」。"""
+    game, removed_uid = world.game, world.removed.uid
+    path = tmp_path / f"dangling-{path_kind}.yaml"
+    script_id, own_id, inherited_id = write_scripts(
+        path, {"game_id": str(game.uid), "device_id": str(removed_uid)}
+    )
+
+    async def delete_instance():
+        result = await run_trigger(world.removed, "delete_instance")
+        assert result is not None and result.state == "succeeded", result
+        assert removed_uid not in game.devices
+
+    if path_kind == "restore":
+        scripts = await load_sidelined_then_restore(
+            monkeypatch, path, before_restore=delete_instance
+        )
+    else:
+        await delete_instance()
+        scripts = await load_on_startup(monkeypatch, path)
+
+    assert scripts.unresolved() == ()
+    script = scripts[script_id]
+    own, inherited = script.UserData[own_id], script.UserData[inherited_id]
+    assert_cleared(script, game)
+    assert_cleared(own, game)
+    assert inherited.game.game_id == "-"
+    await config_manager.flush()
+    saved = io.read_dict_file(path)["data"][script_id]
+    assert saved["game"]["device_id"] == "-"
+    assert saved["game"]["unavailable_reason"] == DEVICE_DELETED_REASON
+    for owner in (None, own, inherited):
+        await assert_run_refused(script, owner, DEVICE_DELETED_REASON)
+
+    # 再跑一遍不再改动任何东西
+    before = path.read_bytes()
+    await GameManager.startup_maintenance()
+    await config_manager.flush()
+    assert path.read_bytes() == before
+    assert_cleared(own, game)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["restore", "startup"])
+async def test_binding_to_missing_game_target_still_loads_unbound(
+    world, tmp_path, monkeypatch, path_kind
+):
+    """盘上绑定指向已不存在的游戏目标：照删除整个目标的口径清空绑定，托管照常读进来。"""
+    path = tmp_path / f"missing-game-{path_kind}.yaml"
+    script_id, own_id, _ = write_scripts(
+        path, {"game_id": str(uuid4()), "device_id": str(uuid4())}
+    )
+
+    if path_kind == "restore":
+        scripts = await load_sidelined_then_restore(monkeypatch, path)
+    else:
+        scripts = await load_on_startup(monkeypatch, path)
+
+    assert scripts.unresolved() == ()
+    script = scripts[script_id]
+    for owner in (script, script.UserData[own_id]):
+        assert owner.game.game_id == "-"
+        assert owner.game.device_id == "-"
+        assert owner.game.unavailable_reason == ""
+    await config_manager.flush()
+    saved = io.read_dict_file(path)["data"][script_id]["game"]
+    assert saved["game_id"] == "-" and saved["device_id"] == "-"
+
+
+@pytest.mark.asyncio
+async def test_user_save_still_rejects_missing_device_or_target(world):
+    """加载放行不放松保存：用户选不存在的设备或目标仍被拒绝，原绑定不变。"""
+    script, game = world.script, world.game
+    with pytest.raises(ConfigAggregateError):
+        await script.update(
+            GeneralConfig.model_validate(
+                {"game": {"game_id": str(game.uid), "device_id": str(uuid4())}}
+            )
+        )
+    assert script.game.game_id == game.uid
+    assert script.game.device_id == world.removed.uid
+    with pytest.raises(ConfigAggregateError):
+        await script.update(
+            GeneralConfig.model_validate(
+                {"game": {"game_id": str(uuid4()), "device_id": str(world.kept.uid)}}
+            )
+        )
+    assert script.game.device_id == world.removed.uid
+
+
+@pytest.mark.asyncio
+async def test_dangling_binding_of_running_script_waits(world, tmp_path, monkeypatch):
+    """托管正在运行时不改它的绑定，写不进去就留到下次。"""
+    game, removed_uid = world.game, world.removed.uid
+    result = await run_trigger(world.removed, "delete_instance")
+    assert result is not None and result.state == "succeeded", result
+    path = tmp_path / "running.yaml"
+    script_id, own_id, _ = write_scripts(
+        path, {"game_id": str(game.uid), "device_id": str(removed_uid)}
+    )
+    scripts = ConfigCollection.build([GeneralConfig], keep_unknown_types=True)
+    monkeypatch.setattr(Config, "ScriptConfig", scripts)
+    await activate_config(scripts, path)
+    script = scripts[script_id]
+    locked, finish = asyncio.Event(), asyncio.Event()
+
+    async def running_script():
+        ticket = await script.lock_x(cascade=False)
+        locked.set()
+        try:
+            await finish.wait()
+        finally:
+            await script.unlock(ticket)
+
+    runner = asyncio.create_task(running_script())
+    try:
+        await asyncio.wait_for(locked.wait(), timeout=2)
+        await GameManager.startup_maintenance()
+        assert script.game.device_id == removed_uid
+        assert script.UserData[own_id].game.device_id == removed_uid
+    finally:
+        finish.set()
+        await asyncio.wait_for(runner, timeout=2)
+
+    await GameManager.startup_maintenance()
+    assert_cleared(script, game)
+    assert_cleared(script.UserData[own_id], game)

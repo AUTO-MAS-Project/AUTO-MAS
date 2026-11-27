@@ -3169,10 +3169,14 @@ class AppConfig:
                             f"还原失败，继续原样保留：{item.type_name} {item.uid}"
                             f"（{item.detail}）"
                         )
+            from app.core.game_manager import GameManager
+
             for uid in restored_scripts:
                 script = self.ScriptConfig.get(uid)
                 if script is None:
                     continue
+                # 旁挂期间删掉的实例 / 目标只改得到已加载的托管，转正后补做。
+                await GameManager.repair_dangling_bindings((script,))
                 try:
                     await self._initialize_script_config(script)
                 except Exception as error:  # noqa: BLE001
