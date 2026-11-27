@@ -11,7 +11,7 @@ release 接口。字节仍来自用户选定的源，所以不违反上面那条
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import httpx
 from packaging.version import InvalidVersion, Version
@@ -143,45 +143,14 @@ async def discover(
 
     if source == "MirrorChyan":
         cdk = cdk.strip()
-        if cdk and not for_download:
-            # 检查页只确认存在新版；能否授权留到实际下载时判断。
-            return DiscoveryResult(**base, download_authorization_pending=True)
-        if cdk:
-            authorized = await _query_latest(
-                spec,
-                current_version=current_version,
-                source=source,
-                channel=channel,
-                cdk=cdk,
-                proxy=proxy,
+        if not cdk:
+            return DiscoveryResult(**base, blocked_reason=_MISSING_MIRROR_DOWNLOAD)
+        result = DiscoveryResult(**base, download_authorization_pending=True)
+        if for_download:
+            return await authorize_mirror_download(
+                spec, result, channel=channel, cdk=cdk, proxy=proxy
             )
-            if authorized.blocked_reason:
-                return DiscoveryResult(**base, blocked_reason=authorized.blocked_reason)
-            if authorized.version != latest.version:
-                raise HSRUpdateError("Mirror 酱最新版本已变化，请重新检查更新")
-            latest = authorized
-        if not cdk or not latest.download_url:
-            return DiscoveryResult(
-                **base,
-                blocked_reason=(
-                    "已选择 Mirror 酱作为下载源，但未取得下载地址；"
-                    "请检查 CDK 是否填写且仍然有效"
-                ),
-            )
-        # Mirror 酱只发全量包，它给的是一次性直链，资产名由服务端决定。
-        return DiscoveryResult(
-            **base,
-            candidate=UpdateCandidate(
-                engine=spec.engine,
-                current_version=current_version,
-                latest_version=latest.version,
-                source=source,
-                asset_kind="zip",
-                download_url=latest.download_url,
-                sha256=latest.sha256,
-                release_note=latest.release_note,
-            ),
-        )
+        return result
 
     if source == "AutoSite":
         url = spec.station_url()
@@ -224,6 +193,51 @@ async def discover(
             download_url=url,
             sha256=sha,
             release_note=latest.release_note,
+        ),
+    )
+
+
+_MISSING_MIRROR_DOWNLOAD = (
+    "已选择 Mirror 酱作为下载源，但未取得下载地址；请检查 CDK 是否填写且仍然有效"
+)
+
+
+async def authorize_mirror_download(
+    spec: EngineSpec,
+    result: DiscoveryResult,
+    *,
+    channel: str,
+    cdk: str,
+    proxy: httpx.Proxy | None,
+) -> DiscoveryResult:
+    """只为已查到且即将下载的新版签发一次性全量包地址。"""
+    assert result.download_authorization_pending
+    authorized = await _query_latest(
+        spec,
+        current_version=result.current_version,
+        source="MirrorChyan",
+        channel=channel,
+        cdk=cdk.strip(),
+        proxy=proxy,
+    )
+    result = replace(result, download_authorization_pending=False)
+    if authorized.blocked_reason:
+        return replace(result, blocked_reason=authorized.blocked_reason)
+    if authorized.version != result.latest_version:
+        raise HSRUpdateError("Mirror 酱最新版本已变化，请重新检查更新")
+    if not authorized.download_url:
+        return replace(result, blocked_reason=_MISSING_MIRROR_DOWNLOAD)
+    return replace(
+        result,
+        candidate=UpdateCandidate(
+            engine=spec.engine,
+            current_version=result.current_version,
+            latest_version=authorized.version,
+            source="MirrorChyan",
+            asset_kind="zip",
+            download_url=authorized.download_url,
+            sha256=authorized.sha256,
+            release_note=authorized.release_note,
         ),
     )
 

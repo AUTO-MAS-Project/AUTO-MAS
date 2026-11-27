@@ -26,7 +26,7 @@ from typing import TypeVar
 import httpx
 
 from app.core.script_update import script_downloader
-from app.utils import get_logger
+from app.utils import format_exception_reason, get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
 
 from ...task_mapping import engine_label
@@ -37,7 +37,13 @@ from .apply import (
     has_pending_journal,
     rollback,
 )
-from .discover import DiscoveryResult, HSRUpdateError, UpdateCandidate, discover
+from .discover import (
+    DiscoveryResult,
+    HSRUpdateError,
+    UpdateCandidate,
+    authorize_mirror_download,
+    discover,
+)
 from .download import AbortFn, HSRUpdateAborted
 from .engines import (
     EngineSpec,
@@ -182,7 +188,6 @@ async def update_engine_if_needed(
                 channel=channel,
                 cdk=cdk,
                 proxy=proxy,
-                for_download=True,
             )
     except HSRUpdateError as exc:
         log(f"{label}更新检查失败，按现有版本继续：{exc}")
@@ -213,19 +218,34 @@ async def update_engine_if_needed(
         log(f"{label}已是最新版本（{result.current_version or '未知'}）")
         return UpdateOutcome(**base, updated=False)
 
-    candidate = result.candidate
-    assert candidate is not None  # 进入实际下载时必须已有授权候选
-
     # ── 前置门：任一不过就跳过本轮，目录一动不动 ──
     # 进程扫描要遍历整张进程表（实测 ~250ms），API 手动更新走的是事件循环，
     # 得丢线程；写探针是同步 IO，顺手一起。
-    for failure in (
-        await asyncio.to_thread(check_no_process_running, install_root),
-        await asyncio.to_thread(check_writable, install_root),
-    ):
+    for check in (check_no_process_running, check_writable):
+        failure = await asyncio.to_thread(check, install_root)
         if failure:
             log(f"{label}跳过更新：{failure.reason}")
             return UpdateOutcome(**base, updated=False, message=failure.reason)
+
+    if should_abort and should_abort():
+        raise asyncio.CancelledError
+    if result.download_authorization_pending:
+        try:
+            result = await authorize_mirror_download(
+                spec, result, channel=channel, cdk=cdk, proxy=proxy
+            )
+        except Exception as exc:  # noqa: BLE001 - 授权失败不阻止使用现有版本
+            message = format_exception_reason(exc, stage="获取 Mirror 酱下载授权失败")
+            log(f"{label}{message}，按现有版本继续")
+            return UpdateOutcome(**base, updated=False, message=message)
+        if result.blocked_reason:
+            log(
+                f"{label}有新版本 {result.latest_version}，但无法安装：{result.blocked_reason}"
+            )
+            return UpdateOutcome(**base, updated=False, message=result.blocked_reason)
+
+    candidate = result.candidate
+    assert candidate is not None  # 进入实际下载时必须已有授权候选
 
     log(f"{label}发现新版本 {candidate.latest_version}，开始下载")
 
