@@ -178,6 +178,10 @@ class NodeObservation:
     def __len__(self) -> int:
         return len(self._nodes)
 
+    def changes_since(self, sequence: int) -> tuple[Node, ...]:
+        """按接收顺序读取宿主发布循环尚未提交的变更。"""
+        return tuple(self._nodes[sequence:])
+
     @property
     def summary(self) -> SessionSummary | None:
         return self._summary

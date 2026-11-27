@@ -233,6 +233,25 @@ class TaskUserItem(RuntimeEntry):
         """提交最终有效节点和采集结束原因。"""
         await self.publish_log_analysis(nodes=result.nodes, close_reason=result.reason)
 
+    async def apply_log_analysis_changes(
+        self, changes: tuple[Node, ...], *, reset: bool
+    ) -> None:
+        """按事件顺序更新账号树，复用已经脱敏的节点。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        previous = self.log_analysis.nodes
+        current = {} if reset else {node.node_id: node for node in previous}
+        for change in changes:
+            if change.withdrawn:
+                current.pop(change.node_id, None)
+            else:
+                node = public_log_node(change)
+                current[node.node_id] = node
+        nodes = tuple(current.values())
+        if nodes != previous:
+            self.log_analysis.nodes = nodes
+            await self.commit()
+
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。"""
         return [

@@ -97,8 +97,9 @@ class LogFlow(TaskBase):
             except TimeoutError:
                 sequence = len(observation)
                 if sequence != last_sequence:
-                    await self._user_info.publish_log_analysis(
-                        nodes=observation.snapshot()
+                    await self._user_info.apply_log_analysis_changes(
+                        observation.changes_since(last_sequence),
+                        reset=last_sequence == 0,
                     )
                     last_sequence = sequence
 

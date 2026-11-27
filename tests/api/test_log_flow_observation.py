@@ -191,9 +191,16 @@ async def test_explicit_account_query_reads_published_live_tree(scheduler, monke
                 assert reporter is not None
                 assert reporter.node("step", "working", node_id="step") == "accepted"
                 assert reporter.node("step", "old", node_id="obsolete") == "accepted"
+                assert reporter.node("step", "unchanged") == "accepted"
                 await amend.wait()
                 assert (
-                    reporter.node("step", "done", node_id="step", status="success")
+                    reporter.node(
+                        "step",
+                        "done",
+                        node_id="step",
+                        status="success",
+                        attributes=(NodeAttribute(key="token", value="hidden"),),
+                    )
                     == "accepted"
                 )
                 assert reporter.withdraw("obsolete") == "accepted"
@@ -241,16 +248,21 @@ async def test_explicit_account_query_reads_published_live_tree(scheduler, monke
 
         try:
             async with asyncio.timeout(5):
-                while len(first.log_analysis.nodes) < 2:
+                while len(first.log_analysis.nodes) < 3:
                     await asyncio.sleep(0.01)
             assert [node.text for node in first.log_analysis.nodes] == [
                 "working",
                 "old",
+                "unchanged",
             ]
             assert all("log_analysis" not in row for row in (await users()).values())
             rows = await users(user=first)
             initial = rows[str(first.uid)]["log_analysis"]
-            assert [node["text"] for node in initial["nodes"]] == ["working", "old"]
+            assert [node["text"] for node in initial["nodes"]] == [
+                "working",
+                "old",
+                "unchanged",
+            ]
             assert initial["close_reason"] is None
             assert "log_analysis" not in rows[str(second.uid)]
             assert (
@@ -264,14 +276,19 @@ async def test_explicit_account_query_reads_published_live_tree(scheduler, monke
             assert not other[str(second.uid)]["log_analysis"]["nodes"]
             amend.set()
             async with asyncio.timeout(5):
-                while [node.text for node in first.log_analysis.nodes] != ["done"]:
+                while [node.text for node in first.log_analysis.nodes] != [
+                    "done",
+                    "unchanged",
+                ]:
                     await asyncio.sleep(0.01)
-            [changed] = (await users(user=first))[str(first.uid)]["log_analysis"][
-                "nodes"
-            ]
+            changed, unchanged = (await users(user=first))[str(first.uid)][
+                "log_analysis"
+            ]["nodes"]
             assert changed["text"] == "done"
             assert changed["node_id"] == initial["nodes"][0]["node_id"]
             assert changed["revision"] > initial["nodes"][0]["revision"]
+            assert changed["attributes"] == []
+            assert unchanged == initial["nodes"][2]
             assert "log_analysis" not in str(
                 manager.get_runtime_snapshot().model_dump(mode="json")
             )
@@ -281,5 +298,6 @@ async def test_explicit_account_query_reads_published_live_tree(scheduler, monke
 
         await asyncio.wait_for(run.accomplish.wait(), 5)
         final = (await users(user=first))[str(first.uid)]["log_analysis"]
-        assert final["nodes"] == [changed] and final["close_reason"] == "complete"
+        assert final["nodes"] == [changed, unchanged]
+        assert final["close_reason"] == "complete"
         assert all("log_analysis" not in row for row in (await users()).values())
