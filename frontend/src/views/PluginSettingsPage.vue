@@ -166,7 +166,7 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     return true
   } catch (error) {
     const reason = errorMessage(error)
-    draft.saveFailed(draft.dirtyCount.value === 1 ? reason : t('core.apiErrors.settingsSaveFailed'))
+    draft.saveFailed(error)
     message.error(reason)
     return false
   } finally {
@@ -186,8 +186,11 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
     activeFields.value.includes(`${group}.${field}`)
   )
     return
-  // 触发器只接受三态命令。这里仅启动任务，false 是取消，null 是跳过。
-  if (value !== true) {
+  const dropdown = hint.component === 'dropdown-button'
+  if (
+    (!dropdown && value !== true) ||
+    (typeof value !== 'boolean' && typeof value !== 'string' && typeof value !== 'number')
+  ) {
     message.error(t('core.plugins.actionFailed'))
     return
   }
@@ -197,7 +200,8 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
       configUid: configUid.value,
       group,
       field,
-      value,
+      value: true,
+      ...(dropdown ? { option: value } : {}),
     })
     message.success(result.message || t('core.plugins.actionComplete'))
     await fetchSettings()

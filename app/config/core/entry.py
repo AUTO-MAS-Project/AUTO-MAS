@@ -20,6 +20,7 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializationInfo,
+    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -44,6 +45,7 @@ from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
     ComponentHint,
     OptionHint,
+    OptionValue,
     TriggerUiState,
     UiTablesList,
     hint_for_field,
@@ -474,9 +476,14 @@ class ConfigEntry(ConfigNode):
             self._build_workspace()
             group = getattr(self.effective, op.group)
             old = group.__dict__.get(op.field)
-            group.__pydantic_validator__.validate_assignment(
-                group, op.field, op.value, context={"entry": self}
-            )
+            try:
+                group.__pydantic_validator__.validate_assignment(
+                    group, op.field, op.value, context={"entry": self}
+                )
+            except ValidationError as exc:
+                raise ConfigAggregateError(
+                    [exc], field_path=(op.group, op.field)
+                ) from exc
             new = group.__dict__.get(op.field)
             changed = old != new
             if changed:
@@ -517,10 +524,17 @@ class ConfigEntry(ConfigNode):
             return stored.plaintext()
         return stored
 
-    def write_trigger(self, group: str, field: str, value: bool | None) -> UUID | None:
+    def write_trigger(
+        self,
+        group: str,
+        field: str,
+        value: bool | None,
+        *,
+        option: OptionValue | None = None,
+    ) -> UUID | None:
         """写入配置触发器命令，返回受影响的任务 UUID。"""
         return config_manager.submit_trigger(
-            self, group=group, field=field, value=value
+            self, group=group, field=field, value=value, option=option
         )
 
     def _apply_trigger_field(self, group: str, field: str, value: bool | None) -> None:

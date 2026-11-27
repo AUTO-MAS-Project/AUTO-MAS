@@ -7,6 +7,9 @@ import { requestApi, apiErrorMessage } from '@/utils/apiResult'
 export type DeclarativeOption = { value: string | number | boolean; label?: string }
 export type DeclarativeHint = Omit<ComponentHint, 'options'> & {
   options?: DeclarativeOption[] | null
+  precision?: number
+  step?: number
+  plan_type?: string
 }
 
 /** 声明式选项复用 QueryClient；目标和依赖变化时切换查询身份。 */
@@ -30,6 +33,7 @@ export function useDeclarativeOptions(
         .map(hint => /* 将控件提示转换为字段键、接口地址与当前依赖值，供查询缓存使用。 */ ({
           key: `${section}.${hint.field}`,
           endpoint: hint.endpoint!,
+          planType: hint.plan_type,
           dependencies: (hint.deps ?? []).map(path =>
             /* 按声明的点分路径读取一个依赖值，供级联下拉框更新查询条件。 */ path
               .split('.')
@@ -55,6 +59,7 @@ export function useDeclarativeOptions(
             target.value.uid,
             field.endpoint,
             field.dependencies,
+            ...(field.planType === undefined ? [] : [field.planType]),
           ],
           queryFn: async (): Promise<Required<DeclarativeOption>[]> => {
             // 按声明的宿主接口加载游戏、设备、模拟器或计划选项，规范化返回值并过滤无效关联项。
@@ -85,7 +90,10 @@ export function useDeclarativeOptions(
               case '/api/plugin/options/plans':
                 response = await requestApi(
                   () =>
-                    /* 查询插件计划配置的可关联选项。 */ Service.pluginPlanOptionsApiPluginOptionsPlansPost(),
+                    Service.pluginPlanOptionsApiPluginOptionsPlansPost(
+                      undefined,
+                      field.planType === undefined ? undefined : { type: field.planType }
+                    ),
                   fallback
                 )
                 break

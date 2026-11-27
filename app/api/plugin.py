@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Iterator
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -38,7 +39,7 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
@@ -185,6 +186,12 @@ class PluginConfigUpdateIn(BaseModel):
     recordId: str = Field(..., description="PluginRecord.uid")
     data: dict[str, Any] = Field(
         default_factory=dict, description="热补丁；走 entry.update"
+    )
+
+
+class PluginConfigUpdateOut(OutBase):
+    fieldErrors: dict[str, str] = Field(
+        default_factory=dict, description="按 group.field 定位的校验错误"
     )
 
 
@@ -392,31 +399,64 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
         )
 
 
+def _config_update_issues(
+    error: Exception, field_path: tuple[str, str] | None = None
+) -> Iterator[tuple[tuple[str | int, ...], str]]:
+    """冷态校验给出完整路径，热态赋值使用提交时的字段坐标。"""
+    if isinstance(error, ConfigAggregateError):
+        for cause in error.errors:
+            yield from _config_update_issues(cause, error.field_path or field_path)
+    elif isinstance(error, ValidationError):
+        for issue in error.errors(
+            include_input=False, include_context=False, include_url=False
+        ):
+            yield field_path or issue["loc"], issue["msg"]
+    else:
+        yield (), str(error)
+
+
 @_config.post(
     "/update",
     tags=["Update"],
     summary="修改插件自有配置（凭注册表项定位）",
-    response_model=OutBase,
+    response_model=PluginConfigUpdateOut,
 )
 async def update_plugin_config(
     body: PluginConfigUpdateIn = Body(...),
-) -> OutBase:
+) -> PluginConfigUpdateOut:
     """按插件实际配置类型校验并保存局部补丁，返回配置更新结果。"""
     try:
         record = Config.plugin_registry[UUID(body.recordId)]
         cfg = record._config
         if cfg is None:
-            return OutBase(code=400, status="error", message="插件未启用或无自有配置")
-        # 用同类型冷态补丁；失败由 ConfigAggregateError 上抛
+            return PluginConfigUpdateOut(
+                code=400, status="error", message="插件未启用或无自有配置"
+            )
         patch = type(cfg).model_validate(body.data)
         await cfg.update(patch)
     except KeyError:
-        return OutBase(code=404, status="error", message="未找到对应插件配置")
-    except ConfigAggregateError as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return PluginConfigUpdateOut(
+            code=404, status="error", message="未找到对应插件配置"
+        )
+    except (ValidationError, ConfigAggregateError) as e:
+        messages: list[str] = []
+        fields: dict[str, list[str]] = {}
+        for path, message in _config_update_issues(e):
+            label = ".".join(map(str, path))
+            messages.append(f"{label}: {message}" if label else message)
+            if len(path) >= 2:
+                fields.setdefault(f"{path[0]}.{path[1]}", []).append(message)
+        return PluginConfigUpdateOut(
+            code=422 if isinstance(e, ValidationError) else 500,
+            status="error",
+            message="\n".join(messages),
+            fieldErrors={key: "\n".join(items) for key, items in fields.items()},
+        )
     except Exception as e:
-        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
-    return OutBase()
+        return PluginConfigUpdateOut(
+            code=500, status="error", message=f"{type(e).__name__}: {e}"
+        )
+    return PluginConfigUpdateOut()
 
 
 # ==================== 运行时列表 /api/plugin/list ====================
@@ -506,7 +546,7 @@ async def plugin_plan_options(
     from app.models.config import PlanEntry
 
     plan_type = PlanEntry
-    if body.type is not None:
+    if body.type is not None and body.type != PlanEntry.__name__:
         declared = Config.PlanConfig.entry_types.get(body.type)
         if declared is None or not issubclass(declared, PlanEntry):
             return ComboBoxOut(

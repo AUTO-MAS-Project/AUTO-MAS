@@ -1,15 +1,25 @@
 import { describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, defineComponent, h } from 'vue'
+import { computed, createSSRApp, defineComponent, h } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import Antd from 'ant-design-vue'
-import { PathKind } from '@/api'
+import { PathKind, Service } from '@/api'
+import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { requestApi } from '@/utils/apiResult'
 import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
 import DeclarativeForm from './DeclarativeForm.vue'
 
 /** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
-async function render(transpose: boolean, includeOptionsGroup = true) {
+async function render(
+  transpose: boolean,
+  includeOptionsGroup = true,
+  errors: Record<string, string> = {
+    'alpha.enabled': 'invalid switch',
+    'alpha.missing_dir': 'missing directory',
+  }
+) {
   const update = vi.fn()
   const action = vi.fn()
   const edit = new Map<string, (value: string) => void>()
@@ -21,7 +31,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
         { field: 'name' },
         { field: 'note' },
         { field: 'on', component: 'switch' },
-        { field: 'count', component: 'number' },
+        { field: 'count', component: 'number', min: 0, step: 0.1 },
         { field: 'extra' },
         { field: 'enabled', component: 'switch' },
         { field: 'locked', component: 'switch', editable: false },
@@ -50,7 +60,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
         {
           field: 'refresh',
           component: 'dropdown-button',
-          options: [{ value: true, label: 'Refresh now' }],
+          options: [{ value: 'refresh', label: 'Refresh now' }],
         },
       ],
     },
@@ -81,11 +91,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
           { key: 'invisible', rows: ['absent'], columns: ['beta'], transpose: false },
         ],
       }),
-      errors: {
-        'beta.name': 'save failed',
-        'alpha.enabled': 'invalid switch',
-        'alpha.missing_dir': 'missing directory',
-      },
+      errors,
       'onUpdate:value': update,
       onAction: action,
     })
@@ -122,9 +128,11 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
       },
     })
   )
+  let numeric: Record<string, unknown> = {}
   let columns: Array<{ key: string; width?: number; align?: string }> = []
   app.mixin({
     created() {
+      if (this.$options.name === 'AInputNumber') numeric = this.$props
       if (this.$options.name === 'ATable') columns = this.$props.columns
       if (this.$options.name === 'AInput') {
         edit.set(String(this.$props.value), value => this.$emit('update:value', value))
@@ -133,7 +141,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
   })
   const html = await renderToString(app)
   client.clear()
-  return { html, edit, update, action, selectAction, columns }
+  return { html, edit, update, action, selectAction, columns, numeric }
 }
 
 describe('插件声明式表格与字段反馈', () => {
@@ -202,7 +210,8 @@ describe('插件声明式表格与字段反馈', () => {
   })
 
   it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {
-    const { columns, html } = await render(false)
+    const { columns, html, numeric } = await render(false)
+    expect(numeric).toMatchObject({ min: 0, step: 0.1 })
     expect(columns.map(({ width }) => width)).toEqual([108, undefined, undefined, 84, 116])
     expect(columns.find(column => column.key === 'on')?.align).toBe('center')
     const table = html.match(/<tbody\b[^>]*>([\s\S]*?)<\/tbody>/)![1]!
@@ -217,15 +226,64 @@ describe('插件声明式表格与字段反馈', () => {
   })
 
   it('保存错误留在对应单元格，选项加载失败在普通字段内显示并可重试', async () => {
-    const { html } = await render(false)
+    const draft = usePluginSettingsDraft()
+    await requestApi(
+      async () => ({
+        code: 422,
+        message: 'invalid settings',
+        fieldErrors: { 'beta.name': 'name already exists', 'alpha.extra': 'invalid extra' },
+      }),
+      'save failed'
+    ).catch(draft.saveFailed)
+    const { html } = await render(false, true, draft.errors.value)
     const cell = [...html.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].find(match =>
       match[1]!.includes('value="B1"')
     )
-    expect(cell?.[1]).toMatch(/role="alert"[^>]*>save failed</)
+    expect(cell?.[1]).toMatch(/role="alert"[^>]*>name already exists</)
     const ordinary = html.slice(html.indexOf('</table>'))
+    expect(ordinary).toMatch(/value="outside"[^<]*(?:<[^>]+>)*invalid extra</)
+    expect(html).not.toContain('invalid settings')
     expect(ordinary).toMatch(
       /device[\s\S]*role="alert"[^>]*>options unavailable<[\s\S]*core.common.retry/
     )
+  })
+
+  it('同一表单的两种计划和未筛选计划各自请求并缓存选项', async () => {
+    const endpoint = '/api/plugin/options/plans'
+    const hints = [
+      { field: 'first', endpoint, plan_type: 'FirstPlan' },
+      { field: 'second', endpoint, plan_type: 'SecondPlan' },
+      { field: 'all', endpoint },
+    ]
+    const request = vi.spyOn(Service, 'pluginPlanOptionsApiPluginOptionsPlansPost')
+    const client = new QueryClient({
+      defaultOptions: { queries: { enabled: false, retry: false } },
+    })
+    try {
+      for (const label of ['first', 'second', 'all'])
+        request.mockResolvedValueOnce({ code: 200, data: [{ value: label, label }] })
+      const app = createSSRApp(
+        defineComponent({
+          async setup() {
+            const target = computed(() => ({ uid: 'uid', ui: { hints: { plans: hints } } }))
+            const { stateFor } = useDeclarativeOptions(target)
+            const lists = await Promise.all(hints.map(hint => stateFor('plans', hint)!.execute()))
+            return () => h('span', lists.map(list => list.data?.[0]?.label).join(','))
+          },
+        })
+      )
+      app.use(VueQueryPlugin, { queryClient: client })
+      app.use(createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false }))
+      expect(await renderToString(app)).toContain('first,second,all')
+      expect(request.mock.calls.map(([, body]) => body)).toEqual([
+        { type: 'FirstPlan' },
+        { type: 'SecondPlan' },
+        undefined,
+      ])
+    } finally {
+      request.mockRestore()
+      client.clear()
+    }
   })
 
   it('下拉动作携带分组和字段声明，走独立动作入口', async () => {
@@ -234,7 +292,7 @@ describe('插件声明式表格与字段反馈', () => {
     expect(action).toHaveBeenCalledWith(
       'other',
       expect.objectContaining({ field: 'refresh', component: 'dropdown-button' }),
-      true
+      'refresh'
     )
     expect(update).not.toHaveBeenCalled()
   })

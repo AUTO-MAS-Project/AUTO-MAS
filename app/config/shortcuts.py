@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from math import isfinite
-from typing import Callable, Protocol, TypeVar, cast
+from typing import Callable, TypeVar, cast
 from uuid import UUID
 
 from pydantic import Field
@@ -103,20 +103,11 @@ def trigger(*, timeout: float, description: str | None = None) -> UUID | None:
     return cast(UUID | None, info)
 
 
-class _TriggerDecorator(Protocol):
-    def __call__[TEntry: ConfigNode, TResult](
-        self,
-        func: Callable[[TEntry], TResult],
-    ) -> Callable[[TEntry], TResult]: ...
-
-
-def trigger_field(path: str, *, finish_on_cancel: bool = False) -> _TriggerDecorator:
-    """注册无参处理器；需完整收尾的副作用可声明 finish_on_cancel。"""
+def trigger_field(path: str, *, finish_on_cancel: bool = False) -> Callable[[_F], _F]:
+    """注册触发器处理器；下拉动作可接收所选值，finish_on_cancel 保证取消时完整收尾。"""
     group, field_name = parse_field_path(path)
 
-    def _decorator[TEntry: ConfigNode, TResult](
-        func: Callable[[TEntry], TResult],
-    ) -> Callable[[TEntry], TResult]:
+    def _decorator(func: _F) -> _F:
         setattr(func, "__trigger_finish_on_cancel__", finish_on_cancel)
         setattr(
             func,
