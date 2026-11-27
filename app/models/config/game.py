@@ -32,6 +32,18 @@ if TYPE_CHECKING:
 # 经 ``send_async`` 发送，接收者须为协程函数。
 device_removed = Signal("game.device_removed")
 
+# 设备实例删除后，指向它的托管 / 账号绑定写入的不可用原因。
+DEVICE_DELETED_REASON = "所绑定的设备实例已删除"
+
+
+def is_deleted_device(device: GameDeviceEntry) -> bool:
+    """删除实例后置 ``info.tombstone``，条目永久保留。
+
+    保留是因为它的 slot 参与新实例的槽位分配，删掉会让同编号新建的实例算出
+    旧 uid；墓碑不列出、不可绑定、不可运行。
+    """
+    return bool(getattr(device.info, "tombstone", False))
+
 
 # 触发器专用票。用户操作权限最高：只受控制器忙标记约束，不受实例订阅登记约束。
 # 任务票一律由 ``GameManager.subscribe`` 的 ``lock_s`` 签发（token 为 uuid4），

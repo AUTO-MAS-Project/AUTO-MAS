@@ -5,6 +5,9 @@
     :density="compact ? 'compact' : 'default'"
     :icon="icon"
   >
+    <template v-if="$slots.actions" #actions>
+      <slot name="actions" />
+    </template>
     <slot />
   </SectionCard>
 </template>

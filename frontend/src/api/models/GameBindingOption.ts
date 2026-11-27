@@ -6,5 +6,6 @@ export type GameBindingOption = {
     value: string;
     label: string;
     disabledReason?: (string | null);
+    warning?: (string | null);
 };
 

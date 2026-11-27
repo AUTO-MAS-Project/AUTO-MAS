@@ -17,6 +17,7 @@ from app.config import (
     ui,
 )
 from app.config.fields.ref import RefDeleteAction
+from app.models.config.game import is_deleted_device
 
 
 @dataclass(frozen=True)
@@ -64,12 +65,22 @@ class GameBinding(ConfigGroup):
             or entry.activation_state == NodeState.INACTIVE
         ):
             return value
+        # 盘上已有的绑定加载时放行：目标已删除（ref 回落为「-」）、设备已不存在
+        # 或是墓碑（托管旁挂期间删掉的实例），都由宿主随后规整；在这里拒绝
+        # 会让整条托管读不进来。用户保存时照旧拒绝。
+        loading = entry.activation_state == NodeState.INITIALIZING
         game_id = info.data.get("game_id")
         if game_id is None or game_id == "-":
+            if loading and game_id == "-":
+                return value
             raise ValueError("选择设备前须先选择游戏目标")
         game = config_manager.get_collection("games").get(game_id)
         if game is None or value not in game.devices:
+            if loading:
+                return value
             raise ValueError("设备不属于所选游戏目标")
+        if is_deleted_device(game.devices[value]) and not loading:
+            raise ValueError("所选设备实例已删除")
         return value
 
 
@@ -100,9 +111,22 @@ class GameBindingOwner(ConfigEntry):
             group="game",
             field="game_id",
         )
+        cls.connect(
+            GameBindingOwner.on_device_changed,
+            phase="runtime",
+            group="game",
+            field="device_id",
+        )
 
     @staticmethod
     async def on_target_changed(sender, event):
         if sender.game.game_id != "-" and sender.game.unavailable_reason:
+            sender.game.unavailable_reason = ""
+            await sender.commit()
+
+    @staticmethod
+    async def on_device_changed(sender, event):
+        """所绑定设备被删除后保留目标，重新选中设备即视为已处理。"""
+        if sender.game.device_id != "-" and sender.game.unavailable_reason:
             sender.game.unavailable_reason = ""
             await sender.commit()
