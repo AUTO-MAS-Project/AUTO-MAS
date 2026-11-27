@@ -44,16 +44,16 @@
           @enabled="
             value => {
               record.enabled = value
-              updateTimeSetStatus(record)
+              queued(record.id, () => updateTimeSetStatus(record))
             }
           "
           @days="
             value => {
               record.days = value
-              updateTimeSetDays(record)
+              queued(record.id, () => updateTimeSetDays(record))
             }
           "
-          @time="value => updateTimeSetTime(record, value)"
+          @time="value => queued(record.id, () => updateTimeSetTime(record, value))"
           @remove="deleteTimeSet(record.id)"
         />
       </template>
@@ -73,6 +73,7 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import { Service } from '@/composables/useTimeSetApi'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
+import { useInPlaceSaves } from '../useInPlaceSaves'
 
 const { t } = useI18n()
 
@@ -143,18 +144,13 @@ const processTimeSets = (rawTimeSets: any[]) => {
   }))
 }
 
-// 就地保存在途的条数。保存成功后父层会把新值回写到 props，触发下面的整表替换；
-// 这时如果另一条编辑的请求还没返回，它在本地的新值会被 props 里的旧值顶掉。
-// 所以在途时先不替换，全部返回后再整表同步一次（在途期间跳过的刷新也在这时补上）。
-const inPlaceSaves = ref(0)
-
-// 监听props变化
+// 监听props变化；就地保存没结束时不整表替换（见 useInPlaceSaves）
 const syncFromProps = () => {
-  if (isDraggingTimeSet.value || inPlaceSaves.value > 0) return
+  if (isDraggingTimeSet.value || saving.value) return
   timeSets.value = processTimeSets(props.timeSets)
 }
+const { saving, queued } = useInPlaceSaves(syncFromProps)
 watch(() => props.timeSets, syncFromProps, { deep: true, immediate: true })
-watch(inPlaceSaves, syncFromProps)
 
 // 添加定时项
 const addTimeSet = async () => {
@@ -197,7 +193,6 @@ const updateTimeSetTime = async (
   value: Dayjs | string | null
 ) => {
   if (readOnly.value) return
-  inPlaceSaves.value++
   try {
     // 清空表示显示日期的午夜；控件的 null 不写入页面状态或配置请求。
     const timeValue =
@@ -243,15 +238,12 @@ const updateTimeSetTime = async (
     message.error(t('core.queue.toast.updateTimeFailed', { error: errorMsg }))
     // 回滚时间值
     timeSet.timeValue = parseTimeString(timeSet.time)
-  } finally {
-    inPlaceSaves.value--
   }
 }
 
 // 更新定时项状态
 const updateTimeSetStatus = async (timeSet: any) => {
   if (readOnly.value) return
-  inPlaceSaves.value++
   try {
     const queueId = props.queueId
     const enabled = timeSet.enabled
@@ -283,15 +275,12 @@ const updateTimeSetStatus = async (timeSet: any) => {
     message.error(t('core.queue.toast.updateStatusFailed', { error: errorMsg }))
     // 回滚状态
     timeSet.enabled = !timeSet.enabled
-  } finally {
-    inPlaceSaves.value--
   }
 }
 
 // 更新定时项执行周期
 const updateTimeSetDays = async (timeSet: any) => {
   if (readOnly.value) return
-  inPlaceSaves.value++
   try {
     // 对选中的日期按星期顺序排序
     const sortedDays = sortDays(timeSet.days || [])
@@ -322,8 +311,6 @@ const updateTimeSetDays = async (timeSet: any) => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新执行周期失败: ${errorMsg}`)
     message.error(t('core.queue.toast.updateDaysFailed', { error: errorMsg }))
-  } finally {
-    inPlaceSaves.value--
   }
 }
 
