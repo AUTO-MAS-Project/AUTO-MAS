@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app.config import (
     ConfigCollection,
@@ -57,6 +57,17 @@ QQGroupCommandWhitelist = Annotated[
         ]
     ],
     Field(max_length=100),
+]
+
+DESKTOP_SESSION_TARGET_LIMIT = 100
+
+DesktopSessionTargetId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_lower=True,
+        pattern=r"^[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$",
+    ),
 ]
 
 
@@ -182,6 +193,26 @@ class GlobalConfig(DomainEntry):
         )
 
     Display: DisplayFields = Field(default_factory=DisplayFields)
+
+    class DesktopSessionFields(ConfigGroup):
+        Targets: list[DesktopSessionTargetId] = Field(
+            default_factory=list,
+            max_length=DESKTOP_SESSION_TARGET_LIMIT,
+            description="在桌面分身运行的队列和托管，按派发顺序排列",
+        )
+        LegacyMigrated: Annotated[bool, ui(visibility=UiVisibility.HIDE)] = Field(
+            default=False,
+            description="是否已把托管旧的执行会话设置并入清单",
+        )
+
+        @field_validator("Targets")
+        @classmethod
+        def _dedupe_targets(cls, value: list[str]) -> list[str]:
+            return list(dict.fromkeys(value))
+
+    DesktopSession: DesktopSessionFields = Field(
+        default_factory=DesktopSessionFields, description="桌面分身"
+    )
 
     class FunctionFields(ConfigGroup):
         HistoryRetentionTime: Literal[7, 15, 30, 60, 90, 180, 365, 0] = Field(

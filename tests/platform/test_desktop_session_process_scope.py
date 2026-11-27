@@ -592,9 +592,21 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "case", ["main", "desktop", "disconnected", "queue", "selection_changed"]
+    "case",
+    [
+        "main",
+        "desktop",
+        "disconnected",
+        "queue",
+        "selection_changed",
+        "legacy_field",
+        "unsupported",
+        "missing",
+    ],
 )
-async def test_manual_start_respects_configured_execution_session(monkeypatch, case):
+async def test_manual_start_follows_desktop_session_targets(monkeypatch, case):
+    """单独启动托管按全局桌面分身清单选会话；托管上旧的执行会话字段不再参与。"""
+    from types import SimpleNamespace
     from uuid import uuid4
 
     from app.api.dispatch import TaskCreateIn, add_task
@@ -602,19 +614,28 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
     from app.models.config import GeneralConfig
     from app.utils.windows.desktop_session import native
 
-    sid, task_id = uuid4(), uuid4()
+    sid, qid, task_id = uuid4(), uuid4(), uuid4()
+    listed = case in {"desktop", "disconnected", "unsupported", "missing"}
     entry = GeneralConfig.build(
         payload={
-            "Game": {"Enabled": False},
+            "Game": {"Enabled": case == "unsupported", "Type": "Emulator"},
             "Run": {
-                "ExecutionSession": "main"
-                if case in {"main", "selection_changed"}
-                else "desktop"
+                "ExecutionSession": "desktop" if case == "legacy_field" else "main"
             },
         }
     )
     await entry.activate()
-    monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry})
+    # 清单里的托管已不存在时交回主会话，由常规启动处理。
+    monkeypatch.setattr(
+        Config, "ScriptConfig", {} if case == "missing" else {str(sid): entry}
+    )
+    # 清单里的队列手动启动时仍在主会话，所以队列用例把队列也放进清单。
+    targets = [str(sid)] if listed else [str(qid)] if case == "queue" else []
+    monkeypatch.setattr(
+        Config,
+        "setting",
+        SimpleNamespace(DesktopSession=SimpleNamespace(Targets=targets)),
+    )
     service = lifecycle._DesktopSessionLifecycle()
     monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
     service.scope_state = (7, False)
@@ -630,7 +651,7 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
 
     monkeypatch.setattr(TaskManager, "start", start)
     root = (
-        {"uid": str(uuid4())}
+        {"uid": str(qid)}
         if case == "queue"
         else {
             "uid": "-",
@@ -646,10 +667,15 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
             }
         )
     )
-    if case in {"disconnected", "selection_changed"}:
+    if case in {"disconnected", "selection_changed", "unsupported"}:
         assert result.code == 409
-        assert result.reason == (
-            "desktop_session_disconnected" if case == "disconnected" else None
+        assert (
+            result.reason
+            == {
+                "disconnected": "desktop_session_disconnected",
+                "selection_changed": None,
+                "unsupported": "unsupported_config",
+            }[case]
         )
         assert not seen and not service.task_ids
     else:
@@ -663,10 +689,10 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("declared", [True, False])
-async def test_manual_start_reads_plugin_execution_session(monkeypatch, declared):
-    """插件托管的配置类不继承宿主的运行设置类：Run 上声明了执行会话才按它选分身。"""
-    from typing import Literal
+@pytest.mark.parametrize("listed", [True, False])
+async def test_manual_start_routes_plugin_script_by_targets(monkeypatch, listed):
+    """插件托管不声明执行会话字段，也按桌面分身清单选会话。"""
+    from types import SimpleNamespace
     from uuid import uuid4
 
     from pydantic import Field
@@ -679,17 +705,20 @@ async def test_manual_start_reads_plugin_execution_session(monkeypatch, declared
     class PluginScript(ScriptEntry):
         class RunFields(ConfigGroup):
             ProxyTimesLimit: int = 0
-            if declared:
-                ExecutionSession: Literal["main", "desktop"] = "main"
 
         Run: RunFields = Field(default_factory=RunFields)
 
     sid, task_id = uuid4(), uuid4()
-    entry = PluginScript.build(
-        payload={"Run": {"ExecutionSession": "desktop"} if declared else {}}
-    )
+    entry = PluginScript.build()
     await entry.activate()
     monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry})
+    monkeypatch.setattr(
+        Config,
+        "setting",
+        SimpleNamespace(
+            DesktopSession=SimpleNamespace(Targets=[str(sid)] if listed else [])
+        ),
+    )
     monkeypatch.setattr(Plugin, "desktop_session_reason", lambda *_: None)
     service = lifecycle._DesktopSessionLifecycle()
     monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
@@ -715,15 +744,15 @@ async def test_manual_start_reads_plugin_execution_session(monkeypatch, declared
                         },
                     }
                 },
-                "requireDesktopSession": declared,
+                "requireDesktopSession": listed,
             }
         )
     )
     assert result.taskId == str(task_id)
     assert [target.session_id if target else None for target in seen] == [
-        7 if declared else None
+        7 if listed else None
     ]
-    assert service.task_ids == ({task_id} if declared else set())
+    assert service.task_ids == ({task_id} if listed else set())
     assert session.desktop_process_target.get() is None
 
 

@@ -251,6 +251,31 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
   }
 )
 
+it.runIf(process.platform === 'win32' && process.arch === 'x64').each([
+  [
+    { mode: 'native', resolution: 'primary' },
+    { mode: 'native', resolution: 'primary' },
+  ],
+  [
+    { mode: 'fullscreen', resolution: 42 },
+    { mode: 'proxy', resolution: '1080p' },
+  ],
+  [{}, { mode: 'proxy', resolution: '1080p' }],
+])('单独启动托管时自动连接沿用保存的连接参数（%o）', async (preferences, expected) => {
+  const main = new TestWindow()
+  registerDesktopSession(
+    () => main as unknown as BrowserWindow,
+    '',
+    () => 'en-US',
+    () => preferences
+  )
+  const pending = invoke(main, 'connect-for-task')
+  const request = invoke(preview!, 'pending')
+  expect(request).toMatchObject({ ...expected, queueIds: [], forTask: true })
+  invoke(preview!, 'cancel-task-connect', request.taskConnectId)
+  await expect(pending).resolves.toBe('cancelled')
+})
+
 it.runIf(process.platform === 'win32' && process.arch === 'x64')(
   '预览崩溃后再次启动托管会重新加载页面并处理新的连接请求',
   async () => {

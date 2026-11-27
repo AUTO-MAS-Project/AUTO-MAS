@@ -260,7 +260,10 @@ class _DesktopSessionLifecycle:
         return DesktopProcessTarget(session_id, Config.source_path, Config.work_path)
 
     async def start_configured_script(self, node: "TaskSelectionNode") -> UUID | None:
-        """仅在手动启动单个托管时按其设置选用桌面分身。"""
+        """手动启动单个托管时，托管在桌面分身清单里就选用桌面分身。
+
+        队列、多个托管和不在清单里的托管返回 ``None``，由调用方在主会话启动。
+        """
         if node.uid != "-" or len(node.children) != 1:
             return None
 
@@ -269,11 +272,11 @@ class _DesktopSessionLifecycle:
         from app.utils.common.process.session import desktop_process_target
 
         async with self.lock:
-            script = Config.ScriptConfig.get(node.children[0].uid)
-            # 看字段在不在而不看基类：插件托管的配置类不继承宿主的 DesktopSessionRunFields，
-            # 与前端按 'ExecutionSession' in run 决定是否显示该设置的口径一致。
-            run = getattr(script, "Run", None)
-            if getattr(run, "ExecutionSession", "main") == "main":
+            uid = str(node.children[0].uid).lower()
+            if uid not in Config.setting.DesktopSession.Targets:
+                return None
+            script = Config.ScriptConfig.get(uid)
+            if script is None:
                 return None
             require_task_support(script)
             target = self._connected_target()

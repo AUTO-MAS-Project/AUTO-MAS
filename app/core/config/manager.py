@@ -112,6 +112,7 @@ from app.models.config import (
     ZzzOdUserConfig,
 )
 from app.models.config.game_binding import GameBindingCapabilities
+from app.models.config.setting import DESKTOP_SESSION_TARGET_LIMIT
 from app.models.schema import PlanComboxConsumer, ScriptStatusOverviewItem
 from app.models.script_access import entry_name, script_users
 from app.models.script_contracts import ScriptConfigHandler
@@ -817,6 +818,7 @@ class AppConfig:
                 await migrate_adapter_configs(self)
             for script in self.ScriptConfig.values():
                 await self._initialize_script_config(script)
+            await self._absorb_legacy_execution_session()
             await config_manager.flush()
         if version not in {"v2.0", "v2.1", "v2.2"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
@@ -1461,6 +1463,7 @@ class AppConfig:
 
         if script is None:
             await self.ScriptConfig.discard_unresolved(uid)
+        await self._remove_desktop_session_target(uid)
         if handler is not None:
             if handler.after_script_removal is not None:
                 handler.after_script_removal()
@@ -1894,6 +1897,61 @@ class AppConfig:
         if handler is not None and handler.initialize is not None:
             await handler.initialize(script)
 
+    async def _absorb_legacy_execution_session(self) -> None:
+        """把托管旧的「执行会话=桌面分身」并入桌面分身清单，只做一次。
+
+        托管上的字段原样保留、不写回，降级后旧版本照旧按字段路由。
+        插件不可用而旁挂的托管从盘上原始数据里读。
+        """
+        group = self.setting.DesktopSession
+        if group.LegacyMigrated:
+            return
+        found: list[str] = []
+        for uid, script in self.ScriptConfig.items():
+            run = getattr(script, "Run", None)
+            if getattr(run, "ExecutionSession", "main") == "desktop":
+                found.append(str(uid))
+        for item in self.ScriptConfig.unresolved():
+            run = item.payload.get("Run")
+            if isinstance(run, dict) and run.get("ExecutionSession") == "desktop":
+                found.append(str(item.uid))
+        limit = DESKTOP_SESSION_TARGET_LIMIT
+        targets = list(dict.fromkeys([*group.Targets, *found]))
+        if len(targets) > limit:
+            logger.warning(
+                f"桌面分身清单超过 {limit} 条，以下托管未并入: {targets[limit:]}"
+            )
+            targets = targets[:limit]
+        if found:
+            logger.info(f"已把 {len(found)} 个托管的执行会话设置并入桌面分身清单")
+        await self.setting.update(
+            GlobalConfig.model_validate(
+                {"DesktopSession": {"Targets": targets, "LegacyMigrated": True}}
+            ),
+            check_visibility=False,
+        )
+
+    async def _remove_desktop_session_target(self, uid: uuid.UUID) -> None:
+        """删除托管或队列后尽力从桌面分身清单移除；失败只记日志，不影响删除。"""
+        try:
+            targets = self.setting.DesktopSession.Targets
+            if str(uid) not in targets:
+                return
+            await self.setting.update(
+                GlobalConfig.model_validate(
+                    {
+                        "DesktopSession": {
+                            "Targets": [t for t in targets if t != str(uid)]
+                        }
+                    }
+                ),
+                check_visibility=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"从桌面分身清单移除 {uid} 失败: {type(exc).__name__}: {exc}"
+            )
+
     async def del_user(self, script_id: str, user_id: str) -> None:
         """删除账号配置"""
 
@@ -2253,6 +2311,7 @@ class AppConfig:
 
         self.QueueConfig.remove(queue_uid)
         await self.QueueConfig.commit()
+        await self._remove_desktop_session_target(queue_uid)
 
     async def get_time_set(
         self, queue_id: str, time_set_id: Optional[str]

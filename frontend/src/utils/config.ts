@@ -17,8 +17,14 @@ export interface FrontendConfig {
 
   /** 设置页右侧分区目录的显示偏好。 */
   settingsShowNavigation?: boolean
-  /** 桌面分身独立选择的队列与托管任务。 */
+  /** 旧版「打开分身时一并启动」的选择；清单已移到后端，只在迁移时读取，原样保留以便降级。 */
   desktopSessionQueueIds?: string[]
+  /** 旧选择已并入后端清单；只在设置保存成功后置位。 */
+  desktopSessionQueueIdsMigrated?: boolean
+  /** 桌面分身的分辨率；单独启动托管时自动连接也沿用它。 */
+  desktopSessionResolution?: '1080p' | 'primary'
+  /** 桌面分身的最小化方式；单独启动托管时自动连接也沿用它。 */
+  desktopSessionMode?: 'proxy' | 'native'
 
   // 主题设置
   themeMode: ThemeMode
@@ -93,6 +99,8 @@ const DEFAULT_CONFIG: FrontendConfig = {
   themeColor: 'blue',
   settingsShowNavigation: true,
   desktopSessionQueueIds: [],
+  desktopSessionResolution: '1080p',
+  desktopSessionMode: 'proxy',
   desktopMascotFps: null,
   cursorEffect: 'none',
   lowPerformanceMode: false,

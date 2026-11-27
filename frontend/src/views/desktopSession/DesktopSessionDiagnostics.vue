@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { WarningOutlined } from '@ant-design/icons-vue'
 import { AppModal } from '@/components/ui'
 import type {
   DesktopSessionRepair,
@@ -129,6 +130,7 @@ async function exportLogs() {
   <AppModal
     :open="confirming"
     size="sm"
+    :icon="WarningOutlined"
     :title="t('bootstrap.desktopSession.repairTitle')"
     :ok-text="t('bootstrap.desktopSession.repairContinue')"
     :cancel-text="t('bootstrap.desktopSession.cancel')"

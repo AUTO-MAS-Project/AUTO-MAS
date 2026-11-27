@@ -296,6 +296,8 @@ export type { GeneralUserConfig_Notify } from './models/GeneralUserConfig_Notify
 export type { GeneralUserConfig_NotifyInput } from './models/GeneralUserConfig_NotifyInput';
 export type { GeneralUserConfigInput } from './models/GeneralUserConfigInput';
 export type { GlobalConfig } from './models/GlobalConfig';
+export type { GlobalConfig_DesktopSession } from './models/GlobalConfig_DesktopSession';
+export type { GlobalConfig_DesktopSessionInput } from './models/GlobalConfig_DesktopSessionInput';
 export type { GlobalConfig_Display } from './models/GlobalConfig_Display';
 export type { GlobalConfig_DisplayInput } from './models/GlobalConfig_DisplayInput';
 export type { GlobalConfig_download } from './models/GlobalConfig_download';
