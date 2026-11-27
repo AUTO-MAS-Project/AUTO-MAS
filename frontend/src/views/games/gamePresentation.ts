@@ -67,6 +67,11 @@ export function hasModAvdUpdate(row: GameRow): boolean {
   return Boolean(current && latest && current !== latest && !blocked)
 }
 
+/** 插件提供配置守卫时后端才下发 capture 提示。 */
+export function supportsConfigGuard(row: GameRow): boolean {
+  return !!gameActionHint(row, row.uid, 'capture')
+}
+
 export function isTargetInUse(row: GameRow): boolean {
   return (
     Object.values(row.runtime.deviceUsage ?? {}).some(Boolean) ||
@@ -199,7 +204,7 @@ export function formatTargetConfigSummary(row: GameRow, t: (key: string) => stri
     if (row.type.type !== 'avd' && info && 'stable_mode' in info && info.stable_mode) {
       parts.push(t('core.games.summary.stableMode'))
     }
-    if (row.type.type !== 'avd' && info && 'config_guard' in info && info.config_guard) {
+    if (supportsConfigGuard(row) && info && 'config_guard' in info && info.config_guard) {
       parts.push(t('core.games.summary.configGuard'))
     }
     if (

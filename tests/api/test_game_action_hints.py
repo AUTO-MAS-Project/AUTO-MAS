@@ -1,4 +1,4 @@
-"""游戏页动作提示：ModAVD 不提供配置守卫，不下发「记录配置守卫基准」。"""
+"""游戏页动作提示：「记录配置守卫基准」跟着插件是否实现守卫走，不按模拟器类型。"""
 
 import pytest
 
@@ -6,15 +6,23 @@ from app.api.games import _action_hints
 from app.config import ConfigCollection, config_manager
 from app.core import Config
 from app.core.game_manager import _GameManager
+from app.plugin.base.emulator import EmulatorControl
 
 control_module = pytest.importorskip("ldplayer_adapter.control")
 from ldplayer_adapter.config import LDPlayerDevice, LDPlayerGame  # noqa: E402
 
 
-class ModAvdLike(control_module.Control):
-    """能力与雷电相同、品牌为 ModAVD 的控制器（测试环境没有 ModAVD 适配插件）。"""
+class GuardedAvd(control_module.Control):
+    """品牌为 ModAVD、仍带配置守卫的控制器（相当于 ModAVD 适配 0.1.1）。"""
 
     kind = "avd"
+
+
+class UnguardedAvd(control_module.Control):
+    """品牌为 ModAVD、已去掉配置守卫的控制器（相当于 ModAVD 适配 0.1.2）。"""
+
+    kind = "avd"
+    capture_baseline = EmulatorControl.capture_baseline
 
 
 def fields(hints, uid):
@@ -22,7 +30,7 @@ def fields(hints, uid):
 
 
 @pytest.mark.asyncio
-async def test_mod_avd_has_no_config_guard_capture(
+async def test_capture_hint_follows_plugin_guard_support(
     isolated_app_paths, tmp_path, monkeypatch
 ):
     games = ConfigCollection.build([LDPlayerGame])
@@ -31,15 +39,21 @@ async def test_mod_avd_has_no_config_guard_capture(
     executable = tmp_path / "ldconsole.exe"
     executable.touch()
     await games.activate()
-    game_uid = games.add(LDPlayerGame, payload={"info": {"path": str(executable)}})
+    game_uid = games.add(
+        LDPlayerGame,
+        payload={"info": {"path": str(executable), "config_guard": True}},
+    )
     await games.commit()
     game = games[game_uid]
     device = game.devices.add(LDPlayerDevice, payload={"info": {"index": "0"}})
     await game.devices.commit()
+    game.info.baselines = {str(device): {"resolution_width": 1280}}
+    await games.commit()
 
     for control_class, guarded in (
         (control_module.Control, True),
-        (ModAvdLike, False),
+        (GuardedAvd, True),
+        (UnguardedAvd, False),
     ):
         _GameManager.create_control(config=game, control_class=control_class)
         hints = _action_hints(game)

@@ -4,6 +4,8 @@ import { gameDevices, type GameRow } from '@/types/games'
 import {
   buildTargetOperationsMap,
   filterGameTargetRows,
+  formatTargetConfigSummary,
+  supportsConfigGuard,
   getTargetPriorityBadge,
   resolveEditableDeviceTarget,
   resolveEditableGameTarget,
@@ -118,5 +120,29 @@ describe('gamePresentation', () => {
     expect(opsMap.get('game-a')).toHaveLength(1)
     expect(getTargetPriorityBadge(targetA, opsMap.get('game-a'))?.kind).toBe('operating')
     expect(getTargetPriorityBadge(targetA, [])?.kind).toBe('recovery')
+  })
+
+  it('配置守卫跟着插件是否下发记录基准提示走，不按 ModAVD 类型隐藏', () => {
+    const target = makeRow('game-a', '目标 A', {
+      type: { type: 'avd', name: 'ModAVD', configType: 'ModAvdGame', kind: 'emulator' },
+    })
+    target.document.info = {
+      ...target.document.info,
+      config_guard: true,
+    } as GameRow['document']['info']
+    const t = (key: string) => key
+
+    // 已去掉守卫的插件（ModAVD 适配 0.1.2 起）不下发 capture
+    expect(supportsConfigGuard(target)).toBe(false)
+    expect(formatTargetConfigSummary(target, t)).not.toContain('core.games.summary.configGuard')
+
+    // 仍带守卫的旧插件（0.1.1）下发 capture，开关和摘要都要留着
+    target.runtime.actionHints!['game-a']!.push({
+      field: 'capture',
+      component: 'button',
+      editable: true,
+    })
+    expect(supportsConfigGuard(target)).toBe(true)
+    expect(formatTargetConfigSummary(target, t)).toContain('core.games.summary.configGuard')
   })
 })

@@ -129,7 +129,7 @@
           <span>{{ t('core.games.stableMode') }}</span>
           <a-switch v-model:checked="draft.stable" />
         </label>
-        <label v-if="selectedType !== 'avd'" class="switch-item">
+        <label v-if="guardSupported" class="switch-item">
           <span>{{ t('core.games.configGuard') }}</span>
           <a-switch v-model:checked="draft.guard" />
         </label>
@@ -181,6 +181,7 @@ defineProps<{
   showAdapterSelect?: boolean
   twoColumn?: boolean
   creating?: boolean
+  guardSupported?: boolean
 }>()
 
 const emit = defineEmits<{

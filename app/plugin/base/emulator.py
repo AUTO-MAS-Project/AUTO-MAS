@@ -158,7 +158,11 @@ class EmulatorControl(GameControl[TEmulator, TEmulatorDevice]):
     async def capture_baseline(
         self, uid: UUID, *, ticket: LockTicket
     ) -> dict[str, int]:
-        """由插件读取并保存其支持的配置守卫基准。"""
+        """由插件读取并保存其支持的配置守卫基准。
+
+        覆盖本方法即表示提供配置守卫，宿主据此显示守卫开关和记录基准入口；
+        不提供守卫就不要覆盖。
+        """
         raise NotImplementedError("此设备不提供配置守卫")
 
     async def maafw_adb_extra(self, uid: UUID) -> dict[str, object]:
