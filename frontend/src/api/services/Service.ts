@@ -26,8 +26,6 @@ import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post 
 import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post } from '../models/Body_save_oknte_plan_configs_api_scripts_oknte_plan_save_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
-import type { CommunityActivityOut } from '../models/CommunityActivityOut';
-import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
 import type { ConfigBackupEnsureIn } from '../models/ConfigBackupEnsureIn';
 import type { ConfigBackupEnsureOut } from '../models/ConfigBackupEnsureOut';
 import type { ConfigBackupFileOut } from '../models/ConfigBackupFileOut';
@@ -3824,26 +3822,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign',
-        });
-    }
-    /**
-     * 查询游戏社区日常活跃度
-     * 查询游戏社区日常活动，不占用签到流程锁。
-     * @param requestBody
-     * @returns CommunityActivityOut Successful Response
-     * @throws ApiError
-     */
-    public static queryCommunityActivityApiToolsCommunityActivityQueryPost(
-        requestBody: CommunityActivityQueryIn,
-    ): CancelablePromise<CommunityActivityOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/community/activity/query',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**

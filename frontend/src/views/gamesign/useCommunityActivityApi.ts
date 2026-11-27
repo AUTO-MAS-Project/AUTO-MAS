@@ -1,21 +1,40 @@
+import { ApiError, Service } from '@/api'
+import { signflowApi, type SignflowNoteSnapshot } from '@/services/signflowApi'
 import { observeFeature } from '@/utils/featureAnalytics'
-import {
-  ApiError,
-  CommunityActivitySnapshotOut,
-  CommunityService,
-  Service,
-  type CommunityActivityResourceOut,
-  type CommunityActivityTaskOut,
-} from '@/api'
-import { isPluginUnavailable, signflowApi, type SignflowNoteSnapshot } from '@/services/signflowApi'
 import { parseSignResult } from './gameSignDisplay'
 
-type ActivityTask = CommunityActivityTaskOut & { period: string }
-type ActivityResource = CommunityActivityResourceOut
-export type ActivitySnapshot = Omit<
-  CommunityActivitySnapshotOut,
-  'completed' | 'target' | 'tasks' | 'resources'
-> & {
+/** 便笺状态取值，与 signflow-notes 插件下发的字符串枚举一致 */
+export type ActivityStatus = 'success' | 'empty' | 'limited' | 'unavailable' | 'failed'
+
+const ACTIVITY_STATUSES: readonly ActivityStatus[] = [
+  'success',
+  'empty',
+  'limited',
+  'unavailable',
+  'failed',
+]
+
+interface ActivityTask {
+  name: string
+  completed: number
+  target: number
+  status: string
+  period: string
+}
+
+interface ActivityResource {
+  name: string
+  current: number
+  target: number
+  status: string
+}
+
+export interface ActivitySnapshot {
+  account: string
+  accountUid: string
+  game: string
+  platform: string
+  status: ActivityStatus
   completed: number | null
   target: number | null
   tasks: ActivityTask[]
@@ -28,37 +47,15 @@ export type ActivitySnapshot = Omit<
   source: string
 }
 
-/** 一次便笺查询的结果；插件与宿主两条来源归一成同一形状再交给调用方 */
+/** 一次便笺查询的结果信封，供遥测判定取值 */
 interface ActivityQueryResult {
   code: number
   message?: string
   data?: ActivitySnapshot[]
 }
 
-const normalizeSnapshot = (snapshot: CommunityActivitySnapshotOut): ActivitySnapshot => ({
-  ...snapshot,
-  completed: snapshot.completed ?? null,
-  target: snapshot.target ?? null,
-  tasks: (snapshot.tasks ?? []).map(task => ({
-    ...task,
-    period: task.period ?? 'daily',
-  })),
-  resources: snapshot.resources ?? [],
-  reason: snapshot.reason ?? '',
-  updatedAt: snapshot.updatedAt ?? '',
-  roleName: snapshot.roleName ?? '',
-  roleUid: snapshot.roleUid ?? '',
-  server: snapshot.server ?? '',
-  source: snapshot.source ?? '',
-})
-
-/** 插件快照已经把字段投影成驼峰，这里只做数值与枚举的收口，避免把松散字典直接当合同用 */
-const resolveStatus = (status: string): CommunityActivitySnapshotOut.status => {
-  const known = Object.values(CommunityActivitySnapshotOut.status) as string[]
-  return known.includes(status)
-    ? (status as CommunityActivitySnapshotOut.status)
-    : CommunityActivitySnapshotOut.status.FAILED
-}
+const resolveStatus = (status: string): ActivityStatus =>
+  ACTIVITY_STATUSES.includes(status as ActivityStatus) ? (status as ActivityStatus) : 'failed'
 
 const asNumber = (value: unknown, fallback: number): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback
@@ -106,30 +103,13 @@ const responseMessage = (error: ApiError): string => {
   return typeof body?.message === 'string' ? body.message : error.message
 }
 
-/**
- * 便笺查询优先走 SignFlow 附属插件，插件未启用时回退宿主内置的社区查询。
- *
- * 两条路径都还在：插件已装但没启用的用户升级后不会突然查不到便笺，
- * 而插件一旦启用就由它承担责任（宿主那份实现后续会迁出）。
- */
+/** 便笺只由 SignFlow 附属插件提供；插件未启用时按失败处理，不再回退宿主实现 */
 const querySnapshots = async (accountIds: string[] | null): Promise<ActivityQueryResult> => {
-  try {
-    const plugin = await signflowApi.queryNotes(accountIds)
-    return {
-      code: plugin.code ?? 200,
-      message: plugin.message,
-      data: Array.isArray(plugin.data) ? plugin.data.map(fromPlugin) : undefined,
-    }
-  } catch (error) {
-    if (!isPluginUnavailable(error)) throw error
-  }
-  const host = await CommunityService.queryCommunityActivityApiToolsCommunityActivityQueryPost({
-    accountIds,
-  })
+  const plugin = await signflowApi.queryNotes(accountIds)
   return {
-    code: host.code ?? 500,
-    message: host.message,
-    data: Array.isArray(host.data) ? host.data.map(normalizeSnapshot) : undefined,
+    code: plugin.code ?? 200,
+    message: plugin.message,
+    data: Array.isArray(plugin.data) ? plugin.data.map(fromPlugin) : undefined,
   }
 }
 
@@ -145,9 +125,7 @@ export function useCommunityActivityApi() {
             ? 'blocked'
             : result.code !== 200 || !Array.isArray(result.data)
               ? 'failure'
-              : result.data.some(
-                    item => item.status !== CommunityActivitySnapshotOut.status.SUCCESS
-                  )
+              : result.data.some(item => item.status !== 'success')
                 ? 'partial'
                 : 'success'
       )
