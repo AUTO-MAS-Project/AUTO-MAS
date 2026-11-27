@@ -160,6 +160,7 @@ import type { PluginCatalogUpdateIn } from '../models/PluginCatalogUpdateIn';
 import type { PluginConfigGetIn } from '../models/PluginConfigGetIn';
 import type { PluginConfigGetOut } from '../models/PluginConfigGetOut';
 import type { PluginConfigUpdateIn } from '../models/PluginConfigUpdateIn';
+import type { PluginConfigUpdateOut } from '../models/PluginConfigUpdateOut';
 import type { PluginGameDevicesIn } from '../models/PluginGameDevicesIn';
 import type { PluginInstallationGetIn } from '../models/PluginInstallationGetIn';
 import type { PluginInstallationOut } from '../models/PluginInstallationOut';
@@ -4826,7 +4827,7 @@ export class Service {
     public static updatePluginConfigApiPluginConfigUpdatePost(
         requestBody: PluginConfigUpdateIn,
         locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<PluginConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_config/update',

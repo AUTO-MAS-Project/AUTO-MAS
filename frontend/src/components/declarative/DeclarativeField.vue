@@ -104,6 +104,8 @@ const pick = async () => {
         :path-kind="hint.path_kind"
         :min="hint.min"
         :max="hint.max"
+        :precision="hint.precision"
+        :step="hint.step"
         :multiple="hint.multiple"
         :options="options"
         @update:model-value="update"

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from app.config import config_manager
 from app.config.core.manager import TriggerUnavailable
+from app.config.fields.hints import OptionValue
 from app.core.background_tasks import BackgroundTaskState
 from app.models.schema import ConfigSnapshotOut, OutBase
 
@@ -19,6 +20,9 @@ class TriggerWriteIn(BaseModel):
     group: str
     field: str
     value: StrictBool | None
+    option: OptionValue | None = Field(
+        default=None, description="下拉动作启动时传给处理器的选项值"
+    )
 
 
 class TriggerWriteOut(OutBase):
@@ -64,7 +68,11 @@ async def write_config_trigger(body: TriggerWriteIn) -> TriggerWriteOut:
     """写入三态命令并立即返回受影响的任务 UUID。"""
     try:
         uid = config_manager.write_trigger(
-            body.configUid, group=body.group, field=body.field, value=body.value
+            body.configUid,
+            group=body.group,
+            field=body.field,
+            value=body.value,
+            option=body.option,
         )
     except TriggerUnavailable as error:
         return TriggerWriteOut(code=409, status="error", message=str(error))

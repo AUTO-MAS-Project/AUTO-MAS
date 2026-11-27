@@ -52,8 +52,11 @@ class ConfigPersistenceError(ConfigError):
 class ConfigAggregateError(ConfigError):
     """聚合多条错误（activate / commit / update）；``errors`` 可含嵌套的 ``ConfigAggregateError``。"""
 
-    def __init__(self, errors: list[Exception]) -> None:
+    def __init__(
+        self, errors: list[Exception], *, field_path: tuple[str, str] | None = None
+    ) -> None:
         self.errors = list(errors)
+        self.field_path = field_path
         detail = "; ".join(f"{type(e).__name__}: {e}" for e in self.errors)
         super().__init__(detail or "操作失败")
 
