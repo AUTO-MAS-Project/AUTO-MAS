@@ -198,14 +198,19 @@ class GlobalConfig(DomainEntry):
         Targets: list[DesktopSessionTargetId] = Field(
             default_factory=list,
             max_length=DESKTOP_SESSION_TARGET_LIMIT,
-            description="在桌面分身运行的队列和托管，按派发顺序排列",
+            description="单独启动时在桌面分身运行的托管",
+        )
+        StartOnOpen: list[DesktopSessionTargetId] = Field(
+            default_factory=list,
+            max_length=DESKTOP_SESSION_TARGET_LIMIT,
+            description="打开桌面分身并启动任务时一并派发的队列和托管，按派发顺序排列",
         )
         LegacyMigrated: Annotated[bool, ui(visibility=UiVisibility.HIDE)] = Field(
             default=False,
-            description="是否已把托管旧的执行会话设置并入清单",
+            description="是否已把托管旧的执行会话设置并入单独启动清单",
         )
 
-        @field_validator("Targets")
+        @field_validator("Targets", "StartOnOpen")
         @classmethod
         def _dedupe_targets(cls, value: list[str]) -> list[str]:
             return list(dict.fromkeys(value))
