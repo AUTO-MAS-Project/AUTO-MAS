@@ -100,19 +100,19 @@ interface Props {
   pending?: boolean
   /** 只读已持续一段时间：显示禁用样式 */
   dimmed?: boolean
+  /** 就地保存成功后回写。用 prop 不用事件：子表被卸载后，排着的保存仍要回写 */
+  onSaved?: (queueId: string, queueItemId: string, schedule: Record<string, any>) => void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   locked: false,
   pending: false,
   dimmed: false,
+  onSaved: undefined,
 })
 
 // Emits
-const emit = defineEmits<{
-  refresh: []
-  saved: [queueId: string, queueItemId: string, schedule: Record<string, any>]
-}>()
+const emit = defineEmits<{ refresh: [] }>()
 
 // 逻辑只读与禁用样式分开：快速切换队列时不闪灰
 const readOnly = computed(() => props.locked || props.pending)
@@ -133,7 +133,7 @@ const syncFromProps = () => {
   if (isDraggingQueueItem.value || saving.value) return
   queueItems.value = withSchedule(props.queueItems)
 }
-const { saving, queued } = useInPlaceSaves(syncFromProps)
+const { saving, queued } = useInPlaceSaves(() => props.queueId, syncFromProps)
 watch(() => props.queueItems, syncFromProps, { deep: true })
 
 // 保存队列项的执行星期。这里不 emit refresh：本地 record 已是最新值，
@@ -154,7 +154,7 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
       emit('refresh')
       return false
     }
-    emit('saved', queueId, record.id, data)
+    props.onSaved?.(queueId, record.id, data)
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

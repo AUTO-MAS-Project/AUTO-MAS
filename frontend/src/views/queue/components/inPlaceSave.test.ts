@@ -84,7 +84,7 @@ const flush = async () => {
   for (let i = 0; i < 8; i++) await nextTick()
 }
 
-/** 父层与页面一致：列表来自 useQueueScopedList，子表 saved 后用 patch 回写 */
+/** 父层与页面一致：列表来自 useQueueScopedList，子表按队列带 key（切队列即重建），saved 后用 patch 回写 */
 function mountList<T extends { id: string }>(
   component: Component,
   listProp: string,
@@ -100,7 +100,8 @@ function mountList<T extends { id: string }>(
         list.commit('q', rows)
         return () =>
           h(component, {
-            queueId: 'q',
+            key: active.value,
+            queueId: list.ownerQueueId.value,
             [listProp]: list.items.value,
             onSaved: (queueId: string, id: string, change: Record<string, unknown>) =>
               list.patch(queueId, id, item => apply(item, JSON.parse(JSON.stringify(change)))),
@@ -124,7 +125,14 @@ function mountList<T extends { id: string }>(
     list.select('q')
     return list.items.value
   }
-  return { list: () => list, shown, node, cached }
+  /** 切到某个队列并读回它的列表 */
+  const switchTo = async (queueId: string, loaded: T[]) => {
+    active.value = queueId
+    list.select(queueId)
+    list.commit(queueId, loaded)
+    await flush()
+  }
+  return { list: () => list, shown, node, cached, switchTo }
 }
 
 beforeEach(() => {
@@ -262,5 +270,35 @@ describe('队列项连续就地保存', () => {
       ['Monday'],
       ['Friday'],
     ])
+  })
+
+  it('切到别的队列再切回来，旧子表里排着的保存不会晚于新子表的保存发出', async () => {
+    const replies = [deferred<typeof ok>(), deferred<typeof ok>(), deferred<typeof ok>()]
+    replies.forEach(reply => api.updateSchedule.mockReturnValueOnce(reply.promise))
+    const view = mount()
+    const sent = () => api.updateSchedule.mock.calls.map(call => call[2].Days[0])
+
+    await fire(view.node('days', 0), 'onPick', ['Monday'])
+    await fire(view.node('days', 0), 'onPick', ['Tuesday'])
+    // 切走再切回：子表被重建，回读到的是后台已写入的周一
+    await view.switchTo('other', [])
+    await view.switchTo('q', [
+      { id: 'a', script: 's1', schedule: { Days: ['Monday'] } },
+      { id: 'b', script: 's2', schedule: { Days: [] } },
+    ])
+    await fire(view.node('days', 0), 'onPick', ['Wednesday'])
+    await flush()
+    expect(sent()).toEqual(['Monday'])
+
+    replies[0].resolve(ok)
+    await flush()
+    expect(sent()).toEqual(['Monday', 'Tuesday'])
+    replies[1].resolve(ok)
+    await flush()
+    expect(sent()).toEqual(['Monday', 'Tuesday', 'Wednesday'])
+    replies[2].resolve(ok)
+    await flush()
+    expect(view.shown('days', 'value')[0]).toBe('Wednesday')
+    expect(view.cached()[0].schedule.Days).toEqual(['Wednesday'])
   })
 })

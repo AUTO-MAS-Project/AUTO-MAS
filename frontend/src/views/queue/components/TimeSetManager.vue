@@ -88,19 +88,18 @@ interface Props {
   pending?: boolean
   /** 只读已持续一段时间：显示禁用样式 */
   dimmed?: boolean
+  /** 就地保存成功后回写。用 prop 不用事件：子表被卸载后，排着的保存仍要回写 */
+  onSaved?: (
+    queueId: string,
+    timeSetId: string,
+    change: { time?: string; enabled?: boolean; days?: DayOfWeek[] }
+  ) => void
 }
 
 const props = defineProps<Props>()
 
 // Emits
-const emit = defineEmits<{
-  refresh: []
-  saved: [
-    queueId: string,
-    timeSetId: string,
-    change: { time?: string; enabled?: boolean; days?: DayOfWeek[] },
-  ]
-}>()
+const emit = defineEmits<{ refresh: [] }>()
 
 // 逻辑只读与禁用样式分开：快速切换队列时不闪灰
 const readOnly = computed(() => props.disabled || props.pending)
@@ -149,7 +148,7 @@ const syncFromProps = () => {
   if (isDraggingTimeSet.value || saving.value) return
   timeSets.value = processTimeSets(props.timeSets)
 }
-const { saving, queued } = useInPlaceSaves(syncFromProps)
+const { saving, queued } = useInPlaceSaves(() => props.queueId, syncFromProps)
 watch(() => props.timeSets, syncFromProps, { deep: true, immediate: true })
 
 // 添加定时项
@@ -222,7 +221,7 @@ const updateTimeSetTime = async (
     if (response.code === 200) {
       // 更新本地显示的时间
       timeSet.time = timeString
-      emit('saved', queueId, timeSet.id, { time: timeString })
+      props.onSaved?.(queueId, timeSet.id, { time: timeString })
     } else {
       message.error(
         t('core.queue.toast.timeUpdateFailed', {
@@ -259,7 +258,7 @@ const updateTimeSetStatus = async (timeSet: any, enabled: boolean) => {
 
     if (response.code === 200) {
       // 状态更新成功，无需通知
-      emit('saved', queueId, timeSet.id, { enabled })
+      props.onSaved?.(queueId, timeSet.id, { enabled })
     } else {
       message.error(
         t('core.queue.toast.statusUpdateFailed', {
@@ -299,7 +298,7 @@ const updateTimeSetDays = async (timeSet: any) => {
 
     if (response.code === 200) {
       // 周期更新成功，无需通知
-      emit('saved', queueId, timeSet.id, { days: sortedDays })
+      props.onSaved?.(queueId, timeSet.id, { days: sortedDays })
     } else {
       message.error(
         t('core.queue.toast.daysUpdateFailed', {
