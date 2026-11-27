@@ -86,8 +86,13 @@
                   @change="selectDevice"
                 >
                   <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
-                  <a-select-option v-for="device in devices" :key="device.uid" :value="device.uid">
-                    {{ device.document.info?.name }}
+                  <a-select-option
+                    v-for="device in deviceOptions"
+                    :key="device.value"
+                    :value="device.value"
+                    :disabled="device.disabled"
+                  >
+                    {{ device.label }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -167,8 +172,13 @@
                 @change="selectDevice"
               >
                 <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
-                <a-select-option v-for="device in devices" :key="device.uid" :value="device.uid">
-                  {{ device.document.info?.name }}
+                <a-select-option
+                  v-for="device in deviceOptions"
+                  :key="device.value"
+                  :value="device.value"
+                  :disabled="device.disabled"
+                >
+                  {{ device.label }}
                 </a-select-option>
               </a-select>
             </a-form-item>
@@ -180,20 +190,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { DesktopOutlined } from '@ant-design/icons-vue'
 import { SectionCard } from '@/components/ui'
-import { useConfigQuery } from '@/services/configUiSync'
-import { Service } from '@/api'
-import { useGamesApi, checkedGameResponse, useGameBindingQuery } from '@/composables/useGamesApi'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useUserApi } from '@/composables/useUserApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
-import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { gameDevices, type GameBindingValue } from '@/types/games'
+import { useGameBinding } from '@/composables/useGameBinding'
 
 const props = withDefaults(
   defineProps<{
@@ -205,134 +207,32 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const route = useRoute()
-const client = useQueryClient()
-const games = useGamesApi()
-const { updateScript } = useScriptApi()
-const { updateUser } = useUserApi()
 const userId = computed(() =>
   typeof route.params.userId === 'string' ? route.params.userId : undefined
 )
 const routeVisible = computed(
   () => route.meta.scriptPage !== 'userAdd' && !route.path.includes('/users/add/')
 )
-const { configLocked } = useScriptConfigLock(() =>
-  userId.value ? { scriptId: props.scriptId, userId: userId.value } : props.scriptId
-)
-const binding = ref<GameBindingValue>({ game_id: '-', device_id: '-' })
-const overrideDraftOpen = ref(false)
-const queryKey = computed(() => ['game-binding', props.scriptId, userId.value])
-const query = useGameBindingQuery(() => props.scriptId, userId, routeVisible)
-const options = useConfigQuery({
-  queryKey: computed(() => ['game-binding-options', props.scriptId, userId.value]),
-  enabled: computed(() => routeVisible.value && !!props.scriptId),
-  queryFn: async () =>
-    checkedGameResponse(
-      await Service.gameBindingOptionsApiGamesBindingOptionsPost({
-        scriptId: props.scriptId,
-        userId: userId.value,
-      })
-    ),
-})
-const bindingSupported = computed(
-  () =>
-    options.data.value?.supported !== false &&
-    (!userId.value || options.data.value?.accountOverrideSupported !== false)
-)
-const hasBinding = computed(
-  () => binding.value.game_id !== '-' || !!binding.value.unavailable_reason
-)
-const selectedOptionWarning = computed(
-  () =>
-    options.data.value?.data?.find(option => option.value === binding.value.game_id)?.warning ?? ''
-)
-const bindingProblem = computed(
-  () =>
-    binding.value.unavailable_reason ||
-    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '')
-)
-// 类型不一致只是提示，绑定照常可用，不提供「清空」。
-const bindingWarning = computed(() => bindingProblem.value || selectedOptionWarning.value)
-const selected = computed(() => games.rows.value.find(game => game.uid === binding.value.game_id))
-const devices = computed(() => (selected.value ? gameDevices(selected.value) : []))
-const inheritedName = computed(
-  () =>
-    games.rows.value.find(game => game.uid === query.data.value?.inherited?.game_id)?.document.info
-      ?.name ?? t('core.games.noTarget')
-)
-const userSaveQueue = useSaveQueue()
-const save = useMutation({
-  mutationKey: computed(() => ['game-binding-save', props.scriptId, userId.value]),
-  scope: { id: `script-save:${props.scriptId}` },
-  retry: false,
-  mutationFn: async (value: GameBindingValue) => {
-    const currentUserId = userId.value
-    const ok = currentUserId
-      ? await userSaveQueue.enqueue(
-          () => updateUser(props.scriptId, currentUserId, { game: value }),
-          'game'
-        )
-      : await updateScript(props.scriptId, { game: value })
-    if (!ok) throw new Error(t('core.games.saveFailed'))
-  },
-  onSettled: () => client.invalidateQueries({ queryKey: queryKey.value }),
-})
-const saving = save.isPending
-const controlsDisabled = computed(() => configLocked.value || saving.value || query.isPending.value)
-const overrideEnabled = computed(() => overrideDraftOpen.value || hasBinding.value)
-const error = computed(() => query.error.value ?? options.error.value ?? save.error.value)
-
-watch(
-  () => [props.scriptId, userId.value] as const,
-  () => {
-    overrideDraftOpen.value = false
-  }
-)
-
-watch(
-  () => query.data.value,
-  data => {
-    binding.value = {
-      game_id: data?.binding?.game_id ?? '-',
-      device_id: data?.binding?.device_id ?? '-',
-      unavailable_reason: data?.binding?.unavailable_reason,
-    }
-  },
-  { immediate: true }
-)
-
-async function toggleOverride(checked: unknown) {
-  overrideDraftOpen.value = Boolean(checked)
-  if (!checked && (hasBinding.value || binding.value.device_id !== '-')) await resetBinding()
-}
-
-async function resetBinding() {
-  await save.mutateAsync({ game_id: '-', device_id: '-' }).catch(() => {})
-}
-
-async function selectTarget(value: unknown) {
-  if (typeof value !== 'string') return
-  if (value === '-') {
-    await resetBinding()
-    return
-  }
-  const target = games.rows.value.find(game => game.uid === value)
-  const device = target?.type.kind === 'client' ? (gameDevices(target)[0]?.uid ?? '-') : '-'
-  binding.value = { game_id: value, device_id: device }
-  overrideDraftOpen.value = false
-  await save.mutateAsync({ ...binding.value }).catch(() => {})
-}
-
-async function selectDevice(value: unknown) {
-  if (typeof value !== 'string') return
-  binding.value = { ...binding.value, device_id: value }
-  await save.mutateAsync({ ...binding.value }).catch(() => {})
-}
-
-function reload() {
-  void query.refetch()
-  void options.refetch()
-  void games.refresh()
-}
+const {
+  binding,
+  query,
+  options,
+  bindingSupported,
+  hasBinding,
+  bindingProblem,
+  bindingWarning,
+  deviceOptions,
+  inheritedName,
+  saving,
+  controlsDisabled,
+  overrideEnabled,
+  error,
+  toggleOverride,
+  resetBinding,
+  selectTarget,
+  selectDevice,
+  reload,
+} = useGameBinding({ scriptId: () => props.scriptId, userId, enabled: routeVisible })
 </script>
 
 <style scoped>

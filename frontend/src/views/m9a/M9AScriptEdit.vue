@@ -14,7 +14,7 @@
     :form="{ model: formData, rules }"
     :body-form="{ model: maafwConfig }"
     :form-label="pageTitle"
-    :binding-visible="!isWizard || currentStep === 1"
+    :binding-visible="false"
     @cancel="handleCancel"
   >
     <template #before-basic>
