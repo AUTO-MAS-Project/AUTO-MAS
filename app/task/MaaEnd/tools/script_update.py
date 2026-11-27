@@ -10,9 +10,11 @@
 
 import asyncio
 import base64
+import hashlib
 import json
 import os
 import shutil
+import tempfile
 import threading
 import zipfile
 from contextlib import suppress
@@ -164,6 +166,110 @@ def select_package(release: dict, arch: str) -> tuple[Version, str, str, int, st
         url = f"https://github.com/{REPOSITORY}/releases/download/{quote(tag, safe='')}/{quote(name, safe='')}"
         return version, name, url, size, digest[7:]
     raise ValueError("MaaEnd 官方发行版没有当前安装架构的完整包")
+
+
+def verify_package_tree(root: Path, archive: Path, cancelled: threading.Event) -> bool:
+    """逐文件核对官方包与当前安装，忽略配置和运行期新增文件。"""
+    script_install._check_cancel(cancelled)
+    script_install._reject_link(root)
+    script_install._reject_link(archive)
+    seen: set[str] = set()
+    files: set[str] = set()
+    matched = 0
+    with zipfile.ZipFile(archive) as package:
+        entries = package.infolist()
+        if not entries or len(entries) > 100_000:
+            return False
+        for item in entries:
+            script_install._check_cancel(cancelled)
+            name = script_install._member_name(item.filename)
+            key = name.casefold()
+            mode = (item.external_attr >> 16) & 0o170000
+            if mode not in (0, 0o040000, 0o100000) or item.flag_bits & 1:
+                raise ValueError("MaaEnd 官方包包含链接、特殊文件或加密成员")
+            if key in seen or any(
+                parent in files for parent in script_install._parents(key)
+            ):
+                raise ValueError("MaaEnd 官方包包含重名文件或文件目录冲突")
+            seen.add(key)
+            target = script_install.update_files.resolve_within(
+                root, name, reject_links=True
+            )
+            if item.is_dir():
+                if target.exists() and not target.is_dir():
+                    return False
+                continue
+            files.add(key)
+            if not target.is_file():
+                return False
+            with target.open("rb") as current:
+                actual = hashlib.file_digest(current, "sha256").hexdigest()
+            digest = hashlib.sha256()
+            with package.open(item) as source:
+                while chunk := source.read(1024 * 1024):
+                    script_install._check_cancel(cancelled)
+                    digest.update(chunk)
+            if actual != digest.hexdigest():
+                return False
+            matched += 1
+    return bool(files) and matched == len(files)
+
+
+async def verify_current_install_integrity(root: Path) -> None:
+    """仅在遗留事务恢复时，用当前版本官方完整包证明安装文件齐全。"""
+    try:
+        version, arch = await asyncio.to_thread(read_install, root)
+        interface = await asyncio.to_thread(
+            _utils_io.read_dict_file, root / "interface.json", format=".json5"
+        )
+        installed_tag = str(interface["version"])
+        cache = (
+            Config.data_path
+            / "maaend_package_cache"
+            / script_install.record_directory(root).name
+        )
+        try:
+            metadata = json.loads((cache / "baseline.json").read_text(encoding="utf-8"))
+            baseline = cache / "baseline.zip"
+            if Version(str(metadata.get("version", ""))) == version:
+                await script_install.run_worker(
+                    script_install.verify_archive,
+                    baseline,
+                    metadata["size"],
+                    metadata["sha256"],
+                )
+                if await script_install.run_worker(verify_package_tree, root, baseline):
+                    return
+        except (OSError, KeyError, TypeError, ValueError, zipfile.BadZipFile):
+            pass
+        release = await request_release_for_version(version, installed_tag)
+        target, name, url, size, digest = select_package(release, arch)
+        if target != version:
+            raise ValueError("当前版本与官方完整包版本不一致")
+        cache.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=cache, prefix="verify-") as directory:
+            destination = Path(directory) / name
+            await download_file(
+                url,
+                destination,
+                timeout=30 * 60,
+                proxy=Config.proxy,
+                downloader="builtin",
+                source="GitHub",
+            )
+            await script_install.run_worker(
+                script_install.verify_archive, destination, size, digest
+            )
+            if not await script_install.run_worker(
+                verify_package_tree, root, destination
+            ):
+                raise ValueError("当前安装缺少或损坏官方包中的必要文件")
+    except script_install.InstallUnsafeError:
+        raise
+    except Exception as error:
+        raise script_install.InstallUnsafeError(
+            "无法用当前版本官方完整包确认 MaaEnd 安装完整性，已保留恢复现场并阻止启动"
+        ) from error
 
 
 @dataclass(frozen=True)
