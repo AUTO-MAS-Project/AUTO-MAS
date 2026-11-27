@@ -56,6 +56,7 @@ from app.models.schema import (
     OutBase,
     PluginInstallation,
 )
+from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
 from app.plugin.errors import PluginBusyError, PluginPrecheckError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
@@ -108,11 +109,27 @@ class PluginConfigUi(BaseModel):
     tables: UiTablesList = Field(default_factory=list)
 
 
+class PluginProvidedScriptType(BaseModel):
+    """已启用专项在宿主登记的配置类型及能力。"""
+
+    scriptKey: str = Field(description="创建托管时使用的脚本类型标识")
+    scriptConfigType: str
+    userConfigType: str
+    planConfigType: str | None = None
+    supportsGameBinding: bool
+    supportsDesktopSession: bool = Field(
+        description="是否支持自动代理桌面分身，单个托管的可用性由运行时检查决定"
+    )
+    hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
+    hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
+
+
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
     """沿用配置字段投影，并显式保留命令目标身份及运行时 UI 属性。"""
 
     uid: UUID
     ui: PluginConfigUi
+    providedScript: PluginProvidedScriptType | None = None
     disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
         default_factory=list,
         description="停用本插件及其级联下游时暂不可用的配置领域",
@@ -226,6 +243,32 @@ logger = get_logger("插件 API")
 # ==================== 注册表 plugin_registry ====================
 
 
+def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
+    registration = Plugin.registered_script(record)
+    if registration is None:
+        return None
+    script_key, decl = registration
+    info = decl.user_type.model_fields.get("Info")
+    info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
+    return PluginProvidedScriptType(
+        scriptKey=script_key,
+        scriptConfigType=decl.script_type.__name__,
+        userConfigType=decl.user_type.__name__,
+        planConfigType=decl.plan_type.__name__ if decl.plan_type else None,
+        supportsGameBinding=decl.supports_game_binding is not False,
+        supportsDesktopSession=TaskMode.AUTO_PROXY in decl.supported_modes
+        and (
+            decl.desktop_session_check is not None or decl.desktop_session is not None
+        ),
+        hasAccountField="Id" in info_fields,
+        hasPasswordField="Password" in info_fields,
+    )
+
+
+# 前端客户端由 /api/plugin_registry/get 生成，两个入口共用一个 OpenAPI 操作。
+@_runtime.post(
+    "/registry/get", response_model=PluginRegistryGetOut, include_in_schema=False
+)
 @_registry.post(
     "/get",
     tags=["Get"],
@@ -249,6 +292,7 @@ async def get_plugin_registry(
                 str(uid): PluginRegistryDocument.model_validate(
                     {
                         "uid": uid,
+                        "providedScript": _provided_script(col[uid]),
                         "disableImpact": Plugin.disable_impact(col[uid]),
                         **Plugin.dependency_view(col[uid]),
                         **col[uid].model_dump(mode="json", context={"audience": "api"}),
