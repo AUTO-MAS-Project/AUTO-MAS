@@ -9,6 +9,10 @@ from auto_mas_core import (
     ConfigGroup,
     ConfigRestorePool,
     ConfigTableColumn,
+    FrontendManifest,
+    FrontendPlanCreation,
+    FrontendSurface,
+    FrontendTarget,
     OptionHint,
     PlanEntry,
     RestoreContext,
@@ -137,6 +141,19 @@ class Demo15Expander(UserExpander):
 
 class Demo15Plugin(ScriptAdapterPlugin):
     script_type_key = "Demo15"
+    frontend = FrontendManifest(
+        static_dir="ui",
+        assets=("plan.html", "plan.css", "plan.js", "plan.svg"),
+        targets=(
+            FrontendTarget(
+                script_key=script_type_key,
+                script_config_type="Demo15Config",
+                plan_config_type="Demo15PlanConfig",
+                plan_creation=FrontendPlanCreation(key="Demo15PlanConfig"),
+                surfaces={"plan": FrontendSurface(mode="wheel", entry="plan.html")},
+            ),
+        ),
+    )
     decl = ScriptTypeDecl(
         script_type=Demo15Config,
         user_type=Demo15UserConfig,

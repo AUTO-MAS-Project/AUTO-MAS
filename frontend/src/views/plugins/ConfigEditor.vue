@@ -6,6 +6,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { ConfigEditShell, StateView } from '@/components/ui'
 import { DeclarativeForm } from '@/components/declarative'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PluginUiMount from '@/components/PluginUiMount.vue'
 import ConfigRestoreSection from '@/components/shared/ConfigRestoreSection.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
@@ -36,6 +37,10 @@ const {
   ui,
   configUid,
   groups,
+  wheel,
+  wheelTarget,
+  refreshWheel,
+  wheelEditor,
   tables,
   saving,
   canSave,
@@ -59,7 +64,7 @@ const {
   reload,
   save,
 } = useDeclarativeConfigEditor(target)
-const [DefineForm, EditorForm] = createReusableTemplate()
+const [DefineForm, EditorForm] = createReusableTemplate<{ locked: boolean }>()
 const { restore } = restoreApi
 const restoreOpen = ref(false)
 watch(configUid, () => {
@@ -84,19 +89,37 @@ defineExpose({ beforeLeave })
 </script>
 
 <template>
-  <DefineForm>
+  <DefineForm v-slot="{ locked }">
     <StateView
       :loading="loading"
       :error="error"
       :empty="
-        !configUid || (!groups.length && !setupMode && !backupTargets.length && !ui?.nativeSession)
+        !configUid ||
+        (!wheel && !groups.length && !setupMode && !backupTargets.length && !ui?.nativeSession)
       "
       :empty-description="t('core.plugins.noConfigFields')"
       overlay-loading
       @retry="reload"
     >
+      <template v-if="wheel">
+        <PluginUiMount
+          :mount="wheel"
+          :target="wheelTarget"
+          :editor="wheelEditor(locked)"
+          :refresh="refreshWheel"
+        />
+        <a-button
+          v-if="setupMode"
+          type="primary"
+          :disabled="locked || !canSubmit"
+          :loading="saving || creatingUser"
+          @click="finish"
+        >
+          {{ t('core.taskboard.complete') }}
+        </a-button>
+      </template>
       <DeclarativeForm
-        v-if="groups.length || setupMode"
+        v-else-if="groups.length || setupMode"
         :groups="groups"
         :tables="tables"
         :steps="ui?.steps"
@@ -136,7 +159,7 @@ defineExpose({ beforeLeave })
       </DeclarativeForm>
     </StateView>
   </DefineForm>
-  <EditorForm v-if="mode === 'plan'" />
+  <EditorForm v-if="mode === 'plan'" :locked="ui?.locked ?? false" />
   <ConfigEditShell v-else :surface="mode === 'user'" :max-width="1040">
     <template #header>
       <ScriptEditHeader
@@ -197,7 +220,7 @@ defineExpose({ beforeLeave })
         :script-id="scriptId"
         :user-id="mode === 'user' ? userId : null"
       />
-      <EditorForm />
+      <EditorForm :locked="locked || !!ui?.locked" />
     </ConfigLockPanel>
   </ConfigEditShell>
 </template>

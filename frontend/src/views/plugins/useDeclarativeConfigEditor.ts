@@ -2,7 +2,7 @@ import { computed, onScopeDispose, ref, watch, type ComputedRef } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { Service } from '@/api'
+import { FrontendSurfaceMount, Service, type ConfigUpdateOut } from '@/api'
 import {
   declarativeGroups,
   declarativeTables,
@@ -16,7 +16,17 @@ import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { useConfigQuery } from '@/services/configUiSync'
 import { apiErrorMessage, requestApi } from '@/utils/apiResult'
 import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analytics'
-import { usePluginSettingsDraft, type SettingsValues } from './settings/usePluginSettingsDraft'
+import { pluginUiPost, type PluginUiActivation } from '@/utils/pluginUiRequests'
+import type {
+  PluginUiChange,
+  PluginUiEditor,
+  PluginUiTarget,
+} from '@/composables/usePluginUiBridge'
+import {
+  usePluginSettingsDraft,
+  type SettingsChange,
+  type SettingsValues,
+} from './settings/usePluginSettingsDraft'
 
 export type ConfigEditorTarget =
   | { mode: 'script' | 'setup' | 'plan'; id: string }
@@ -34,25 +44,37 @@ async function readConfig(target: ConfigEditorTarget) {
   }
 }
 
-function writeConfig(target: ConfigEditorTarget, data: SettingsValues) {
+function writeConfig(
+  target: ConfigEditorTarget,
+  data: SettingsValues,
+  activation?: PluginUiActivation
+) {
   switch (target.mode) {
     case 'setup':
-    case 'script':
-      return Service.updateScriptApiScriptsUpdatePost({ scriptId: target.id, data })
-    case 'user':
-      return Service.updateUserApiScriptsUserUpdatePost({
-        scriptId: target.scriptId,
-        userId: target.id,
-        data,
-      })
-    case 'plan':
-      return Service.updatePlanApiPlanUpdatePost({ planId: target.id, data })
+    case 'script': {
+      const body = { scriptId: target.id, data }
+      return activation
+        ? pluginUiPost<ConfigUpdateOut>('/api/scripts/update', body, activation)
+        : Service.updateScriptApiScriptsUpdatePost(body)
+    }
+    case 'user': {
+      const body = { scriptId: target.scriptId, userId: target.id, data }
+      return activation
+        ? pluginUiPost<ConfigUpdateOut>('/api/scripts/user/update', body, activation)
+        : Service.updateUserApiScriptsUserUpdatePost(body)
+    }
+    case 'plan': {
+      const body = { planId: target.id, data }
+      return activation
+        ? pluginUiPost<ConfigUpdateOut>('/api/plan/update', body, activation)
+        : Service.updatePlanApiPlanUpdatePost(body)
+    }
   }
 }
 
 export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarget>) {
   const client = useQueryClient()
-  const { t } = useI18n()
+  const { t, locale } = useI18n()
   const { confirm } = useConfirm()
   const draft = usePluginSettingsDraft()
   const saving = ref(false)
@@ -82,19 +104,41 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   })
   const detail = useConfigQuery({
     queryKey: computed(() => ['declarative-config', target.value]),
-    queryFn: async () => {
-      const selected = target.value
+    queryFn: async ({ queryKey }) => {
+      const selected = queryKey[1] as ConfigEditorTarget
       const { data, ui, uiSources } = await requestApi(
         () => readConfig(selected),
         t('core.plugins.settingsLoadFailed')
       )
       const document = data[selected.id]
       if (!document) throw new Error(t('core.apiErrors.invalidResponse'))
-      return { ui, uiSources, values: declarativeValues(declarativeGroups(ui), document) }
+      return { selected, ui, uiSources, values: declarativeValues(declarativeGroups(ui), document) }
     },
   })
-  const ui = computed(() => detail.data.value?.ui)
+  const ui = computed(() => {
+    const current = detail.data.value
+    return current && isCurrent(current.selected) ? current.ui : undefined
+  })
   const configUid = computed(() => ui.value?.configUid ?? '')
+  const wheel = computed(() => {
+    const surface = ui.value?.frontendSurfaces?.[target.value.mode]
+    if (surface?.mode === FrontendSurfaceMount.mode.WHEEL && surface.entry)
+      return { ...surface, entry: surface.entry }
+  })
+  const wheelTarget = computed<PluginUiTarget>(() => {
+    const { mode, id } = target.value
+    return {
+      kind: mode,
+      scriptId: mode === 'plan' ? null : mode === 'user' ? target.value.scriptId : id,
+      userId: mode === 'user' ? id : null,
+      planId: mode === 'plan' ? id : null,
+      configUid: configUid.value,
+    }
+  })
+  const refreshWheel = async () => {
+    const { isSuccess } = await detail.refetch()
+    return isSuccess && !!wheel.value
+  }
   // 托管和账号的 game 分组由 GameBindingSection 编辑，计划可以自行声明同名分组。
   const groups = computed(() =>
     declarativeGroups(ui.value).filter(
@@ -126,14 +170,19 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       !!native.taskId.value ||
       native.stopping.value
   )
-  const canSubmit = computed(
+  const canWrite = computed(
     () =>
       !!configUid.value &&
+      !ui.value?.locked &&
       !busy.value &&
       !optionsInvalid.value &&
       !detail.isFetching.value &&
       !detail.isError.value &&
-      !activeFields.value.length &&
+      !activeFields.value.length
+  )
+  const canSubmit = computed(
+    () =>
+      canWrite.value &&
       draft.changes.value.every(({ group, field }) =>
         ui.value?.hints[group]?.some(hint => hint.field === field && hint.editable !== false)
       )
@@ -218,26 +267,25 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     if (!busy.value && (await confirmDiscard()) && isCurrent(selected)) await readBack(selected)
   }
 
-  async function save() {
-    if (!canSave.value) return false
+  async function persist(activation?: PluginUiActivation, fields?: SettingsChange[]) {
     const selected = target.value
     const submitted = draft.snapshot()
-    const data = draft.patch(submitted)
+    const data = draft.patch(submitted, fields)
     saving.value = true
     const plan = selected.mode === 'plan' ? beginAnalyticsOperation('plan_edit_finished') : null
     const config =
       selected.mode !== 'plan' ? beginAnalyticsOperation('config_write_finished') : null
     let outcome: 'success' | 'failure' = 'failure'
     try {
-      await requestApi(() => writeConfig(selected, data), t('core.plugins.saveFailed'))
+      await requestApi(() => writeConfig(selected, data, activation), t('core.plugins.saveFailed'))
       outcome = 'success'
       void client.invalidateQueries({
         queryKey: selected.mode === 'plan' ? ['config', 'plans'] : ['config', 'script-list'],
       })
       if (isCurrent(selected)) {
-        draft.commit(submitted)
+        draft.commit(submitted, fields)
         message.success(t('core.plugins.saved'))
-        await Promise.all([readBack(selected), ensureTargets()])
+        await Promise.all([detail.refetch(), ensureTargets()])
       }
       return true
     } catch (error) {
@@ -256,6 +304,58 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
           outcome,
         })
       saving.value = false
+    }
+  }
+
+  async function save() {
+    return canSave.value && persist(wheel.value)
+  }
+
+  async function saveWheel(
+    changes: PluginUiChange[],
+    commit: boolean,
+    activation: PluginUiActivation
+  ) {
+    if (commit && !canWrite.value) return false
+    for (const { group, field, value } of changes) draft.update(group, field, value)
+    if (!commit) return true
+    const fields = draft.changes.value.filter(({ group, field }) =>
+      changes.some(change => change.group === group && change.field === field)
+    )
+    return !fields.length || persist(activation, fields)
+  }
+
+  function wheelEditor(locked: boolean): PluginUiEditor {
+    const selected = target.value
+    const activation = wheel.value
+    const isActive = () =>
+      isCurrent(selected) &&
+      !!activation &&
+      wheel.value?.activationId === activation.activationId &&
+      !ui.value?.locked
+    return {
+      locale: locale.value,
+      locked: locked || !!ui.value?.locked,
+      busy: busy.value || detail.isFetching.value || detail.isError.value,
+      groups: groups.value,
+      values: draft.values,
+      save: async (changes, commit) =>
+        !!activation && isActive() && saveWheel(changes, commit, activation),
+      runAction: async (group, hint, value, canRun) => {
+        if (!activation || !isActive()) return 'cancelled'
+        const owner = groups.value.flatMap(({ name, hints }) =>
+          hints.flatMap(item =>
+            item.field && item.action_ref === `${group}.${hint.field}`
+              ? [{ group: name, field: item.field }]
+              : []
+          )
+        )[0]
+        return runAction(group, hint, value, owner, {
+          activation,
+          canRun: () => isActive() && canRun(),
+        })
+      },
+      notify: (severity, text) => void message[severity](text),
     }
   }
 
@@ -278,6 +378,10 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     ui,
     configUid,
     groups,
+    wheel,
+    wheelTarget,
+    refreshWheel,
+    wheelEditor,
     tables,
     saving,
     canSave,

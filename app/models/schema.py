@@ -406,10 +406,19 @@ class BackupTargetHint(BaseModel):
     kind: Literal["user", "script"]
 
 
+class FrontendSurfaceMount(BaseModel):
+    mode: Literal["declarative", "wheel"]
+    pluginName: str
+    revision: str
+    activationId: str
+    entry: str | None = None
+
+
 class DeclarativeConfigUi(BaseModel):
     """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
 
     configUid: str
+    locked: bool = False
     hints: UiHintsMap
     tables: UiTablesList
     steps: list[UiStep] = Field(default_factory=list)
@@ -418,6 +427,7 @@ class DeclarativeConfigUi(BaseModel):
     pluginName: str | None = None
     backupTargets: list[BackupTargetHint] = Field(default_factory=list)
     nativeSession: Literal["view", "config"] | None = None
+    frontendSurfaces: dict[str, FrontendSurfaceMount] = Field(default_factory=dict)
 
 
 class ConfigSnapshotOut(OutBase):

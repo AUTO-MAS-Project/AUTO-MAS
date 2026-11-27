@@ -9,10 +9,13 @@ import { createMemoryHistory, createRouter, loadRouteLocation, routerKey } from 
 import {
   buildScriptEditorRoutes,
   genericEditorRoutes,
+  resolvePluginEditorRoute,
   useScriptEditorNavigation,
 } from '@/router/scriptEditorRoutes'
 import {
   PluginProvidedScriptType,
+  PluginFrontendRouteAliasInfo,
+  PluginFrontendSurfaceInfo,
   Service,
   type PluginRegistryDocument,
   type ScriptIndexItem,
@@ -53,6 +56,85 @@ afterEach(() => {
 })
 
 describe('运行时专项', () => {
+  it('仅提供界面的插件可以接管已注册托管、解析旧地址并声明计划创建入口', async () => {
+    const pluginTypes = indexPluginScriptTypes({
+      presentation: {
+        uid: 'frontend',
+        ui: {},
+        providedScript: null,
+        frontend: {
+          protocolVersion: 1,
+          revision: 'rev',
+          activationId: 'activation',
+          targets: [
+            {
+              scriptKey: 'General',
+              scriptConfigType: 'GeneralConfig',
+              userConfigType: 'GeneralUserConfig',
+              planConfigType: 'UniversalPlanConfig',
+              displayName: 'Shared plan',
+              iconAsset: null,
+              surfaces: {
+                script: { mode: PluginFrontendSurfaceInfo.mode.WHEEL, entry: 'script.html' },
+                user: { mode: PluginFrontendSurfaceInfo.mode.DECLARATIVE },
+                plan: { mode: PluginFrontendSurfaceInfo.mode.WHEEL, entry: 'plan.html' },
+              },
+              aliases: [
+                {
+                  surface: PluginFrontendRouteAliasInfo.surface.SCRIPT,
+                  path: '/scripts/:scriptId',
+                },
+                {
+                  surface: PluginFrontendRouteAliasInfo.surface.USER,
+                  path: '/old/{scriptId}/user/:userId',
+                },
+                { surface: PluginFrontendRouteAliasInfo.surface.PLAN, path: '/old-plan/:planId' },
+              ],
+              planCreation: { key: 'UniversalPlan', requiresParentScript: true },
+            },
+          ],
+        },
+      },
+    })
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({}) } })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        ...buildScriptEditorRoutes(),
+        ...genericEditorRoutes,
+        { path: '/plans', name: 'Plans', component: { render: () => null } },
+      ],
+    })
+    router.beforeEach(to => resolvePluginEditorRoute(to, pluginTypes))
+    await router.push({
+      name: 'GeneralScriptEdit',
+      params: { id: 's' },
+      query: { tab: 'run' },
+      hash: '#count',
+    })
+    expect(router.currentRoute.value.fullPath).toBe('/scripts/s/edit/plugin/General?tab=run#count')
+    await router.push('/scripts/s?tab=run#count')
+    expect(router.currentRoute.value.fullPath).toBe('/scripts/s/edit/plugin/General?tab=run#count')
+    await router.push('/old/s/user/u%20two?tab=run#count')
+    expect(router.currentRoute.value.fullPath).toBe(
+      '/scripts/s/users/u%20two/edit/plugin/General?tab=run#count'
+    )
+    await router.push('/old-plan/p?tab=run#count')
+    expect(router.currentRoute.value).toMatchObject({
+      name: 'Plans',
+      query: { tab: 'run', planId: 'p' },
+      hash: '#count',
+    })
+    expect(pluginTypes.byScriptKey.has('General')).toBe(false)
+    expect(getAvailablePlanTypes(['General'], pluginTypes)).toContainEqual(
+      expect.objectContaining({
+        configType: 'UniversalPlanConfig',
+        createType: 'UniversalPlan',
+        parentScriptType: 'General',
+      })
+    )
+  })
+
   it('按插件名称创建新类型，保留原始创建标识和备用图标', () => {
     const options = getScriptTypeOptions(['Demo15'], types, key => key)
     expect(options).toEqual([

@@ -1,0 +1,65 @@
+:root {
+  color-scheme: light dark;
+  font: 1rem system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+}
+
+main {
+  max-width: 32rem;
+  margin: auto;
+  padding: 1.25rem;
+  border: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+  border-radius: 0.75rem;
+}
+
+h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+}
+
+h1 img {
+  width: 2rem;
+  height: 2rem;
+}
+
+fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid color-mix(in srgb, CanvasText 20%, Canvas);
+}
+
+h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1rem;
+}
+
+input[type="number"] {
+  width: 5rem;
+}
+
+button {
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  font: inherit;
+}
+
+[role="status"] {
+  margin-bottom: 0;
+}

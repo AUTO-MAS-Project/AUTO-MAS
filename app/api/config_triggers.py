@@ -3,9 +3,10 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from app.api._config_editors import require_frontend_activation
 from app.config import config_manager
 from app.config.core.manager import TriggerUnavailable
 from app.config.fields.hints import OptionValue
@@ -63,7 +64,12 @@ class ActiveTriggersOut(ConfigSnapshotOut):
 router = APIRouter(prefix="/api/config/triggers", tags=["配置触发器"])
 
 
-@router.post("/write", tags=["Action"], response_model=TriggerWriteOut)
+@router.post(
+    "/write",
+    tags=["Action"],
+    response_model=TriggerWriteOut,
+    dependencies=[Depends(require_frontend_activation, scope="function")],
+)
 async def write_config_trigger(body: TriggerWriteIn) -> TriggerWriteOut:
     """写入三态命令并立即返回受影响的任务 UUID。"""
     try:

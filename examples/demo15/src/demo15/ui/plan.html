@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Demo15 plan</title>
+    <link rel="stylesheet" href="./plan.css">
+    <script src="./plan.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <h1><img src="./plan.svg" alt="">Demo15 plan</h1>
+      <form>
+        <fieldset disabled>
+          <div class="task" data-group="First">
+            <h2>First</h2>
+            <label><input name="Enabled" type="checkbox"> Enabled</label>
+            <label>Count <input name="Count" type="number" min="0" step="1" required></label>
+          </div>
+          <div class="task" data-group="Second">
+            <h2>Second</h2>
+            <label><input name="Enabled" type="checkbox"> Enabled</label>
+            <label>Count <input name="Count" type="number" min="0" step="1" required></label>
+          </div>
+          <button type="submit">Save</button>
+        </fieldset>
+      </form>
+      <p role="status">Loading plan…</p>
+    </main>
+  </body>
+</html>

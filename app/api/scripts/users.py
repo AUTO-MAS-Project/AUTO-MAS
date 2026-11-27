@@ -25,7 +25,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends
 from pydantic import (
     BaseModel,
     Field,
@@ -35,7 +35,11 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
-from app.api._config_editors import config_detail_ui, config_update_data
+from app.api._config_editors import (
+    config_detail_ui,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.api._error_codes import config_error_code
 from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigInput, ConfigPayload
@@ -196,8 +200,17 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
     try:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
-        user_configs = script_users(Config.ScriptConfig[uuid.UUID(user.scriptId)])
-        ui = config_detail_ui(user_configs[user.userId], data) if user.userId else None
+        script = Config.ScriptConfig[uuid.UUID(user.scriptId)]
+        user_configs = script_users(script)
+        ui = (
+            config_detail_ui(
+                user_configs[user.userId],
+                data,
+                parent_script_type=type(script).__name__,
+            )
+            if user.userId
+            else None
+        )
         data = {
             uid: ConfigPayload[type(user_configs[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
@@ -287,6 +300,7 @@ async def add_user(user: UserCreateIn = Body(...)) -> UserCreateOut:
     summary="更新账号配置信息",
     response_model=ConfigUpdateOut,
     status_code=200,
+    dependencies=[Depends(require_frontend_activation, scope="function")],
 )
 async def update_user(
     user: UserUpdateIn = Body(...),

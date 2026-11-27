@@ -47,6 +47,7 @@ from app.plugin.errors import (
     PluginPrecheckError,
     PluginStateError,
 )
+from app.plugin.frontend import MountedFrontend
 from app.plugin.http import HttpRegistry, collect_route_decls
 from app.plugin.runtime import discover, loader, market_index
 from app.plugin.runtime import market as plugin_market
@@ -79,6 +80,8 @@ if TYPE_CHECKING:
     from app.config import ConfigEntry, ConfigNode
     from app.models.config import PluginMeta, PluginRecord
     from app.models.config.game import GameEntry
+    from app.models.schema import FrontendSurfaceMount
+    from app.plugin.frontend import FrontendManifest, FrontendSurfaceKind
 
 logger = get_logger("插件管理")
 
@@ -791,8 +794,16 @@ class _PluginManager:
                 replace(route, handler=gate.wrap(route.handler))
                 for route in collect_route_decls(plugin)
             ]
-            if routes or plugin.api_router is not None:
-                self.http.mount(name, routes, router=plugin.api_router, gate=gate)
+            manifest = plugin.frontend
+            frontend = (
+                self._build_frontend(plugin, manifest=manifest, gate=gate)
+                if manifest is not None
+                else None
+            )
+            if routes or plugin.api_router is not None or frontend is not None:
+                self.http.mount(
+                    name, routes, router=plugin.api_router, gate=gate, frontend=frontend
+                )
 
             if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                 await plugin.system_enable()
@@ -1573,6 +1584,111 @@ class _PluginManager:
             (s for s in Config.plugin_registry.values() if s._plugin_cls is not None),
             key=lambda s: s.info.plugin_name,
         )
+
+    def _build_frontend(
+        self, plugin: BasePlugin, *, manifest: FrontendManifest, gate: CallGate
+    ) -> MountedFrontend:
+        from app.core.config import Config
+        from app.models.config import PLAN_BOOK, PlanEntry, UniversalPlanConfig
+
+        record = plugin.record
+        package_root = (
+            record._project_dir / record.info.import_name
+            if record._project_dir is not None
+            else Path(inspect.getfile(type(plugin))).parent
+        )
+        plan_types = {
+            plan["create_type"]: (
+                plan["config_class"].__name__,
+                plan["config_class"] is UniversalPlanConfig,
+            )
+            for plan in PLAN_BOOK.values()
+        }
+        plan_types.update(
+            (key, (cls.__name__, False))
+            for key, cls in Config.PlanConfig.entry_types.items()
+            if issubclass(cls, PlanEntry)
+        )
+        if isinstance(plugin, ScriptAdapterPlugin) and plugin.plan_type is not None:
+            plan_types[plugin.plan_type.__name__] = (plugin.plan_type.__name__, False)
+        frontend = MountedFrontend(
+            manifest=manifest,
+            package_root=package_root,
+            plugin_version=record.info.version,
+            plan_types=plan_types,
+            gate=gate,
+        )
+        for name, mount in self.http.all_mounts().items():
+            if mount.frontend is not None:
+                overlap = frontend.claims.keys() & mount.frontend.claims.keys()
+                if overlap:
+                    claim = min(overlap, key=str)
+                    raise PluginPrecheckError(
+                        f"插件 {plugin.plugin_name} 与 {name} 重复声明界面: {claim}"
+                    )
+        return frontend
+
+    def mounted_frontend(
+        self, record_or_name: PluginRecord | str
+    ) -> MountedFrontend | None:
+        """查询插件当前挂载的界面快照。"""
+        name = (
+            record_or_name
+            if isinstance(record_or_name, str)
+            else record_or_name.info.plugin_name
+        )
+        mount = self.http.get(name)
+        return mount.frontend if mount is not None else None
+
+    def resolve_frontend_surfaces(
+        self, entry: ConfigEntry, parent_script_type: str | None = None
+    ) -> dict[str, FrontendSurfaceMount]:
+        """按对外配置类型和账号所属托管查询显式声明的界面。"""
+        from app.models.config import CLASS_BOOK, PlanEntry, ScriptEntry
+        from app.models.config.plan import PlanDaysConfig
+        from app.models.schema import FrontendSurfaceMount
+
+        kinds: tuple[FrontendSurfaceKind, ...]
+        if isinstance(entry, (ScriptEntry, *CLASS_BOOK.values())):
+            kinds = ("script", "setup")
+        elif isinstance(entry, (PlanEntry, PlanDaysConfig)):
+            kinds = ("plan",)
+        elif parent_script_type is not None:
+            kinds = ("user",)
+        else:
+            return {}
+
+        config_type = type(entry).__name__
+        surfaces = {}
+        for name, mount in self.http.all_mounts().items():
+            frontend = mount.frontend
+            if frontend is None or not frontend.gate.accepting:
+                continue
+            for kind in kinds:
+                surface = frontend.claims.get((parent_script_type, config_type, kind))
+                if surface is not None:
+                    surfaces[kind] = FrontendSurfaceMount(
+                        mode=surface.mode,
+                        pluginName=name,
+                        revision=frontend.revision,
+                        activationId=frontend.activation_id,
+                        entry=surface.entry,
+                    )
+        return surfaces
+
+    def validate_frontend_activation(
+        self, plugin_name: str, activation_id: str
+    ) -> MountedFrontend | None:
+        """仅在界面仍属当前启用实例且可接收调用时返回快照。"""
+        frontend = self.mounted_frontend(plugin_name)
+        if (
+            self.http.accepting
+            and frontend is not None
+            and frontend.activation_id == activation_id
+            and frontend.gate.accepting
+        ):
+            return frontend
+        return None
 
     def script_decl(self, config):
         """从当前插件类型目录查找配置的专项声明，不向宿主暴露具体插件模块。"""

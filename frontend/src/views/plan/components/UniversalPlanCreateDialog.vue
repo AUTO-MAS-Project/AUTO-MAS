@@ -2,7 +2,7 @@
   <AppModal
     v-model:open="open"
     size="sm"
-    :title="t('core.plan.universal.create')"
+    :title="title"
     :submitting="busy || creating"
     :ok-disabled="!selected || busy || creating"
     :mask-closable="false"
@@ -17,7 +17,12 @@
           :placeholder="t('core.plan.universal.chooseScript')"
         />
       </a-form-item>
-      <a-alert type="info" show-icon :message="t('core.plan.universal.scriptHint')" />
+      <a-alert
+        v-if="universal"
+        type="info"
+        show-icon
+        :message="t('core.plan.universal.scriptHint')"
+      />
       <a-alert v-if="error" type="error" show-icon :message="error" />
     </a-form>
   </AppModal>
@@ -27,9 +32,8 @@ import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { AppModal } from '@/components/ui'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
 const { t } = useI18n()
-// 通用脚本计划表仅供 General 使用
-const UNIVERSAL_PLAN_SCRIPT_TYPE = 'General'
 const props = defineProps<{ activePlanId: string; creating?: boolean }>()
 const emit = defineEmits<{ create: [scriptId: string] }>()
 const { getScripts } = useScriptApi()
@@ -38,7 +42,13 @@ const busy = ref(false)
 const selected = ref<string>()
 const options = ref<{ label: string; value: string }[]>([])
 const error = ref('')
-async function show() {
+const title = ref('')
+const universal = ref(false)
+async function show(scriptType: string, planName: string, configType: string) {
+  universal.value = configType === PLAN_CONFIG_TYPES.UNIVERSAL
+  title.value = universal.value
+    ? t('core.plan.universal.create')
+    : t('core.plan.createTyped', { name: planName })
   open.value = true
   selected.value = undefined
   busy.value = true
@@ -46,7 +56,7 @@ async function show() {
   try {
     const scripts = await getScripts()
     options.value = scripts
-      .filter(script => script.type === UNIVERSAL_PLAN_SCRIPT_TYPE)
+      .filter(script => script.type === scriptType)
       .map(script => ({ label: script.name, value: script.uid }))
     if (!options.value.length) error.value = t('core.plan.universal.noScripts')
   } catch (reason) {
