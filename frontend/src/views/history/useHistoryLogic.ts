@@ -6,6 +6,7 @@ import {
   type HistoryIndexItem,
   HistorySearchIn,
   ApiError,
+  GetService,
 } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api/services/Service'
@@ -96,9 +97,34 @@ export function useHistoryLogic() {
   // 选中的用户相关数据
   const selectedUser = ref('')
   const selectedUserData = ref<HistoryBucket | null>(null)
-  const selectedRecordIndex = ref(-1)
   const currentDetail = ref<HistoryDetail | null>(null)
   const currentRecordId = ref<string | null>(null)
+
+  // 同一天内记录条目的顺序，来自设置页「历史记录条目顺序」。只在进页面时读一次，和查询互不等待：
+  // 设置回来之前按默认的最新在前显示，回来后只重排当前列表。读不到也按默认，不弹错误——
+  // 排序只是偏好，不该挡住历史记录本身。
+  const newestFirst = ref(true)
+  const loadHistoryOrder = async () => {
+    try {
+      const response = await GetService.getScriptsApiSettingGetPost()
+      if (isMounted && response.code === 200)
+        newestFirst.value = response.data?.Function?.HistoryOrder !== 'asc'
+    } catch {
+      // 保持默认顺序
+    }
+  }
+
+  // 后端按时间正序返回记录条目；默认倒过来，点进日志时最先看到的应该是最近一次
+  const selectedRecords = computed<HistoryIndexItem[]>(() => {
+    const records = selectedUserData.value?.index ?? []
+    return newestFirst.value ? [...records].reverse() : records
+  })
+  // 按记录 id 找高亮位置，顺序晚到重排时高亮仍跟着同一条记录
+  const selectedRecordIndex = computed(() =>
+    currentRecordId.value === null
+      ? -1
+      : selectedRecords.value.findIndex(record => record.id === currentRecordId.value)
+  )
 
   // 搜索表单
   const searchForm = reactive({
@@ -110,6 +136,9 @@ export function useHistoryLogic() {
   // 历史记录数据
   const historyData = ref<HistoryDateGroup[]>([])
 
+  // 只有最新一轮搜索能写列表、结束加载：快捷筛选连点时，先发的慢请求不能把旧范围写回来
+  let searchSeq = 0
+
   // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
@@ -117,6 +146,8 @@ export function useHistoryLogic() {
       return
     }
 
+    const seq = ++searchSeq
+    const isCurrent = () => isMounted && seq === searchSeq
     try {
       searchLoading.value = true
       const response = await observeFeature(
@@ -141,24 +172,16 @@ export function useHistoryLogic() {
         })
       )
 
-      if (!isMounted) return
+      if (!isCurrent()) return
 
       if (response.code === 200) {
         selectedUser.value = ''
         selectedUserData.value = null
         currentRecordId.value = null
         currentDetail.value = null
-        // 记录条目按时间倒序：点进日志时最先看到的应该是最近一次
+        // 记录条目保持后端的时间正序，显示顺序由 selectedRecords 按设置决定
         historyData.value = Object.entries(response.data)
-          .map(([date, users]) => ({
-            date,
-            users: Object.fromEntries(
-              Object.entries(users).map(([name, data]) => [
-                name,
-                { ...data, index: [...(data.index ?? [])].reverse() },
-              ])
-            ),
-          }))
+          .map(([date, users]) => ({ date, users }))
           .sort((a, b) => b.date.localeCompare(a.date))
 
         const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
@@ -166,13 +189,13 @@ export function useHistoryLogic() {
         // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
         void playSound('history_query')
 
-        if (!isMounted) return
+        if (!isCurrent()) return
         message.success(t('core.history.toast.searchDone'))
       } else {
         message.error(response.message || t('core.history.toast.searchFailed'))
       }
     } catch (error) {
-      if (!isMounted) return
+      if (!isCurrent()) return
       const errorMsg =
         error instanceof ApiError && typeof error.body?.message === 'string'
           ? error.body.message
@@ -182,7 +205,7 @@ export function useHistoryLogic() {
       logger.error(`搜索历史记录失败: ${errorMsg}`)
       message.error(t('core.history.toast.searchHistoryFailed'))
     } finally {
-      if (isMounted) searchLoading.value = false
+      if (isCurrent()) searchLoading.value = false
     }
   }
 
@@ -195,7 +218,6 @@ export function useHistoryLogic() {
     activeKeys.value = []
     selectedUser.value = ''
     selectedUserData.value = null
-    selectedRecordIndex.value = -1
     currentDetail.value = null
     currentRecordId.value = null
     currentPreset.value = 'week'
@@ -219,14 +241,12 @@ export function useHistoryLogic() {
   const handleSelectUser = async (key: string, userData: HistoryBucket) => {
     selectedUser.value = key
     selectedUserData.value = userData
-    selectedRecordIndex.value = -1
     currentDetail.value = null
     currentRecordId.value = null
   }
 
-  // 选择记录处理
-  const handleSelectRecord = async (index: number, record: HistoryIndexItem) => {
-    selectedRecordIndex.value = index
+  // 选择记录处理（高亮位置由 selectedRecordIndex 按 id 推出，这里只记 id）
+  const handleSelectRecord = async (_index: number, record: HistoryIndexItem) => {
     currentRecordId.value = record.id
     currentDetail.value = null
     await loadUserLog(record.id)
@@ -300,6 +320,7 @@ export function useHistoryLogic() {
 
   // 页面加载时自动搜索
   onMounted(() => {
+    void loadHistoryOrder()
     handleSearch()
   })
 
@@ -315,6 +336,7 @@ export function useHistoryLogic() {
     currentPreset,
     selectedUser,
     selectedUserData,
+    selectedRecords,
     selectedRecordIndex,
     currentDetail,
     currentRecordId,

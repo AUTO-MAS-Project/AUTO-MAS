@@ -38,10 +38,21 @@ const handleHistoryRetentionChange = (value: unknown) => {
   const option = historyRetentionOptions.value.find(option => option.value === value)
   if (option) void handleSettingChange('Function', 'HistoryRetentionTime', option.value)
 }
+
+type HistoryOrder = NonNullable<NonNullable<GlobalConfig['Function']>['HistoryOrder']>
+const historyOrderOptions = computed<{ label: string; value: HistoryOrder }[]>(() => [
+  { label: t('core.setting.func.historyOrderDesc'), value: 'desc' },
+  { label: t('core.setting.func.historyOrderAsc'), value: 'asc' },
+])
+
+const handleHistoryOrderChange = (value: unknown) => {
+  const option = historyOrderOptions.value.find(option => option.value === value)
+  if (option) void handleSettingChange('Function', 'HistoryOrder', option.value)
+}
 </script>
 <template>
   <div class="tab-content function-settings">
-    <!-- 功能：历史保留时长 + 四个全局开关，一项一行 -->
+    <!-- 功能：历史保留时长与条目顺序 + 全局开关，一项一行 -->
     <SectionCard :title="t('core.setting.func.featureSection')" :icon="ControlOutlined">
       <SettingRow
         :label="t('core.setting.func.retention')"
@@ -53,6 +64,19 @@ const handleHistoryRetentionChange = (value: unknown) => {
           class="retention-select"
           :aria-label="t('core.setting.func.retention')"
           @change="handleHistoryRetentionChange"
+        />
+      </SettingRow>
+
+      <SettingRow
+        :label="t('core.setting.func.historyOrder')"
+        :hint="t('core.setting.func.historyOrderTip')"
+      >
+        <a-select
+          :value="settings.Function?.HistoryOrder ?? 'desc'"
+          :options="historyOrderOptions"
+          class="retention-select"
+          :aria-label="t('core.setting.func.historyOrder')"
+          @change="handleHistoryOrderChange"
         />
       </SettingRow>
 

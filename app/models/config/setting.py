@@ -224,6 +224,11 @@ class GlobalConfig(DomainEntry):
             default_factory=lambda: 0, description="历史记录保留时间（天）"
         )
 
+        HistoryOrder: Literal["desc", "asc"] = Field(
+            default_factory=lambda: "desc",
+            description="历史记录页同一天内记录条目的顺序：desc 最新在前，asc 最早在前",
+        )
+
         IfAgreeBilibili: bool = Field(
             default_factory=lambda: False, description="是否同意 Bilibili 协议"
         )
