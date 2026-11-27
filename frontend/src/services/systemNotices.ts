@@ -21,6 +21,13 @@ import {
 } from '@/services/websocket/types'
 
 let subscriptionIds: string[] = []
+// 调度器同一时间只等待一个请求。保留其 Promise，重连重投时可复用等待中的选择或最终结果。
+let scheduledLogin: { requestId: string; result: Promise<boolean> } | undefined
+
+async function promptDesktopLogin(): Promise<boolean> {
+  const { promptScheduledDesktopLogin } = await import('@/composables/useDesktopSessionLogin')
+  return (await promptScheduledDesktopLogin()) === true
+}
 
 type NoticeLevel = WSTaskNoticeData['level']
 type NoticeDescription = string | (() => ReturnType<typeof h>)
@@ -88,13 +95,18 @@ export function bootstrapSystemNotices(): void {
     ),
     subscribe({ id: WS_ID_MAIN, type: WS_DESKTOP_SESSION_LOGIN_NEEDED }, async message => {
       const { requestId } = message.data
+      if (!requestId) {
+        await promptDesktopLogin()
+        return
+      }
+      if (scheduledLogin?.requestId !== requestId) {
+        scheduledLogin = { requestId, result: promptDesktopLogin() }
+      }
       let retryStartup = false
       try {
-        const { promptScheduledDesktopLogin } = await import('@/composables/useDesktopSessionLogin')
-        retryStartup = (await promptScheduledDesktopLogin()) === true
+        retryStartup = await scheduledLogin.result
       } finally {
-        if (requestId)
-          send(WS_ID_MAIN, WS_DESKTOP_SESSION_LOGIN_FINISHED, { requestId, retryStartup })
+        send(WS_ID_MAIN, WS_DESKTOP_SESSION_LOGIN_FINISHED, { requestId, retryStartup })
       }
     }),
     subscribe({ id: WS_ID_MAIN, type: WS_SYSTEM_NOTICE }, message =>
