@@ -9,6 +9,9 @@ from app.models.config import ScriptEntry, UserEntry
 from app.models.schema import BackupTargetHint, DeclarativeConfigUi
 from app.models.task import TaskMode
 
+# 托管是否进桌面分身改由全局清单管理，旧字段只为降级与已发布插件保留，不在表单里出现。
+_DEPRECATED_FIELDS = frozenset({("Run", "ExecutionSession")})
+
 
 def config_detail_ui(
     entry: ConfigEntry, documents: dict[str, dict[str, Any]]
@@ -29,6 +32,14 @@ def config_detail_ui(
         ),
         **documents[uid]["ui"],
     )
+    ui.hints = {
+        group: [
+            hint
+            for hint in hints
+            if (group, hint.get("field")) not in _DEPRECATED_FIELDS
+        ]
+        for group, hints in ui.hints.items()
+    }
     registration = Plugin.registered_script(record) if record is not None else None
     if registration is None or not isinstance(entry, (ScriptEntry, UserEntry)):
         return ui
