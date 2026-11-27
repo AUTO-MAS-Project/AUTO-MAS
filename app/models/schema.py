@@ -406,12 +406,31 @@ class BackupTargetHint(BaseModel):
     kind: Literal["user", "script"]
 
 
+class PanelArtifactInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    entry: str
+    panelApi: int = Field(gt=0)
+
+
+class PanelBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    surface: Literal[
+        "script", "setup", "user", "plan", "settings", "notification", "extra"
+    ]
+    page: str
+    scriptType: str | None = None
+    planType: str | None = None
+    channel: str | None = None
+
+
 class FrontendSurfaceMount(BaseModel):
-    mode: Literal["declarative", "wheel"]
+    pageId: str
     pluginName: str
     revision: str
     activationId: str
-    entry: str | None = None
+    artifacts: dict[str, PanelArtifactInfo]
 
 
 class DeclarativeConfigUi(BaseModel):

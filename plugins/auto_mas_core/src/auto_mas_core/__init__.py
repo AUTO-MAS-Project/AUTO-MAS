@@ -84,13 +84,6 @@ from app.plugin.base.extension import AdapterRuntime
 from app.plugin.base.game import GameRuntime
 from app.plugin.base.script import DesktopSessionCheckReason, FirstAccountMode
 from app.plugin.errors import PluginBusyError, PluginError, PluginPrecheckError
-from app.plugin.frontend import (
-    FrontendManifest,
-    FrontendPlanCreation,
-    FrontendRouteAlias,
-    FrontendSurface,
-    FrontendTarget,
-)
 from app.plugin.http import plugin_route
 from app.plugin.services import ServiceResolver
 from app.plugin.types import PLUGIN_API_VERSION, PluginState
@@ -181,11 +174,6 @@ __all__ = [
     "ExecutablePath",
     "FilePath",
     "FirstAccountMode",
-    "FrontendManifest",
-    "FrontendPlanCreation",
-    "FrontendRouteAlias",
-    "FrontendSurface",
-    "FrontendTarget",
     "FolderPath",
     "JsonDictString",
     "JsonListString",

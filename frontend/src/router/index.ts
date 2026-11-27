@@ -4,12 +4,7 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { buildMaaFWRoutes } from './maafwRoutes'
-import {
-  buildScriptEditorRoutes,
-  genericEditorRoutes,
-  mayUsePluginEditor,
-  resolvePluginEditorRoute,
-} from './scriptEditorRoutes'
+import { buildScriptEditorRoutes, genericEditorRoutes } from './scriptEditorRoutes'
 import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import {
   MAAFW_FAMILY_ADAPTERS,
@@ -20,8 +15,6 @@ import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
-import { getPluginRegistry } from '@/composables/usePluginScriptTypes'
-import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 const logger = window.electronAPI.getLogger('路由管理')
 
 // MaaFW 家族的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按适配条目生成；
@@ -346,16 +339,6 @@ router.beforeEach(async (to, from, next) => {
   }
 
   next()
-})
-
-router.beforeEach(async to => {
-  if (!mayUsePluginEditor(to)) return
-  try {
-    const { data } = await getPluginRegistry()
-    return resolvePluginEditorRoute(to, indexPluginScriptTypes(data))
-  } catch (error) {
-    logger.warn(`读取插件界面声明失败: ${String(error)}`)
-  }
 })
 
 // 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。

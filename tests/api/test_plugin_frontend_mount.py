@@ -1,10 +1,11 @@
 """通过真实插件生命周期和 ASGI 验证 wheel 界面挂载。"""
 
+import importlib.metadata
+import json
 import os
 import sys
-from dataclasses import replace
-from pathlib import Path
 from shutil import copytree, ignore_patterns
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -15,26 +16,23 @@ from httpx import ASGITransport, AsyncClient
 from app.api import config_triggers, plan_router, plugin_router, scripts_router
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Plugin
-from app.models.config import GeneralConfig, PluginRecord, PluginRegistryCollection
-from app.plugin.base.plugin import BasePlugin
+from app.core.i18n import I18n
+from app.models.config import GeneralConfig, PluginRegistryCollection
 from app.plugin.errors import PluginOperationError
-from app.plugin.frontend import (
-    FrontendManifest,
-    FrontendPlanCreation,
-    FrontendRouteAlias,
-    FrontendSurface,
-    FrontendTarget,
-)
 from app.plugin.http import HttpRegistry
+from app.plugin.runtime import discover
 from app.plugin.types import PluginState
 from app.task.general.registration import build_config_handler
 
 pytestmark = pytest.mark.asyncio
-DEMO_SRC = Path(__file__).resolve().parents[2] / "examples/demo15/src/demo15"
+DEMO_SRC = Config.source_path / "examples/demo15/src/demo15"
 
 
 @pytest_asyncio.fixture
 async def host(monkeypatch, isolated_app_paths):
+    monkeypatch.setattr(I18n, "_plugin_sources", {})
+    monkeypatch.setattr(I18n, "_package_roots", {})
+    monkeypatch.setattr(I18n, "_snapshot", None)
     scripts = ConfigCollection.build(
         [GeneralConfig],
         keep_unknown_types=True,
@@ -65,30 +63,6 @@ async def host(monkeypatch, isolated_app_paths):
                     await Plugin.disable(record)
 
 
-async def register(name, root, plugin=None):
-    collection = Config.plugin_registry
-    uid = collection.add(
-        PluginRecord,
-        payload={
-            "info": {
-                "plugin_name": name,
-                "import_name": name,
-                "version": "0.1.0",
-                "source": "local",
-                "state": "disabled",
-            }
-        },
-    )
-    await collection.commit()
-    record = collection[uid]
-    record._project_dir = root
-    if plugin is None:
-        await Plugin.load(record)
-    else:
-        record._plugin_cls = plugin
-    return record
-
-
 async def registry_document(client, record):
     response = await client.post(
         "/api/plugin_registry/get", json={"recordId": str(record.uid)}
@@ -100,27 +74,38 @@ def asset_url(record, revision, asset):
     return f"/api/plugin/{record.info.plugin_name}/ui/{revision}/{asset}"
 
 
-@pytest.fixture
-def demo_package(tmp_path, monkeypatch):
-    monkeypatch.setitem(sys.modules, "demo15", None)
-    return copytree(
-        DEMO_SRC,
-        tmp_path / "demo15",
+@pytest_asyncio.fixture
+async def demo_package(host, monkeypatch):
+    project = copytree(
+        DEMO_SRC.parents[1],
+        Config.plugins_path / "demo15",
         ignore=ignore_patterns("__pycache__"),
     )
+    package = project / "src/demo15"
+    locales = package / "i18n"
+    locales.mkdir()
+    (locales / "en.json").write_text(
+        '{"plugins.demo15.name": "Demo 15"}', encoding="utf8"
+    )
+    monkeypatch.setitem(sys.modules, "demo15", None)
+    monkeypatch.setattr(discover, "_source_projects", lambda: {project})
+    monkeypatch.setattr(discover.importlib_metadata, "distributions", lambda **kw: [])
+    await discover.refresh()
+    record = Config.plugin_registry.by_name("demo15")
+    await Plugin.load(record)
+    return record, package / "ui"
 
 
 @pytest_asyncio.fixture
 async def demo(host, demo_package):
-    record = await register("demo15", demo_package.parent)
+    record, ui = demo_package
     await Plugin.enable(record)
-    return host, record, demo_package / "ui"
+    return host, record, ui
 
 
 async def test_demo_assets_and_csp(host, demo_package):
     client = host
-    ui = demo_package / "ui"
-    record = await register("demo15", demo_package.parent)
+    record, ui = demo_package
     router = APIRouter(prefix="/api/plugin/demo15")
     router.add_api_route("/{section}/{path:path}", lambda: {"via": "typed"})
     record._plugin_cls.api_router = router
@@ -129,15 +114,18 @@ async def test_demo_assets_and_csp(host, demo_package):
         "via": "typed"
     }
     frontend = (await registry_document(client, record))["frontend"]
-    assert frontend["protocolVersion"] == 1
-    (target,) = frontend["targets"]
-    assert target["surfaces"] == {"plan": {"mode": "wheel", "entry": "plan.html"}}
-    assert target["planCreation"] == {
-        "key": "Demo15PlanConfig",
-        "requiresParentScript": False,
-    }
+    assert frontend["manifestVersion"] == 1
+    assert frontend["pages"] == {"plan": {"web": {"entry": "plan.html", "panelApi": 1}}}
+    assert frontend["diagnostics"] == []
+    (binding,) = frontend["bindings"]
+    assert (binding["surface"], binding["planType"], binding["page"]) == (
+        "plan",
+        "Demo15PlanConfig",
+        "plan",
+    )
     revision = frontend["revision"]
     for asset, mime in {
+        "panel-sdk.js": "text/javascript; charset=utf-8",
         "plan.html": "text/html; charset=utf-8",
         "plan.js": "text/javascript; charset=utf-8",
         "plan.css": "text/css; charset=utf-8",
@@ -164,13 +152,19 @@ async def test_demo_assets_and_csp(host, demo_package):
                 "object-src": "'none'",
                 "frame-src": "'none'",
                 "worker-src": "'none'",
-                "script-src": f"{root}plan.js",
+                "script-src": f"{root}panel-sdk.js {root}plan.js",
                 "style-src": f"{root}plan.css",
                 "img-src": f"{root}plan.svg",
                 "font-src": "'none'",
                 "connect-src": " ".join(
                     root + name
-                    for name in ("plan.css", "plan.html", "plan.js", "plan.svg")
+                    for name in (
+                        "panel-sdk.js",
+                        "plan.css",
+                        "plan.html",
+                        "plan.js",
+                        "plan.svg",
+                    )
                 ),
             }
         elif asset == "plan.svg":
@@ -201,59 +195,75 @@ async def test_asset_requires_declared_canonical_path(demo, revision, asset):
     assert (await client.get(asset_url(record, revision, asset))).status_code == 404
 
 
-@pytest.mark.parametrize(
-    ("case", "error"),
-    [
-        ("symlink", "资源不存在或越界"),
-        ("code.py", "资源路径或扩展名"),
-        ("run.exe", "资源路径或扩展名"),
-        ("undeclared-entry", "入口必须是已声明"),
-        ("unsupported-parent", "不支持保存所属托管"),
-        ("typed-route", "/ui 路径保留"),
-    ],
-)
-async def test_failed_enable_leaves_no_mount(host, demo_package, case, error):
-    package = demo_package
-    record = await register("demo15", package.parent)
-    plugin = record._plugin_cls
-    manifest = plugin.frontend
-    if case == "symlink":
-        outside = package / "outside"
-        outside.mkdir()
-        (outside / "external.js").write_bytes(b"outside the static directory")
-        link = package / "ui/linked"
-        if os.name == "nt":
-            from _winapi import CreateJunction
-
-            CreateJunction(str(outside), str(link))
-        else:
-            link.symlink_to(outside, target_is_directory=True)
-        plugin.frontend = replace(
-            manifest, assets=(*manifest.assets, "linked/external.js")
-        )
-    elif case == "undeclared-entry":
-        plugin.frontend = replace(manifest, assets=("plan.js",))
-    elif case == "unsupported-parent":
-        (target,) = manifest.targets
-        target = replace(
-            target,
-            plan_creation=FrontendPlanCreation(
-                key="Demo15PlanConfig", requires_parent_script=True
-            ),
-        )
-        plugin.frontend = replace(manifest, targets=(target,))
-    elif case == "typed-route":
-        router = APIRouter(prefix="/api/plugin/demo15")
-        router.add_api_route("/ui/{revision}/plan.html", lambda: {})
-        plugin.api_router = router
-    else:
-        (package / "ui" / case).write_bytes(b"disallowed extension")
-        plugin.frontend = replace(manifest, assets=(*manifest.assets, case))
-    with pytest.raises(PluginOperationError, match=error):
+async def test_typed_route_cannot_shadow_static_resources(host, demo_package):
+    record, _ = demo_package
+    router = APIRouter(prefix="/api/plugin/demo15")
+    router.add_api_route("/ui/{revision}/plan.html", lambda: {})
+    record._plugin_cls.api_router = router
+    with pytest.raises(PluginOperationError, match="/ui 路径保留"):
         await Plugin.enable(record)
-    assert Plugin.http.get(record.info.plugin_name) is None
     assert (await registry_document(host, record))["frontend"] is None
-    assert (await host.get(asset_url(record, "any", "plan.html"))).status_code == 404
+
+
+async def test_partial_manifest_and_ownership(host, demo_package):
+    record, ui = demo_package
+    manifest = ui / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    (ui / "Plan.qml").write_text("Item {}", encoding="utf8")
+    outside = ui.parent / "outside"
+    outside.mkdir()
+    (outside / "external.js").write_bytes(b"external")
+    link = ui / "linked"
+    if os.name == "nt":
+        from _winapi import CreateJunction
+
+        CreateJunction(str(outside), str(link))
+    else:
+        link.symlink_to(outside, target_is_directory=True)
+    data["pages"]["plan"]["qt-quick"] = {"entry": "Plan.qml", "panelApi": 2}
+    data["bindings"][0].pop("page")
+    data["pages"]["plan"]["invalid"] = {"entry": "plan.html", "panelApi": True}
+    data["pages"]["lost"] = {"web": {"entry": "../outside/plan.html", "panelApi": 1}}
+    data["pages"]["missing"] = {"web": {"entry": "missing.html", "panelApi": 1}}
+    data["bindings"] += [
+        {"surface": "settings", "page": "plan"},
+        {"surface": "notification", "channel": "demo15", "page": "plan"},
+        {"surface": "plan", "planType": "ForeignPlanConfig", "page": "plan"},
+        {"surface": "script", "scriptType": "General", "page": "plan"},
+        {"surface": "setup", "scriptType": "Demo15", "page": "lost"},
+    ]
+    (ui / "private.py").write_bytes(b"private")
+    manifest.write_text(json.dumps(data), encoding="utf8")
+    await Plugin.enable(record)
+    frontend = (await registry_document(host, record))["frontend"]
+    assert frontend["pages"] == {
+        "plan": {
+            "web": {"entry": "plan.html", "panelApi": 1},
+            "qt-quick": {"entry": "Plan.qml", "panelApi": 2},
+        }
+    }
+    assert [binding["surface"] for binding in frontend["bindings"]] == [
+        "plan",
+        "settings",
+        "notification",
+    ]
+    diagnostics = "\n".join(frontend["diagnostics"])
+    for target in (
+        "pages.plan.invalid",
+        "pages.lost",
+        "pages.missing",
+        "bindings[3]",
+        "bindings[4]",
+        "bindings[5]",
+    ):
+        assert target in diagnostics
+    assert (
+        await host.get(asset_url(record, frontend["revision"], "Plan.qml"))
+    ).content == b"Item {}"
+    for asset in ("linked/external.js", "private.py", "manifest.json"):
+        assert (
+            await host.get(asset_url(record, frontend["revision"], asset))
+        ).status_code == 404
 
 
 async def test_disable_reenable_and_reload_asset_revision(demo):
@@ -265,6 +275,9 @@ async def test_disable_reenable_and_reload_asset_revision(demo):
 
     await Plugin.disable(record)
     assert (await client.get(old_url)).status_code == 404
+    assert (await registry_document(client, record))["frontend"] is None
+    messages, _ = await I18n.get_messages("en-US")
+    assert messages["plugins"]["demo15"]["name"] == "Demo 15"
     await Plugin.enable(record)
     current = (await registry_document(client, record))["frontend"]
     assert current["revision"] == before["revision"]
@@ -284,85 +297,13 @@ async def test_disable_reenable_and_reload_asset_revision(demo):
     assert response.content == updated
 
 
-async def test_ui_only_builtin_claim_and_conflict(host, tmp_path, monkeypatch):
-    class BuiltinUi(BasePlugin):
-        frontend = FrontendManifest(
-            static_dir="ui",
-            assets=("script.html",),
-            targets=(
-                FrontendTarget(
-                    script_key="General",
-                    script_config_type="GeneralConfig",
-                    user_config_type="GeneralUserConfig",
-                    surfaces={
-                        "script": FrontendSurface(mode="wheel", entry="script.html"),
-                        "setup": FrontendSurface(mode="declarative"),
-                        "user": FrontendSurface(mode="declarative"),
-                    },
-                    aliases=(
-                        FrontendRouteAlias(surface="script", path="/scripts/:scriptId"),
-                    ),
-                ),
-            ),
-        )
-
-    records = []
-    for name in ("builtin-ui", "conflicting-ui"):
-        ui = tmp_path / name / "ui"
-        ui.mkdir(parents=True)
-        (ui / "script.html").write_bytes(b"<!doctype html><title>General</title>")
-        records.append(await register(name, tmp_path, BuiltinUi))
-    owner, conflict = records
-    monkeypatch.setitem(
-        Config._script_config_handlers, GeneralConfig, build_config_handler()
-    )
-    script_id, _ = await Config.add_script("General")
-    user_id, _ = await Config.add_user(str(script_id))
-
-    async def surfaces(path, **ids):
-        response = await host.post(
-            f"/api/scripts/{path}", json={"scriptId": str(script_id), **ids}
-        )
-        return response.json()["ui"]["frontendSurfaces"]
-
-    assert await surfaces("get") == {}
-    await Plugin.enable(owner)
-    document = await registry_document(host, owner)
-    assert document["providedScript"] is None
-    frontend = document["frontend"]
-    assert frontend["targets"][0]["aliases"] == [
-        {"surface": "script", "path": "/scripts/:scriptId"}
-    ]
-    mount = {
-        "pluginName": owner.info.plugin_name,
-        "revision": frontend["revision"],
-        "activationId": frontend["activationId"],
-    }
-    assert await surfaces("get") == {
-        "script": {**mount, "mode": "wheel", "entry": "script.html"},
-        "setup": {**mount, "mode": "declarative", "entry": None},
-    }
-    assert await surfaces("user/get", userId=str(user_id)) == {
-        "user": {**mount, "mode": "declarative", "entry": None}
-    }
-    assert (
-        await host.get(asset_url(owner, frontend["revision"], "script.html"))
-    ).status_code == 200
-    with pytest.raises(PluginOperationError, match="conflicting-ui 与 builtin-ui"):
-        await Plugin.enable(conflict)
-    assert (await registry_document(host, conflict))["frontend"] is None
-    assert (await surfaces("get"))["script"]["pluginName"] == owner.info.plugin_name
-    await Plugin.disable(owner)
-    assert await surfaces("get") == {}
-    assert (await registry_document(host, owner))["frontend"] is None
-
-
 async def test_stale_activation_rejects_config_and_trigger_writes(demo):
     client, record, _ = demo
     frontend = (await registry_document(client, record))["frontend"]
     headers = {
         "X-Plugin-Ui-Provider": record.info.plugin_name,
         "X-Plugin-Ui-Activation": frontend["activationId"],
+        "X-Plugin-Ui-Page": "plan",
     }
     # 业务体使用合法形状，陈旧请求在定位配置或派发触发器之前即被拒绝。
     uid = str(uuid4())
@@ -382,8 +323,8 @@ async def test_stale_activation_rejects_config_and_trigger_writes(demo):
     detail = (await client.post("/api/plan/get", json={"planId": str(plan_id)})).json()
     assert detail["ui"]["frontendSurfaces"] == {
         "plan": {
-            "mode": "wheel",
-            "entry": "plan.html",
+            "pageId": "plan",
+            "artifacts": {"web": {"entry": "plan.html", "panelApi": 1}},
             "pluginName": record.info.plugin_name,
             "revision": frontend["revision"],
             "activationId": frontend["activationId"],
@@ -399,7 +340,25 @@ async def test_stale_activation_rejects_config_and_trigger_writes(demo):
         },
         headers=headers,
     )
-    assert response.status_code == 200
+    assert response.status_code == 403
+    user_id, _ = await Config.add_user(str(script_id))
+    for path, ids in (
+        ("/api/scripts/update", {"scriptId": str(script_id)}),
+        (
+            "/api/scripts/user/update",
+            {"scriptId": str(script_id), "userId": str(user_id)},
+        ),
+    ):
+        assert (
+            await client.post(path, json={**ids, "data": {}}, headers=headers)
+        ).status_code == 403
+    assert (
+        await client.post(
+            "/api/plan/update",
+            json={"planId": str(plan_id), "data": {}},
+            headers={**headers, "X-Plugin-Ui-Page": "other"},
+        )
+    ).status_code == 403
     await Plugin.disable(record)
     assert (
         await client.post(
@@ -428,3 +387,191 @@ async def test_stale_activation_rejects_config_and_trigger_writes(demo):
     )
     assert response.status_code == 200 and response.json()["code"] == 200
     assert plan.First.Count == 3
+
+
+async def test_script_and_user_bindings_authorize_actual_targets(
+    host, demo_package, monkeypatch
+):
+    record, ui = demo_package
+    manifest = ui / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    data["pages"]["editor"] = data["pages"]["plan"]
+    data["bindings"].extend(
+        {"surface": surface, "scriptType": "Demo15", "page": "editor"}
+        for surface in ("script", "setup", "user", "extra")
+    )
+    manifest.write_text(json.dumps(data), encoding="utf8")
+    await Plugin.enable(record)
+    frontend = (await registry_document(host, record))["frontend"]
+    headers = {
+        "X-Plugin-Ui-Provider": "demo15",
+        "X-Plugin-Ui-Activation": frontend["activationId"],
+        "X-Plugin-Ui-Page": "editor",
+    }
+    script_id, script = await Config.add_script("Demo15")
+    user_id, user = await Config.add_user(str(script_id))
+    ids = {"scriptId": str(script_id)}
+    user_ids = {**ids, "userId": str(user_id)}
+    for route, target, expected in (
+        ("get", ids, {"script", "setup"}),
+        ("user/get", user_ids, {"user"}),
+    ):
+        mounts = (await host.post(f"/api/scripts/{route}", json=target)).json()["ui"][
+            "frontendSurfaces"
+        ]
+        assert set(mounts) == expected
+        assert all(mount["pageId"] == "editor" for mount in mounts.values())
+    for path, body in (
+        ("/api/scripts/update", {**ids, "data": {"Run": {"Retries": 4}}}),
+        ("/api/scripts/user/update", {**user_ids, "data": {"Info": {"Id": "demo"}}}),
+        (
+            "/api/config/triggers/write",
+            {
+                "configUid": str(script_id),
+                "group": "Info",
+                "field": "DiscoverPath",
+                "value": None,
+            },
+        ),
+    ):
+        response = await host.post(path, json=body, headers=headers)
+        assert response.status_code == 200 and response.json()["code"] == 200
+    assert script.Run.Retries == 4 and user.Info.Id == "demo"
+
+    monkeypatch.setitem(
+        Config._script_config_handlers, GeneralConfig, build_config_handler()
+    )
+    foreign_id, _ = await Config.add_script("General")
+    foreign_user, _ = await Config.add_user(str(foreign_id))
+    for path, target in (
+        ("update", {"scriptId": str(foreign_id)}),
+        ("user/update", {"scriptId": str(foreign_id), "userId": str(foreign_user)}),
+    ):
+        response = await host.post(
+            f"/api/scripts/{path}", json={**target, "data": {}}, headers=headers
+        )
+        assert response.status_code == 403
+
+
+async def test_manifest_only_reload_revokes_session(demo):
+    client, record, ui = demo
+    before = (await registry_document(client, record))["frontend"]
+    path = ui / "manifest.json"
+    manifest = json.loads(path.read_bytes())
+    manifest["pages"]["plan"]["web"]["panelApi"] = 2
+    path.write_text(json.dumps(manifest), encoding="utf8")
+    await Plugin.reload(record)
+    after = (await registry_document(client, record))["frontend"]
+    assert after["revision"] != before["revision"]
+    assert after["pages"]["plan"]["web"]["panelApi"] == 2
+    assert (
+        await client.get(asset_url(record, before["revision"], "plan.html"))
+    ).status_code == 404
+    plan_id, plan = await Config.add_plan("Demo15PlanConfig")
+    response = await client.post(
+        "/api/plan/update",
+        json={"planId": str(plan_id), "data": {"First": {"Count": 8}}},
+        headers={
+            "X-Plugin-Ui-Provider": "demo15",
+            "X-Plugin-Ui-Page": "plan",
+            "X-Plugin-Ui-Activation": before["activationId"],
+        },
+    )
+    assert response.status_code == 409 and plan.First.Count == 1
+
+
+async def test_installed_plugin_cannot_take_demo_plan_and_releases_resources(
+    host, demo, tmp_path, monkeypatch
+):
+    """用另一个已安装发行包认领正在运行的计划，仅隔离实际的 uv 卸包操作。"""
+    _, owner, _ = demo
+    package = tmp_path / "panel_probe"
+    ui = package / "ui"
+    ui.mkdir(parents=True)
+    (package / "__init__.py").write_text(
+        "from auto_mas_core import BasePlugin, PluginConfig\nclass Probe(BasePlugin): config_class = PluginConfig\nPLUGIN = Probe\n",
+        encoding="utf8",
+    )
+    (ui / "settings.html").write_bytes(b"settings")
+    (ui / "manifest.json").write_text(
+        json.dumps(
+            {
+                "manifestVersion": 1,
+                "pages": {
+                    "settings": {"web": {"entry": "settings.html", "panelApi": 1}}
+                },
+                "bindings": [
+                    {"surface": "settings", "page": "settings"},
+                    {
+                        "surface": "plan",
+                        "page": "settings",
+                        "planType": "Demo15PlanConfig",
+                    },
+                ],
+            }
+        ),
+        encoding="utf8",
+    )
+    (package / "i18n").mkdir()
+    (package / "i18n/en.json").write_text(
+        '{"plugins.panel_probe.name":"Probe"}', encoding="utf8"
+    )
+    info = tmp_path / "panel_probe-1.dist-info"
+    info.mkdir()
+    (info / "METADATA").write_text(
+        "Metadata-Version: 2.2\nName: panel-probe\nVersion: 1\nKeywords: auto-mas-plugin,auto-mas-id:panel_probe\n",
+        encoding="utf8",
+    )
+    (info / "RECORD").write_text("panel_probe/__init__.py,,\n", encoding="utf8")
+    dist = importlib.metadata.Distribution.at(info)
+    monkeypatch.setattr(
+        discover.importlib_metadata, "distributions", lambda **kw: [dist]
+    )
+    await discover.refresh()
+    record = Config.plugin_registry.by_name("panel_probe")
+    await Plugin.load(record)
+    await Plugin.enable(record)
+    frontend = (await registry_document(host, record))["frontend"]
+    assert [binding["surface"] for binding in frontend["bindings"]] == ["settings"]
+    assert any("bindings[1]" in message for message in frontend["diagnostics"])
+    plan_id, plan = await Config.add_plan("Demo15PlanConfig")
+    response = await host.post(
+        "/api/plan/update",
+        json={"planId": str(plan_id), "data": {"First": {"Count": 9}}},
+        headers={
+            "X-Plugin-Ui-Page": "settings",
+            "X-Plugin-Ui-Activation": frontend["activationId"],
+            "X-Plugin-Ui-Provider": "panel_probe",
+        },
+    )
+    assert response.status_code == 403 and plan.First.Count == 1
+    settings = {"recordId": str(record.uid), "data": {}}
+    headers = {
+        "X-Plugin-Ui-Provider": "panel_probe",
+        "X-Plugin-Ui-Page": "settings",
+        "X-Plugin-Ui-Activation": frontend["activationId"],
+    }
+    assert (
+        await host.post("/api/plugin_config/update", json=settings, headers=headers)
+    ).json()["code"] == 200
+    other_ui = (await registry_document(host, owner))["frontend"]
+    headers = {
+        "X-Plugin-Ui-Provider": "demo15",
+        "X-Plugin-Ui-Page": "plan",
+        "X-Plugin-Ui-Activation": other_ui["activationId"],
+    }
+    assert (
+        await host.post("/api/plugin_config/update", json=settings, headers=headers)
+    ).status_code == 403
+    url = asset_url(record, frontend["revision"], "settings.html")
+    assert (await host.get(url)).content == b"settings"
+
+    from app.plugin import uv as uv_tool
+
+    monkeypatch.setattr(uv_tool, "uninstall", AsyncMock())
+    monkeypatch.setattr(Config, "setting", type(Config.setting).build())
+    await Plugin.uninstall(record)
+    assert (await host.get(url)).status_code == 404
+    messages, _ = await I18n.get_messages("en-US")
+    assert "panel_probe" not in messages["plugins"]
+    assert (await registry_document(host, owner))["frontend"]["pages"]["plan"]

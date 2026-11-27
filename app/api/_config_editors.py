@@ -1,6 +1,6 @@
 """托管、账号和计划共用的详情投影与局部更新契约。"""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Literal
 
 from fastapi import HTTPException, Request
@@ -16,8 +16,6 @@ from app.models.task import TaskMode
 def config_detail_ui(
     entry: ConfigEntry,
     documents: dict[str, dict[str, Any]],
-    *,
-    parent_script_type: str | None = None,
 ) -> DeclarativeConfigUi:
     """复用同次 API 快照的显隐、掩码与选项，账号按所属托管解析插件。"""
     owner = Plugin.trigger_owner(entry)
@@ -33,7 +31,7 @@ def config_detail_ui(
         i18nNamespace=(
             f"plugins.{record.info.plugin_name}.config" if record is not None else None
         ),
-        frontendSurfaces=Plugin.resolve_frontend_surfaces(entry, parent_script_type),
+        frontendSurfaces=Plugin.resolve_frontend_surfaces(entry),
         locked=entry.is_locked,
         **documents[uid]["ui"],
     )
@@ -54,22 +52,34 @@ def config_detail_ui(
     return ui
 
 
-async def require_frontend_activation(request: Request) -> AsyncIterator[None]:
-    """带插件界面来源的写入必须由当前挂载放行，停用时等待在途写入。"""
-    x_plugin_ui_provider = request.headers.get("x-plugin-ui-provider")
-    x_plugin_ui_activation = request.headers.get("x-plugin-ui-activation")
-    if x_plugin_ui_provider is None and x_plugin_ui_activation is None:
-        yield
+type FrontendWriteGuard = Callable[[ConfigEntry], None]
+
+
+async def require_frontend_activation(
+    request: Request,
+) -> AsyncIterator[FrontendWriteGuard | None]:
+    """宿主请求沿用原写入流程；面板请求在整个写入期间持有当前实例的调用门。"""
+    provider = request.headers.get("x-plugin-ui-provider")
+    activation = request.headers.get("x-plugin-ui-activation")
+    page = request.headers.get("x-plugin-ui-page")
+    if provider is None and activation is None and page is None:
+        yield None
         return
-    if not x_plugin_ui_provider or not x_plugin_ui_activation:
-        raise HTTPException(status_code=403, detail="插件界面来源或激活标识缺失")
-    frontend = Plugin.validate_frontend_activation(
-        x_plugin_ui_provider, x_plugin_ui_activation
-    )
+    if not (provider and activation and page):
+        raise HTTPException(status_code=403, detail="插件界面身份不完整")
+    frontend = Plugin.validate_frontend_activation(provider, activation)
     if frontend is None:
         raise HTTPException(status_code=409, detail="插件界面已失效，请重新打开")
+
+    def authorize(entry: ConfigEntry) -> None:
+        if not any(
+            mount is frontend and binding.page == page
+            for _, mount, binding in Plugin.frontend_bindings(entry)
+        ):
+            raise HTTPException(status_code=403, detail="页面未绑定到此配置")
+
     with frontend.gate.active_call():
-        yield
+        yield authorize
 
 
 def config_update_data(

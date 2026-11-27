@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
     from app.core.background_tasks import BackgroundTaskGroup
     from app.models.config import PluginConfig, PluginRecord
-    from app.plugin.frontend import FrontendManifest
     from app.plugin.services import ServiceResolver
 
 
@@ -25,7 +24,6 @@ class BasePlugin:
     provides_services: ClassVar[Mapping[str, str]] = MappingProxyType({})
     config_class: ClassVar[type[PluginConfig] | None] = None
     api_router: ClassVar[APIRouter | None] = None
-    frontend: ClassVar[FrontendManifest | None] = None
     services: ServiceResolver
 
     def __init__(

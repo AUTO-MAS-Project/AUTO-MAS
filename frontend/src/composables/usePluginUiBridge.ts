@@ -1,6 +1,7 @@
-import { onScopeDispose, ref, shallowRef } from 'vue'
+import { onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { OpenAPI, TriggerUiState, type ComponentHint, type FrontendSurfaceMount } from '@/api'
 import type { SettingsValues } from '@/views/plugins/settings/usePluginSettingsDraft'
+import type { PluginPanelTheme } from './pluginPanelTheme'
 
 export interface PluginUiTarget {
   kind: 'script' | 'setup' | 'user' | 'plan'
@@ -19,13 +20,18 @@ export interface PluginUiChange {
 const severities = ['info', 'success', 'warning', 'error'] as const
 export type PluginUiSeverity = (typeof severities)[number]
 export type WheelMount = FrontendSurfaceMount & { entry: string }
+export type PluginUiSaveResult =
+  | { ok: true }
+  | { ok: false; code: string; message: string; fieldErrors?: Record<string, string> }
+
 export interface PluginUiEditor {
   locale: string
   locked: boolean
   busy: boolean
   groups: { name: string; hints: ComponentHint[] }[]
   values: SettingsValues
-  save: (changes: PluginUiChange[], commit: boolean) => Promise<boolean>
+  configRevision: number
+  save: (changes: PluginUiChange[], commit: boolean) => Promise<PluginUiSaveResult>
   runAction: (
     group: string,
     hint: ComponentHint,
@@ -56,6 +62,29 @@ function isConfigValue(value: unknown, depth = 0): boolean {
 }
 
 const visible = (hint: ComponentHint) => hint.field && !hint.secret && !hint.masked
+
+function panelConfig({ groups, values }: PluginUiEditor) {
+  const config = Object.fromEntries(
+    groups.map(({ name, hints }) => [
+      name,
+      Object.fromEntries(
+        hints.flatMap(hint => {
+          const field = hint.field
+          const fields = values[name]
+          return field &&
+            visible(hint) &&
+            hint.state === undefined &&
+            fields &&
+            Object.prototype.hasOwnProperty.call(fields, field)
+            ? [[field, fields[field]]]
+            : []
+        })
+      ),
+    ])
+  )
+  return JSON.parse(JSON.stringify(config)) as SettingsValues
+}
+
 const pathSegment = (value: string) =>
   encodeURIComponent(value).replace(
     /[!'()*]/g,
@@ -64,16 +93,31 @@ const pathSegment = (value: string) =>
 
 export function usePluginUiBridge(
   frame: () => HTMLIFrameElement | null,
-  editor: () => PluginUiEditor
+  editor: () => PluginUiEditor,
+  theme: () => PluginPanelTheme
 ) {
   const iframeUrl = ref('')
   const frameHeight = ref(320)
   const status = shallowRef<'loading' | 'ready' | 'error'>('loading')
   let revoke: (() => void) | undefined
+  let port: MessagePort | undefined
+
+  function state({ locked, busy, locale }: PluginUiEditor) {
+    return { locked, busy, locale, theme: theme() }
+  }
+
+  watch([() => editor().locked, () => editor().busy, () => editor().locale, theme], () =>
+    port?.postMessage({ event: 'stateChanged', payload: state(editor()) })
+  )
+  watch(
+    () => editor().configRevision,
+    () => port?.postMessage({ event: 'configReloaded', payload: { config: panelConfig(editor()) } })
+  )
 
   function stop() {
     revoke?.()
     revoke = undefined
+    port = undefined
     iframeUrl.value = ''
   }
 
@@ -99,7 +143,6 @@ export function usePluginUiBridge(
       data.pluginName === pluginName &&
       matchesTarget(data.target, target)
 
-    let port: MessagePort | undefined
     let active = true
     const seen = new Set<string | number>()
 
@@ -121,6 +164,7 @@ export function usePluginUiBridge(
       )
         return
       seen.add(requestId)
+      if (seen.size > 512) seen.delete(seen.values().next().value!)
       const reply = (result: unknown) => {
         if (active) port?.postMessage({ requestId, result })
       }
@@ -130,30 +174,11 @@ export function usePluginUiBridge(
       const current = editor()
 
       if (action === 'getContext' || action === 'readConfig') {
-        const config = Object.fromEntries(
-          current.groups.map(({ name, hints }) => [
-            name,
-            Object.fromEntries(
-              hints.flatMap(hint => {
-                const field = hint.field
-                const fields = current.values[name]
-                return field &&
-                  visible(hint) &&
-                  hint.state === undefined &&
-                  fields &&
-                  Object.prototype.hasOwnProperty.call(fields, field)
-                  ? [[field, fields[field]]]
-                  : []
-              })
-            ),
-          ])
-        )
         reply({
           target,
           surface: target.kind,
-          locale: current.locale,
-          locked: current.locked,
-          config: JSON.parse(JSON.stringify(config)),
+          ...state(current),
+          config: panelConfig(current),
         })
         return
       }
@@ -180,8 +205,7 @@ export function usePluginUiBridge(
           })
         )
           return reject('invalid_changes')
-        if (await current.save(changes, phase === 'commit')) reply(true)
-        else reject('save_failed')
+        reply(await current.save(changes, phase === 'commit'))
       } else if (action === 'runAction') {
         const { group, field, value } = params
         if (!writable() || current.busy) return reject('read_only')
@@ -229,6 +253,7 @@ export function usePluginUiBridge(
       port.start()
       clearTimeout(timer)
       window.removeEventListener('message', onReady)
+      port.postMessage({ event: 'stateChanged', payload: state(editor()) })
       status.value = 'ready'
     }
 

@@ -131,33 +131,24 @@ export const getPlanTypeDescriptor = (planType?: string | null): PlanTypeDescrip
 
 export function getPlanTypeOption(configType: string, plugins: PluginScriptTypes) {
   const stored = getPlanTypeDescriptor(configType)
-  const frontend = plugins.frontendByPlanConfigType.get(configType)
-  const plugin = plugins.byPlanConfigType.get(configType)
-  const declaredName = frontend?.displayName
-  const parentScriptType = frontend?.planCreation?.requiresParentScript
-    ? frontend.scriptKey
-    : configType === PLAN_CONFIG_TYPES.UNIVERSAL
-      ? 'General'
-      : undefined
   if (stored) {
     return {
       configType,
-      createType: frontend?.planCreation?.key ?? stored.createType,
-      displayName: declaredName ?? t(stored.displayNameKey),
-      selectorTag: declaredName ?? stored.selectorTag,
+      createType: stored.createType,
+      displayName: t(stored.displayNameKey),
+      selectorTag: stored.selectorTag,
       defaultName: stored.defaultName,
-      parentScriptType,
     }
   }
-  if (frontend || plugin) {
-    const name = declaredName ?? plugin?.displayName ?? frontend!.scriptKey
+  const plugin = plugins.byPlanConfigType.get(configType)
+  if (plugin) {
+    const name = plugin.displayName
     return {
       configType,
-      createType: frontend?.planCreation?.key ?? configType,
+      createType: configType,
       displayName: name,
       selectorTag: name,
       defaultName: name,
-      parentScriptType,
     }
   }
 }
@@ -165,21 +156,13 @@ export function getPlanTypeOption(configType: string, plugins: PluginScriptTypes
 export type PlanTypeOption = NonNullable<ReturnType<typeof getPlanTypeOption>>
 
 export function getAvailablePlanTypes(scriptTypes: readonly string[], plugins: PluginScriptTypes) {
-  const types = new Set([
-    ...Object.keys(PLAN_TYPE_REGISTRY),
-    ...plugins.byPlanConfigType.keys(),
-    ...[...plugins.frontendByPlanConfigType]
-      .filter(([, target]) => target.planCreation)
-      .map(([type]) => type),
-  ])
+  const types = new Set([...Object.keys(PLAN_TYPE_REGISTRY), ...plugins.byPlanConfigType.keys()])
   const available: PlanTypeOption[] = []
   for (const type of types) {
-    const option = getPlanTypeOption(type, plugins)!
     const owner =
-      plugins.frontendByPlanConfigType.get(type)?.scriptKey ??
       plugins.byPlanConfigType.get(type)?.scriptKey ??
       SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === type)?.scriptType
-    if (!owner || scriptTypes.includes(owner)) available.push(option)
+    if (!owner || scriptTypes.includes(owner)) available.push(getPlanTypeOption(type, plugins)!)
   }
   return available
 }

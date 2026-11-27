@@ -2,8 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { defineComponent, h, nextTick, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
-import { FrontendSurfaceMount, TriggerUiState } from '@/api'
-import type { PluginUiEditor, PluginUiTarget } from '@/composables/usePluginUiBridge'
+import { TriggerUiState } from '@/api'
+import type {
+  PluginUiEditor,
+  PluginUiSaveResult,
+  PluginUiTarget,
+} from '@/composables/usePluginUiBridge'
+import { pluginPanelTheme } from '@/composables/pluginPanelTheme'
 import { deferred, testView } from '../../tests/vueRenderer'
 import { pluginUiFrame } from '../../tests/pluginUiFrame'
 import PluginUiMount from './PluginUiMount.vue'
@@ -21,11 +26,13 @@ vi.mock('@/services/websocket/subscriptions', () => ({
   subscribe: socket.capabilities,
   unsubscribe: vi.fn(),
 }))
+const lightTheme = { mode: 'light', tokens: { '--mas-bg-base': '#fff' } } as const
 
 afterEach(() => vi.unstubAllGlobals())
 
 function mountWheel() {
   vi.stubGlobal('window', new EventTarget())
+  pluginPanelTheme.value = lightTheme
   socket.disconnected.mockReturnValue(() => {})
   const target = shallowRef<PluginUiTarget>({
     kind: 'plan',
@@ -50,12 +57,14 @@ function mountWheel() {
       },
     ],
     values: { Second: { Count: 3, Hidden: 'hi', Password: 'secret', Masked: 'masked' } },
-    save: vi.fn().mockResolvedValue(true),
+    configRevision: 0,
+    save: vi.fn().mockResolvedValue({ ok: true }),
     runAction: vi.fn().mockResolvedValue('success'),
     notify: vi.fn(),
   })
   const mount = {
-    mode: FrontendSurfaceMount.mode.WHEEL,
+    pageId: 'plan',
+    artifacts: { web: { entry: 'plans/main.html', panelApi: 1 } },
     entry: 'plans/main.html',
     revision: 'rev',
     activationId: 'active',
@@ -110,6 +119,8 @@ describe('wheel iframe', () => {
             surface: 'plan',
             locale: 'en-US',
             locked: false,
+            busy: false,
+            theme: lightTheme,
             config: { Second: { Count: 3 } },
           })
         )
@@ -123,6 +134,60 @@ describe('wheel iframe', () => {
       } finally {
         active.close()
       }
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('pushes lock, busy, locale, theme and projected config changes without a new request', async () => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const theme = { mode: 'dark', tokens: { '--mas-bg-base': '#141414' } } as const
+      pluginPanelTheme.value = theme
+      editor.value = { ...editor.value, locked: true, busy: true, locale: 'ja-JP' }
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: { locked: true, busy: true, locale: 'ja-JP', theme },
+        })
+      )
+      editor.value = {
+        ...editor.value,
+        configRevision: 1,
+        values: { Second: { Count: 7, Masked: 'updated secret' } },
+      }
+      await vi.waitFor(() =>
+        expect(child.events.at(-1)).toEqual({
+          event: 'configReloaded',
+          payload: { config: { Second: { Count: 7 } } },
+        })
+      )
+      expect(child.replies.size).toBe(0)
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('deduplicates the latest 512 request IDs and evicts the oldest', async () => {
+    const { view } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      for (let id = 0; id < 512; id++) child.request('resize', { height: 350 }, {}, id)
+      child.request('resize', { height: 500 }, {}, 0)
+      const newest = child.request('resize', { height: 400 }, {}, 512)
+      await vi.waitFor(() => expect(child.replies.get(newest)?.result).toBe(400))
+      expect(child.replies.get(0)?.result).toBe(350)
+      child.request('resize', { height: 500 }, {}, 1)
+      child.request('resize', { height: 600 }, {}, 0)
+      await vi.waitFor(() => expect(child.replies.get(0)?.result).toBe(600))
+      expect(child.replies.get(1)?.result).toBe(350)
     } finally {
       child.close()
       view.app.unmount()
@@ -174,7 +239,7 @@ describe('wheel iframe', () => {
 
   it('revokes old channels after a target switch, capability update and disconnect', async () => {
     const { view, editor, target, refresh } = mountWheel()
-    const saving = deferred<boolean>()
+    const saving = deferred<PluginUiSaveResult>()
     vi.mocked(editor.value.save).mockReturnValue(saving.promise)
     await nextTick()
     const oldFrame = view.find('iframe')!
@@ -188,7 +253,7 @@ describe('wheel iframe', () => {
       await vi.waitFor(() => expect(editor.value.save).toHaveBeenCalledOnce())
       target.value = { ...target.value, planId: 'other', configUid: 'other-uid' }
       await nextTick()
-      saving.resolve(true)
+      saving.resolve({ ok: true })
       expect(view.find('iframe')).not.toBe(oldFrame)
       const current = pluginUiFrame(view.find('iframe')!)
       try {

@@ -10,10 +10,10 @@ import Antd, { message } from 'ant-design-vue'
 import {
   BackgroundTaskState,
   BackupTargetHint,
-  FrontendSurfaceMount,
   Service,
   TriggerUiState,
   type DeclarativeConfigUi,
+  type FrontendSurfaceMount,
 } from '@/api'
 import { editorView } from '../../../tests/declarativeEditorView'
 import { fire } from '../../../tests/vueRenderer'
@@ -160,11 +160,14 @@ describe('Demo15 配置编辑器', () => {
   const userPath = '/scripts/s/users/u/edit/plugin/Demo15'
 
   const wheel = {
-    mode: FrontendSurfaceMount.mode.WHEEL,
+    pageId: 'plan',
     pluginName: 'demo15',
     revision: 'r1',
     activationId: 'activation',
-    entry: 'plan.html',
+    artifacts: {
+      'qt-quick': { entry: 'plan.qml', panelApi: 1 },
+      web: { entry: 'plan.html', panelApi: 1 },
+    },
   }
 
   it('没有声明式字段的托管仍挂载 wheel 界面', async () => {
@@ -182,22 +185,66 @@ describe('Demo15 配置编辑器', () => {
           referrerpolicy: 'no-referrer',
         })
       )
+      expect(view.find('iframe')?.props.src).toMatch(/\/plan\.html#/)
       expect(view.find('input')).toBeUndefined()
     } finally {
       view.app.unmount()
     }
   })
 
+  it.each([
+    'missing web artifact',
+    'incompatible panelApi',
+    'iframe load failure',
+    'handshake timeout',
+  ])('uses the declarative editor after %s', async reason => {
+    const fallback = '插件界面不可用，已切换到内置编辑器。'
+    const state = detail(
+      'p',
+      { First: { Count: 1 } },
+      {
+        First: [{ field: 'Count', editable: true, component: 'number' }],
+      }
+    )
+    const mount: FrontendSurfaceMount = { ...wheel, artifacts: { ...wheel.artifacts } }
+    if (reason === 'missing web artifact') {
+      delete mount.artifacts.web
+    } else if (reason === 'incompatible panelApi') {
+      mount.artifacts.web = { ...mount.artifacts.web, panelApi: 2 }
+    }
+    vi.spyOn(Service, 'getPlanApiPlanGetPost').mockResolvedValue({
+      ...state,
+      ui: { ...state.ui, frontendSurfaces: { plan: mount } },
+    })
+    if (reason === 'handshake timeout') vi.useFakeTimers()
+    const view = await editorView('/plan', client)
+    view.mount()
+    try {
+      if (reason === 'iframe load failure' || reason === 'handshake timeout') {
+        await vi.waitFor(() => expect(view.find('iframe')).toBeDefined())
+        if (reason === 'iframe load failure') await fire(view.find('iframe')!, 'onError')
+        else await vi.advanceTimersByTimeAsync(10_000)
+      }
+      await vi.waitFor(() => expect(view.find('input')).toBeDefined())
+      expect(view.find('iframe')).toBeUndefined()
+      expect(view.find('aside')?.props).toMatchObject({ type: 'info', message: fallback })
+    } finally {
+      view.app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('Demo15 计划用当前激活标识保存单字段，保留失败草稿并阻止锁定写入', async () => {
     const state = detail(
       'p',
-      { First: { Count: 1 }, Second: { Count: 2 } },
+      { First: { Count: 1 }, Second: { Count: 2 }, Third: { Count: 3 } },
       {
         First: [{ field: 'Count', editable: true }],
         Second: [
           { field: 'Count', editable: true },
           { field: 'Run', component: 'button', state: TriggerUiState.IDLE, editable: true },
         ],
+        Third: [{ field: 'Count', editable: true }],
       }
     )
     const config = {
@@ -211,6 +258,7 @@ describe('Demo15 配置编辑器', () => {
     const headers = {
       'X-Plugin-Ui-Provider': 'demo15',
       'X-Plugin-Ui-Activation': 'activation',
+      'X-Plugin-Ui-Page': 'plan',
     }
     let fail = false
     const network = vi.spyOn(axios, 'request').mockImplementation(async request => {
@@ -220,7 +268,10 @@ describe('Demo15 配置编辑器', () => {
       if (path === '/api/config/triggers/write')
         return { status: 200, data: { code: 200, data: 'job' } }
       if (fail)
-        return { status: 200, data: { code: 422, fieldErrors: { 'Second.Count': 'invalid' } } }
+        return {
+          status: 200,
+          data: { code: 422, message: 'Invalid count', fieldErrors: { 'Second.Count': 'invalid' } },
+        }
       const body = request.data as { data: SettingsValues }
       config.data.p.Second.Count = body.data.Second.Count
       read.mockResolvedValue(structuredClone(config))
@@ -245,18 +296,25 @@ describe('Demo15 配置编辑器', () => {
       expect(frame.url.pathname).toBe('/api/plugin/demo15/ui/r1/plan.html')
       expect(
         await rpc('saveConfig', { phase: 'draft', changes: [change('First', 4)] })
-      ).toMatchObject({ result: true })
+      ).toMatchObject({ result: { ok: true } })
       expect(network).not.toHaveBeenCalled()
       expect(
         await rpc('saveConfig', { phase: 'commit', changes: [change('Second', 5)] })
-      ).toMatchObject({ result: true })
+      ).toMatchObject({ result: { ok: true } })
       expect(writes).toEqual([
         { path: '/api/plan/update', body: { planId: 'p', data: { Second: { Count: 5 } } } },
       ])
       fail = true
       expect(
         await rpc('saveConfig', { phase: 'commit', changes: [change('Second', 6)] })
-      ).toMatchObject({ error: 'save_failed' })
+      ).toMatchObject({
+        result: {
+          ok: false,
+          code: '422',
+          message: 'Invalid count',
+          fieldErrors: { 'Second.Count': 'invalid' },
+        },
+      })
       expect(await rpc('readConfig')).toMatchObject({
         result: { config: { First: { Count: 4 }, Second: { Count: 6 } } },
       })
@@ -274,11 +332,19 @@ describe('Demo15 配置编辑器', () => {
         }))
       )
       config.ui.locked = true
+      config.data.p.Third.Count = 8
       read.mockResolvedValue(structuredClone(config))
       await client.refetchQueries({ queryKey: ['declarative-config'] })
-      await vi.waitFor(async () =>
-        expect(await rpc('readConfig')).toMatchObject({ result: { locked: true } })
-      )
+      await vi.waitFor(() => {
+        expect(frame.events).toContainEqual({
+          event: 'configReloaded',
+          payload: { config: { First: { Count: 4 }, Second: { Count: 6 }, Third: { Count: 8 } } },
+        })
+        expect(frame.events).toContainEqual({
+          event: 'stateChanged',
+          payload: expect.objectContaining({ locked: true, busy: false }),
+        })
+      })
       network.mockClear()
       expect(
         await rpc('saveConfig', { phase: 'commit', changes: [change('Second', 7)] })

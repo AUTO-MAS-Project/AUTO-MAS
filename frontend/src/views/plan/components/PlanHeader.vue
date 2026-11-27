@@ -9,7 +9,7 @@
         <a-dropdown :trigger="['click']">
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
-              <a-menu-item v-for="planType in availablePlanTypes" :key="planType.createType">
+              <a-menu-item v-for="planType in availablePlanTypes" :key="planType.configType">
                 {{ t('core.plan.createTyped', { name: planType.displayName }) }}
               </a-menu-item>
             </a-menu>
@@ -38,10 +38,10 @@
     </div>
   </div>
   <UniversalPlanCreateDialog
-    ref="ownerDialog"
+    ref="universalDialog"
     :active-plan-id="activePlanId"
     :creating="creating"
-    @create="createWithOwner"
+    @create="addPlan(PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
   />
 </template>
 
@@ -51,7 +51,11 @@ import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
 import UniversalPlanCreateDialog from './UniversalPlanCreateDialog.vue'
 import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
-import { getAvailablePlanTypes, type PlanTypeOption } from '@/utils/planTypeRegistry'
+import {
+  PLAN_CONFIG_TYPES,
+  getAvailablePlanTypes,
+  type PlanTypeOption,
+} from '@/utils/planTypeRegistry'
 import type { PlanListItem } from '../planList'
 import { ConfirmActionButton } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
@@ -75,21 +79,17 @@ const emit = defineEmits<{
   'add-plan': [plan: PlanTypeOption, owner?: { scriptId: string }]
 }>()
 
-const ownerDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
-const selectedCreateType = ref<string>()
-function createWithOwner(scriptId: string) {
-  const plan = availablePlanTypes.value.find(
-    option => option.createType === selectedCreateType.value
-  )
-  if (plan) emit('add-plan', plan, { scriptId })
+const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
+const addPlan = (key: string, owner?: { scriptId: string }) => {
+  const plan = availablePlanTypes.value.find(option => option.configType === key)
+  if (plan) emit('add-plan', plan, owner)
 }
 const onAddPlanMenu = ({ key }: { key: string }) => {
-  const plan = availablePlanTypes.value.find(option => option.createType === key)
-  if (!plan) return
-  if (plan.parentScriptType) {
-    selectedCreateType.value = key
-    void ownerDialog.value?.show(plan.parentScriptType, plan.displayName, plan.configType)
-  } else emit('add-plan', plan)
+  if (key === PLAN_CONFIG_TYPES.UNIVERSAL) {
+    void universalDialog.value?.show()
+    return
+  }
+  addPlan(key)
 }
 </script>
 

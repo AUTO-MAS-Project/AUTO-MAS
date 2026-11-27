@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type PluginFrontendPlanCreationInfo = {
-    key: string;
-    requiresParentScript: boolean;
+export type PanelArtifactInfo = {
+    entry: string;
+    panelApi: number;
 };
 

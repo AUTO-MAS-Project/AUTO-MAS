@@ -14,7 +14,11 @@ export function pluginUiFrame(frame: TestNode) {
     target: JSON.parse(hash.get('target')!),
   }
   const replies = new Map<number, { result?: unknown; error?: string }>()
-  port1.onmessage = ({ data }) => replies.set(data.requestId, data)
+  const events: { event: 'stateChanged' | 'configReloaded'; payload: unknown }[] = []
+  port1.onmessage = ({ data }) => {
+    if (data.event) events.push(data)
+    else replies.set(data.requestId, data)
+  }
   let nextId = 0
   const request = (action: string, params?: object, overrides?: object, requestId = ++nextId) => {
     port1.postMessage({ ...envelope, action, params, requestId, ...overrides })
@@ -31,6 +35,7 @@ export function pluginUiFrame(frame: TestNode) {
   }
   return {
     envelope,
+    events,
     replies,
     ready,
     request,

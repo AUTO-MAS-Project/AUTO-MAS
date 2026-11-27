@@ -2,11 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { PluginFrontendTargetInfo } from './PluginFrontendTargetInfo';
+import type { PanelArtifactInfo } from './PanelArtifactInfo';
+import type { PanelBinding } from './PanelBinding';
 export type PluginFrontendInfo = {
-    protocolVersion: number;
+    manifestVersion?: number;
     revision: string;
     activationId: string;
-    targets: Array<PluginFrontendTargetInfo>;
+    pages: Record<string, Record<string, PanelArtifactInfo>>;
+    bindings: Array<PanelBinding>;
+    diagnostics: Array<string>;
 };
 

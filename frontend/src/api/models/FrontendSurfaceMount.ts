@@ -2,17 +2,12 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { PanelArtifactInfo } from './PanelArtifactInfo';
 export type FrontendSurfaceMount = {
-    mode: FrontendSurfaceMount.mode;
+    pageId: string;
     pluginName: string;
     revision: string;
     activationId: string;
-    entry?: (string | null);
+    artifacts: Record<string, PanelArtifactInfo>;
 };
-export namespace FrontendSurfaceMount {
-    export enum mode {
-        DECLARATIVE = 'declarative',
-        WHEEL = 'wheel',
-    }
-}
 

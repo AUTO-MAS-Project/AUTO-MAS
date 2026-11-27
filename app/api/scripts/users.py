@@ -25,7 +25,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import (
     BaseModel,
     Field,
@@ -36,6 +36,7 @@ from pydantic import (
 
 import app.models.config as _config_models
 from app.api._config_editors import (
+    FrontendWriteGuard,
     config_detail_ui,
     config_update_data,
     require_frontend_activation,
@@ -206,7 +207,6 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             config_detail_ui(
                 user_configs[user.userId],
                 data,
-                parent_script_type=type(script).__name__,
             )
             if user.userId
             else None
@@ -300,15 +300,21 @@ async def add_user(user: UserCreateIn = Body(...)) -> UserCreateOut:
     summary="更新账号配置信息",
     response_model=ConfigUpdateOut,
     status_code=200,
-    dependencies=[Depends(require_frontend_activation, scope="function")],
 )
 async def update_user(
     user: UserUpdateIn = Body(...),
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
 ) -> ConfigUpdateOut:
     try:
         entry = script_users(Config.ScriptConfig[user.scriptId])[user.userId]
+        if guard is not None:
+            guard(entry)
         data = config_update_data(entry, user.data)
         await Config.update_user(user.scriptId, user.userId, data=data)
+    except HTTPException:
+        raise
     except (ValidationError, ConfigAggregateError) as e:
         return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:

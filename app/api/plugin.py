@@ -34,12 +34,13 @@ import inspect
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.api._config_editors import FrontendWriteGuard, require_frontend_activation
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
@@ -54,13 +55,14 @@ from app.models.schema import (
     ConfigSnapshotOut,
     ConfigUpdateOut,
     OutBase,
+    PanelArtifactInfo,
+    PanelBinding,
     PluginInstallation,
 )
 from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
 from app.plugin.base.script import FirstAccountMode
 from app.plugin.errors import PluginBusyError, PluginPrecheckError
-from app.plugin.frontend import FrontendSurfaceKind
 from app.plugin.http import PLUGIN_GATEWAY_PATH, PLUGIN_UI_PATH
 from app.plugin.types import (
     RESTRICTED_PLUGIN_NAMES,
@@ -129,48 +131,13 @@ class PluginProvidedScriptType(BaseModel):
     firstAccountMode: FirstAccountMode = "direct"
 
 
-class PluginFrontendSurfaceInfo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    mode: Literal["declarative", "wheel"]
-    entry: str | None = None
-
-
-class PluginFrontendRouteAliasInfo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    surface: FrontendSurfaceKind
-    path: str
-
-
-class PluginFrontendPlanCreationInfo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    key: str
-    requiresParentScript: bool = Field(validation_alias="requires_parent_script")
-
-
-class PluginFrontendTargetInfo(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    scriptKey: str = Field(validation_alias="script_key")
-    scriptConfigType: str = Field(validation_alias="script_config_type")
-    userConfigType: str | None = Field(validation_alias="user_config_type")
-    planConfigType: str | None = Field(validation_alias="plan_config_type")
-    displayName: str | None = Field(validation_alias="display_name")
-    iconAsset: str | None = Field(validation_alias="icon_asset")
-    surfaces: dict[FrontendSurfaceKind, PluginFrontendSurfaceInfo]
-    aliases: tuple[PluginFrontendRouteAliasInfo, ...]
-    planCreation: PluginFrontendPlanCreationInfo | None = Field(
-        validation_alias="plan_creation"
-    )
-
-
 class PluginFrontendInfo(BaseModel):
-    protocolVersion: Literal[1]
+    manifestVersion: Literal[1] = 1
     revision: str
     activationId: str
-    targets: list[PluginFrontendTargetInfo]
+    pages: dict[str, dict[str, PanelArtifactInfo]]
+    bindings: list[PanelBinding]
+    diagnostics: list[str]
 
 
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
@@ -319,13 +286,11 @@ def _plugin_frontend(record: PluginRecord) -> PluginFrontendInfo | None:
     if frontend is None:
         return None
     return PluginFrontendInfo(
-        protocolVersion=frontend.manifest.protocol_version,
         revision=frontend.revision,
         activationId=frontend.activation_id,
-        targets=[
-            PluginFrontendTargetInfo.model_validate(target)
-            for target in frontend.manifest.targets
-        ],
+        pages=frontend.pages,
+        bindings=frontend.bindings,
+        diagnostics=frontend.diagnostics,
     )
 
 
@@ -516,6 +481,9 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
 )
 async def update_plugin_config(
     body: PluginConfigUpdateIn = Body(...),
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
 ) -> PluginConfigUpdateOut:
     """按插件实际配置类型校验并保存局部补丁，返回配置更新结果。"""
     try:
@@ -525,8 +493,12 @@ async def update_plugin_config(
             return PluginConfigUpdateOut(
                 code=400, status="error", message="插件未启用或无自有配置"
             )
+        if guard is not None:
+            guard(cfg)
         patch = type(cfg).model_validate(body.data)
         await cfg.update(patch)
+    except HTTPException:
+        raise
     except KeyError:
         return PluginConfigUpdateOut(
             code=404, status="error", message="未找到对应插件配置"
@@ -689,7 +661,7 @@ async def dispatch_plugin_http(
     method = request.method.upper()
     try:
         if path == "ui" or path.startswith("ui/"):
-            frontend = mount.frontend
+            frontend = Plugin.mounted_frontend(plugin_name)
             if method != "GET" or frontend is None:
                 return Response(status_code=404)
             revision, _, asset = path.removeprefix("ui/").partition("/")

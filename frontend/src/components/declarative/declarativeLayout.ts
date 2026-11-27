@@ -80,9 +80,27 @@ export function tableColumnTypes(
 }
 
 type LayoutGroup = { name: string; hints: DeclarativeHint[] }
+type FieldLocation = { group: string; field: string }
 type CardContent =
   | { table: DeclarativeTableHint; columnTypes: Record<string, string> }
   | { group: LayoutGroup; runs: ReturnType<typeof fieldRuns> }
+
+const isAction = (hint: DeclarativeHint | undefined) =>
+  hint?.component === 'button' || hint?.component === 'dropdown-button'
+
+export function resolveActionOwner(
+  groups: LayoutGroup[],
+  group: string,
+  field: string
+): FieldLocation | undefined {
+  const action = groups.find(item => item.name === group)?.hints.find(hint => hint.field === field)
+  if (!isAction(action)) return
+  const ref = `${group}.${field}`
+  for (const { name, hints } of groups) {
+    const owner = hints.find(hint => hint.field && hint.action_ref === ref)
+    if (owner?.field) return { group: name, field: owner.field }
+  }
+}
 
 /** 先从可见字段中提取行内动作、表格，再按插件声明分步。 */
 export function declarativeLayout(
@@ -98,17 +116,12 @@ export function declarativeLayout(
   )
   const actions = new Map<string, { group: string; hint: DeclarativeHint }>()
   const referenced = new Set<string>()
-  for (const [key, { hint }] of fields) {
-    const ref = hint.action_ref
-    const target = ref && fields.get(ref)
-    if (
-      target &&
-      !referenced.has(ref) &&
-      ['button', 'dropdown-button'].includes(target.hint.component ?? '')
-    ) {
-      actions.set(key, target)
-      referenced.add(ref)
-    }
+  for (const [key, target] of fields) {
+    if (!target.hint.field || !isAction(target.hint)) continue
+    const owner = resolveActionOwner(groups, target.group, target.hint.field)
+    if (!owner) continue
+    actions.set(`${owner.group}.${owner.field}`, target)
+    referenced.add(key)
   }
   const hintFor = (group: string, field: string) => {
     const key = `${group}.${field}`

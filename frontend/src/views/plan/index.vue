@@ -27,6 +27,8 @@
         :plan="currentPlan"
         :plan-id="activePlanId"
         :descriptor="currentPlanDescriptor"
+        :has-panel="currentPlanHasPanel"
+        :supports-schedule="currentPlanSupportsSchedule"
         :table-data="tableData"
         :mode="currentMode"
         :rotate-days="currentRotateDays"
@@ -114,10 +116,11 @@ const registry = usePluginRegistry()
 const planClaims = computed(
   () => indexPluginScriptTypes(registry.data.value?.data).frontendByPlanConfigType
 )
-const currentPlanDescriptor = computed(() => {
-  const type = currentPlan.value?.type
-  return type && planClaims.value.get(type)?.surfaces.plan ? null : getPlanTypeDescriptor(type)
-})
+const currentPlanDescriptor = computed(() => getPlanTypeDescriptor(currentPlan.value?.type))
+const currentPlanHasPanel = computed(() => planClaims.value.has(currentPlan.value?.type ?? ''))
+const currentPlanSupportsSchedule = computed(
+  () => !!currentPlanDescriptor.value || currentPlanData.value?.Info?.Mode != null
+)
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 

@@ -1,12 +1,15 @@
 import { OpenAPI, type FrontendSurfaceMount } from '@/api'
 import { request } from '@/api/core/request'
 
-export type PluginUiActivation = Pick<FrontendSurfaceMount, 'pluginName' | 'activationId'>
+export type PluginUiActivation = Pick<
+  FrontendSurfaceMount,
+  'pluginName' | 'activationId' | 'pageId'
+>
 
 export function pluginUiPost<T>(
   url: string,
   body: object,
-  { pluginName, activationId }: PluginUiActivation
+  { pluginName, activationId, pageId }: PluginUiActivation
 ) {
   return request<T>(OpenAPI, {
     method: 'POST',
@@ -16,6 +19,7 @@ export function pluginUiPost<T>(
     headers: {
       'X-Plugin-Ui-Provider': pluginName,
       'X-Plugin-Ui-Activation': activationId,
+      'X-Plugin-Ui-Page': pageId,
     },
   })
 }

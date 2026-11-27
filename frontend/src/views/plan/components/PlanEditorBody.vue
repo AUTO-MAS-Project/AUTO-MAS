@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
+import { createReusableTemplate } from '@vueuse/core'
 import ConfigEditor from '@/views/plugins/ConfigEditor.vue'
 import {
   PLAN_CONFIG_TYPES,
@@ -16,6 +17,8 @@ const props = defineProps<{
   plan: PlanListItem | null
   planId: string
   descriptor: ReturnType<typeof getPlanTypeDescriptor>
+  hasPanel: boolean
+  supportsSchedule: boolean
   tableData: Record<string, unknown>
   mode: PlanMode
   rotateDays: number
@@ -33,8 +36,18 @@ const emit = defineEmits<{
   rotateDays: [days: number]
 }>()
 
+const [DefineTable, EditorTable] = createReusableTemplate()
 const planTable = ref<{ beforeLeave?: () => boolean | Promise<boolean> } | null>(null)
-defineExpose({ beforeLeave: () => planTable.value?.beforeLeave?.() ?? true })
+const pluginEditor = ref<InstanceType<typeof ConfigEditor> | null>(null)
+defineExpose({
+  beforeLeave: async () =>
+    (await (planTable.value?.beforeLeave?.() ?? true)) &&
+    (await (pluginEditor.value?.beforeLeave() ?? true)),
+})
+
+async function selectViewMode(next: 'config' | 'simple') {
+  if (!props.hasPanel || (await (pluginEditor.value?.beforeLeave() ?? true))) viewMode.value = next
+}
 
 async function startEditName() {
   editingName.value = true
@@ -56,6 +69,19 @@ async function finishEditName() {
 </script>
 
 <template>
+  <DefineTable>
+    <component
+      v-if="descriptor"
+      :is="descriptor.tableComponent"
+      ref="planTable"
+      v-bind="plan?.type === PLAN_CONFIG_TYPES.BAAH ? { interactionDisabled: pending } : {}"
+      :table-data="tableData"
+      :current-mode="mode"
+      :view-mode="viewMode"
+      :plan-id="planId"
+      :handle-plan-change="changeField"
+    />
+  </DefineTable>
   <div class="plans-content">
     <PlanSelector
       :plan-list="planList"
@@ -65,32 +91,26 @@ async function finishEditName() {
       @rename="rename"
     />
     <PlanConfig
-      v-if="descriptor"
       v-model:current-plan-name="name"
-      v-model:view-mode="viewMode"
+      :view-mode="viewMode"
       :current-mode="mode"
       :rotate-days="rotateDays"
-      :supports-simple-view="descriptor.supportsSimpleView"
+      :supports-schedule="supportsSchedule"
+      :supports-simple-view="descriptor?.supportsSimpleView ?? false"
       :is-editing-plan-name="editingName"
       :compact="plan?.type === PLAN_CONFIG_TYPES.BAAH"
       :disabled="pending"
       @update:current-mode="emit('mode', $event)"
       @update:rotate-days="emit('rotateDays', $event)"
+      @update:view-mode="selectViewMode"
       @start-edit-plan-name="startEditName"
       @finish-edit-plan-name="finishEditName"
     >
-      <component
-        :is="descriptor.tableComponent"
-        ref="planTable"
-        v-bind="plan?.type === PLAN_CONFIG_TYPES.BAAH ? { interactionDisabled: pending } : {}"
-        :table-data="tableData"
-        :current-mode="mode"
-        :view-mode="viewMode"
-        :plan-id="planId"
-        :handle-plan-change="changeField"
-      />
+      <EditorTable v-if="descriptor && (!hasPanel || viewMode === 'simple')" />
+      <ConfigEditor v-else ref="pluginEditor" mode="plan" :plan-id="planId">
+        <template v-if="descriptor" #fallback><EditorTable /></template>
+      </ConfigEditor>
     </PlanConfig>
-    <ConfigEditor v-else ref="planTable" mode="plan" :plan-id="planId" />
   </div>
 </template>
 

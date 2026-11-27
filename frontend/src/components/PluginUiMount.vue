@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onScopeDispose, shallowRef, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
 import { StateView } from '@/components/ui'
+import { pluginPanelTheme } from '@/composables/pluginPanelTheme'
 import {
   usePluginUiBridge,
   type PluginUiEditor,
@@ -18,11 +18,11 @@ const props = defineProps<{
   editor: PluginUiEditor
   refresh: () => Promise<boolean>
 }>()
-const { t } = useI18n()
 const frame = shallowRef<HTMLIFrameElement | null>(null)
 const { iframeUrl, frameHeight, status, start, stop, fail } = usePluginUiBridge(
   () => frame.value,
-  () => props.editor
+  () => props.editor,
+  () => pluginPanelTheme.value
 )
 let cleanup: (() => void) | undefined
 
@@ -48,6 +48,7 @@ onMounted(() => {
   const stopWatch = watch(
     [
       () => props.mount.pluginName,
+      () => props.mount.pageId,
       () => props.mount.revision,
       () => props.mount.entry,
       () => props.mount.activationId,
@@ -70,7 +71,6 @@ onMounted(() => {
     refreshing = false
     fail()
   })
-  retry = refresh
   cleanup = () => {
     generation++
     stopWatch()
@@ -80,29 +80,26 @@ onMounted(() => {
   }
 })
 
-let retry: () => Promise<void>
 onScopeDispose(() => cleanup?.())
 </script>
 
 <template>
-  <StateView
-    :loading="status === 'loading'"
-    :error="status === 'error' ? t('core.plugins.settingsLoadFailed') : null"
-    :empty="!iframeUrl"
-    overlay-loading
-    @retry="retry()"
-  >
-    <iframe
-      ref="frame"
-      :key="iframeUrl"
-      sandbox="allow-scripts"
-      referrerpolicy="no-referrer"
-      :title="mount.pluginName"
-      :src="iframeUrl"
-      :style="{ height: frameHeight + 'px' }"
-      @error="fail"
-    />
-  </StateView>
+  <template v-if="status !== 'error'">
+    <StateView :loading="status === 'loading'" :empty="!iframeUrl" overlay-loading>
+      <iframe
+        ref="frame"
+        :key="iframeUrl"
+        sandbox="allow-scripts"
+        referrerpolicy="no-referrer"
+        :title="mount.pluginName"
+        :src="iframeUrl"
+        :style="{ height: frameHeight + 'px' }"
+        @error="fail"
+      />
+    </StateView>
+    <slot v-if="status === 'ready'" />
+  </template>
+  <slot v-else name="fallback" />
 </template>
 
 <style scoped>

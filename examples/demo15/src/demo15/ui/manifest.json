@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "pages": {
+    "plan": {
+      "web": { "entry": "plan.html", "panelApi": 1 }
+    }
+  },
+  "bindings": [
+    { "surface": "plan", "planType": "Demo15PlanConfig", "page": "plan" }
+  ]
+}

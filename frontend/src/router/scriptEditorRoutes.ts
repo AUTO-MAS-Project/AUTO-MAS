@@ -1,16 +1,9 @@
-import {
-  useRouter,
-  type HistoryState,
-  type RouteLocationNormalized,
-  type RouteLocationRaw,
-  type RouteRecordRaw,
-} from 'vue-router'
+import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
 import { maafwRouteName } from './maafwRoutes'
 import { isMaaFWFamily } from '@/plugins/maafwFamily'
 import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
-import type { PluginScriptTypes } from '@/utils/pluginScriptTypes'
 
 type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
@@ -100,93 +93,7 @@ export const genericEditorRoutes: RouteRecordRaw[] = [
   },
 ]
 
-const genericNames = {
-  script: 'GenericScriptEdit',
-  setup: 'GenericScriptSetup',
-  user: 'GenericUserEdit',
-}
-
-export function mayUsePluginEditor(to: RouteLocationNormalized) {
-  const page = to.meta.maafwPage ?? to.meta.scriptPage
-  return !to.matched.length || (!!to.meta.scriptType && !!page && page !== 'userAdd')
-}
-
-export function resolvePluginEditorRoute(
-  to: RouteLocationNormalized,
-  plugins: PluginScriptTypes
-): RouteLocationRaw | undefined {
-  const kind = to.meta.maafwPage ?? to.meta.scriptPage
-  const type = to.meta.scriptType
-  if (type && kind && kind !== 'userAdd') {
-    const surface = kind === 'userEdit' ? 'user' : kind
-    if (plugins.frontendByScriptKey.get(type)?.surfaces[surface]) {
-      return {
-        name: genericNames[surface],
-        params: {
-          ...to.params,
-          scriptId: to.params.scriptId ?? to.params.id,
-          scriptType: type,
-          id: undefined,
-        },
-        query: to.query,
-        hash: to.hash,
-      }
-    }
-  }
-  // 声明的历史地址只占用宿主没有登记的路径。
-  if (to.matched.length) return
-  const parts = to.path.replace(/^\//, '').split('/')
-  for (const target of plugins.frontendByScriptKey.values()) {
-    for (const alias of target.aliases) {
-      if (!target.surfaces[alias.surface]) continue
-      const pattern = alias.path.replace(/^\//, '').split('/')
-      if (pattern.length !== parts.length) continue
-      const ids = new Map<string, string>()
-      if (
-        !pattern.every((segment, index) => {
-          const param = /^:([\w-]+)$|^\{([\w-]+)\}$/.exec(segment)
-          if (!param) return segment === parts[index]
-          if (!parts[index]) return false
-          // 与 Vue Router 对参数的解码规则一致。
-          const value = decodeAliasParam(parts[index])
-          if (value === undefined) return false
-          ids.set(param[1] || param[2], value)
-          return true
-        })
-      )
-        continue
-      if (alias.surface === 'plan') {
-        const planId = ids.get('planId') ?? ids.get('id')
-        if (planId) return { name: 'Plans', query: { ...to.query, planId }, hash: to.hash }
-        continue
-      }
-      const scriptId = ids.get('scriptId') ?? ids.get('id')
-      const userId = ids.get('userId')
-      if (!scriptId || (alias.surface === 'user' && !userId)) continue
-      return {
-        name: genericNames[alias.surface],
-        params: {
-          scriptId,
-          scriptType: target.scriptKey,
-          ...(alias.surface === 'user' ? { userId } : {}),
-        },
-        query: to.query,
-        hash: to.hash,
-      }
-    }
-  }
-}
-
-function decodeAliasParam(value: string) {
-  try {
-    return decodeURIComponent(value)
-  } catch {
-    // 损坏的 URL 参数不能用于配置身份。
-    return undefined
-  }
-}
-
-/** 定位已有编辑入口，由路由守卫按插件的当前声明接管。 */
+/** 优先进入已注册的专用页面，运行时专项从详情接口读取表单。 */
 export function useScriptEditorNavigation() {
   const router = useRouter()
   return <K extends keyof ScriptEditorParams>(
