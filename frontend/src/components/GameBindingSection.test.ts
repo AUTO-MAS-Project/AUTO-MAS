@@ -104,6 +104,19 @@ describe('游戏绑定显示和清理', () => {
     )
   })
 
+  it('已选目标类型不一致时只提示，不清空绑定', async () => {
+    const { html } = await render({
+      options: {
+        supported: true,
+        accountOverrideSupported: true,
+        data: [{ value: 'client-target', label: '客户端', warning: '类型不一致提示' }],
+      },
+      binding: { game_id: 'client-target', device_id: '-' },
+    })
+    expect(html).toMatch(/ant-alert-warning[^]*?ant-alert-message[^>]*>类型不一致提示</)
+    expect(updateScript).not.toHaveBeenCalled()
+  })
+
   it('托管只剩不可用原因时仍可清除旧绑定', async () => {
     const { html, controls } = await render({
       options: unsupported,

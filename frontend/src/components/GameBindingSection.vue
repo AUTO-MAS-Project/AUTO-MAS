@@ -67,10 +67,13 @@
                     :value="option.value"
                     :label="option.label"
                     :disabled="!!option.disabledReason"
-                    :title="option.disabledReason ?? undefined"
+                    :title="option.disabledReason ?? option.warning ?? undefined"
                   >
                     {{ option.label
-                    }}<span v-if="option.disabledReason"> — {{ option.disabledReason }}</span>
+                    }}<span v-if="option.disabledReason"> — {{ option.disabledReason }}</span
+                    ><span v-else-if="option.warning" class="option-warning">
+                      — {{ option.warning }}</span
+                    >
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -153,10 +156,13 @@
                   :value="option.value"
                   :label="option.label"
                   :disabled="!!option.disabledReason"
-                  :title="option.disabledReason ?? undefined"
+                  :title="option.disabledReason ?? option.warning ?? undefined"
                 >
                   {{ option.label
-                  }}<span v-if="option.disabledReason"> — {{ option.disabledReason }}</span>
+                  }}<span v-if="option.disabledReason"> — {{ option.disabledReason }}</span
+                  ><span v-else-if="option.warning" class="option-warning">
+                    — {{ option.warning }}</span
+                  >
                 </a-select-option>
               </a-select>
             </a-form-item>
@@ -251,10 +257,15 @@ const bindingSupported = computed(
 const hasBinding = computed(
   () => binding.value.game_id !== '-' || !!binding.value.unavailable_reason
 )
+const selectedOptionWarning = computed(
+  () =>
+    options.data.value?.data?.find(option => option.value === binding.value.game_id)?.warning ?? ''
+)
 const bindingWarning = computed(
   () =>
     binding.value.unavailable_reason ||
-    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '')
+    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '') ||
+    selectedOptionWarning.value
 )
 const selected = computed(() => games.rows.value.find(game => game.uid === binding.value.game_id))
 const devices = computed(() => (selected.value ? gameDevices(selected.value) : []))
@@ -409,6 +420,10 @@ function reload() {
 
 .binding-form-item {
   margin-bottom: 12px;
+}
+
+.option-warning {
+  color: var(--ant-color-warning);
 }
 
 .compact-form-item {

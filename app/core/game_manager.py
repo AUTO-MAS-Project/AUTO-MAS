@@ -250,7 +250,13 @@ class _GameManager:
         owner=None,
         script=None,
         capabilities: GameBindingCapabilities | None = None,
+        hints: list[str] | None = None,
     ) -> str | None:
+        """返回拒绝绑定的原因；``hints`` 收集不拒绝、只提示的问题。
+
+        目标类型与专项当前控制方式不一致只作提示：控制方式的推断可能不准，
+        用户仍可按自己的判断绑定和运行。
+        """
         from app.core import Config
 
         if script is None:
@@ -276,8 +282,12 @@ class _GameManager:
         game = Config.GameConfig.get(UUID(str(uid)))
         if game is None:
             return "所选游戏目标不存在"
-        if capabilities.kinds and game.info.type not in capabilities.kinds:
-            return "所选游戏目标类型与当前专项控制方式不兼容"
+        if (
+            hints is not None
+            and capabilities.kinds
+            and game.info.type not in capabilities.kinds
+        ):
+            hints.append("游戏目标类型与当前专项控制方式不一致，可能无法运行")
         if (
             isinstance(game._control, EmulatorControl)
             and game._control.kind == "avd"

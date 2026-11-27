@@ -232,16 +232,23 @@ class GameSession:
         await self.release()
         if uid is None:
             return
+        hints: list[str] = []
         refusal = await GameManager.validate_binding(
             str(self.config.uid),
             {"game": {"game_id": uid}},
             owner=owner if self._account_override else None,
             script=self.config,
             capabilities=capabilities,
+            hints=hints,
         )
         if refusal:
             raise ValueError(refusal)
         game_name = Config.GameConfig[uid].info.name
+        for hint in hints:
+            self.script.current.log += (
+                f"提示：「{game_name}」{hint}，仍按所选目标运行。\n"
+            )
+            logger.warning(f"游戏目标「{game_name}」{hint}，仍按所选目标运行")
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
         logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
