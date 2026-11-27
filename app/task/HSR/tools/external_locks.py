@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from .m7a_paths import resolve_m7a_config_path
 from .native_control import resolve_script_path
 from .sra_runtime import get_sra_app_data_dir
 
@@ -46,7 +47,7 @@ def resolve_external_lock_paths(
     """返回指定引擎会读写的安装根和账号配置根。
 
     SRA 同时修改安装目录进程以及 ``%APPDATA%/SRA`` 下的 settings/cache/
-    configs；M7A 修改安装目录下的 ``config.yaml``。空路径不会出现在结果中。
+    configs；M7A 修改当前数据目录下的 ``config.yaml``。
     """
 
     paths: list[str | Path] = []
@@ -59,6 +60,8 @@ def resolve_external_lock_paths(
             paths.append(root)
         if engine == "SRA" and root:
             paths.append(get_sra_app_data_dir())
+        if engine == "M7A" and root:
+            paths.append(resolve_m7a_config_path(root).parent)
     return normalize_external_path_keys(paths)
 
 

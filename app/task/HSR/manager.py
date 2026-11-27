@@ -77,6 +77,7 @@ from .tools.external_locks import (
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config, load_m7a_yaml
+from .tools.m7a_paths import prepare_m7a_config, resolve_m7a_config_path
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
     native_provider,
@@ -235,7 +236,7 @@ class HSRManager(NotificationTaskBase):
         if m7a_path:
             backup_path(
                 _M7A_CONFIG_LABEL,
-                Path(str(m7a_path)) / "config.yaml",
+                resolve_m7a_config_path(m7a_path),
                 backup_root / "M7A" / "config.yaml",
             )
 
@@ -973,7 +974,7 @@ class HSRManager(NotificationTaskBase):
         logger.info(f"云·星穹铁道登录时间已写回：{sorted(pending)}")
 
     async def prepare(self):
-        """锁定配置、加载账号列表（不启动外部程序）"""
+        """锁定配置并完成外部脚本的任务前准备。"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         self.config_locks[
@@ -1002,12 +1003,14 @@ class HSRManager(NotificationTaskBase):
             if update_error:
                 self.check_result = update_error
                 raise RuntimeError(update_error)
+            m7a_root = resolve_script_path(self.script_config, "M7A")
+            if m7a_root:
+                await prepare_m7a_config(Path(m7a_root))
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
             # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
             # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
             # 失败不阻断任务）
-            m7a_root = resolve_script_path(self.script_config, "M7A")
             try:
                 archive_native_backup(
                     Path(m7a_root) if m7a_root else None,
