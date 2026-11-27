@@ -56,7 +56,7 @@ from app.models.schema import (
     PluginInstallation,
 )
 from app.mystery.gate import is_unlocked
-from app.plugin.errors import PluginBusyError
+from app.plugin.errors import PluginBusyError, PluginPrecheckError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import (
     RESTRICTED_PLUGIN_NAMES,
@@ -95,6 +95,13 @@ class PluginRegistryGetIn(BaseModel):
     )
 
 
+class PluginUninstallIn(BaseModel):
+    recordId: str = Field(..., description="PluginRecord.uid")
+    purge_config: bool = Field(
+        default=False, description="同时清理此插件的配置与托管数据"
+    )
+
+
 class PluginConfigUi(BaseModel):
     hints: UiHintsMap = Field(default_factory=dict)
     tables: UiTablesList = Field(default_factory=list)
@@ -107,7 +114,7 @@ class PluginRegistryDocument(ConfigPayload[PluginRecord]):
     ui: PluginConfigUi
     disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
         default_factory=list,
-        description="停用本插件及其级联下游时会删除的配置领域",
+        description="停用本插件及其级联下游时暂不可用的配置领域",
     )
     dependsOn: list[str] = Field(
         default_factory=list, description="直接上游插件名（requires 的提供者）"
@@ -416,6 +423,24 @@ async def update_plugin_config(
 
 
 @_runtime.post(
+    "/uninstall", tags=["Delete"], summary="卸载插件", response_model=OutBase
+)
+async def uninstall_plugin(body: PluginUninstallIn) -> OutBase:
+    record = Config.plugin_registry.get(body.recordId)
+    if record is None:
+        return OutBase(code=404, status="error", message="未找到对应插件")
+    try:
+        await Plugin.uninstall(record, purge_config=body.purge_config)
+    except (PluginBusyError, PluginPrecheckError) as error:
+        return OutBase(code=409, status="error", message=str(error))
+    except Exception as error:
+        return OutBase(
+            code=500, status="error", message=f"{type(error).__name__}: {error}"
+        )
+    return OutBase()
+
+
+@_runtime.post(
     "/list",
     tags=["Get"],
     summary="列出已加载插件（运行时）",
@@ -628,8 +653,6 @@ async def prepare_plugin_installation_restart(
     body: PluginInstallationRestartIn,
 ) -> PluginInstallationOut:
     """业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。"""
-    from app.plugin.errors import PluginPrecheckError
-
     try:
         ready = await Plugin.prepare_installation_restart(body.installationId)
     except PluginBusyError:

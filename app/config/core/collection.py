@@ -27,6 +27,8 @@ from pydantic import (
 )
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
+from app.utils import io as _utils_io
+
 from ..errors import ConfigAggregateError, DeletedNodeError, UnresolvedEntryError
 from ..signals import CollectionChangeEvent
 from .manager import TransactionContext, config_manager
@@ -105,7 +107,6 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
     _remove_guards: list[RemoveGuard[TEntry]] = PrivateAttr(default_factory=list)
     # 旁挂区：打开 keep_unknown_types 后，激活时类型没登记的成员原样留在这里，
     # 现有遍历（values / keys / get）都看不见它，只有落盘、显式接口去读。
-    # 工作区壳是浅拷贝，与 live 共用这几个容器：只原地修改，不重新赋值。
     _keep_unknown_types: bool = PrivateAttr(default=False)
     _unresolved: dict[UUID, UnresolvedEntry] = PrivateAttr(default_factory=dict)
     _load_order: list[UUID] = PrivateAttr(default_factory=list)
@@ -215,24 +216,27 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             StageKind.COLLECTION_SET_ORDER,
             StageKind.COLLECTION_ADD_TYPE,
             StageKind.COLLECTION_REMOVE_TYPE,
+            StageKind.COLLECTION_DETACH_TYPE,
             StageKind.COLLECTION_RELOAD_TYPE,
             StageKind.COLLECTION_REPLACE_TYPE,
         ):
             raise TypeError(f"Collection 不支持: {op.kind.value}")
 
-        use_init = (
-            op.kind == StageKind.COLLECTION_ADD
-            and self.activation_state == NodeState.INITIALIZING
+        use_init = op.kind == StageKind.COLLECTION_ADD and (
+            self.activation_state == NodeState.INITIALIZING or op.uid in self._restoring
         )
         async with config_manager.transaction():
-            self._build_workspace()
+            self._build_workspace(persist=op.kind != StageKind.COLLECTION_DETACH_TYPE)
             changed = True
 
             if op.kind == StageKind.COLLECTION_ADD:
                 assert op.entry_type is not None and op.uid is not None
                 if op.uid in self.effective.data:
                     raise ValueError(f"成员 uid 已存在: {op.uid}")
-                if op.uid in self._unresolved and op.uid not in self._restoring:
+                if (
+                    op.uid in self.effective._unresolved
+                    and op.uid not in self._restoring
+                ):
                     # 旁挂成员照样落盘，同一 uid 不能在盘上出现两份。
                     raise ValueError(f"成员 uid 已存在（所属插件不可用）: {op.uid}")
                 # 推迟导入：entry ↔ collection；用 build 避开 pydantic 合成 __init__
@@ -318,6 +322,40 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                         entry_type=op.entry_type,
                     ),
                 )
+            elif op.kind == StageKind.COLLECTION_DETACH_TYPE:
+                assert op.entry_type is not None
+                name = op.entry_type.__name__
+                view = self.effective
+                if view._entry_types.get(name) is not op.entry_type:
+                    raise ValueError(f"未登记的 Entry 类型: {name}")
+                # 顺序包括以前已旁挂的成员，以及启动后新建或调序的成员。
+                view._load_order = view._merged_order()
+                path = self.persist_path
+                raw = (
+                    _utils_io.read_dict_file(path, allow_empty=True).get("data", {})
+                    if path is not None and config_manager.is_persisted(self)
+                    else {}
+                )
+                for item in view.order:
+                    if item.type != name:
+                        continue
+                    entry = view.data[item.uid]
+                    if entry.is_locked:
+                        raise ValueError(f"成员已锁定，无法旁挂: {item.uid}")
+                    payload = raw.get(str(item.uid))
+                    if payload is None:
+                        payload = entry.model_dump(
+                            context=ExportContext(
+                                audience="persist", use_workspace=True
+                            )
+                        )
+                    view._unresolved[item.uid] = UnresolvedEntry(
+                        item.uid, name, payload
+                    )
+                    await entry._delete(persist=False)
+                    del view.data[item.uid]
+                view.order = [item for item in view.order if item.type != name]
+                del view._entry_types[name]
             elif op.kind == StageKind.COLLECTION_REMOVE_TYPE:
                 assert op.entry_type is not None
                 type_name = op.entry_type.__name__
@@ -484,7 +522,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             uid = UUID(uid)
         entry = self.effective.data.get(uid)
         if entry is None:
-            unresolved = self._unresolved.get(uid)
+            unresolved = self.effective._unresolved.get(uid)
             if unresolved is not None:
                 raise UnresolvedEntryError(uid, unresolved.type_name)
             raise KeyError(uid)
@@ -540,10 +578,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
 
     def unresolved(self) -> tuple[UnresolvedEntry, ...]:
         """旁挂成员，按激活时盘上的顺序。只读。"""
-        rank = {uid: index for index, uid in enumerate(self._load_order)}
+        view = self.effective
+        rank = {uid: index for index, uid in enumerate(view._load_order)}
         return tuple(
             sorted(
-                self._unresolved.values(),
+                view._unresolved.values(),
                 key=lambda item: rank.get(item.uid, len(rank)),
             )
         )
@@ -555,7 +594,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 uid = UUID(uid)
             except ValueError:
                 return False
-        return uid in self._unresolved
+        return uid in self.effective._unresolved
 
     def _unresolved_guard(self) -> asyncio.Lock:
         if self._unresolved_lock is None:
@@ -567,13 +606,10 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         if isinstance(uid, str):
             uid = UUID(uid)
         async with self._unresolved_guard():
-            if uid not in self._unresolved:
-                raise KeyError(uid)
             async with config_manager.transaction():
-                removed = self._unresolved.pop(uid)
-                config_manager.mark_persist_changed(self)
+                self._build_workspace()
+                removed = self.effective._unresolved.pop(uid)
                 config_manager.mark_ui_changed(self)
-        config_manager.schedule_debounced_save()
         return removed
 
     async def materialize_unresolved(self, type_name: str) -> list[UUID]:
@@ -616,7 +652,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                     item.type_name, uid=item.uid, payload=copy.deepcopy(item.payload)
                 )
                 await self.commit()
-                wanted = [uid for uid in self._merged_order((item.uid,)) if uid in self]
+                wanted = [
+                    uid
+                    for uid in self.effective._merged_order((item.uid,))
+                    if uid in self
+                ]
                 if wanted != list(self.keys()):
                     self.set_order(wanted)
                     await self.commit()
@@ -770,6 +810,16 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             return
         self._stage(StagedOp.collection_add_type(entry_cls))
 
+    def detach_type(self, entry_cls: type[TEntry]) -> None:
+        """暂存类型停用，成员保留持久化形态及引用，提交后旧实例失效。"""
+        if self.activation_state != NodeState.ACTIVE:
+            raise ValueError("须先 activate")
+        if self.effective._entry_types.get(entry_cls.__name__) is not entry_cls:
+            raise ValueError(f"未登记的 Entry 类型: {entry_cls.__name__}")
+        self._stage(
+            StagedOp(kind=StageKind.COLLECTION_DETACH_TYPE, entry_type=entry_cls)
+        )
+
     def remove_type(self, entry_type: type[TEntry] | str) -> None:
         """卸类型并级联删除该类全部成员（单 op 单事务，见 §5.4）。
 
@@ -900,9 +950,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         # 清空冷态残留（写 effective / ws；外层 activate 已建工作区）
         object.__setattr__(self.effective, "order", [])
         object.__setattr__(self.effective, "data", {})
-        # 与工作区壳共用容器：原地清空。
-        self._unresolved.clear()
-        self._load_order.clear()
+        self.effective._unresolved.clear()
+        self.effective._load_order.clear()
 
         keep = self._keep_unknown_types and not regenerate_uuids
         errors: list[Exception] = []
@@ -928,11 +977,11 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                         f"data[{uid}] 须为 ConfigNode 或 dict，收到 {type(raw).__name__}"
                     )
                 if keep:
-                    self._load_order.append(uid)
-                    if uid not in self._unresolved:
+                    self.effective._load_order.append(uid)
+                    if uid not in self.effective._unresolved:
                         if type_name not in self.effective._entry_types:
                             # 所属插件没登记上：原样留着，照旧落盘，等插件恢复后还原。
-                            self._unresolved[uid] = UnresolvedEntry(
+                            self.effective._unresolved[uid] = UnresolvedEntry(
                                 uid=uid,
                                 type_name=type_name,
                                 payload=copy.deepcopy(payload),
@@ -955,7 +1004,7 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
                 # 类型已登记、只这一条读不进来：只隔离它，原文照旧落盘，其余照常加载。
                 # 旧格式升级是否放行由调用方按旁挂区判断（见 Config.check_data）。
                 uid, type_name, raw_payload = isolatable
-                self._unresolved[uid] = UnresolvedEntry(
+                self.effective._unresolved[uid] = UnresolvedEntry(
                     uid=uid,
                     type_name=type_name,
                     payload=raw_payload,
@@ -976,6 +1025,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         object.__setattr__(ws, "order", list(src.order))
         object.__setattr__(ws, "data", dict(src.data))
         ws._entry_types = dict(src._entry_types)
+        ws._unresolved = dict(src._unresolved)
+        ws._load_order = list(src._load_order)
         ws._is_workspace = True
         return ws
 
@@ -996,6 +1047,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         object.__setattr__(target, "order", list(shell.order))
         object.__setattr__(target, "data", dict(shell.data))
         target._entry_types = dict(shell._entry_types)
+        target._unresolved = shell._unresolved
+        target._load_order = shell._load_order
         target._deleted = shell._deleted
         target._activation_state = shell._activation_state
         target._activation = shell._activation

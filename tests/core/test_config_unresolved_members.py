@@ -14,6 +14,7 @@ from app.config import (
     ConfigEntry,
     ConfigGroup,
     config_manager,
+    encrypted,
     ref,
 )
 from app.utils import io as config_io
@@ -298,3 +299,53 @@ async def test_discarded_member_reaches_disk_without_exit_flush(tmp_path):
     assert [item["uid"] for item in saved["order"]] == [
         uid for uid in profile.ids if uid != gone
     ]
+
+
+async def test_detach_rollback_and_pending_edit_preserve_order(tmp_path):
+    class Credentials(_Info):
+        Secret: Annotated[str, encrypted()] = ""
+
+    class Account(PluginEntry):
+        Info: Credentials = Field(default_factory=Credentials)
+
+    known, uid = uuid4(), uuid4()
+    raw = {"Info": {"Secret": "DPAPI:opaque"}}
+    path = tmp_path / "scripts.yaml"
+    config_io.write_file(
+        path,
+        {
+            "order": [
+                {"uid": str(known), "type": "KnownEntry"},
+                {"uid": str(uid), "type": "Account"},
+            ],
+            "data": {str(known): {}, str(uid): raw},
+        },
+    )
+    scripts = ConfigCollection.build(
+        [KnownEntry, Account], file=path, keep_unknown_types=True
+    )
+    await scripts.activate()
+    old = scripts[uid]
+    with pytest.raises(RuntimeError, match="撤销"):
+        async with config_manager.transaction():
+            scripts.detach_type(Account)
+            await scripts.commit()
+            assert old.deleted and scripts.is_unresolved(old.uid)
+            assert scripts.unresolved()[0].payload == raw
+            raise RuntimeError("撤销")
+    assert scripts[old.uid] is old and not old.deleted and not scripts.unresolved()
+
+    async with config_manager.transaction():
+        old.Info.Name = "尚未落盘"
+        await old.commit()
+        scripts.set_order([uid, known])
+        await scripts.commit()
+        scripts.detach_type(Account)
+        await scripts.commit()
+    saved = await scripts.to_dict()
+    assert saved["data"][str(uid)]["Info"] == {
+        "Name": "尚未落盘",
+        "Count": 0,
+        "Secret": "DPAPI:opaque",
+    }
+    assert [item["uid"] for item in saved["order"]] == [str(uid), str(known)]
