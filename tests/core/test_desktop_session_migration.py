@@ -1,4 +1,4 @@
-"""桌面分身清单：升级时并入托管旧的执行会话设置，删除托管或队列后清理条目。"""
+"""桌面分身清单：升级时只把托管旧的执行会话设置并入单独启动清单，删除托管或队列后两份清单都清理。"""
 
 import json
 import os
@@ -92,7 +92,11 @@ def test_upgrade_absorbs_legacy_execution_session_once(tmp_path):
         tmp_path, [("D1", "desktop"), ("M", "main"), ("D2", "desktop")]
     )
     # 新装：没有托管时直接置位，清单为空。
-    assert _desktop_session(config) == {"Targets": [], "LegacyMigrated": True}
+    assert _desktop_session(config) == {
+        "Targets": [],
+        "StartOnOpen": [],
+        "LegacyMigrated": True,
+    }
 
     # 插件不可用的托管旁挂保留，盘上原始数据里的设置同样并入。
     scripts = config_io.read_dict_file(config / "scripts.yaml")
@@ -108,6 +112,7 @@ def test_upgrade_absorbs_legacy_execution_session_once(tmp_path):
     _run_config_startup(tmp_path, _START)
     assert _desktop_session(config) == {
         "Targets": [desktop, second, hidden],
+        "StartOnOpen": [],
         "LegacyMigrated": True,
     }
     # 托管上的字段原样保留，降级后旧版本照旧按它路由。
@@ -123,7 +128,11 @@ def test_upgrade_absorbs_legacy_execution_session_once(tmp_path):
     setting["DesktopSession"]["Targets"] = [second]
     config_io.write_file(config / "setting.yaml", setting)
     _run_config_startup(tmp_path, _START)
-    assert _desktop_session(config) == {"Targets": [second], "LegacyMigrated": True}
+    assert _desktop_session(config) == {
+        "Targets": [second],
+        "StartOnOpen": [],
+        "LegacyMigrated": True,
+    }
 
 
 def test_upgrade_keeps_existing_targets_and_truncates_at_limit(tmp_path):
@@ -136,6 +145,7 @@ def test_upgrade_keeps_existing_targets_and_truncates_at_limit(tmp_path):
     # 已有的条目不重复，超出上限的不并入。
     assert _desktop_session(config) == {
         "Targets": [*existing, first],
+        "StartOnOpen": [],
         "LegacyMigrated": True,
     }
     assert extra not in _desktop_session(config)["Targets"]
@@ -157,8 +167,9 @@ async def add_targets():
     qid, _queue = await Config.add_queue(payload={"Info": {"Name": "Q"}})
     keep = Config.ScriptConfig.add(GeneralConfig, payload={"Info": {"Name": "K"}})
     await Config.ScriptConfig.commit()
+    ids = [str(sid), str(qid), str(keep)]
     await Config.update_setting(
-        {"DesktopSession": {"Targets": [str(sid), str(qid), str(keep)]}}
+        {"DesktopSession": {"Targets": ids, "StartOnOpen": ids}}
     )
     return sid, qid, keep
 
@@ -167,7 +178,9 @@ async def run():
     sid, qid, keep = await add_targets()
     await Config.del_script(str(sid))
     await Config.del_queue(str(qid))
+    # 两份清单都清理。
     assert Config.setting.DesktopSession.Targets == [str(keep)]
+    assert Config.setting.DesktopSession.StartOnOpen == [str(keep)]
 
     # 清理失败只记日志，删除本身照常完成。
     sid, qid, _ = await add_targets()
@@ -180,6 +193,7 @@ async def run():
         await Config.del_queue(str(qid))
     assert sid not in Config.ScriptConfig and qid not in Config.QueueConfig
     assert str(sid) in Config.setting.DesktopSession.Targets
+    assert str(sid) in Config.setting.DesktopSession.StartOnOpen
     await config_manager.flush()
 
 asyncio.run(run())

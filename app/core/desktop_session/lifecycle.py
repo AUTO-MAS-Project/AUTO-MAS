@@ -260,9 +260,10 @@ class _DesktopSessionLifecycle:
         return DesktopProcessTarget(session_id, Config.source_path, Config.work_path)
 
     async def start_configured_script(self, node: "TaskSelectionNode") -> UUID | None:
-        """手动启动单个托管时，托管在桌面分身清单里就选用桌面分身。
+        """手动启动单个托管时，托管在单独启动清单（Targets）里就选用桌面分身。
 
-        队列、多个托管和不在清单里的托管返回 ``None``，由调用方在主会话启动。
+        队列、多个托管和不在单独启动清单里的托管返回 ``None``，由调用方在主会话启动。
+        一并启动清单（StartOnOpen）只给卡片派发用，这里不读。
         """
         if node.uid != "-" or len(node.children) != 1:
             return None

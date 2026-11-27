@@ -687,6 +687,133 @@ async def test_manual_start_follows_desktop_session_targets(monkeypatch, case):
     assert session.desktop_process_target.get() is None
 
 
+async def _upgraded_entry_points(
+    monkeypatch,
+    *,
+    legacy_session: str,
+    legacy_card: bool,
+    connected: bool = True,
+    unsupported: bool = False,
+):
+    """按迁移产出的两份清单搭好环境：旧执行会话只进 Targets，旧卡片勾选只进 StartOnOpen。"""
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.core import Config, TaskManager
+    from app.models.config import GeneralConfig
+    from app.utils.windows.desktop_session import native
+
+    sid = uuid4()
+    entry = GeneralConfig.build(
+        payload={
+            "Game": {"Enabled": unsupported, "Type": "Emulator"},
+            # 字段本身不再参与路由，取值照旧填上以证明这一点。
+            "Run": {"ExecutionSession": legacy_session},
+        }
+    )
+    await entry.activate()
+    # 单独启动按字符串查托管，卡片派发按 UUID 查。
+    monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry, sid: entry})
+    monkeypatch.setattr(Config, "QueueConfig", {})
+    monkeypatch.setattr(
+        Config,
+        "setting",
+        SimpleNamespace(
+            DesktopSession=SimpleNamespace(
+                Targets=[str(sid)] if legacy_session == "desktop" else [],
+                StartOnOpen=[str(sid)] if legacy_card else [],
+            )
+        ),
+    )
+    service = lifecycle._DesktopSessionLifecycle()
+    monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
+    service.scope_state = (7, False)
+    monkeypatch.setattr(native, "child_session", lambda: 7 if connected else None)
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    seen = []
+    task_ids = iter([uuid4(), uuid4()])
+
+    async def start(mode, tasks):
+        seen.append(session.desktop_process_target.get())
+        return next(task_ids)
+
+    monkeypatch.setattr(TaskManager, "start", start)
+    return sid, service, seen
+
+
+async def _start_standalone(sid):
+    """调度台、首页、托盘等单独启动一个托管，不要求分身。"""
+    from uuid import uuid4
+
+    from app.api.dispatch import TaskCreateIn, add_task
+
+    return await add_task(
+        TaskCreateIn.model_validate(
+            {
+                "mode": "AutoProxy",
+                "tasks": {
+                    0: {
+                        "uid": "-",
+                        "children": {
+                            0: {"uid": str(sid), "children": {0: {"uid": str(uuid4())}}}
+                        },
+                    }
+                },
+            }
+        )
+    )
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_card", [False, True], ids=["card-off", "card-on"])
+@pytest.mark.parametrize("legacy_session", ["main", "desktop"])
+async def test_upgrade_keeps_standalone_and_card_entries_apart(
+    monkeypatch, legacy_session, legacy_card
+):
+    """升级后同一个托管：单独启动只跟旧执行会话走，卡片派发只由前端传入的 id 决定。"""
+    sid, service, seen = await _upgraded_entry_points(
+        monkeypatch, legacy_session=legacy_session, legacy_card=legacy_card
+    )
+
+    result = await _start_standalone(sid)
+    assert result.code == 200, result.message
+    standalone = [target.session_id if target else None for target in seen]
+    assert standalone == [7 if legacy_session == "desktop" else None]
+    assert (result.taskId in {str(task) for task in service.task_ids}) is (
+        legacy_session == "desktop"
+    )
+
+    # 卡片派发不读 Targets 和执行会话：传进来的托管一律进分身。
+    results = await service.dispatch_queues(
+        [sid], preview_only=False, main_session_queue_ids=set()
+    )
+    assert [item["code"] for item in results] == [""]
+    assert seen[-1] is not None and seen[-1].session_id == 7
+    assert session.desktop_process_target.get() is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["disconnected", "unsupported"])
+async def test_card_only_script_starts_standalone_in_main_session(monkeypatch, case):
+    """只在旧卡片里勾选过的托管，单独启动照旧在主会话：分身没连、托管不支持分身都不报 409。"""
+    sid, service, seen = await _upgraded_entry_points(
+        monkeypatch,
+        legacy_session="main",
+        legacy_card=True,
+        connected=case != "disconnected",
+        unsupported=case == "unsupported",
+    )
+
+    result = await _start_standalone(sid)
+    assert result.code == 200, result.message
+    assert result.taskId
+    assert seen == [None]
+    assert not service.task_ids
+    assert session.desktop_process_target.get() is None
+
+
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("listed", [True, False])

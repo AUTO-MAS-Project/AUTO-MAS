@@ -1924,9 +1924,10 @@ class AppConfig:
             await handler.initialize(script)
 
     async def _absorb_legacy_execution_session(self) -> None:
-        """把托管旧的「执行会话=桌面分身」并入桌面分身清单，只做一次。
+        """把托管旧的「执行会话=桌面分身」并入单独启动清单，只做一次。
 
-        托管上的字段原样保留、不写回，降级后旧版本照旧按字段路由。
+        只写单独启动清单 Targets，不动一并启动清单 StartOnOpen：后者只承接
+        Electron 本地旧的卡片勾选，由前端迁移。托管上的字段原样保留、不写回，降级后旧版本照旧按字段路由。
         插件不可用而旁挂的托管从盘上原始数据里读。
         """
         group = self.setting.DesktopSession
@@ -1958,19 +1959,19 @@ class AppConfig:
         )
 
     async def _remove_desktop_session_target(self, uid: uuid.UUID) -> None:
-        """删除托管或队列后尽力从桌面分身清单移除；失败只记日志，不影响删除。"""
+        """删除托管或队列后尽力从两份桌面分身清单移除；失败只记日志，不影响删除。"""
         try:
-            targets = self.setting.DesktopSession.Targets
-            if str(uid) not in targets:
+            key = str(uid)
+            group = self.setting.DesktopSession
+            changes = {
+                name: [t for t in getattr(group, name) if t != key]
+                for name in ("Targets", "StartOnOpen")
+                if key in getattr(group, name)
+            }
+            if not changes:
                 return
             await self.setting.update(
-                GlobalConfig.model_validate(
-                    {
-                        "DesktopSession": {
-                            "Targets": [t for t in targets if t != str(uid)]
-                        }
-                    }
-                ),
+                GlobalConfig.model_validate({"DesktopSession": changes}),
                 check_visibility=False,
             )
         except Exception as exc:  # noqa: BLE001
