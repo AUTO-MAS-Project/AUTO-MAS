@@ -7,7 +7,6 @@ import type { SettingChangeHandler } from './settingTypes'
 import { navigateTo } from '@/router'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
-import FailureReplaySettings from './components/FailureReplaySettings.vue'
 import VoiceSettings from './components/VoiceSettings.vue'
 
 const { t } = useI18n()
@@ -131,8 +130,6 @@ const handleHistoryRetentionChange = (value: unknown) => {
         />
       </SettingRow>
     </SectionCard>
-
-    <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
     <VoiceSettings :settings="settings.Voice" :handle-setting-change="handleSettingChange" />
 

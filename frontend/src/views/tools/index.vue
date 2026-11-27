@@ -7,6 +7,7 @@ import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
 import McpStartupSwitch from './components/McpStartupSwitch.vue'
 import McpAgentPrompt from './components/McpAgentPrompt.vue'
 import VirtualDisplayTool from './components/VirtualDisplayTool.vue'
+import FailureReplayTool from './components/FailureReplayTool.vue'
 
 const { t } = useI18n()
 const activeTab = ref('mcp')
@@ -118,6 +119,11 @@ onUnmounted(() => {
         <a-tab-pane key="virtualDisplay" :tab="t('core.setting.display.section')">
           <div class="tools-panel">
             <VirtualDisplayTool />
+          </div>
+        </a-tab-pane>
+        <a-tab-pane key="failureReplay" :tab="t('core.setting.replay.section')">
+          <div class="tools-panel">
+            <FailureReplayTool />
           </div>
         </a-tab-pane>
       </a-tabs>
