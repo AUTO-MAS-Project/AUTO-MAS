@@ -25,7 +25,8 @@
     </draggable>
 
     <div v-if="modelValue.length === 0" class="empty-state">
-      <NoData :image-style="{ height: '200px' }" :description="false" />
+      <a-spin v-if="loading" />
+      <NoData v-else :image-style="{ height: '200px' }" :description="false" />
     </div>
   </div>
 </template>
@@ -44,12 +45,15 @@ interface Props {
   itemKey: string
   disabled?: boolean
   busy?: boolean
+  /** 数据还没读回：空列表显示加载态而不是空状态 */
+  loading?: boolean
   group?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   disabled: false,
   busy: false,
+  loading: false,
   group: '',
 })
 
