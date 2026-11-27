@@ -1,24 +1,26 @@
-import { nextTick, onScopeDispose, ref, type Ref } from 'vue'
+import { nextTick, onScopeDispose, type Ref } from 'vue'
 import { Service, type TimeSet_Info } from '@/api'
 import { useConfigLoader } from '@/services/configUiSync'
+import { useQueueScopedList } from './useQueueScopedList'
 
-type QueueTimeSet = {
+export type QueueTimeSet = {
   id: string
   time: string
   enabled: boolean
   days: NonNullable<TimeSet_Info['Days']>
 }
 
-export function useQueueTimeSets(activeQueueId: Ref<string>) {
+export function useQueueTimeSets(activeQueueId: Ref<string>, pageInstance: number) {
   const logger = window.electronAPI.getLogger('调度队列')
-  const currentTimeSets = ref<QueueTimeSet[]>([])
   let active = true
   onScopeDispose(() => {
     active = false
   })
+  const timeSetList = useQueueScopedList<QueueTimeSet>(activeQueueId)
+  const currentTimeSets = timeSetList.items
   // 刷新定时项数据
   const refreshTimeSets = useConfigLoader(
-    () => ['config', 'queue-times', activeQueueId.value],
+    () => ['config', 'queue-times', activeQueueId.value, pageInstance],
     async read => {
       if (!activeQueueId.value) {
         currentTimeSets.value = []
@@ -33,10 +35,10 @@ export function useQueueTimeSets(activeQueueId: Ref<string>) {
         })
 
         read(response)
-        if (selected !== activeQueueId.value) return
         if (response.code !== 200) {
           logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
-          // 不清空数组，避免骨架屏闪现
+          // 已显示本队列内容时不清空，避免骨架屏闪现
+          timeSetList.fail(selected)
           return
         }
 
@@ -69,17 +71,18 @@ export function useQueueTimeSets(activeQueueId: Ref<string>) {
 
         // 使用nextTick确保数据更新不会导致渲染问题
         await nextTick()
-        if (!active || selected !== activeQueueId.value) return
-        // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-        currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
+        if (!active) return
+        // 已切走的队列只进缓存，不替换当前显示
+        timeSetList.commit(selected, timeSets)
         logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`刷新定时项列表失败: ${errorMsg}`)
-        // 不清空数组，避免骨架屏闪现
+        // 已显示本队列内容时不清空，避免骨架屏闪现
+        timeSetList.fail(selected)
       }
     }
   )
 
-  return { currentTimeSets, refreshTimeSets }
+  return { timeSetList, currentTimeSets, refreshTimeSets }
 }

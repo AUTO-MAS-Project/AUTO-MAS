@@ -3,15 +3,11 @@
     variant="plain"
     :title="t('core.queue.time.cardTitle')"
     class="app-page-section time-set-card"
-    :class="{ 'time-set-disabled': props.disabled }"
+    :class="{ 'time-set-disabled': looksDisabled }"
+    :inert="props.pending"
   >
     <template #actions>
-      <a-button
-        type="primary"
-        :loading="loading"
-        :disabled="props.disabled || !props.queueId || props.queueId.trim() === ''"
-        @click="addTimeSet"
-      >
+      <a-button type="primary" :loading="loading" :disabled="looksDisabled" @click="addTimeSet">
         <template #icon>
           <PlusOutlined />
         </template>
@@ -23,8 +19,9 @@
       v-model="timeSets"
       group="timeSets"
       item-key="id"
-      :disabled="loading || props.disabled"
+      :disabled="loading || readOnly"
       :busy="loading"
+      :loading="props.pending"
       @end="onDragEnd"
     >
       <template #header>
@@ -43,7 +40,7 @@
         <div class="row-cell index-cell">{{ index + 1 }}</div>
         <TimeSetRow
           :record="record"
-          :disabled="loading || props.disabled"
+          :disabled="loading || looksDisabled"
           @enabled="
             value => {
               record.enabled = value
@@ -70,7 +67,7 @@ import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
 import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
-import { ref, nextTick, watch } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import dayjs, { type Dayjs } from 'dayjs'
@@ -86,6 +83,10 @@ interface Props {
   queueId: string
   timeSets: any[]
   disabled?: boolean
+  /** 本队列数据还没读回（显示的是占位内容）：立即只读，但不改样式 */
+  pending?: boolean
+  /** 只读已持续一段时间：显示禁用样式 */
+  dimmed?: boolean
 }
 
 const props = defineProps<Props>()
@@ -93,7 +94,16 @@ const props = defineProps<Props>()
 // Emits
 const emit = defineEmits<{
   refresh: []
+  saved: [
+    queueId: string,
+    timeSetId: string,
+    change: { time?: string; enabled?: boolean; days?: DayOfWeek[] },
+  ]
 }>()
+
+// 逻辑只读与禁用样式分开：快速切换队列时不闪灰
+const readOnly = computed(() => props.disabled || props.pending)
+const looksDisabled = computed(() => props.disabled || props.dimmed)
 
 // 响应式数据
 const loading = ref(false)
@@ -146,6 +156,7 @@ watch(
 
 // 添加定时项
 const addTimeSet = async () => {
+  if (readOnly.value) return
   try {
     // 验证queueId是否存在
     if (!props.queueId || props.queueId.trim() === '') {
@@ -183,6 +194,7 @@ const updateTimeSetTime = async (
   timeSet: { id: string; time: string; timeValue?: Dayjs },
   value: Dayjs | string | null
 ) => {
+  if (readOnly.value) return
   try {
     // 清空表示显示日期的午夜；控件的 null 不写入页面状态或配置请求。
     const timeValue =
@@ -198,8 +210,9 @@ const updateTimeSetTime = async (
     const timeString = formatTimeValue(timeValue, originalTime)
     timeSet.timeValue = timeValue
 
+    const queueId = props.queueId
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
+      queueId,
       timeSetId: timeSet.id,
       data: {
         Info: {
@@ -211,6 +224,7 @@ const updateTimeSetTime = async (
     if (response.code === 200) {
       // 更新本地显示的时间
       timeSet.time = timeString
+      emit('saved', queueId, timeSet.id, { time: timeString })
     } else {
       message.error(
         t('core.queue.toast.timeUpdateFailed', {
@@ -231,19 +245,23 @@ const updateTimeSetTime = async (
 
 // 更新定时项状态
 const updateTimeSetStatus = async (timeSet: any) => {
+  if (readOnly.value) return
   try {
+    const queueId = props.queueId
+    const enabled = timeSet.enabled
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
+      queueId,
       timeSetId: timeSet.id,
       data: {
         Info: {
-          Enabled: timeSet.enabled,
+          Enabled: enabled,
         },
       },
     })
 
     if (response.code === 200) {
       // 状态更新成功，无需通知
+      emit('saved', queueId, timeSet.id, { enabled })
     } else {
       message.error(
         t('core.queue.toast.statusUpdateFailed', {
@@ -264,13 +282,15 @@ const updateTimeSetStatus = async (timeSet: any) => {
 
 // 更新定时项执行周期
 const updateTimeSetDays = async (timeSet: any) => {
+  if (readOnly.value) return
   try {
     // 对选中的日期按星期顺序排序
     const sortedDays = sortDays(timeSet.days || [])
     timeSet.days = sortedDays
 
+    const queueId = props.queueId
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
-      queueId: props.queueId,
+      queueId,
       timeSetId: timeSet.id,
       data: {
         Info: {
@@ -281,6 +301,7 @@ const updateTimeSetDays = async (timeSet: any) => {
 
     if (response.code === 200) {
       // 周期更新成功，无需通知
+      emit('saved', queueId, timeSet.id, { days: sortedDays })
     } else {
       message.error(
         t('core.queue.toast.daysUpdateFailed', {
@@ -297,6 +318,7 @@ const updateTimeSetDays = async (timeSet: any) => {
 
 // 删除定时项
 const deleteTimeSet = async (timeSetId: string) => {
+  if (readOnly.value) return
   try {
     const response = await Service.deleteTimeSetApiQueueTimeDeletePost({
       queueId: props.queueId,
@@ -323,7 +345,7 @@ const deleteTimeSet = async (timeSetId: string) => {
 // 拖拽结束处理函数
 const onDragEnd = async (evt: any) => {
   // 如果位置没有变化，直接返回
-  if (evt.oldIndex === evt.newIndex) {
+  if (evt.oldIndex === evt.newIndex || readOnly.value) {
     return
   }
 

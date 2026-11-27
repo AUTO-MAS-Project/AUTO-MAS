@@ -112,9 +112,12 @@
         <TimeSetManager
           v-if="activeQueueId && currentQueueData?.[activeQueueId]?.Info?.TimeEnabled"
           :key="`time-${activeQueueId}`"
-          :queue-id="activeQueueId"
+          :queue-id="timeSetsQueueId"
           :time-sets="currentTimeSets"
+          :pending="timeSetsLocked"
+          :dimmed="timeSetsDimmed"
           @refresh="refreshTimeSets"
+          @saved="onTimeSetSaved"
         />
         <QueueCycleSettings
           v-if="activeQueueId && currentQueueData?.[activeQueueId]?.Info?.CycleEnabled"
@@ -126,9 +129,12 @@
         <QueueItemManager
           v-if="activeQueueId && currentQueueData"
           :key="`items-${activeQueueId}`"
-          :queue-id="activeQueueId"
+          :queue-id="queueItemsQueueId"
           :queue-items="currentQueueItems"
+          :pending="queueItemsLocked"
+          :dimmed="queueItemsDimmed"
           @refresh="refreshQueueItems"
+          @saved="onQueueItemSaved"
         />
         <a-form layout="vertical" class="queue-extra-settings">
           <ExtraScriptSection
@@ -150,7 +156,8 @@
 import { useConfigLoader } from '@/services/configUiSync'
 import { useI18n } from 'vue-i18n'
 import type { QueueConfig_Info } from '@/api'
-import { useQueueTimeSets } from './useQueueTimeSets'
+import { useQueueTimeSets, type QueueTimeSet } from './useQueueTimeSets'
+import { nextQueuePageInstance, useQueueScopedList } from './useQueueScopedList'
 import { queueApi } from '@/composables/useQueueApi'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import QueueDeleteButton from './components/QueueDeleteButton.vue'
@@ -193,14 +200,61 @@ const extraScriptConfigQueueId = ref('')
 // 队列名称编辑状态
 const isEditingQueueName = ref<boolean>(false)
 
-// 当前队列的定时项和队列项
-const { currentTimeSets, refreshTimeSets } = useQueueTimeSets(activeQueueId)
-const currentQueueItems = ref<any[]>([])
+// 回读的 query key 带上页面实例编号：离开再回来时不会并进旧实例还在途的请求
+const pageInstance = nextQueuePageInstance()
+
+// 当前队列的定时项和队列项。切换队列时不清空：有缓存先显示缓存，没有就保留旧内容，
+// 都锁住直到新队列读回来；写请求始终发往显示内容所属的队列（ownerQueueId）。
+const { timeSetList, currentTimeSets, refreshTimeSets } = useQueueTimeSets(
+  activeQueueId,
+  pageInstance
+)
+type QueueItemRow = { id: string; script: string; schedule: Record<string, any> }
+const queueItemList = useQueueScopedList<QueueItemRow>(activeQueueId)
+const currentQueueItems = queueItemList.items
+const {
+  ownerQueueId: timeSetsQueueId,
+  locked: timeSetsLocked,
+  dimmed: timeSetsDimmed,
+} = timeSetList
+const {
+  ownerQueueId: queueItemsQueueId,
+  locked: queueItemsLocked,
+  dimmed: queueItemsDimmed,
+} = queueItemList
+
+// 切换选中队列：两张表先显示缓存或保留旧内容并锁住，由 loadQueueData 回读后替换
+const selectQueue = (queueId: string) => {
+  // 重复点当前队列不算切换，保留正在编辑的内容
+  if (activeQueueId.value === queueId) return
+  activeQueueId.value = queueId
+  // 队列删光时两张表不再显示，不用锁（否则禁用样式会带到下一个新建的队列）
+  if (!queueId) return
+  queueItemList.select(queueId)
+  timeSetList.select(queueId)
+}
+
+// 这次切换的回读没能发出（队列数据读取失败等）：按读失败处理，不能一直锁着
+const failQueueLists = (queueId: string) => {
+  queueItemList.fail(queueId)
+  timeSetList.fail(queueId)
+}
+
+// 子表就地保存成功后同步缓存和当前显示，同一队列里组件重挂载时不会显示保存前的值
+const copy = <V>(value: V): V => JSON.parse(JSON.stringify(value))
+const onQueueItemSaved = (queueId: string, itemId: string, schedule: Record<string, any>) => {
+  queueItemList.patch(queueId, itemId, item => {
+    item.schedule = { ...item.schedule, ...copy(schedule) }
+  })
+}
+const onTimeSetSaved = (queueId: string, timeSetId: string, change: Partial<QueueTimeSet>) => {
+  timeSetList.patch(queueId, timeSetId, item => Object.assign(item, copy(change)))
+}
 
 const loading = ref(true)
 
 // 获取队列列表
-const fetchQueues = useConfigLoader(['config', 'queues'], async read => {
+const fetchQueues = useConfigLoader(['config', 'queues', pageInstance], async read => {
   if (!queueList.value.length) loading.value = true
   try {
     const response = await queueApi.getQueues({})
@@ -219,7 +273,7 @@ const fetchQueues = useConfigLoader(['config', 'queues'], async read => {
 
         // 如果有队列且没有选中的队列，默认选中第一个
         if (!queueList.value.some(queue => queue.id === activeQueueId.value)) {
-          activeQueueId.value = queueList.value[0].id
+          selectQueue(queueList.value[0].id)
           logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
           // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
           nextTick(() => {
@@ -254,6 +308,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
   if (!queueId) return
 
   queueConfigLoading.value = true
+  let listsRequested = false
   try {
     const data = queuesData ?? (await queueApi.getQueues({})).data
     if (!isMounted || queueId !== activeQueueId.value) return
@@ -276,6 +331,7 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
       loadExtraScriptConfig(queueData.Info)
 
       // 定时项和队列项互不依赖，并行拉取
+      listsRequested = true
       await Promise.all([
         refreshTimeSets().catch(timeError => {
           const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
@@ -293,12 +349,13 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
     if (isMounted) message.error(t('core.queue.toast.loadQueueFailed'))
   } finally {
     if (queueId === activeQueueId.value) queueConfigLoading.value = false
+    if (!listsRequested && isMounted && queueId === activeQueueId.value) failQueueLists(queueId)
   }
 }
 
 // 刷新队列项数据
 const refreshQueueItems = useConfigLoader(
-  () => ['config', 'queue-items', activeQueueId.value],
+  () => ['config', 'queue-items', activeQueueId.value, pageInstance],
   async read => {
     if (!activeQueueId.value) {
       // 不清空数组，避免骨架屏闪现
@@ -313,14 +370,14 @@ const refreshQueueItems = useConfigLoader(
       })
 
       read(response)
-      if (selected !== activeQueueId.value) return
       if (response.code !== 200) {
         logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
-        // 不清空数组，避免骨架屏闪现
+        // 已显示本队列内容时不清空，避免骨架屏闪现
+        queueItemList.fail(selected)
         return
       }
 
-      const queueItems: any[] = []
+      const queueItems: QueueItemRow[] = []
 
       // 处理队列项数据
       if (response.index && Array.isArray(response.index)) {
@@ -346,14 +403,15 @@ const refreshQueueItems = useConfigLoader(
 
       // 使用nextTick确保数据更新不会导致渲染问题
       await nextTick()
-      if (!isMounted || selected !== activeQueueId.value) return
-      // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-      currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
+      if (!isMounted) return
+      // 已切走的队列只进缓存，不替换当前显示
+      queueItemList.commit(selected, queueItems)
       logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`刷新队列项列表失败: ${errorMsg}`)
-      // 不清空数组，避免骨架屏闪现
+      // 已显示本队列内容时不清空，避免骨架屏闪现
+      queueItemList.fail(selected)
     }
   }
 )
@@ -430,7 +488,7 @@ const handleAddQueue = async () => {
         name: defaultName,
       }
       queueList.value.push(newQueue)
-      activeQueueId.value = newQueue.id
+      selectQueue(newQueue.id)
 
       // 设置默认名称到输入框中
       currentQueueName.value = defaultName
@@ -465,11 +523,13 @@ const handleRemoveQueue = async (queueId: string) => {
       const { playSound } = useAudioPlayer()
       await playSound('delete_queue')
 
+      queueItemList.forget(queueId)
+      timeSetList.forget(queueId)
       const index = queueList.value.findIndex(queue => queue.id === queueId)
       if (index > -1) {
         queueList.value.splice(index, 1)
         if (activeQueueId.value === queueId) {
-          activeQueueId.value = queueList.value[0]?.id || ''
+          selectQueue(queueList.value[0]?.id || '')
           if (activeQueueId.value) {
             await loadQueueData(activeQueueId.value)
           } else {
@@ -497,11 +557,8 @@ const onQueueChange = async (queueId: string) => {
   if (!queueId) return
 
   try {
-    // 立即更新activeQueueId以确保按钮高亮切换
-    activeQueueId.value = queueId
-    // 清空当前数据，避免渲染问题
-    currentTimeSets.value = []
-    currentQueueItems.value = []
+    // 立即更新activeQueueId以确保按钮高亮切换；不清空两张表，避免先闪一下空状态
+    selectQueue(queueId)
 
     await loadQueueData(queueId)
   } catch (error) {
