@@ -11,7 +11,7 @@ withDefaults(
     nameHint?: string
     placeholder?: string
   }>(),
-  { nameField: 'name' }
+  { nameField: 'name', nameHint: undefined, placeholder: undefined }
 )
 const emit = defineEmits<{
   'update:name': [value: string]

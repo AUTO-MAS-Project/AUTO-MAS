@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 DesktopSessionCheckReason = Literal["admin_required", "unsupported_config"]
 DesktopSessionReason = Literal[DesktopSessionCheckReason, "plugin_unavailable"]
+FirstAccountMode = Literal["direct", "wizard"]
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class ScriptTypeDecl:
     desktop_session_check: (
         Callable[[ScriptEntry, bool], DesktopSessionCheckReason | None] | None
     ) = None
+    first_account_mode: FirstAccountMode = "direct"
 
     def desktop_session_reason(
         self, config: ScriptEntry, elevated: bool

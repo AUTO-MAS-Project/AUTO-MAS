@@ -100,6 +100,7 @@ async def test_registry_provided_script(monkeypatch, with_plan):
                 "supportsDesktopSession": not with_plan,
                 "hasAccountField": with_plan,
                 "hasPasswordField": with_plan,
+                "firstAccountMode": "direct",
             }
             assert await ownership("/api/plugin_registry/get") == provided
         finally:

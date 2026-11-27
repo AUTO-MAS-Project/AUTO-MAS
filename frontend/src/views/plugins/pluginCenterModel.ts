@@ -2,10 +2,12 @@ import type {
   PluginReleaseNote,
   PluginCatalogDocument,
   PluginCatalogGetOut,
+  PluginConfigDocument,
   PluginConfigUi,
   PluginRegistryDocument,
   PluginRegistryGetOut,
 } from '@/api'
+import { declarativeGroups } from '@/components/declarative/declarativeLayout'
 import { pluginActionHint, pluginToggleChecked } from './configActions'
 
 /**
@@ -799,28 +801,10 @@ export function updatableEntries(
 // ---------- 设置入口 ----------
 
 export type SettingsVisibility = 'visible' | 'hidden' | 'unknown' | 'loading'
-export interface PluginSettingsGroup<THint = unknown> {
-  name: string
-  hints: THint[]
-}
 
-/** 插件自有配置里有提示项的分组；与设置页使用同一判据。 */
-export function pluginSettingsGroups<THint = unknown>(
-  config: unknown
-): PluginSettingsGroup<THint>[] {
-  if (!config || typeof config !== 'object') return []
-  const ui = (config as Record<string, unknown>).ui
-  const hints = ui && typeof ui === 'object' ? (ui as Record<string, unknown>).hints : null
-  if (!hints || typeof hints !== 'object') return []
-  return Object.entries(hints as Record<string, unknown>).flatMap(([name, value]) =>
-    Array.isArray(value) && value.length ? [{ name, hints: value as THint[] }] : []
-  )
-}
-
-/** 后端按同类 Group 聚合成列；插件表单按分组分行，再应用 transpose。 */
-export function pluginSettingsTables(ui?: PluginConfigUi) {
-  return (ui?.tables ?? []).map(table => ({ ...table, rows: table.columns, columns: table.rows }))
-}
+/** 插件中心按表单实际能渲染的分组展示设置入口。 */
+export const pluginSettingsGroups = (config?: PluginConfigDocument | null) =>
+  declarativeGroups(config?.ui)
 
 /** 确定没有可见设置才隐藏；读失败时仍给入口，由设置页显示失败与重试。 */
 export const showSettingsEntry = (visibility: SettingsVisibility) =>

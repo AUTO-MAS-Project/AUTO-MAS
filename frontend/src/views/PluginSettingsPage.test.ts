@@ -32,7 +32,15 @@ it('插件设置页把所选动作交给后台执行，保留普通按钮的启�
     options: [{ value: 'refresh' }],
   }
   const button = { field: 'check', editable: true, component: 'button' }
-  const config = { uid: 'config', ui: { hints: { actions: [menu, button] } } }
+  const config = {
+    uid: 'config',
+    advanced: { name: 'later-step-value' },
+    ui: {
+      hints: { actions: [menu, button], advanced: [{ field: 'name' }] },
+      steps: [{ key: 'actions', title: 'Actions' }, { key: 'advanced' }],
+      sections: { 'group:advanced': { step: 'advanced' } },
+    },
+  }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const locale = 'en-US'
   client.setQueryData(['plugins', 'settings', 'record', locale], {
@@ -72,7 +80,11 @@ it('插件设置页把所选动作交给后台执行，保留普通按钮的启�
           action = (hint, value) => this.$emit('action', 'actions', hint, value)
       },
     })
-    await renderToString(app)
+    const html = await renderToString(app)
+    expect(html).toContain('ant-steps')
+    expect(html).toContain('Actions')
+    expect(html).toContain('advanced')
+    expect(html).not.toContain('later-step-value')
     action(menu, 'refresh')
     await vi.waitFor(() => expect(success).toHaveBeenCalledTimes(1))
     await vi.waitFor(() => expect(client.isFetching()).toBe(0))

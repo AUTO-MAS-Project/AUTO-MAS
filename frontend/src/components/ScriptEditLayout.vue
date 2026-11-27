@@ -29,7 +29,7 @@ withDefaults(
     formLabel?: string
     bindingVisible?: boolean
   }>(),
-  { bindingVisible: true }
+  { bindingVisible: true, bodyForm: undefined, formLabel: undefined }
 )
 
 const emit = defineEmits<{ cancel: [] }>()

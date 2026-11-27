@@ -1,13 +1,12 @@
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { fetchPluginScriptTypes } from '@/composables/usePluginScriptTypes'
 import type { useTemplateApi } from '@/composables/useTemplateApi'
 import type { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
-import { maafwRouteLocation } from '@/router/maafwRoutes'
-import { scriptEditorLocation } from '@/router/scriptEditorRoutes'
+import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import { isMfwFamily, type ScriptCreateRequest } from './components/scriptCreateFlow'
 import type { ScriptType } from '@/types/script'
 import type { ScriptListItem } from './scriptListModel'
@@ -21,25 +20,22 @@ interface CreationOptions {
   cloneProject: ReturnType<typeof useMaaFWEmbeddedApi>['cloneEmbedded']
 }
 
+const usesFirstAccountWizard = async (type: ScriptType) =>
+  (await fetchPluginScriptTypes()).byScriptKey.get(type)?.firstAccountMode === 'wizard'
+
 /** 新建、模板导入、项目复用与复制的完整流程；基础记录创建不等于导入完成。 */
 export function useScriptCreation(options: CreationOptions) {
-  const router = useRouter()
+  const openEditor = useScriptEditorNavigation()
   const { addScript, deleteScript } = useScriptApi()
   const { addUser } = useUserApi()
   const logger = window.electronAPI.getLogger('脚本创建')
   const addLoading = ref(false)
   const copyingScriptId = ref<string | null>(null)
   const navigate = (scriptId: string, type: ScriptType, data?: Record<string, unknown>) => {
-    void router.push({
-      ...(isMfwFamily(type)
-        ? maafwRouteLocation(type, 'setup', { id: scriptId })
-        : scriptEditorLocation(type, 'script', { id: scriptId })),
-      ...(data
-        ? {
-            state: { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } },
-          }
-        : {}),
-    })
+    const state = data
+      ? { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } }
+      : undefined
+    openEditor(type, isMfwFamily(type) ? 'setup' : 'script', { id: scriptId }, state)
   }
 
   const submit = async (request: ScriptCreateRequest) => {
@@ -54,9 +50,17 @@ export function useScriptCreation(options: CreationOptions) {
     let outcome: AnalyticsEventProps['script_create_finished']['outcome'] = 'failure'
     addLoading.value = true
     try {
+      const wizard =
+        request.kind === 'new' && !isMfwFamily(type) && (await usesFirstAccountWizard(type))
       const result = await addScript(type)
       if (!result) return
       outcome = 'partial'
+      if (wizard) {
+        outcome = 'success'
+        options.closeDialog()
+        openEditor(type, 'setup', { id: result.scriptId })
+        return
+      }
       if (request.kind === 'mfw-reuse') {
         try {
           const { message: text } = await options.cloneProject(
@@ -103,6 +107,30 @@ export function useScriptCreation(options: CreationOptions) {
     }
   }
 
+  const createUser = async (
+    script: Pick<ScriptListItem, 'id' | 'type' | 'users' | 'usersLoadError'>
+  ) => {
+    const scriptId = script.id
+    if (addLoading.value) return
+    addLoading.value = true
+    try {
+      if (
+        !script.usersLoadError &&
+        !script.users.length &&
+        !isMfwFamily(script.type) &&
+        (await usesFirstAccountWizard(script.type))
+      ) {
+        openEditor(script.type, 'setup', { id: scriptId })
+        return
+      }
+      if (openEditor(script.type, 'userAdd', { scriptId })) return
+      const user = await addUser(scriptId)
+      if (user?.userId) openEditor(script.type, 'user', { scriptId, userId: user.userId })
+    } finally {
+      addLoading.value = false
+    }
+  }
+
   const copy = async (script: ScriptListItem) => {
     const operation = beginAnalyticsOperation('script_create_finished')
     let outcome: 'success' | 'failure' = 'failure'
@@ -125,5 +153,5 @@ export function useScriptCreation(options: CreationOptions) {
       copyingScriptId.value = null
     }
   }
-  return { addLoading, copyingScriptId, submit, copy }
+  return { addLoading, copyingScriptId, submit, copy, createUser }
 }

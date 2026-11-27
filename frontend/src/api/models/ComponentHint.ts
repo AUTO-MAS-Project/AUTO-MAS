@@ -27,6 +27,9 @@ export type ComponentHint = {
     multiple?: boolean;
     ordered?: boolean;
     endpoint?: (string | null);
+    option_source?: string;
+    depends_on?: Record<string, string>;
+    action_ref?: string;
     plan_type?: string;
     deps?: (Array<string> | null);
     widget?: (string | null);
