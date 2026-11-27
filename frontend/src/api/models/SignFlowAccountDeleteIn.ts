@@ -5,7 +5,7 @@
 /**
  * 游戏社区账号组删除请求
  */
-export type GameSignAccountDeleteIn = {
+export type SignFlowAccountDeleteIn = {
     /**
      * 账号组 UUID
      */

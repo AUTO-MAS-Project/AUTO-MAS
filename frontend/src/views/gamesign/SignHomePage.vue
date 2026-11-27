@@ -5,7 +5,7 @@
 -->
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { ToolsConfig_GameSign } from '@/api'
+import type { ToolsConfig_SignFlow } from '@/api'
 import type { AccountInstance } from './gameSignAccounts'
 import type { PlatformResult } from './gameSignDisplay'
 import AccountSummarySection from './components/AccountSummarySection.vue'
@@ -13,15 +13,15 @@ import SignResultSection from './components/SignResultSection.vue'
 import SignSettingsPanel from './components/SignSettingsPanel.vue'
 
 defineProps<{
-  config: ToolsConfig_GameSign
+  config: ToolsConfig_SignFlow
   result: PlatformResult
   accounts: readonly AccountInstance[]
   disabled?: boolean
   accountsLoading?: boolean
   signLoading?: boolean
-  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+  onFieldChange?: <K extends keyof ToolsConfig_SignFlow>(
     key: K,
-    value: ToolsConfig_GameSign[K]
+    value: ToolsConfig_SignFlow[K]
   ) => void | Promise<void>
 }>()
 

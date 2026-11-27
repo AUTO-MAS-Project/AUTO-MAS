@@ -83,14 +83,14 @@ const loadAccounts = async () => {
     if (!Array.isArray(data.order)) throw new Error('Account list invalid')
     // 只保留选择器需要的名称和 UUID，不把账号列表中的明文凭据留在页面状态里。
     accounts.value = data.order.flatMap((instance: { uid?: string; type?: string }) => {
-      if (instance.type !== 'GameSignAccountGroup' || !instance.uid) return []
+      if (instance.type !== 'SignFlowAccountGroup' || !instance.uid) return []
       const config = (data.data as Record<string, unknown> | undefined)?.[instance.uid] as
-        | { GameSignAccount?: { Name?: string } }
+        | { SignFlowAccount?: { Name?: string } }
         | undefined
       return [
         {
           uid: instance.uid,
-          name: config?.GameSignAccount?.Name || t('core.gamesign.defaultUserName'),
+          name: config?.SignFlowAccount?.Name || t('core.gamesign.defaultUserName'),
         },
       ]
     })

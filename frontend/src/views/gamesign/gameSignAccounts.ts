@@ -5,7 +5,7 @@
  * 提交只用 diffAccountForm：账号组里的凭据是页面加载时的快照，
  * 全量回写会把后台在这期间轮换出的新凭据覆盖回旧值（一次性 refreshToken 尤其致命）。
  */
-import type { GameSignAccountGroupConfig } from '@/api'
+import type { SignFlowAccountGroupConfig } from '@/api'
 
 /** 账号列表里一个账号组的本地形态：字段全部归一成字符串，便于输入框双向绑定 */
 export interface AccountInstance {
@@ -32,7 +32,7 @@ export interface AccountForm {
   TaygedoToken: string
 }
 
-export type AccountPatch = Partial<GameSignAccountGroupConfig>
+export type AccountPatch = Partial<SignFlowAccountGroupConfig>
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}

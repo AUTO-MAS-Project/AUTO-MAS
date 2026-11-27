@@ -1,13 +1,13 @@
 <!--
   游戏社区：签到设置区。
-  只负责把本体 ToolsConfig.GameSign 的布尔开关渲染成配置行，
+  只负责把本体 ToolsConfig.SignFlow 的布尔开关渲染成配置行，
   写回仍走父级传入的 onFieldChange，避免在子组件里直接操作配置对象。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import type { ToolsConfig_GameSign } from '@/api'
+import type { ToolsConfig_SignFlow } from '@/api'
 import { SettingRow } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -15,11 +15,11 @@ import { getConfig, saveConfig } from '@/utils/config'
 import { formatConfigDate } from '@/utils/configDateTime'
 
 const props = defineProps<{
-  config: ToolsConfig_GameSign
+  config: ToolsConfig_SignFlow
   disabled?: boolean
-  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+  onFieldChange?: <K extends keyof ToolsConfig_SignFlow>(
     key: K,
-    value: ToolsConfig_GameSign[K]
+    value: ToolsConfig_SignFlow[K]
   ) => void | Promise<void>
 }>()
 
@@ -37,9 +37,9 @@ const lastSignDate = computed(() => {
     : t('core.gamesign.section.neverSigned')
 })
 
-const handleChange = async <K extends keyof ToolsConfig_GameSign>(
+const handleChange = async <K extends keyof ToolsConfig_SignFlow>(
   key: K,
-  value: ToolsConfig_GameSign[K]
+  value: ToolsConfig_SignFlow[K]
 ) => {
   if (!props.onFieldChange) return
   try {

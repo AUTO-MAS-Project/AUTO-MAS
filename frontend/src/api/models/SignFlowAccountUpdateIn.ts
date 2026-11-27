@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GameSignAccountGroupConfigInput } from './GameSignAccountGroupConfigInput';
+import type { SignFlowAccountGroupConfigInput } from './SignFlowAccountGroupConfigInput';
 /**
  * 游戏社区账号组更新请求
  */
-export type GameSignAccountUpdateIn = {
+export type SignFlowAccountUpdateIn = {
     /**
      * 账号组 UUID
      */
@@ -14,6 +14,6 @@ export type GameSignAccountUpdateIn = {
     /**
      * 账号组配置
      */
-    data: GameSignAccountGroupConfigInput;
+    data: SignFlowAccountGroupConfigInput;
 };
 

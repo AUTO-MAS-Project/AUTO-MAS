@@ -1,0 +1,50 @@
+/* generated using openapi-typescript-codegen -- do not edit */
+/* istanbul ignore file */
+/* tslint:disable */
+/* eslint-disable */
+/**
+ * 账号组的纯接口投影。
+ */
+export type SignFlowAccountGroupConfigInput = {
+    /**
+     * SignFlowAccount - 云原神 combo token (DPAPI 加密)
+     */
+    CloudGenshinToken?: (string | null);
+    /**
+     * SignFlowAccount - 是否启用（该账号是否参与签到）
+     */
+    Enabled?: (boolean | null);
+    /**
+     * SignFlowAccount - 库街区登录凭证 (DPAPI 加密)
+     */
+    KuroToken?: (string | null);
+    /**
+     * SignFlowAccount - 上次签到日期 (按账号隔离，防止重复触发)
+     */
+    LastSignDate?: (string | null);
+    /**
+     * SignFlowAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)
+     */
+    MiyousheDeviceFp?: (string | null);
+    /**
+     * SignFlowAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)
+     */
+    MiyousheDeviceId?: (string | null);
+    /**
+     * SignFlowAccount - 米游社登录凭证 (DPAPI 加密)
+     */
+    MiyousheToken?: (string | null);
+    /**
+     * SignFlowAccount - 账号组名称
+     */
+    Name?: (string | null);
+    /**
+     * SignFlowAccount - 森空岛登录凭证 (DPAPI 加密)
+     */
+    SklandToken?: (string | null);
+    /**
+     * SignFlowAccount - 塔吉多及云异环登录凭证 (DPAPI 加密) 支持 refreshToken 纯文本或包含 cloudToken/cloudUserId 的 JSON。
+     */
+    TaygedoToken?: (string | null);
+};
+

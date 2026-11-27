@@ -4,13 +4,13 @@ import { communitySignOutcome } from '@/utils/communityAnalytics'
 
 /** 游戏社区账号与签到 API。 */
 export function useGameSignApi() {
-  const listAccounts = () => Service.listGameSignAccountsApiToolsSignAccountListPost()
+  const listAccounts = () => Service.listSignFlowAccountsApiToolsSignAccountListPost()
 
   const reorderAccounts = (order: string[]) =>
     observeFeature(
       'community_account_manage_finished',
       { action: 'reorder' },
-      () => Service.reorderGameSignAccountsApiToolsSignAccountReorderPost({ order }),
+      () => Service.reorderSignFlowAccountsApiToolsSignAccountReorderPost({ order }),
       apiOutcome
     )
 
@@ -18,7 +18,7 @@ export function useGameSignApi() {
     observeFeature(
       'game_sign_requested',
       { trigger_kind: 'manual' },
-      () => Service.manualGameSignApiToolsSignPost(),
+      () => Service.manualSignFlowApiToolsSignPost(),
       communitySignOutcome
     )
 

@@ -43,7 +43,7 @@ const fetchAccountList = async (): Promise<AccountInstance[] | null> => {
   for (const entry of entries) {
     const uid = asString(entry.uid)
     if (!uid) continue
-    const raw = asRecord(asRecord(data?.data?.[uid]).GameSignAccount)
+    const raw = asRecord(asRecord(data?.data?.[uid]).SignFlowAccount)
     next.push({
       uid,
       Name: asString(raw.Name) || t('core.gamesign.defaultUserName'),
