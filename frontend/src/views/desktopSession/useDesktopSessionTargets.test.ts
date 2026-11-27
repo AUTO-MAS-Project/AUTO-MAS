@@ -249,7 +249,7 @@ describe('桌面分身清单', () => {
     ])
   })
 
-  it('切换启动方式：先撤单独启动，再改一并启动，最后加单独启动', async () => {
+  it('切换启动方式：两份清单各存一次，先加后撤', async () => {
     const { card, save, rejected } = setup({
       targets: [SCRIPT],
       startOnOpen: [SCRIPT, UNSUPPORTED],
@@ -264,8 +264,8 @@ describe('桌面分身清单', () => {
     save.mockClear()
     await expect(card.setMode(SCRIPT, 'startOnOpen')).resolves.toBe(true)
     expect(calls()).toEqual([
-      ['Targets', []],
       ['StartOnOpen', [UNSUPPORTED, SCRIPT]],
+      ['Targets', []],
     ])
 
     save.mockClear()
@@ -274,20 +274,21 @@ describe('桌面分身清单', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('加单独启动那一步失败时停下：一并启动已写入，单独启动回到设置值', async () => {
+  it('切换到一半保存失败时停下：这一行仍在卡片上，显示设置里的真实值', async () => {
     const { card, save } = setup({
       startOnOpen: [QUEUE, SCRIPT],
-      save: key => key !== 'Targets',
+      save: key => key !== 'StartOnOpen',
     })
     await card.load()
     await settle()
 
     await expect(card.setMode(SCRIPT, 'standalone')).resolves.toBe(false)
     expect(save.mock.calls.map(call => call.slice(1))).toEqual([
-      ['StartOnOpen', [QUEUE]],
       ['Targets', [SCRIPT]],
+      ['StartOnOpen', [QUEUE]],
     ])
-    expect(card.startOnOpen.value).toEqual([QUEUE])
-    expect(card.standalone.value).toEqual([])
+    expect(card.startOnOpen.value).toEqual([QUEUE, SCRIPT])
+    expect(card.standalone.value).toEqual([SCRIPT])
+    expect(card.rows.value.map(row => row.id)).toEqual([QUEUE, SCRIPT])
   })
 })

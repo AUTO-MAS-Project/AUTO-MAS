@@ -224,39 +224,27 @@ export function useDesktopSessionTargets(options: {
   }
 
   /**
-   * 切换托管行的启动方式。按「先撤 Targets → 再改 StartOnOpen → 最后加 Targets」写，
-   * 任一步失败就停，半途停下时单独启动留在主会话。
+   * 切换托管行的启动方式。两份清单各存一次，先加后撤，任一步失败就停：
+   * 半途停下时这一行仍在卡片上，每份清单要么是原值，要么是所选的值。
    */
   async function setMode(id: string, mode: DesktopSessionLaunchMode): Promise<boolean> {
     const target = findTarget(id)
     if (target?.kind !== 'script' || adding.value) return false
     const wantStandalone = mode !== 'startOnOpen'
     const wantStartOnOpen = mode !== 'standalone'
+    const without = (list: string[]) => list.filter(item => item !== id)
     adding.value = true
     try {
-      if (
-        wantStandalone &&
-        !standalone.value.includes(id) &&
-        !(await ensureSupported(target, false))
-      )
-        return false
-      if (
-        !wantStandalone &&
-        standalone.value.includes(id) &&
-        !(await saveList(
-          'Targets',
-          standalone.value.filter(item => item !== id)
-        ))
-      )
-        return false
-      if (wantStartOnOpen !== startOnOpen.value.includes(id)) {
-        const next = wantStartOnOpen
-          ? [...startOnOpen.value, id]
-          : startOnOpen.value.filter(item => item !== id)
-        if (!(await saveList('StartOnOpen', next))) return false
+      if (wantStandalone && !standalone.value.includes(id)) {
+        if (!(await ensureSupported(target, false))) return false
+        if (!(await saveList('Targets', [...standalone.value, id]))) return false
       }
-      if (wantStandalone && !standalone.value.includes(id))
-        return saveList('Targets', [...standalone.value, id])
+      if (wantStartOnOpen && !startOnOpen.value.includes(id))
+        if (!(await saveList('StartOnOpen', [...startOnOpen.value, id]))) return false
+      if (!wantStandalone && standalone.value.includes(id))
+        if (!(await saveList('Targets', without(standalone.value)))) return false
+      if (!wantStartOnOpen && startOnOpen.value.includes(id))
+        return saveList('StartOnOpen', without(startOnOpen.value))
       return true
     } finally {
       adding.value = false
