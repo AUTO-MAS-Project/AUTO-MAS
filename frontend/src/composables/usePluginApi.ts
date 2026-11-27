@@ -1,4 +1,5 @@
 import { onScopeDispose } from 'vue'
+import { getPluginRegistry } from './usePluginScriptTypes'
 import {
   Service,
   PluginInstallation,
@@ -223,11 +224,7 @@ export function usePluginApi() {
     })
   return {
     runCommand,
-    getRegistry: (recordId: string | null = null) =>
-      /* 读取插件注册配置及其 UI 提示，保留后端决定的显隐和禁用状态。 */ requestApi(
-        () => Service.getPluginRegistryApiPluginRegistryGetPost({ recordId }, locale()),
-        t('core.plugins.loadFailed')
-      ),
+    getRegistry: getPluginRegistry,
     getCatalog: (language = locale()) =>
       /* 读取市场条目与安装字段的 UI 属性。 */ requestApi(
         () => Service.getPluginCatalogApiPluginCatalogGetPost({}, language),

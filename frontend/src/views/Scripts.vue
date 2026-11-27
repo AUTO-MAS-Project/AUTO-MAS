@@ -160,7 +160,6 @@ import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTas
 
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   DownOutlined,
@@ -174,10 +173,9 @@ import ScriptsEmptyState from '@/views/scripts/components/ScriptsEmptyState.vue'
 import UnavailableScriptCards from '@/views/scripts/components/UnavailableScriptCards.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { ScriptType } from '@/types/script'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
-import { isMfwFamily, type TemplateRequest } from '@/views/scripts/components/scriptCreateFlow'
-import { scriptEditorLocation } from '@/router/scriptEditorRoutes'
+import type { TemplateRequest } from '@/views/scripts/components/scriptCreateFlow'
+import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptList } from '@/views/scripts/useScriptList'
 import { useUserApi } from '@/composables/useUserApi'
@@ -211,7 +209,7 @@ defineOptions({ name: 'ScriptsPage' })
 
 const logger = window.electronAPI.getLogger('脚本管理')
 
-const router = useRouter()
+const openEditor = useScriptEditorNavigation()
 const { deleteScript } = useScriptApi()
 const {
   scripts,
@@ -457,7 +455,7 @@ const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) 
 }
 
 const handleEditScript = (script: ScriptListItem) => {
-  router.push(scriptEditorLocation(script.type, 'script', { id: script.id }))
+  openEditor(script.type, 'script', { id: script.id })
 }
 
 const handleDeleteScript = async (script: ScriptListItem) => {
@@ -469,15 +467,13 @@ const handleDeleteScript = async (script: ScriptListItem) => {
 }
 
 const handleAddUser = (script: ScriptListItem) => {
-  router.push(scriptEditorLocation(script.type, 'userAdd', { scriptId: script.id }))
+  openEditor(script.type, 'userAdd', { scriptId: script.id })
 }
 
 const handleEditUser = (user: ScriptListUser) => {
   const script = scripts.value.find(item => item.id === user.scriptId)
   if (script) {
-    router.push(
-      scriptEditorLocation(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
-    )
+    openEditor(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
   } else {
     message.error(t('core.scripts.toast.scriptNotFound'))
   }

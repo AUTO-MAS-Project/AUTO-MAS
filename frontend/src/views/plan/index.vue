@@ -65,6 +65,7 @@
             :handle-plan-change="handlePlanChange"
           />
         </PlanConfig>
+        <a-alert v-else type="info" show-icon :message="t('core.plugins.editorUnavailable')" />
       </div>
     </div>
   </div>
@@ -77,20 +78,16 @@ import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
+import { fetchPluginScriptTypes } from '@/composables/usePluginScriptTypes'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { projectPlanList, projectUnavailablePlans, type PlanListItem } from './planList'
+import { generateUniquePlanName, validatePlanName } from '@/utils/planNameUtils'
 import {
-  generateUniquePlanName,
-  getPlanTypeLabelKey,
-  validatePlanName,
-} from '@/utils/planNameUtils'
-import {
-  DEFAULT_PLAN_CONFIG_TYPE,
-  PLAN_TYPE_REGISTRY,
+  getPlanTypeDescriptor,
   PLAN_CONFIG_TYPES,
   type PlanChangeOptions,
   type PlanConfigData,
-  type PlanConfigType,
+  type PlanTypeOption,
 } from '@/utils/planTypeRegistry'
 import { PLAN_ROTATE_DAYS_DEFAULT, clampRotateDays, type PlanMode } from '@/utils/planDays'
 import PlanHeader from './components/PlanHeader.vue'
@@ -142,12 +139,7 @@ const currentPlan = computed(
 const currentPlanData = computed<PlanConfigData | null>(
   () => planDataMap.value[activePlanId.value] ?? null
 )
-const currentPlanDescriptor = computed(() => {
-  if (!currentPlan.value) {
-    return null
-  }
-  return PLAN_TYPE_REGISTRY[currentPlan.value.type]
-})
+const currentPlanDescriptor = computed(() => getPlanTypeDescriptor(currentPlan.value?.type))
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
@@ -201,17 +193,22 @@ const applyLocalPlanChange = (planId: string, path: string, value: any) => {
   }
 }
 
-const handleAddPlan = async (
-  planType: PlanConfigType = DEFAULT_PLAN_CONFIG_TYPE,
-  owner?: { scriptId: string }
-) => {
+const handleAddPlan = async (plan: PlanTypeOption, owner?: { scriptId: string }) => {
   if (planOperationPending.value || !canLeaveTable()) return
   planOperationPending.value = true
   try {
-    const response = await createPlan(planType, owner)
+    const response = await createPlan(plan, owner)
     if (response.code !== 200) throw new Error(response.message)
-    const uniqueName = getDefaultPlanName(planType)
-    const newPlan: PlanListItem = { id: response.planId, name: uniqueName, type: planType }
+    const uniqueName = generateUniquePlanName(
+      plan.defaultName,
+      planList.value.map(item => item.name)
+    )
+    const newPlan: PlanListItem = {
+      id: response.planId,
+      name: uniqueName,
+      type: plan.configType,
+      typeLabel: plan.selectorTag,
+    }
     planDataMap.value = {
       ...planDataMap.value,
       [newPlan.id]: response.data as PlanConfigData,
@@ -225,22 +222,9 @@ const handleAddPlan = async (
     }
     syncCurrentPlan(newPlan.id)
     // 如果生成的名称包含数字，说明有重名，提示用户
-    if (uniqueName.match(/\s\d+$/)) {
-      message.info(
-        t('core.plan.toast.createdHint', {
-          type: t(getPlanTypeLabelKey(planType)),
-          name: uniqueName,
-        }),
-        4
-      )
-    } else {
-      message.success(
-        t('core.plan.toast.created', {
-          type: t(getPlanTypeLabelKey(planType)),
-          name: uniqueName,
-        })
-      )
-    }
+    const details = { type: plan.displayName, name: uniqueName }
+    if (/\s\d+$/.test(uniqueName)) message.info(t('core.plan.toast.createdHint', details), 4)
+    else message.success(t('core.plan.toast.created', details))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`添加计划失败: ${errorMsg}`)
@@ -506,14 +490,17 @@ const loadPlanData = async (planId: string, force = false, forceCustomStages = f
 
 const initPlans = useConfigLoader(['config', 'plans'], async read => {
   try {
-    const response = await getPlans(undefined, { silent: true })
+    const [response, plugins] = await Promise.all([
+      getPlans(undefined, { silent: true }),
+      fetchPluginScriptTypes(read),
+    ])
     read(response)
     if (response.code !== 200) {
       throw new Error(response.message || t('core.plan.toast.fetchFailed'))
     }
     unavailablePlans.value = projectUnavailablePlans(response)
 
-    const { nextPlanDataMap, nextPlanList } = projectPlanList(response, message =>
+    const { nextPlanDataMap, nextPlanList } = projectPlanList(response, plugins, message =>
       logger.error(message)
     )
 
@@ -545,11 +532,6 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
     loading.value = false
   }
 })
-
-const getDefaultPlanName = (planType: PlanConfigType) => {
-  const existingNames = planList.value.map(plan => plan.name)
-  return generateUniquePlanName(planType, existingNames)
-}
 
 // 注意：currentPlanName 和 currentMode 的变更保存由各自的 finish/change 事件处理
 // 直接调用 handlePlanChange 只发送修改的字段

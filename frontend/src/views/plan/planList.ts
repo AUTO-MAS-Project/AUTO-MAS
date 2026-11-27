@@ -1,21 +1,19 @@
 import type { PlanGetOut } from '@/api'
 import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
 import { generateUniquePlanName } from '@/utils/planNameUtils'
-import {
-  PLAN_TYPE_REGISTRY,
-  isKnownPlanType,
-  type PlanConfigData,
-  type PlanConfigType,
-} from '@/utils/planTypeRegistry'
+import { getPlanTypeOption, type PlanConfigData } from '@/utils/planTypeRegistry'
+import type { PluginScriptTypes } from '@/utils/pluginScriptTypes'
 
 export interface PlanListItem {
   id: string
   name: string
-  type: PlanConfigType
+  type: string
+  typeLabel: string
 }
 
 export function projectPlanList(
-  response: Pick<PlanGetOut, 'index' | 'data'>,
+  response: { index: { uid: string; type: string }[]; data: PlanGetOut['data'] },
+  plugins: PluginScriptTypes,
   reportError: (message: string) => void
 ) {
   const nextPlanDataMap: Record<string, PlanConfigData> = {}
@@ -25,9 +23,10 @@ export function projectPlanList(
   response.index.forEach(item => {
     const planId = item.uid
     const planData = response.data[planId] as PlanConfigData | undefined
-    const planType = item.type as string
+    const planType = item.type
+    const planDescriptor = getPlanTypeOption(planType, plugins)
 
-    if (!isKnownPlanType(planType)) {
+    if (!planDescriptor) {
       reportError(`跳过未注册的计划表类型: ${planType}`)
       return
     }
@@ -36,15 +35,19 @@ export function projectPlanList(
       return
     }
 
-    const planDescriptor = PLAN_TYPE_REGISTRY[planType]
     let planName = planData.Info?.Name || ''
     if (!planName || planName === planDescriptor.defaultName) {
-      planName = generateUniquePlanName(planType, allPlanNames)
+      planName = generateUniquePlanName(planDescriptor.defaultName, allPlanNames)
     }
 
     allPlanNames.push(planName)
     nextPlanDataMap[planId] = planData
-    nextPlanList.push({ id: planId, name: planName, type: planType })
+    nextPlanList.push({
+      id: planId,
+      name: planName,
+      type: planType,
+      typeLabel: planDescriptor.selectorTag,
+    })
   })
 
   return { nextPlanDataMap, nextPlanList }

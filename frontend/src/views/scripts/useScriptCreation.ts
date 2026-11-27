@@ -1,13 +1,11 @@
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import type { useTemplateApi } from '@/composables/useTemplateApi'
 import type { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
-import { maafwRouteLocation } from '@/router/maafwRoutes'
-import { scriptEditorLocation } from '@/router/scriptEditorRoutes'
+import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import { isMfwFamily, type ScriptCreateRequest } from './components/scriptCreateFlow'
 import type { ScriptType } from '@/types/script'
 import type { ScriptListItem } from './scriptListModel'
@@ -23,23 +21,19 @@ interface CreationOptions {
 
 /** 新建、模板导入、项目复用与复制的完整流程；基础记录创建不等于导入完成。 */
 export function useScriptCreation(options: CreationOptions) {
-  const router = useRouter()
+  const openEditor = useScriptEditorNavigation()
   const { addScript, deleteScript } = useScriptApi()
   const { addUser } = useUserApi()
   const logger = window.electronAPI.getLogger('脚本创建')
   const addLoading = ref(false)
   const copyingScriptId = ref<string | null>(null)
-  const navigate = (scriptId: string, type: ScriptType, data?: Record<string, unknown>) => {
-    void router.push({
-      ...(isMfwFamily(type)
-        ? maafwRouteLocation(type, 'setup', { id: scriptId })
-        : scriptEditorLocation(type, 'script', { id: scriptId })),
-      ...(data
-        ? {
-            state: { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } },
-          }
-        : {}),
-    })
+  const navigate = async (scriptId: string, type: ScriptType, data?: Record<string, unknown>) => {
+    const state = data
+      ? { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } }
+      : undefined
+    if (!openEditor(type, isMfwFamily(type) ? 'setup' : 'script', { id: scriptId }, state)) {
+      await options.reloadScripts()
+    }
   }
 
   const submit = async (request: ScriptCreateRequest) => {
@@ -71,7 +65,7 @@ export function useScriptCreation(options: CreationOptions) {
           message.error(t('core.scripts.toast.reuseFailed', { reason }))
         }
         options.closeDialog()
-        navigate(result.scriptId, type)
+        await navigate(result.scriptId, type)
         return
       }
       if (request.kind === 'general-template') {
@@ -94,7 +88,11 @@ export function useScriptCreation(options: CreationOptions) {
         outcome = 'success'
       if (request.kind === 'general-template') await options.reloadScripts()
       options.closeDialog()
-      navigate(result.scriptId, type, request.kind === 'general-template' ? undefined : result.data)
+      await navigate(
+        result.scriptId,
+        type,
+        request.kind === 'general-template' ? undefined : result.data
+      )
     } catch (error) {
       logger.error(`创建脚本失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {

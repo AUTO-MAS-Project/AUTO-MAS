@@ -1,9 +1,12 @@
-import type { RouteRecordRaw } from 'vue-router'
-import type { ScriptType } from '@/types/script'
+import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
+import { maafwRouteName } from './maafwRoutes'
+import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<ScriptType, MaaFWFamilyType>
+type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -48,8 +51,9 @@ const PAGE_ROUTES = {
 }
 
 export type ScriptEditorKind = keyof typeof PAGE_ROUTES
-const routeNameOf = (type: ScriptType, kind: ScriptEditorKind) => `${type}${PAGE_ROUTES[kind].name}`
+const routeNameOf = (type: string, kind: ScriptEditorKind) => `${type}${PAGE_ROUTES[kind].name}`
 type ScriptEditorParams = {
+  setup: { id: string }
   script: { id: string }
   userAdd: { scriptId: string }
   userEdit: { scriptId: string; userId: string }
@@ -63,14 +67,23 @@ declare module 'vue-router' {
 }
 
 /** 普通专项与 MFW 共用已有的路由名，跳转无需再维护类型分支。 */
-export const scriptEditorLocation = <K extends ScriptEditorKind>(
-  type: ScriptType,
-  kind: K,
-  params: ScriptEditorParams[K]
-): { name: string; params: ScriptEditorParams[K] } => ({
-  name: routeNameOf(type, kind),
-  params: { ...params },
-})
+export function useScriptEditorNavigation() {
+  const router = useRouter()
+  return <K extends keyof ScriptEditorParams>(
+    type: string,
+    kind: K,
+    params: ScriptEditorParams[K],
+    state?: HistoryState
+  ) => {
+    const name = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
+    if (!router.hasRoute(name)) {
+      message.info(t('core.plugins.editorUnavailable'))
+      return false
+    }
+    void router.push({ name, params, state })
+    return true
+  }
+}
 
 /** 只装配页面入口；专项运行、保存和引导仍由所属模块持有。 */
 export const buildScriptEditorRoutes = (): RouteRecordRaw[] =>
