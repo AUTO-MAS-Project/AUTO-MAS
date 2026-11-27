@@ -1,29 +1,36 @@
 <script setup lang="ts">
-import { describePackageError } from '@/utils/resourcePackageError'
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { PictureOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
-import AppModal from '@/components/ui/AppModal.vue'
 
+import { AppModal } from '@/components/ui'
 import {
   useShareApi,
   type AppearanceCoverMode,
   type AppearanceUploadRecord,
 } from '@/composables/useShareApi'
-import type { OnlineAppearancePreview } from '@/types/appearance'
+import { useAppearanceTryOnStore } from '@/stores/appearanceTryOn'
+import type { ImageDimensions, OnlineAppearancePreview } from '@/types/appearance'
 import type { AppearanceCategory } from '@/types/mascotPack'
+import { describePackageError } from '@/utils/resourcePackageError'
 import {
   getCoverModes,
   isCoverReady,
   pickUploadTarget,
   type InheritCoverState,
 } from '../myAppearance'
+import {
+  evaluateUploadPrecheck,
+  readPreferredUploadMode,
+  savePreferredUploadMode,
+  type UploadSubmissionMode,
+} from '../uploadPrecheck'
 import type { MyAppearanceStore } from '../useMyAppearances'
 import type { ShareAccount } from '../useShareAccount'
-import AppearancePackagePicker from './AppearancePackagePicker.vue'
-import ThemeStoreAccount from './ThemeStoreAccount.vue'
+import AppearanceUploadEditStep from './AppearanceUploadEditStep.vue'
+import UploadPreviewStep from './UploadPreviewStep.vue'
 
 const props = defineProps<{
   open: boolean
@@ -31,7 +38,7 @@ const props = defineProps<{
   allowCategoryChange?: boolean
   account: ShareAccount
   mine: MyAppearanceStore
-  /** 外部指定的目标文件（「我的主题」或详情页的「上传新版本」）；指定后目标锁定。 */
+  /** 外部指定的目标文件（「我的上传」或详情抽屉的「上传新版本」）；指定后目标锁定。 */
   targetFileId?: number | null
 }>()
 
@@ -43,18 +50,18 @@ const emit = defineEmits<{
 
 const DISPLAY_NAME_MAX = 60
 const DESCRIPTION_MAX = 2000
-const CHANGE_NOTE_MAX = 500
-const COVER_MODE_LABELS: Record<AppearanceCoverMode, string> = {
-  inherit: 'core.themeStore.upload.coverInherit',
-  package: 'core.themeStore.upload.coverPackage',
-  custom: 'core.themeStore.upload.coverCustom',
-}
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('主题商店')
+const tryOnStore = useAppearanceTryOnStore()
 const { uploadAppearance, listAppearanceUploads, getInheritableAppearanceCover } = useShareApi()
-const { authorized, refresh: refreshAccount } = props.account
+const { authorized, state: accountState, refresh: refreshAccount } = props.account
 const { items: mineItems, loading: mineLoading } = props.mine
+
+const step = ref<'edit' | 'preview'>('edit')
+const submissionMode = ref<UploadSubmissionMode>(readPreferredUploadMode())
+const rememberMode = ref(true)
+const suspendedForTryOn = ref(false)
 
 const zipPath = ref('')
 const inspecting = ref(false)
@@ -62,19 +69,17 @@ const inspectError = ref<string | null>(null)
 const packageInfo = ref<{ appearance: OnlineAppearancePreview; fileSize: number } | null>(null)
 const coverPath = ref<string | null>(null)
 const coverPreviewUrl = ref<string | null>(null)
+const customCoverDimensions = ref<ImageDimensions | null>(null)
 const coverMode = ref<AppearanceCoverMode>('package')
 const uploads = ref<AppearanceUploadRecord[]>([])
 const target = ref<'new' | 'update'>('new')
 const selectedFileId = ref<number | null>(null)
-// 用户自己改过目标后，后到的列表或记录不再改回默认
 const targetTouched = ref(false)
-// 锁定的目标在分享站上已经没了，解除锁定让用户改成新建
 const lockLost = ref(false)
 const submitting = ref(false)
 const form = reactive({ displayName: '', description: '', changeNote: '' })
 
-const fileName = (value: string): string => value.split(/[\\/]/).pop() ?? value
-
+const resolvedCategory = computed<AppearanceCategory>(() => props.categoryKey ?? 'theme')
 const lockedFileId = computed(() =>
   props.targetFileId != null && !lockLost.value ? props.targetFileId : null
 )
@@ -83,7 +88,6 @@ const targetOptions = computed(() =>
   mineItems.value.map(item => ({ value: item.fileId, label: item.displayName || item.fileKey }))
 )
 
-// 分享站不带封面发新版本时沿用的那张（最近一个未被驳回且带封面的版本），按目标文件单独查
 const inheritCover = ref<{
   fileId: number
   state: InheritCoverState
@@ -118,6 +122,31 @@ const coverReady = computed(() =>
   })
 )
 
+// 机器可判定的预检在选包后自动运行；硬性缺失直接禁用上传，不随「直接上传」跳过。
+const precheckResult = computed(() =>
+  packageInfo.value
+    ? evaluateUploadPrecheck({
+        categoryKey: resolvedCategory.value,
+        fileSize: packageInfo.value.fileSize,
+        precheck: packageInfo.value.appearance.precheck,
+        coverMode: coverMode.value,
+        coverReady: coverReady.value,
+        inheritCoverState: inheritState.value,
+        customCoverDimensions: customCoverDimensions.value,
+      })
+    : null
+)
+
+const canProceed = computed(
+  () =>
+    authorized.value &&
+    Boolean(packageInfo.value) &&
+    coverReady.value &&
+    !precheckResult.value?.hasBlockingError &&
+    (updating.value ? selectedFileId.value !== null : form.displayName.trim().length > 0) &&
+    !submitting.value
+)
+
 const loadInheritCover = async (fileId: number): Promise<void> => {
   const revision = ++inheritRevision
   inheritCover.value = { fileId, state: 'loading', dataUrl: null }
@@ -130,22 +159,17 @@ const loadInheritCover = async (fileId: number): Promise<void> => {
     ? { fileId, state: 'ready', dataUrl: result.data.dataUrl }
     : { fileId, state: 'none', dataUrl: null }
 }
-const canSubmit = computed(
-  () =>
-    authorized.value &&
-    Boolean(packageInfo.value) &&
-    coverReady.value &&
-    (updating.value ? selectedFileId.value !== null : form.displayName.trim().length > 0) &&
-    !submitting.value
-)
 
 const reset = (): void => {
+  if (suspendedForTryOn.value) return
+  step.value = 'edit'
   zipPath.value = ''
   inspecting.value = false
   inspectError.value = null
   packageInfo.value = null
   coverPath.value = null
   coverPreviewUrl.value = null
+  customCoverDimensions.value = null
   coverMode.value = 'package'
   target.value = 'new'
   selectedFileId.value = null
@@ -227,11 +251,11 @@ const pickPackage = async (): Promise<void> => {
     }
     zipPath.value = picked
     packageInfo.value = { appearance: result.appearance, fileSize: result.fileSize ?? 0 }
-    // 换了包就按新包重来：名称、描述取新包的，之前自选的封面作废
     form.displayName = result.appearance.name.slice(0, DISPLAY_NAME_MAX)
     form.description = (result.appearance.description ?? '').slice(0, DESCRIPTION_MAX)
     coverPath.value = null
     coverPreviewUrl.value = null
+    customCoverDimensions.value = null
     applyDefaultTarget()
   } catch (error) {
     logger.error(`读取外观包失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -247,7 +271,6 @@ const pickCover = async (): Promise<void> => {
   ])
   const picked = paths[0]
   if (!picked) return
-  // 主进程按上传时同样的规则先查一遍（≤8 MB、PNG / JPEG / WebP），不合格就不采用。
   const result = await window.electronAPI.inspectAppearanceCover?.(picked)
   if (!result?.success || !result.dataUrl) {
     message.error(result?.error || t('core.themeStore.upload.invalidCover'))
@@ -255,16 +278,23 @@ const pickCover = async (): Promise<void> => {
   }
   coverPath.value = picked
   coverPreviewUrl.value = result.dataUrl
+  customCoverDimensions.value =
+    result.width && result.height ? { width: result.width, height: result.height } : null
   coverMode.value = 'custom'
 }
 
 const usePackageCover = (): void => {
   coverPath.value = null
   coverPreviewUrl.value = null
+  customCoverDimensions.value = null
   coverMode.value = 'package'
 }
 
-const close = () => emit('update:open', false)
+const close = (): void => {
+  if (submitting.value) return
+  suspendedForTryOn.value = false
+  emit('update:open', false)
+}
 
 const failureMessage = (result: { message: string; reason?: string }): string => {
   if (result.reason === 'categoryMismatch') return t('core.themeStore.upload.categoryMismatch')
@@ -275,7 +305,8 @@ const failureMessage = (result: { message: string; reason?: string }): string =>
 }
 
 const submit = async (): Promise<void> => {
-  if (!canSubmit.value || !packageInfo.value) return
+  if (!canProceed.value || !packageInfo.value) return
+  if (rememberMode.value) savePreferredUploadMode(submissionMode.value)
   submitting.value = true
   try {
     const result = await uploadAppearance({
@@ -289,14 +320,13 @@ const submit = async (): Promise<void> => {
       coverPath: coverMode.value === 'custom' ? coverPath.value : null,
     })
     if (!result.ok) {
-      // 令牌过期时刷新一次登录状态，界面回到「登录分享站」
       if (result.code === 401) await refreshAccount()
-      // 站上那个文件已经删了或不归这个账号：后端已删掉本机记录，这里改成按新外观上传
       if (updating.value && (result.code === 403 || result.code === 404)) {
         lockLost.value = true
         targetTouched.value = true
         target.value = 'new'
         selectedFileId.value = null
+        step.value = 'edit'
         void props.mine.load()
         message.warning(t('core.themeStore.upload.versionTargetGone'))
         return
@@ -309,6 +339,7 @@ const submit = async (): Promise<void> => {
         ? t('core.themeStore.upload.published')
         : t('core.themeStore.upload.submitted')
     )
+    suspendedForTryOn.value = false
     emit('uploaded')
     emit('update:open', false)
   } finally {
@@ -316,17 +347,42 @@ const submit = async (): Promise<void> => {
   }
 }
 
-// 目标或包变了，封面来源回到默认（沿用 > 包内预览 > 自选）
+const handlePrimaryAction = (): void => {
+  if (!canProceed.value) return
+  if (rememberMode.value) savePreferredUploadMode(submissionMode.value)
+  if (step.value === 'edit' && submissionMode.value === 'preview') {
+    step.value = 'preview'
+    return
+  }
+  void submit()
+}
+
+const startUploadWindowTryOn = (): void => {
+  const appearance = packageInfo.value?.appearance.tryOnAppearance
+  if (!appearance) return
+  suspendedForTryOn.value = true
+  emit('update:open', false)
+  tryOnStore.start({
+    source: 'upload',
+    title: form.displayName.trim() || appearance.name,
+    versionNo: null,
+    coverUrl: coverImage.value ?? undefined,
+    hasBundledMascot: Boolean(packageInfo.value?.appearance.hasBundledMascot),
+    appearance,
+    onReturn: () => {
+      suspendedForTryOn.value = false
+      step.value = 'preview'
+      emit('update:open', true)
+    },
+  })
+}
+
 watch([target, selectedFileId, packageInfo], () => {
   coverMode.value = coverModes.value[0] ?? 'custom'
 })
-
-// 可选来源变了（比如查完发现没有可沿用的封面），当前选的不在里面了才改回默认
 watch(coverModes, modes => {
   if (!modes.includes(coverMode.value)) coverMode.value = modes[0] ?? 'custom'
 })
-
-// 目标一定下来就查分享站会沿用哪张封面
 watch(
   [() => props.open, updating, selectedFileId],
   ([isOpen, isUpdating, fileId]) => {
@@ -336,7 +392,6 @@ watch(
   },
   { immediate: true }
 )
-
 watch(
   () => props.open,
   isOpen => {
@@ -346,7 +401,6 @@ watch(
   },
   { immediate: true }
 )
-
 watch(authorized, isAuthorized => {
   if (isAuthorized && props.open) void loadTargets()
 })
@@ -355,269 +409,117 @@ watch(authorized, isAuthorized => {
 <template>
   <AppModal
     :open="open"
-    :width="640"
-    :z-index="90"
-    :title="t('core.themeStore.upload.title')"
+    :size="step === 'preview' ? 'xl' : 'lg'"
+    :title="
+      step === 'preview'
+        ? t('core.themeStore.upload.preview.modalTitle')
+        : t('core.themeStore.upload.title')
+    "
     :submitting="submitting"
     footer="custom"
-    scroll="none"
     :after-close="reset"
+    @update:open="value => !value && close()"
     @cancel="close"
   >
-    <div class="upload-body">
-      <a-alert
-        v-if="!authorized"
-        type="info"
-        show-icon
-        :message="t('core.themeStore.upload.loginRequired')"
-      >
-        <template #description>
-          <ThemeStoreAccount :account="account" class="upload-account" />
-        </template>
-      </a-alert>
+    <AppearanceUploadEditStep
+      v-if="step === 'edit'"
+      :authorized="authorized"
+      :account="account"
+      :category="resolvedCategory"
+      :allow-category-change="allowCategoryChange ?? false"
+      :submitting="submitting"
+      :inspecting="inspecting"
+      :zip-path="zipPath"
+      :inspect-error="inspectError"
+      :package-info="packageInfo"
+      :precheck-result="precheckResult"
+      :target="target"
+      :locked-file-id="lockedFileId"
+      :selected-file-id="selectedFileId"
+      :target-options="targetOptions"
+      :mine-loading="mineLoading"
+      :cover-image="coverImage"
+      :cover-mode="coverMode"
+      :cover-modes="coverModes"
+      :cover-path="coverPath"
+      :has-package-preview="Boolean(packagePreview)"
+      :display-name="form.displayName"
+      :description="form.description"
+      :change-note="form.changeNote"
+      :submission-mode="submissionMode"
+      :remember-mode="rememberMode"
+      @category-change="emit('category-change', $event)"
+      @pick-package="pickPackage"
+      @change-target="changeTarget"
+      @select-target="selectTarget"
+      @update:cover-mode="coverMode = $event"
+      @pick-cover="pickCover"
+      @use-package-cover="usePackageCover"
+      @update:display-name="form.displayName = $event"
+      @update:description="form.description = $event"
+      @update:change-note="form.changeNote = $event"
+      @update:submission-mode="submissionMode = $event"
+      @update:remember-mode="rememberMode = $event"
+    />
 
-      <section class="upload-section">
-        <div class="upload-label">{{ t('core.themeStore.category') }}</div>
-        <a-select
-          :value="categoryKey ?? 'theme'"
-          :disabled="!allowCategoryChange || submitting || inspecting || Boolean(zipPath)"
-          :aria-label="t('core.themeStore.category')"
-          style="width: 100%"
-          @change="
-            (value: SelectValue) => {
-              if (value === 'theme' || value === 'mascot') emit('category-change', value)
-            }
-          "
-        >
-          <a-select-option value="theme">{{
-            t('core.themeStore.categories.theme')
-          }}</a-select-option>
-          <a-select-option value="mascot">{{
-            t('core.themeStore.categories.mascot')
-          }}</a-select-option>
-        </a-select>
-      </section>
-
-      <AppearancePackagePicker
-        :inspecting="inspecting"
-        :disabled="submitting"
-        :zip-path="zipPath"
-        :error="inspectError"
-        :package-info="packageInfo"
-        @pick="pickPackage"
-      />
-
-      <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('core.themeStore.upload.target') }}</div>
-        <a-radio-group
-          :value="target"
-          :disabled="submitting || lockedFileId !== null"
-          @update:value="changeTarget"
-        >
-          <a-radio value="new">{{ t('core.themeStore.upload.targetNew') }}</a-radio>
-          <a-radio value="update" :disabled="targetOptions.length === 0 && lockedFileId === null">
-            {{ t('core.themeStore.upload.targetUpdate') }}
-          </a-radio>
-        </a-radio-group>
-        <a-select
-          v-if="updating"
-          :value="selectedFileId ?? undefined"
-          :options="targetOptions"
-          :loading="mineLoading"
-          :disabled="submitting || lockedFileId !== null"
-          :placeholder="t('core.themeStore.upload.targetPlaceholder')"
-          class="upload-target-select"
-          @change="selectTarget"
-        />
-      </section>
-
-      <section v-if="packageInfo" class="upload-section">
-        <div class="upload-label">{{ t('core.themeStore.upload.cover') }}</div>
-        <div class="upload-cover">
-          <div class="upload-cover-frame">
-            <img
-              v-if="coverImage"
-              :src="coverImage"
-              :alt="packageInfo.appearance.name"
-              class="upload-cover-image"
-            />
-            <PictureOutlined v-else class="upload-cover-placeholder" />
-          </div>
-          <div class="upload-cover-actions">
-            <a-radio-group
-              v-if="updating"
-              v-model:value="coverMode"
-              :disabled="submitting"
-              class="upload-cover-modes"
-            >
-              <a-radio v-for="mode in coverModes" :key="mode" :value="mode">
-                {{ t(COVER_MODE_LABELS[mode]) }}
-              </a-radio>
-            </a-radio-group>
-            <span v-if="coverMode === 'custom' && coverPath" class="upload-file-name">
-              {{ fileName(coverPath) }}
-            </span>
-            <template v-else-if="!updating">
-              <span v-if="coverMode === 'package'" class="upload-hint">
-                {{ t('core.themeStore.upload.coverFromPackage') }}
-              </span>
-              <span v-else class="upload-hint upload-hint-warning">
-                {{ t('core.themeStore.upload.coverRequired') }}
-              </span>
-            </template>
-            <span v-if="!updating || coverMode === 'custom'" class="upload-cover-buttons">
-              <a-button size="small" :disabled="submitting" @click="pickCover">
-                {{ t('core.themeStore.upload.pickCover') }}
-              </a-button>
-              <a-button
-                v-if="!updating && coverMode === 'custom' && packagePreview"
-                size="small"
-                type="link"
-                :disabled="submitting"
-                @click="usePackageCover"
-              >
-                {{ t('core.themeStore.upload.usePackageCover') }}
-              </a-button>
-            </span>
-            <span v-if="!updating || coverMode === 'custom'" class="upload-hint">
-              {{ t('core.themeStore.upload.coverSpec') }}
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <a-form v-if="packageInfo" layout="vertical" class="upload-form">
-        <a-form-item v-if="!updating" :label="t('core.themeStore.upload.name')" required>
-          <a-input
-            v-model:value="form.displayName"
-            :maxlength="DISPLAY_NAME_MAX"
-            show-count
-            :disabled="submitting"
-          />
-        </a-form-item>
-        <a-form-item v-if="!updating" :label="t('core.themeStore.upload.description')">
-          <a-textarea
-            v-model:value="form.description"
-            :maxlength="DESCRIPTION_MAX"
-            :auto-size="{ minRows: 2, maxRows: 5 }"
-            :disabled="submitting"
-          />
-        </a-form-item>
-        <a-form-item :label="t('core.themeStore.upload.changeNote')">
-          <a-input
-            v-model:value="form.changeNote"
-            :maxlength="CHANGE_NOTE_MAX"
-            :disabled="submitting"
-          />
-        </a-form-item>
-      </a-form>
-    </div>
+    <UploadPreviewStep
+      v-else-if="packageInfo && precheckResult"
+      :category-key="resolvedCategory"
+      :display-name="form.displayName"
+      :description="form.description"
+      :change-note="form.changeNote"
+      :author-name="accountState.displayName || accountState.username"
+      :updating="updating"
+      :cover-image="coverImage"
+      :file-size="packageInfo.fileSize"
+      :appearance="packageInfo.appearance"
+      :precheck="precheckResult"
+      @try-on-window="startUploadWindowTryOn"
+    />
 
     <template #footer>
-      <a-button :disabled="submitting" @click="close">{{ t('core.common.cancel') }}</a-button>
-      <a-button type="primary" :loading="submitting" :disabled="!canSubmit" @click="submit">
-        {{ t('core.themeStore.upload.submit') }}
-      </a-button>
+      <div class="upload-footer">
+        <a-button v-if="step === 'preview'" :disabled="submitting" @click="step = 'edit'">
+          <template #icon><ArrowLeftOutlined /></template>
+          {{ t('core.themeStore.upload.preview.backToEdit') }}
+        </a-button>
+        <span v-else />
+        <div class="upload-footer-right">
+          <a-button :disabled="submitting" @click="close">{{ t('core.common.cancel') }}</a-button>
+          <a-button
+            type="primary"
+            :loading="submitting"
+            :disabled="!canProceed"
+            @click="handlePrimaryAction"
+          >
+            <template #icon>
+              <EyeOutlined v-if="step === 'edit' && submissionMode === 'preview'" />
+              <UploadOutlined v-else />
+            </template>
+            {{
+              step === 'edit' && submissionMode === 'preview'
+                ? t('core.themeStore.upload.mode.nextPreview')
+                : step === 'preview'
+                  ? t('core.themeStore.upload.preview.confirmSubmit')
+                  : t('core.themeStore.upload.mode.directSubmit')
+            }}
+          </a-button>
+        </div>
+      </div>
     </template>
   </AppModal>
 </template>
 
 <style scoped>
-.upload-body {
+.upload-footer {
   display: flex;
-  max-height: calc(100vh - 220px);
-  flex-direction: column;
-  gap: 16px;
-  overflow-y: auto;
-}
-
-.upload-account {
-  justify-content: flex-start;
-  margin-top: 8px;
-}
-
-.upload-section {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.upload-label {
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.upload-file-name {
-  min-width: 0;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
-.upload-cover {
+.upload-footer-right {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.upload-cover-frame {
-  display: flex;
-  width: 192px;
-  flex: none;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-layout);
-}
-
-.upload-cover-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.upload-cover-placeholder {
-  color: var(--ant-color-text-quaternary);
-  font-size: 28px;
-}
-
-.upload-cover-actions {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.upload-cover-buttons {
-  display: flex;
-  flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
-}
-
-.upload-hint {
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.upload-hint-warning {
-  color: var(--ant-color-warning-text);
-}
-
-.upload-target-select {
-  width: 100%;
-}
-
-.upload-cover-modes {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.upload-form :deep(.ant-form-item) {
-  margin-bottom: 12px;
 }
 </style>

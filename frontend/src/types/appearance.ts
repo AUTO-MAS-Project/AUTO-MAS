@@ -114,6 +114,22 @@ export interface OnlineAppearanceInstalled {
   versionNo: number
 }
 
+export interface ImageDimensions {
+  width: number
+  height: number
+}
+
+/** 上传/在线包解析得到的机器可判定预检摘要（不含写盘状态）。 */
+export interface AppearancePrecheckInfo {
+  hasCustomMenuIcons: boolean
+  hasDefaultMenuIcon: boolean
+  menuIconCount: number
+  hasBackground: boolean
+  hasCursors: boolean
+  hasMascot: boolean
+  previewDimensions?: ImageDimensions
+}
+
 export interface OnlineAppearanceItem {
   categoryKey?: AppearanceCategory
   fileKey: string
@@ -126,6 +142,10 @@ export interface OnlineAppearanceItem {
   installed: OnlineAppearanceInstalled | null
   /** 发布版本有没有封面；有才去取 getOnlineAppearanceCover。 */
   hasCover: boolean
+  /** 分享站累计下载次数；旧接口缺省时按 0 处理。 */
+  downloadCount?: number
+  /** 分享站标签名称列表。 */
+  tags?: string[]
 }
 
 export interface OnlineAppearanceVersion {
@@ -169,7 +189,7 @@ export interface OnlineAppearanceDetailResult {
   error?: string
 }
 
-/** 已下载并校验过的包里读出的外观摘要，用于安装前预览。 */
+/** 已下载并校验过的包里读出的外观摘要，用于安装前预览与试穿沙盒。 */
 export interface OnlineAppearancePreview {
   id: string
   name: string
@@ -177,6 +197,24 @@ export interface OnlineAppearancePreview {
   mode?: AppearanceMode
   tokens?: AppearanceTokens
   previewUrl?: string
+  /** 仅用于内存试穿沙盒的完整界面外观（不含桌宠动画帧，不落盘）。 */
+  tryOnAppearance?: InstalledAppearance
+  /** 主题包内是否附带配套桌宠（试穿时不切换当前桌宠，用于明确提示用户）。 */
+  hasBundledMascot?: boolean
+  /** 机器可判定的结构/资产预检摘要。 */
+  precheck?: AppearancePrecheckInfo
+}
+
+export type OnlineAppearancePreparePhase = 'metadata' | 'downloading' | 'verifying'
+
+export interface OnlineAppearancePrepareProgress {
+  categoryKey: AppearanceCategory
+  fileKey: string
+  versionNo: number
+  phase: OnlineAppearancePreparePhase
+  loadedBytes: number
+  totalBytes: number
+  percent: number
 }
 
 export interface OnlineAppearancePrepareResult {
