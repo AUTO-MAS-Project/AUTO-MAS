@@ -11,15 +11,16 @@ import { translate as t } from '@/i18n'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type {
   OnlineAppearanceItem,
+  OnlineAppearancePrepareProgress,
   OnlineAppearancePreview,
   OnlineAppearanceVersion,
 } from '@/types/appearance'
 import { createCoverLoader, type CoverTask } from './coverLoader'
 import { loadAppearanceCatalog } from './appearanceCatalog'
 
-export const ONLINE_APPEARANCE_PAGE_SIZE = 12
+export const ONLINE_APPEARANCE_PAGE_SIZE = 48
 export const ONLINE_APPEARANCE_SEARCH_DEBOUNCE = 400
-export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 48
+export const ONLINE_APPEARANCE_COVER_CACHE_LIMIT = 120
 export const ONLINE_APPEARANCE_COVER_CONCURRENCY = 3
 
 /** 设置页的覆盖确认、失败提示和安装后预览都在 useAppearanceSettings 里，这里只关心结局。 */
@@ -62,6 +63,22 @@ export function formatAppearanceFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+export function formatPrepareProgressText(
+  progress: OnlineAppearancePrepareProgress | null | undefined
+): string {
+  if (!progress || progress.phase === 'metadata') {
+    return t('core.themeStore.preparing')
+  }
+  if (progress.phase === 'verifying') {
+    return t('core.themeStore.progress.verifying')
+  }
+  return t('core.themeStore.progress.downloading', {
+    percent: progress.percent,
+    loaded: formatAppearanceFileSize(progress.loadedBytes),
+    total: formatAppearanceFileSize(progress.totalBytes),
+  })
+}
+
 // 时间来自分享站，按本机时区展示
 export function formatOnlineAppearanceTime(value: string): string {
   return value ? formatBackendDateTime(value) : t('core.themeStore.unknownTime')
@@ -100,9 +117,11 @@ export function useOnlineAppearance(options: {
 
   const items = ref<OnlineAppearanceItem[]>([])
   const listLoading = ref(false)
+  const loadingMore = ref(false)
   const listError = ref<string | null>(null)
   const page = ref(1)
   const total = ref(0)
+  const hasMore = computed(() => items.value.length < total.value)
   const keyword = ref('')
   let listRevision = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
@@ -116,9 +135,42 @@ export function useOnlineAppearance(options: {
 
   const prepared = shallowRef<PreparedOnlineAppearance | null>(null)
   const preparing = ref(false)
+  const prepareProgress = ref<OnlineAppearancePrepareProgress | null>(null)
   const prepareError = ref<string | null>(null)
   const installing = ref(false)
   let prepareRevision = 0
+
+  const trackPrepareProgress = (
+    fileKey: string,
+    versionNo: number,
+    category: AppearanceCategory,
+    isActive: () => boolean
+  ): (() => void) => {
+    prepareProgress.value = {
+      categoryKey: category,
+      fileKey,
+      versionNo,
+      phase: 'metadata',
+      loadedBytes: 0,
+      totalBytes: 0,
+      percent: 0,
+    }
+    const unsub = api().onOnlineAppearancePrepareProgress?.(progress => {
+      if (
+        !isActive() ||
+        progress.fileKey !== fileKey ||
+        progress.versionNo !== versionNo ||
+        progress.categoryKey !== category
+      ) {
+        return
+      }
+      prepareProgress.value = progress
+    })
+    return () => {
+      unsub?.()
+      if (isActive()) prepareProgress.value = null
+    }
+  }
 
   const selectedVersion = computed(
     () => versions.value.find(item => item.versionNo === selectedVersionNo.value) ?? null
@@ -213,11 +265,15 @@ export function useOnlineAppearance(options: {
     }
   }
 
-  const loadList = async (targetPage = page.value): Promise<void> => {
+  const loadList = async (targetPage = 1, append = false): Promise<void> => {
     cancelScheduledSearch()
     const revision = ++listRevision
-    listLoading.value = true
-    listError.value = null
+    if (append) {
+      loadingMore.value = true
+    } else {
+      listLoading.value = true
+      listError.value = null
+    }
     try {
       const query = keyword.value.trim()
       const request = {
@@ -236,27 +292,53 @@ export function useOnlineAppearance(options: {
           : await api().listOnlineAppearances?.(request, ...categoryArgs())
       if (revision !== listRevision) return
       if (!result?.success) {
-        items.value = []
-        total.value = 0
-        listError.value = describePackageError(result ?? UNSUPPORTED, 'core.themeStore.listFailed')
+        const errorText = describePackageError(result ?? UNSUPPORTED, 'core.themeStore.listFailed')
         logger.warn(`加载在线外观列表失败: ${result?.error ?? result?.code ?? '不支持'}`)
+        if (append) {
+          message.error(errorText)
+        } else {
+          items.value = []
+          total.value = 0
+          listError.value = errorText
+        }
         return
       }
-      items.value = result.items ?? []
+      const fetched = result.items ?? []
+      if (append) {
+        const seen = new Set(items.value.map(item => `${item.categoryKey ?? ''}:${item.fileKey}`))
+        const nextItems = fetched.filter(
+          item => !seen.has(`${item.categoryKey ?? ''}:${item.fileKey}`)
+        )
+        items.value = [...items.value, ...nextItems]
+      } else {
+        items.value = fetched
+      }
       page.value = result.pagination?.page ?? targetPage
       total.value = result.pagination?.total ?? items.value.length
       loadCovers(items.value)
     } catch (error) {
       if (revision !== listRevision) return
-      items.value = []
-      total.value = 0
-      listError.value = t('core.themeStore.listFailed')
       logger.error(
         `加载在线外观列表失败: ${error instanceof Error ? error.message : String(error)}`
       )
+      if (append) {
+        message.error(t('core.themeStore.listFailed'))
+      } else {
+        items.value = []
+        total.value = 0
+        listError.value = t('core.themeStore.listFailed')
+      }
     } finally {
-      if (revision === listRevision) listLoading.value = false
+      if (revision === listRevision) {
+        listLoading.value = false
+        loadingMore.value = false
+      }
     }
+  }
+
+  const loadMore = async (): Promise<void> => {
+    if (listLoading.value || loadingMore.value || !hasMore.value) return
+    await loadList(page.value + 1, true)
   }
 
   const scheduleSearch = (): void => {
@@ -282,6 +364,14 @@ export function useOnlineAppearance(options: {
     discardPrepared()
     preparing.value = true
     prepareError.value = null
+    const category: AppearanceCategory =
+      item.categoryKey ?? (options.categoryKey === 'mascot' ? 'mascot' : 'theme')
+    const stopProgress = trackPrepareProgress(
+      item.fileKey,
+      versionNo,
+      category,
+      () => revision === prepareRevision
+    )
     try {
       const result = await api().prepareOnlineAppearance?.(
         item.fileKey,
@@ -321,6 +411,7 @@ export function useOnlineAppearance(options: {
       )
       return null
     } finally {
+      stopProgress()
       if (revision === prepareRevision) preparing.value = false
     }
   }
@@ -438,7 +529,7 @@ export function useOnlineAppearance(options: {
       // 装好后回到列表并重新拉一次，「已安装 / 有新版本」标记才会跟上。
       if (outcome === 'installed') {
         backToList()
-        void loadList(page.value)
+        void loadList(1)
         options.onInstalled?.()
       }
     }
@@ -510,6 +601,12 @@ export function useOnlineAppearance(options: {
     }
 
     tryingFileKey.value = item.fileKey
+    const stopProgress = trackPrepareProgress(
+      item.fileKey,
+      targetVersion,
+      'theme',
+      () => tryingFileKey.value === item.fileKey
+    )
     try {
       const result = await api().prepareOnlineAppearance?.(item.fileKey, targetVersion, 'theme')
       if (!result?.success || !result.token || !result.appearance?.tryOnAppearance) {
@@ -534,7 +631,7 @@ export function useOnlineAppearance(options: {
             applyImmediately: true,
           })
           if (outcome === 'installed') {
-            void loadList(page.value)
+            void loadList(1)
             options.onInstalled?.()
           }
           return outcome
@@ -546,6 +643,7 @@ export function useOnlineAppearance(options: {
       )
       message.error(t('core.themeStore.prepareFailed'))
     } finally {
+      stopProgress()
       tryingFileKey.value = null
     }
   }
@@ -568,6 +666,7 @@ export function useOnlineAppearance(options: {
     view.value = 'list'
     items.value = []
     listLoading.value = false
+    loadingMore.value = false
     listError.value = null
     page.value = 1
     total.value = 0
@@ -581,6 +680,8 @@ export function useOnlineAppearance(options: {
     detailOpen,
     items,
     listLoading,
+    loadingMore,
+    hasMore,
     listError,
     page,
     total,
@@ -596,12 +697,14 @@ export function useOnlineAppearance(options: {
     detailCover,
     prepared,
     preparing,
+    prepareProgress,
     prepareError,
     installing,
     tryingFileKey,
     open,
     reset,
     loadList,
+    loadMore,
     scheduleSearch,
     clearKeyword,
     openDetail,

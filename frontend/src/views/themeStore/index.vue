@@ -101,7 +101,7 @@ const outdated = useOutdatedAppearances({
   install: (token, category, opts) => installPreparedOnlineAppearance(token, category, opts),
   isBusy: () => storeInstalling.value,
   onUpdated: () => {
-    if (tab.value !== 'mine') void store.value.loadList(store.value.page.value)
+    if (tab.value !== 'mine') void store.value.loadList(1)
   },
 })
 const installing = computed(() => storeInstalling.value || outdated.updatingAll.value)
@@ -142,7 +142,7 @@ const openDocs = (): void => {
 const handleUploaded = (): void => {
   invalidateMine()
   void outdated.refresh()
-  if (tab.value !== 'mine') void store.value.loadList(store.value.page.value)
+  if (tab.value !== 'mine') void store.value.loadList(1)
   if (authorized.value) void mine.value.ensureLoaded()
 }
 
@@ -254,6 +254,7 @@ onBeforeUnmount(() => {
           :category-mode="tab === 'installed' ? 'installed' : activeStoreKey"
         />
         <OnlineAppearanceDetailDrawer
+          :key="activeStoreKey"
           :store="store"
           :account="account"
           :mine="mine"

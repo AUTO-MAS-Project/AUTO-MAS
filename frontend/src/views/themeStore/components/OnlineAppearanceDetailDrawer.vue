@@ -8,7 +8,6 @@ import {
   UploadOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useAppearanceTryOnStore } from '@/stores/appearanceTryOn'
@@ -47,6 +46,7 @@ const {
   detailCover,
   prepared,
   preparing,
+  prepareProgress,
   prepareError,
   installing,
   tryingFileKey,
@@ -61,10 +61,12 @@ const {
 const { authorized, state: accountState } = props.account
 const locatingOwnFile = ref(false)
 
-// 严格避让 Electron 顶部 32px 标题栏与窗口控制按钮。
+// 严格避让 Electron 顶部 32px 标题栏；zIndex 写在 rootStyle 而非 :z-index prop，
+// 避免 Ant Design Vue 4 将 :z-index 只挂到 content-wrapper 而被 z-index:1000 的遮罩反向盖住。
 const drawerRootStyle = computed(() => ({
   top: '32px',
-  height: 'calc(100vh - 32px)',
+  height: 'calc(100% - 32px)',
+  zIndex: 900,
 }))
 
 const isThemeDetail = computed(() => (detailItem.value?.categoryKey ?? 'theme') === 'theme')
@@ -79,22 +81,6 @@ const isActiveInstalled = computed(() =>
     detailItem.value?.installed &&
     persistedAppearance.value?.id === detailItem.value.installed.appearanceId
   )
-)
-
-const versionOptions = computed(() =>
-  versions.value.map(version => ({
-    value: version.versionNo,
-    label: [
-      `v${version.versionNo}`,
-      formatAppearanceFileSize(version.fileSize),
-      formatOnlineAppearanceTime(version.createdAt),
-      detailItem.value?.installed?.versionNo === version.versionNo
-        ? t('core.themeStore.installed')
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' · '),
-  }))
 )
 
 const uploadVersion = async (): Promise<void> => {
@@ -117,8 +103,9 @@ const uploadVersion = async (): Promise<void> => {
   }
 }
 
-const handleVersionChange = (value: SelectValue): void => {
-  if (typeof value === 'number') selectVersion(value)
+const handleSelectVersion = (versionNo: number): void => {
+  if (installing.value || preparing.value) return
+  selectVersion(versionNo)
 }
 
 const handleTryOn = (): void => {
@@ -136,7 +123,6 @@ const handleTryOn = (): void => {
     :mask-closable="!installing"
     :keyboard="!installing"
     :root-style="drawerRootStyle"
-    :z-index="900"
     @close="backToList"
   >
     <template #title>
@@ -167,7 +153,8 @@ const handleTryOn = (): void => {
         :display-name="detailItem.displayName || detailItem.fileKey"
         :detail-cover="detailCover"
         :prepared="prepared"
-        :preparing="preparing"
+        :preparing="preparing || tryingFileKey === detailItem.fileKey"
+        :prepare-progress="prepareProgress?.fileKey === detailItem.fileKey ? prepareProgress : null"
         :prepare-error="prepareError"
         :has-versions="versions.length > 0"
         @prepare="prepareSelected"
@@ -204,25 +191,40 @@ const handleTryOn = (): void => {
         {{ detailItem.description || t('core.themeStore.noDescription') }}
       </p>
 
-      <div class="drawer-section">
+      <div v-if="versions.length > 0" class="drawer-section">
         <div class="drawer-section-label">{{ t('core.themeStore.version') }}</div>
-        <a-select
-          :value="selectedVersionNo ?? undefined"
-          :options="versionOptions"
-          :disabled="installing || preparing || versions.length === 0"
-          class="drawer-version-select"
-          @change="handleVersionChange"
-        />
-        <div v-if="versions.length > 0" class="drawer-version-list">
+        <div
+          class="drawer-version-list"
+          role="radiogroup"
+          :aria-label="t('core.themeStore.version')"
+        >
           <div
             v-for="ver in versions"
             :key="ver.versionNo"
             class="drawer-version-card"
-            :class="{ 'is-selected': ver.versionNo === selectedVersionNo }"
-            @click="selectVersion(ver.versionNo)"
+            :class="{
+              'is-selected': ver.versionNo === selectedVersionNo,
+              'is-disabled': installing || preparing,
+            }"
+            role="radio"
+            :aria-checked="ver.versionNo === selectedVersionNo"
+            :aria-disabled="installing || preparing"
+            :tabindex="installing || preparing ? -1 : 0"
+            @click="handleSelectVersion(ver.versionNo)"
+            @keydown.enter.prevent="handleSelectVersion(ver.versionNo)"
+            @keydown.space.prevent="handleSelectVersion(ver.versionNo)"
           >
             <div class="drawer-version-head">
-              <strong>v{{ ver.versionNo }}</strong>
+              <span class="drawer-version-title">
+                <strong>v{{ ver.versionNo }}</strong>
+                <a-tag
+                  v-if="detailItem.installed?.versionNo === ver.versionNo"
+                  color="blue"
+                  class="drawer-version-tag"
+                >
+                  {{ t('core.themeStore.installed') }}
+                </a-tag>
+              </span>
               <span class="drawer-version-meta">
                 {{ formatAppearanceFileSize(ver.fileSize) }} ·
                 {{ formatOnlineAppearanceTime(ver.createdAt) }}
@@ -364,10 +366,6 @@ const handleTryOn = (): void => {
   font-weight: 600;
 }
 
-.drawer-version-select {
-  width: 100%;
-}
-
 .drawer-version-list {
   display: flex;
   flex-direction: column;
@@ -380,11 +378,25 @@ const handleTryOn = (): void => {
   border-radius: 8px;
   background: var(--ant-color-fill-tertiary);
   cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease;
+}
+
+.drawer-version-card:hover:not(.is-disabled),
+.drawer-version-card:focus-visible {
+  border-color: var(--ant-color-primary-border);
+  outline: none;
 }
 
 .drawer-version-card.is-selected {
   border-color: var(--ant-color-primary-border);
   background: var(--ant-color-primary-bg);
+}
+
+.drawer-version-card.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .drawer-version-head {
@@ -393,6 +405,18 @@ const handleTryOn = (): void => {
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
+}
+
+.drawer-version-title {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.drawer-version-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
 }
 
 .drawer-version-meta {

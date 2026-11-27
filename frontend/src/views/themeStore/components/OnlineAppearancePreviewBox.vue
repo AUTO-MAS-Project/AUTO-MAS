@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { PreparedOnlineAppearance } from '../useOnlineAppearance'
+import type { OnlineAppearancePrepareProgress } from '@/types/appearance'
+import { formatPrepareProgressText, type PreparedOnlineAppearance } from '../useOnlineAppearance'
 
 const props = defineProps<{
   displayName: string
   detailCover?: string
   prepared: PreparedOnlineAppearance | null
   preparing: boolean
+  prepareProgress?: OnlineAppearancePrepareProgress | null
   prepareError: string | null
   hasVersions: boolean
 }>()
@@ -46,7 +48,17 @@ const swatchStyle = computed(() => {
         :alt="displayName"
         class="drawer-preview-image drawer-preview-dim"
       />
-      <a-spin :tip="t('core.themeStore.preparing')" class="drawer-preview-spin" />
+      <div class="drawer-preview-progress">
+        <div class="drawer-preview-progress-text">
+          {{ formatPrepareProgressText(prepareProgress) }}
+        </div>
+        <a-progress
+          :percent="prepareProgress?.percent ?? 0"
+          :status="prepareProgress?.phase === 'verifying' ? 'active' : 'normal'"
+          size="small"
+          class="drawer-preview-progress-bar"
+        />
+      </div>
     </div>
     <div v-else-if="prepareError" class="drawer-preview-state">
       <a-result status="warning" :sub-title="prepareError">
@@ -108,8 +120,28 @@ const swatchStyle = computed(() => {
   opacity: 0.45;
 }
 
-.drawer-preview-spin {
+.drawer-preview-progress {
   position: relative;
+  display: flex;
+  width: min(86%, 320px);
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: var(--ant-color-bg-elevated);
+  box-shadow: var(--ant-box-shadow-secondary);
+}
+
+.drawer-preview-progress-text {
+  color: var(--ant-color-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
+}
+
+.drawer-preview-progress-bar {
+  margin: 0;
 }
 
 .drawer-preview-image {

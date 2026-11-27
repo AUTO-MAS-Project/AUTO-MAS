@@ -1,7 +1,12 @@
 import type { OnlineAppearanceItem } from '@/types/appearance'
 
 export type StoreSortKey = 'latest' | 'popular' | 'updated'
-export type StoreQuickFilter = 'all' | 'outdated' | 'live'
+export type StoreQuickFilter = 'all' | 'outdated'
+
+export interface StoreTagSummary {
+  tag: string
+  count: number
+}
 
 const isOutdatedItem = (item: OnlineAppearanceItem): boolean =>
   Boolean(
@@ -17,10 +22,18 @@ export function shouldUseCompactBanner(totalCount: number): boolean {
   return totalCount < COMPACT_BANNER_ITEM_THRESHOLD
 }
 
-export function isLiveThemeItem(item: OnlineAppearanceItem): boolean {
-  return (item.tags ?? []).some(
-    tag => tag === '动态主题' || tag.toLowerCase() === 'live-theme' || tag.includes('动态')
-  )
+/** 按资源实际携带的 tags 动态汇总可筛选项，按出现次数降序排列。 */
+export function collectStoreTags(items: readonly OnlineAppearanceItem[]): StoreTagSummary[] {
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const unique = new Set((item.tags ?? []).map(tag => tag.trim()).filter(Boolean))
+    for (const tag of unique) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((left, right) => right.count - left.count || left.tag.localeCompare(right.tag))
 }
 
 /**
@@ -41,7 +54,12 @@ export function pickAutoFeaturedItem(
 
 export function filterAndSortStoreItems(
   items: readonly OnlineAppearanceItem[],
-  options: { filter: StoreQuickFilter; sort: StoreSortKey; installedOnly?: boolean }
+  options: {
+    filter: StoreQuickFilter
+    tag?: string | null
+    sort: StoreSortKey
+    installedOnly?: boolean
+  }
 ): OnlineAppearanceItem[] {
   let list = [...items]
   if (options.installedOnly) {
@@ -49,8 +67,9 @@ export function filterAndSortStoreItems(
   }
   if (options.filter === 'outdated') {
     list = list.filter(isOutdatedItem)
-  } else if (options.filter === 'live') {
-    list = list.filter(isLiveThemeItem)
+  }
+  if (options.tag) {
+    list = list.filter(item => (item.tags ?? []).includes(options.tag as string))
   }
   if (options.sort === 'popular') {
     list.sort((left, right) => {

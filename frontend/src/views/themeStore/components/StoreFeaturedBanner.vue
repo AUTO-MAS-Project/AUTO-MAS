@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { EyeOutlined, SkinOutlined, UpOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import type { OnlineAppearanceItem } from '@/types/appearance'
+import type { OnlineAppearanceItem, OnlineAppearancePrepareProgress } from '@/types/appearance'
 import { formatDownloadCount } from '../storeFiltering'
+import { formatPrepareProgressText } from '../useOnlineAppearance'
 
 defineProps<{
   item: OnlineAppearanceItem
@@ -10,6 +11,7 @@ defineProps<{
   compact: boolean
   collapsed: boolean
   trying: boolean
+  tryProgress?: OnlineAppearancePrepareProgress | null
   canTryOn: boolean
 }>()
 
@@ -92,6 +94,16 @@ const { t } = useI18n()
         <a-button size="small" @click="$emit('open-detail', item)">
           {{ t('core.themeStore.featured.viewDetail') }}
         </a-button>
+      </div>
+      <div v-if="trying" class="featured-progress">
+        <a-progress
+          :percent="tryProgress?.percent ?? 0"
+          :status="tryProgress?.phase === 'verifying' ? 'active' : 'normal'"
+          :show-info="false"
+          size="small"
+          class="featured-progress-bar"
+        />
+        <span class="featured-progress-text">{{ formatPrepareProgressText(tryProgress) }}</span>
       </div>
     </div>
   </section>
@@ -230,6 +242,26 @@ const { t } = useI18n()
   gap: 8px;
   margin-top: auto;
   padding-top: 4px;
+}
+
+.featured-progress {
+  display: flex;
+  max-width: 320px;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.featured-progress-bar {
+  margin: 0;
+  line-height: 1;
+}
+
+.featured-progress-text {
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
 }
 
 @media (max-width: 780px) {

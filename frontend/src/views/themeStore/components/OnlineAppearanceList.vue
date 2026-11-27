@@ -7,8 +7,8 @@ import { useAppearanceTryOnStore } from '@/stores/appearanceTryOn'
 import type { OnlineAppearanceItem } from '@/types/appearance'
 import type { AppearanceCategory } from '@/types/mascotPack'
 import {
+  collectStoreTags,
   filterAndSortStoreItems,
-  isLiveThemeItem,
   pickAutoFeaturedItem,
   shouldUseCompactBanner,
   type StoreQuickFilter,
@@ -30,14 +30,16 @@ const tryOnStore = useAppearanceTryOnStore()
 const {
   items,
   listLoading,
+  loadingMore,
+  hasMore,
   listError,
-  page,
   total,
   keyword,
-  pageSize,
   tryingFileKey,
+  prepareProgress,
   coverFor,
   loadList,
+  loadMore,
   scheduleSearch,
   clearKeyword,
   openDetail,
@@ -45,6 +47,7 @@ const {
 } = props.store
 
 const quickFilter = ref<StoreQuickFilter>('all')
+const selectedTag = ref<string | null>(null)
 const sortKey = ref<StoreSortKey>('latest')
 const bannerCollapsed = ref(false)
 
@@ -60,9 +63,17 @@ const isItemActive = (item: OnlineAppearanceItem): boolean =>
 const isItemTrying = (item: OnlineAppearanceItem): boolean =>
   Boolean(tryOnStore.active && tryOnStore.session?.fileKey === item.fileKey)
 
+const availableTags = computed(() => collectStoreTags(items.value))
+const activeTag = computed(() =>
+  selectedTag.value && availableTags.value.some(entry => entry.tag === selectedTag.value)
+    ? selectedTag.value
+    : null
+)
+
 const displayItems = computed(() =>
   filterAndSortStoreItems(items.value, {
     filter: quickFilter.value,
+    tag: activeTag.value,
     sort: sortKey.value,
     installedOnly: props.categoryMode === 'installed',
   })
@@ -73,7 +84,7 @@ const featuredItem = computed(() => {
     props.categoryMode === 'installed' ||
     keyword.value.trim() ||
     quickFilter.value !== 'all' ||
-    page.value !== 1
+    activeTag.value !== null
   ) {
     return null
   }
@@ -84,7 +95,9 @@ const compactBanner = computed(() => shouldUseCompactBanner(total.value || items
 const outdatedCount = computed(
   () => items.value.filter(item => getOnlineAppearanceStatus(item) === 'outdated').length
 )
-const liveCount = computed(() => items.value.filter(isLiveThemeItem).length)
+const hasActiveFilter = computed(
+  () => Boolean(keyword.value.trim()) || quickFilter.value !== 'all' || activeTag.value !== null
+)
 
 const sortOptions = computed(() => [
   { value: 'latest', label: t('core.themeStore.sort.latest') },
@@ -97,8 +110,19 @@ const handleKeywordInput = (value: string): void => {
   scheduleSearch()
 }
 
+const selectAllFilter = (): void => {
+  quickFilter.value = 'all'
+  selectedTag.value = null
+}
+
+const toggleTagFilter = (tag: string): void => {
+  quickFilter.value = 'all'
+  selectedTag.value = selectedTag.value === tag ? null : tag
+}
+
 const resetFilters = (): void => {
   quickFilter.value = 'all'
+  selectedTag.value = null
   clearKeyword()
 }
 </script>
@@ -116,12 +140,12 @@ const resetFilters = (): void => {
       <template #prefix><SearchOutlined /></template>
     </a-input>
 
-    <div v-if="categoryMode !== 'mascot'" class="online-filter-pills">
+    <div v-if="outdatedCount > 0 || availableTags.length > 0" class="online-filter-pills">
       <a-button
         size="small"
-        :type="quickFilter === 'all' ? 'primary' : 'default'"
-        :ghost="quickFilter === 'all'"
-        @click="quickFilter = 'all'"
+        :type="quickFilter === 'all' && activeTag === null ? 'primary' : 'default'"
+        :ghost="quickFilter === 'all' && activeTag === null"
+        @click="selectAllFilter"
       >
         {{ t('core.themeStore.categories.all') }}
       </a-button>
@@ -130,18 +154,24 @@ const resetFilters = (): void => {
         size="small"
         :type="quickFilter === 'outdated' ? 'primary' : 'default'"
         :ghost="quickFilter === 'outdated'"
-        @click="quickFilter = 'outdated'"
+        @click="
+          () => {
+            selectedTag = null
+            quickFilter = 'outdated'
+          }
+        "
       >
         {{ t('core.themeStore.filter.outdated', { count: outdatedCount }) }}
       </a-button>
       <a-button
-        v-if="liveCount > 0"
+        v-for="entry in availableTags"
+        :key="entry.tag"
         size="small"
-        :type="quickFilter === 'live' ? 'primary' : 'default'"
-        :ghost="quickFilter === 'live'"
-        @click="quickFilter = 'live'"
+        :type="activeTag === entry.tag ? 'primary' : 'default'"
+        :ghost="activeTag === entry.tag"
+        @click="toggleTagFilter(entry.tag)"
       >
-        {{ t('core.themeStore.filter.liveTheme') }}
+        {{ entry.tag }}
       </a-button>
     </div>
 
@@ -155,7 +185,7 @@ const resetFilters = (): void => {
     <a-button
       :loading="listLoading"
       :aria-label="t('core.themeStore.refresh')"
-      @click="loadList(page)"
+      @click="loadList(1)"
     >
       <template #icon><ReloadOutlined /></template>
       {{ t('core.themeStore.refresh') }}
@@ -168,7 +198,7 @@ const resetFilters = (): void => {
   <div v-else-if="listError" class="online-state">
     <a-result status="warning" :title="t('core.themeStore.listFailed')" :sub-title="listError">
       <template #extra>
-        <a-button type="primary" @click="loadList(page)">
+        <a-button type="primary" @click="loadList(1)">
           {{ t('core.themeStore.retry') }}
         </a-button>
       </template>
@@ -177,14 +207,14 @@ const resetFilters = (): void => {
   <div v-else-if="displayItems.length === 0" class="online-state">
     <NoData
       :description="
-        keyword.trim() || quickFilter !== 'all'
+        hasActiveFilter
           ? t('core.themeStore.noMatch')
           : categoryMode === 'installed'
             ? t('core.themeStore.installedEmpty')
             : t('core.themeStore.empty')
       "
     >
-      <a-button v-if="keyword.trim() || quickFilter !== 'all'" @click="resetFilters">
+      <a-button v-if="hasActiveFilter" @click="resetFilters">
         {{ t('core.themeStore.clearSearch') }}
       </a-button>
     </NoData>
@@ -199,6 +229,11 @@ const resetFilters = (): void => {
       :compact="compactBanner"
       :collapsed="bannerCollapsed"
       :trying="tryingFileKey === featuredItem.fileKey"
+      :try-progress="
+        tryingFileKey === featuredItem.fileKey && prepareProgress?.fileKey === featuredItem.fileKey
+          ? prepareProgress
+          : null
+      "
       :can-try-on="isThemeItem(featuredItem)"
       @try-on="item => void tryOnItem(item)"
       @open-detail="openDetail"
@@ -222,21 +257,21 @@ const resetFilters = (): void => {
         :is-active="isItemActive(item)"
         :is-trying="isItemTrying(item)"
         :trying-loading="tryingFileKey === item.fileKey"
+        :try-progress="
+          tryingFileKey === item.fileKey && prepareProgress?.fileKey === item.fileKey
+            ? prepareProgress
+            : null
+        "
         @open="openDetail"
         @try-on="entry => void tryOnItem(entry)"
       />
     </div>
   </template>
 
-  <div v-if="!listLoading && !listError && total > pageSize" class="online-pagination">
-    <a-pagination
-      size="small"
-      :current="page"
-      :page-size="pageSize"
-      :total="total"
-      :show-size-changer="false"
-      @change="loadList"
-    />
+  <div v-if="!listLoading && !listError && hasMore" class="online-load-more">
+    <a-button :loading="loadingMore" @click="void loadMore()">
+      {{ t('core.themeStore.loadMore', { loaded: items.length, total }) }}
+    </a-button>
   </div>
 </template>
 
@@ -286,9 +321,9 @@ const resetFilters = (): void => {
   padding-bottom: 76px;
 }
 
-.online-pagination {
+.online-load-more {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
+  justify-content: center;
+  margin-top: 20px;
 }
 </style>

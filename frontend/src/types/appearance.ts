@@ -144,7 +144,7 @@ export interface OnlineAppearanceItem {
   hasCover: boolean
   /** 分享站累计下载次数；旧接口缺省时按 0 处理。 */
   downloadCount?: number
-  /** 分享站标签名称（如「动态主题」）。 */
+  /** 分享站标签名称列表。 */
   tags?: string[]
 }
 
@@ -203,6 +203,18 @@ export interface OnlineAppearancePreview {
   hasBundledMascot?: boolean
   /** 机器可判定的结构/资产预检摘要。 */
   precheck?: AppearancePrecheckInfo
+}
+
+export type OnlineAppearancePreparePhase = 'metadata' | 'downloading' | 'verifying'
+
+export interface OnlineAppearancePrepareProgress {
+  categoryKey: AppearanceCategory
+  fileKey: string
+  versionNo: number
+  phase: OnlineAppearancePreparePhase
+  loadedBytes: number
+  totalBytes: number
+  percent: number
 }
 
 export interface OnlineAppearancePrepareResult {

@@ -99,6 +99,18 @@ export interface OnlineAppearancePreview {
   }
 }
 
+export type OnlineAppearancePreparePhase = 'metadata' | 'downloading' | 'verifying'
+
+export interface OnlineAppearancePrepareProgress {
+  categoryKey: AppearanceCategory
+  fileKey: string
+  versionNo: number
+  phase: OnlineAppearancePreparePhase
+  loadedBytes: number
+  totalBytes: number
+  percent: number
+}
+
 export interface OnlineAppearancePrepareResult {
   success: boolean
   token?: string
@@ -418,7 +430,11 @@ interface CacheEntry {
 export interface OnlineAppearanceService {
   list(query: OnlineAppearanceQuery): Promise<OnlineAppearanceListResult>
   detail(fileKey: unknown): Promise<OnlineAppearanceDetailResult>
-  prepare(fileKey: unknown, versionNo: unknown): Promise<OnlineAppearancePrepareResult>
+  prepare(
+    fileKey: unknown,
+    versionNo: unknown,
+    onProgress?: (progress: OnlineAppearancePrepareProgress) => void
+  ): Promise<OnlineAppearancePrepareResult>
   install(token: unknown, replace: boolean): Promise<OnlineAppearanceInstallResult>
   discard(token: unknown): { success: boolean }
   /** 取封面；versionNo 省略时取发布版本的封面。成功结果按 fileKey + 版本号缓存在内存里。 */
@@ -743,7 +759,8 @@ export function createOnlineAppearanceService(
     fileKey: string,
     versionNo: number,
     expectedBytes: number,
-    partPath: string
+    partPath: string,
+    onProgress?: (loadedBytes: number, totalBytes: number) => void
   ): Promise<{ bytes: number; sha256: string }> => {
     const limit = ASSET_CATEGORY_LIMITS[kind].archiveBytes
     const controller = new AbortController()
@@ -780,6 +797,8 @@ export function createOnlineAppearanceService(
       handle = await fs.promises.open(partPath, 'wx')
       const hash = crypto.createHash('sha256')
       let bytes = 0
+      let lastReportAt = 0
+      onProgress?.(0, expectedBytes)
       for (;;) {
         let chunk: { done: boolean; value?: Uint8Array }
         try {
@@ -804,6 +823,11 @@ export function createOnlineAppearanceService(
         }
         hash.update(chunk.value)
         await handle.write(chunk.value)
+        const currentAt = now()
+        if (bytes >= expectedBytes || currentAt - lastReportAt >= 80) {
+          lastReportAt = currentAt
+          onProgress?.(bytes, expectedBytes)
+        }
       }
       await handle.close()
       handle = undefined
@@ -890,13 +914,31 @@ export function createOnlineAppearanceService(
 
   const prepare = async (
     fileKey: unknown,
-    versionNo: unknown
+    versionNo: unknown,
+    onProgress?: (progress: OnlineAppearancePrepareProgress) => void
   ): Promise<OnlineAppearancePrepareResult> => {
     if (!isValidOnlineFileKey(fileKey)) return invalidArgument('外观包标识无效')
     const pinnedVersion = positiveInteger(versionNo)
     if (pinnedVersion === null) return invalidArgument('版本号无效')
     purgeExpired()
+    const reportProgress = (
+      phase: OnlineAppearancePreparePhase,
+      loadedBytes: number,
+      totalBytes: number,
+      percent: number
+    ): void => {
+      onProgress?.({
+        categoryKey: kind,
+        fileKey,
+        versionNo: pinnedVersion,
+        phase,
+        loadedBytes,
+        totalBytes,
+        percent,
+      })
+    }
     try {
+      reportProgress('metadata', 0, 0, 0)
       const versions = await fetchVersions(fileKey)
       const version = versions.find(item => item.versionNo === pinnedVersion)
       if (!version) {
@@ -915,7 +957,17 @@ export function createOnlineAppearanceService(
       logger.info(
         `开始下载在线外观: ${fileKey} 版本 ${version.versionNo}，大小 ${version.fileSize} 字节`
       )
-      const downloaded = await download(fileKey, version.versionNo, version.fileSize, partPath)
+      const downloaded = await download(
+        fileKey,
+        version.versionNo,
+        version.fileSize,
+        partPath,
+        (loadedBytes, totalBytes) => {
+          const percent =
+            totalBytes > 0 ? Math.min(99, Math.round((loadedBytes / totalBytes) * 100)) : 0
+          reportProgress('downloading', loadedBytes, totalBytes, percent)
+        }
+      )
       if (downloaded.bytes !== version.fileSize || downloaded.sha256 !== version.sha256) {
         removeQuietly(partPath)
         logger.warn(
@@ -926,6 +978,7 @@ export function createOnlineAppearanceService(
       logger.info(
         `在线外观校验通过: ${fileKey} 版本 ${version.versionNo}，SHA-256 ${version.sha256}`
       )
+      reportProgress('verifying', version.fileSize, version.fileSize, 100)
       try {
         fs.renameSync(partPath, zipPath)
       } catch (error) {

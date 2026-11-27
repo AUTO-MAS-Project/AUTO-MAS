@@ -218,11 +218,15 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
 
   ipcMain.handle(
     'appearance:online-prepare',
-    (_event, fileKey: unknown, versionNo: unknown, category: unknown) => {
+    (event, fileKey: unknown, versionNo: unknown, category: unknown) => {
       const service = serviceFor(category)
       if (!service) return INVALID_ARGUMENT
       if (typeof fileKey !== 'string' || typeof versionNo !== 'number') return INVALID_ARGUMENT
-      return service.prepare(fileKey, versionNo)
+      return service.prepare(fileKey, versionNo, progress => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('appearance:online-prepare-progress', progress)
+        }
+      })
     }
   )
 

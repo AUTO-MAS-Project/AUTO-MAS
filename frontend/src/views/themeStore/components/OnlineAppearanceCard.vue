@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { EyeOutlined, SkinOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import type { OnlineAppearanceItem } from '@/types/appearance'
-import { formatDownloadCount, isLiveThemeItem } from '../storeFiltering'
-import { formatOnlineAppearanceTime, getOnlineAppearanceStatus } from '../useOnlineAppearance'
+import type { OnlineAppearanceItem, OnlineAppearancePrepareProgress } from '@/types/appearance'
+import { formatDownloadCount } from '../storeFiltering'
+import {
+  formatOnlineAppearanceTime,
+  formatPrepareProgressText,
+  getOnlineAppearanceStatus,
+} from '../useOnlineAppearance'
 
 const props = defineProps<{
   item: OnlineAppearanceItem
@@ -13,6 +17,7 @@ const props = defineProps<{
   isActive: boolean
   isTrying: boolean
   tryingLoading: boolean
+  tryProgress?: OnlineAppearancePrepareProgress | null
 }>()
 
 const emit = defineEmits<{
@@ -43,6 +48,7 @@ const handleTryOn = (event: MouseEvent): void => {
         v-if="coverUrl"
         :src="coverUrl"
         :alt="item.displayName || item.fileKey"
+        loading="lazy"
         class="online-cover-image"
       />
       <SkinOutlined v-else class="online-cover-placeholder" />
@@ -71,11 +77,21 @@ const handleTryOn = (event: MouseEvent): void => {
       >
         {{ t('core.themeStore.installed') }}
       </a-tag>
-      <a-tag v-else-if="isLiveThemeItem(item)" color="purple" class="online-cover-tag">
-        {{ t('core.themeStore.filter.liveTheme') }}
+      <a-tag v-else-if="(item.tags?.length ?? 0) > 0" color="purple" class="online-cover-tag">
+        {{ item.tags!.length > 1 ? `${item.tags![0]} +${item.tags!.length - 1}` : item.tags![0] }}
       </a-tag>
 
-      <div v-if="canTryOn" class="online-cover-overlay">
+      <div v-if="tryingLoading" class="online-cover-progress" @click.stop>
+        <div class="online-cover-progress-text">{{ formatPrepareProgressText(tryProgress) }}</div>
+        <a-progress
+          :percent="tryProgress?.percent ?? 0"
+          :status="tryProgress?.phase === 'verifying' ? 'active' : 'normal'"
+          :show-info="false"
+          size="small"
+          class="online-cover-progress-bar"
+        />
+      </div>
+      <div v-else-if="canTryOn" class="online-cover-overlay">
         <a-button size="small" type="primary" :loading="tryingLoading" @click="handleTryOn">
           <template #icon><EyeOutlined /></template>
           {{ t('core.themeStore.tryOn.action') }}
@@ -177,6 +193,36 @@ const handleTryOn = (event: MouseEvent): void => {
   bottom: 8px;
   opacity: 0;
   transition: opacity 0.16s ease;
+}
+
+.online-cover-progress {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-elevated);
+  box-shadow: var(--ant-box-shadow-tertiary);
+}
+
+.online-cover-progress-text {
+  overflow: hidden;
+  color: var(--ant-color-text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.online-cover-progress-bar {
+  margin: 0;
+  line-height: 1;
 }
 
 .online-card:hover .online-cover-overlay,
