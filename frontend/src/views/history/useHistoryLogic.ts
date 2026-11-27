@@ -6,6 +6,7 @@ import {
   type HistoryIndexItem,
   HistorySearchIn,
   ApiError,
+  GetService,
 } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { Service } from '@/api/services/Service'
@@ -110,6 +111,17 @@ export function useHistoryLogic() {
   // 历史记录数据
   const historyData = ref<HistoryDateGroup[]>([])
 
+  // 同一天内记录条目的顺序，来自设置页「历史记录条目顺序」。读不到设置时按默认的最新在前，
+  // 不弹错误：排序只是偏好，不该挡住历史记录本身。
+  const loadNewestFirst = async (): Promise<boolean> => {
+    try {
+      const response = await GetService.getScriptsApiSettingGetPost()
+      return response.code !== 200 || response.data?.Function?.HistoryOrder !== 'asc'
+    } catch {
+      return true
+    }
+  }
+
   // 搜索历史记录
   const handleSearch = async () => {
     if (!searchForm.startDate || !searchForm.endDate) {
@@ -119,6 +131,7 @@ export function useHistoryLogic() {
 
     try {
       searchLoading.value = true
+      const newestFirstRequest = loadNewestFirst()
       const response = await observeFeature(
         'history_query_finished',
         { filter_kind: currentPreset.value === 'week' ? 'default' : 'filtered', count_bucket: '0' },
@@ -141,6 +154,7 @@ export function useHistoryLogic() {
         })
       )
 
+      const newestFirst = await newestFirstRequest
       if (!isMounted) return
 
       if (response.code === 200) {
@@ -148,15 +162,16 @@ export function useHistoryLogic() {
         selectedUserData.value = null
         currentRecordId.value = null
         currentDetail.value = null
-        // 记录条目按时间倒序：点进日志时最先看到的应该是最近一次
+        // 后端按时间正序返回记录条目。默认倒过来：点进日志时最先看到的应该是最近一次；
+        // 设置里选了「最早在前」就保持原序
         historyData.value = Object.entries(response.data)
           .map(([date, users]) => ({
             date,
             users: Object.fromEntries(
-              Object.entries(users).map(([name, data]) => [
-                name,
-                { ...data, index: [...(data.index ?? [])].reverse() },
-              ])
+              Object.entries(users).map(([name, data]) => {
+                const index = [...(data.index ?? [])]
+                return [name, { ...data, index: newestFirst ? index.reverse() : index }]
+              })
             ),
           }))
           .sort((a, b) => b.date.localeCompare(a.date))
