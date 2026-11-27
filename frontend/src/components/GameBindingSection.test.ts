@@ -114,6 +114,8 @@ describe('游戏绑定显示和清理', () => {
       binding: { game_id: 'client-target', device_id: '-' },
     })
     expect(html).toMatch(/ant-alert-warning[^]*?ant-alert-message[^>]*>类型不一致提示</)
+    // 只是提示，绑定照常可用，不提供清空入口
+    expect(html).not.toContain('core.edit.clear')
     expect(updateScript).not.toHaveBeenCalled()
   })
 

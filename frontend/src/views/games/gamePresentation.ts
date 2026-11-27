@@ -1,11 +1,5 @@
 import type { ActiveTriggerField, DeviceStatus } from '@/api'
-import {
-  gameActionHint,
-  gameDevices,
-  isDeletedDevice,
-  type GameDevice,
-  type GameRow,
-} from '@/types/games'
+import { gameActionHint, gameDevices, type GameDevice, type GameRow } from '@/types/games'
 
 export type StatusTone = 'success' | 'processing' | 'warning' | 'error' | 'neutral'
 
@@ -23,13 +17,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 export function countOnlineDevices(row: GameRow): number {
-  return gameDevices(row).filter(
-    device => !isDeletedDevice(device.document) && device.document.info?.status === 0
-  ).length
+  return gameDevices(row).filter(device => device.document.info?.status === 0).length
 }
 
 export function countActiveDevices(row: GameRow): number {
-  return gameDevices(row).filter(device => !isDeletedDevice(device.document)).length
+  return gameDevices(row).length
 }
 
 /** 按游戏目标归属聚合正在执行的触发器操作（含目标本身与其下属设备）。 */
@@ -96,7 +88,6 @@ export function getTargetPriorityBadge(
     }
   }
   const hasError = gameDevices(row).some(device => {
-    if (isDeletedDevice(device.document)) return false
     const status = device.document.info?.status
     return status === 4 || status === 7
   })

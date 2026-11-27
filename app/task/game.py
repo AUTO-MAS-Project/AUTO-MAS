@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.models.config.game import DEVICE_DELETED_REASON, is_deleted_device
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
 from app.plugin.base.emulator import EmulatorControl
@@ -246,9 +247,9 @@ class GameSession:
         game_name = Config.GameConfig[uid].info.name
         for hint in hints:
             self.script.current.log += (
-                f"提示：「{game_name}」{hint}，仍按所选目标运行。\n"
+                f"提示：已选「{game_name}」，{hint}，仍会继续执行。\n"
             )
-            logger.warning(f"游戏目标「{game_name}」{hint}，仍按所选目标运行")
+            logger.warning(f"已选「{game_name}」，{hint}，仍会继续执行")
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
         logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
@@ -265,6 +266,8 @@ class GameSession:
             device = game.devices.get(device_uid)
             if device is None:
                 raise ValueError("所选设备已失效")
+            if is_deleted_device(device):
+                raise ValueError(DEVICE_DELETED_REASON)
             device_name = device.info.name
             last_usage = None
             while True:

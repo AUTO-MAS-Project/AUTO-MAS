@@ -2736,7 +2736,6 @@
   "core.games.deleteConfirm": "ゲーム対象を削除しますか？関連付けも解除されます。",
   "core.games.deleteInstance": "インスタンスを削除",
   "core.games.deleteInstanceConfirm": "インスタンスと内部データを削除しますか？",
-  "core.games.deleted": "削除済み",
   "core.games.device": "インスタンス / デバイス",
   "core.games.discard": "未保存の変更を破棄しますか？",
   "core.games.discover": "インストールを検出",

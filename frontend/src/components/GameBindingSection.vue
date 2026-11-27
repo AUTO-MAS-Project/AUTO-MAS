@@ -86,16 +86,8 @@
                   @change="selectDevice"
                 >
                   <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
-                  <a-select-option
-                    v-for="device in devices"
-                    :key="device.uid"
-                    :value="device.uid"
-                    :disabled="isDeletedDevice(device.document)"
-                  >
-                    {{ device.document.info?.name
-                    }}<span v-if="isDeletedDevice(device.document)">
-                      ({{ t('core.games.deleted') }})</span
-                    >
+                  <a-select-option v-for="device in devices" :key="device.uid" :value="device.uid">
+                    {{ device.document.info?.name }}
                   </a-select-option>
                 </a-select>
               </a-form-item>
@@ -131,7 +123,7 @@
         show-icon
         class="binding-alert"
       >
-        <template #action>
+        <template v-if="bindingProblem" #action>
           <a-button size="small" :disabled="controlsDisabled" @click="resetBinding">
             {{ t('core.edit.clear') }}
           </a-button>
@@ -175,16 +167,8 @@
                 @change="selectDevice"
               >
                 <a-select-option value="-">{{ t('core.games.selectDevice') }}</a-select-option>
-                <a-select-option
-                  v-for="device in devices"
-                  :key="device.uid"
-                  :value="device.uid"
-                  :disabled="isDeletedDevice(device.document)"
-                >
-                  {{ device.document.info?.name
-                  }}<span v-if="isDeletedDevice(device.document)">
-                    ({{ t('core.games.deleted') }})</span
-                  >
+                <a-select-option v-for="device in devices" :key="device.uid" :value="device.uid">
+                  {{ device.document.info?.name }}
                 </a-select-option>
               </a-select>
             </a-form-item>
@@ -209,7 +193,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
-import { gameDevices, isDeletedDevice, type GameBindingValue } from '@/types/games'
+import { gameDevices, type GameBindingValue } from '@/types/games'
 
 const props = withDefaults(
   defineProps<{
@@ -261,12 +245,13 @@ const selectedOptionWarning = computed(
   () =>
     options.data.value?.data?.find(option => option.value === binding.value.game_id)?.warning ?? ''
 )
-const bindingWarning = computed(
+const bindingProblem = computed(
   () =>
     binding.value.unavailable_reason ||
-    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '') ||
-    selectedOptionWarning.value
+    (!bindingSupported.value && hasBinding.value ? t('core.games.bindingUnsupported') : '')
 )
+// 类型不一致只是提示，绑定照常可用，不提供「清空」。
+const bindingWarning = computed(() => bindingProblem.value || selectedOptionWarning.value)
 const selected = computed(() => games.rows.value.find(game => game.uid === binding.value.game_id))
 const devices = computed(() => (selected.value ? gameDevices(selected.value) : []))
 const inheritedName = computed(
@@ -331,10 +316,7 @@ async function selectTarget(value: unknown) {
     return
   }
   const target = games.rows.value.find(game => game.uid === value)
-  const device =
-    target?.type.kind === 'client'
-      ? (gameDevices(target).find(device => !isDeletedDevice(device.document))?.uid ?? '-')
-      : '-'
+  const device = target?.type.kind === 'client' ? (gameDevices(target)[0]?.uid ?? '-') : '-'
   binding.value = { game_id: value, device_id: device }
   overrideDraftOpen.value = false
   await save.mutateAsync({ ...binding.value }).catch(() => {})

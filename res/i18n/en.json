@@ -2736,7 +2736,6 @@
   "core.games.deleteConfirm": "Delete this game target? Its bindings will be cleared.",
   "core.games.deleteInstance": "Delete instance",
   "core.games.deleteInstanceConfirm": "Delete this instance and its data?",
-  "core.games.deleted": "Deleted",
   "core.games.device": "Instance / Device",
   "core.games.discard": "Discard unsaved changes?",
   "core.games.discover": "Discover installations",

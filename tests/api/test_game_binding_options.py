@@ -254,3 +254,21 @@ async def test_plugin_game_kind_mismatch_only_hints(binding_host, monkeypatch):
         str(script_id), {"game": {"game_id": str(uuid4())}}, hints=hints
     )
     assert hints == []
+
+    # 运行时选到类型不一致的目标：任务日志写明提示，照常取得目标继续运行
+    script = scripts[script_id]
+    await script.update(
+        type(script).model_validate({"game": {"game_id": native}}),
+        check_visibility=False,
+    )
+    expected: list[str] = []
+    await GameManager.validate_binding(
+        str(script_id), {"game": {"game_id": native}}, hints=expected
+    )
+    session = GameSession(TaskScriptItem.build(), script)
+    await session.select()
+    try:
+        assert str(session.game_uid) == native
+        assert expected and all(hint in session.script.current.log for hint in expected)
+    finally:
+        await session.release()

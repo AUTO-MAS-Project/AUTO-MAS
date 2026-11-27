@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 from uuid import UUID
@@ -12,7 +13,12 @@ from uuid import UUID
 from app.config.core.node import LockTicket
 from app.config.signals import CollectionChangeEvent
 from app.config.wire import config_contract
-from app.models.config.game import GameDeviceEntry, GameEntry
+from app.models.config.game import (
+    DEVICE_DELETED_REASON,
+    GameDeviceEntry,
+    GameEntry,
+    is_deleted_device,
+)
 from app.models.config.game_binding import GameBindingCapabilities, GameBindingOwner
 from app.models.config.plugin_emulator import EmulatorEntry
 from app.models.emulator import DeviceUpdateOptions
@@ -223,6 +229,71 @@ class _GameManager:
                 await entry._control.startup()
             except Exception as error:
                 logger.warning(f"设备维护恢复失败，保留材料供下次尝试：{error}")
+            # 旧版本与升级迁移留下的已删除设备在启动时一次收走。
+            await self.remove_deleted_devices(entry)
+
+    async def remove_deleted_devices(
+        self, entry: GameEntry, uids: Iterable[UUID] | None = None
+    ) -> list[UUID]:
+        """移除已删除的设备条目，返回实际移除的 uid。
+
+        ``uids`` 为空时清理全部墓碑；给出时（删除实例成功后）只移除这几台，
+        不要求适配插件写过墓碑。移除走 ``device_removed``，指向它的绑定改为
+        「设备已删除」；同一事务内删掉游戏级配置守卫基准，使将来拿到相同 uid
+        的新实例不继承旧设置。
+
+        目标正被会话订阅或修改（主配置有锁）、设备被占用或还有操作在执行时不动，
+        留给下次刷新或启动；任一绑定写不进去（托管正在运行）则整笔回滚。
+        可重复调用，没有可移除的设备时什么都不做。
+        """
+        from app.config import config_manager
+
+        if entry.deleted:
+            return []
+        if uids is None:
+            candidates = [
+                device for device in entry.devices.values() if is_deleted_device(device)
+            ]
+        else:
+            candidates = [
+                device for uid in uids if (device := entry.devices.get(uid)) is not None
+            ]
+        if not candidates:
+            return []
+        if entry.is_locked:
+            logger.info(f"游戏目标「{entry.info.name}」正在使用，已删除的设备稍后移除")
+            return []
+        control = entry._game_control
+        targets = [
+            device.uid
+            for device in candidates
+            if not device.is_locked
+            and (control is None or control.device_usage(device.uid) is None)
+            and (uids is not None or not device.action._trigger_uids)
+        ]
+        if not targets:
+            return []
+        try:
+            async with config_manager.transaction(new_boundary=True):
+                for uid in targets:
+                    entry.devices.remove(uid)
+                await entry.devices.commit()
+                baselines = getattr(entry.info, "baselines", None)
+                stale = {str(uid) for uid in targets}
+                if isinstance(baselines, dict) and stale & baselines.keys():
+                    setattr(
+                        entry.info,
+                        "baselines",
+                        {k: v for k, v in baselines.items() if k not in stale},
+                    )
+                    await entry.commit()
+        except Exception as error:
+            logger.opt(exception=True).warning(
+                f"移除游戏目标「{entry.info.name}」已删除的设备失败，留待下次刷新：{error}"
+            )
+            return []
+        logger.info(f"已移除游戏目标「{entry.info.name}」中已删除的设备：{targets}")
+        return targets
 
     async def close_devices(self, *, kind: str | None = None) -> None:
         from app.core import Config
@@ -395,7 +466,11 @@ class _GameManager:
 
     @staticmethod
     async def on_device_removed(sender, *, uid: UUID):
-        """实际删除设备后清除共同绑定，墓碑条目仍保留原身份供用户辨认。"""
+        """设备条目移除后清空指向它的托管 / 账号设备，并写明原因。
+
+        保留所选游戏目标，用户在绑定卡片上看到原因后只需另选设备；
+        原因在重新选择设备、目标或清空绑定时消失。
+        """
         from app.core import Config
         from app.models.script_access import script_users
 
@@ -407,7 +482,15 @@ class _GameManager:
                     and owner.game.device_id == uid
                 ):
                     await owner.update(
-                        type(owner).model_validate({"game": {"device_id": "-"}})
+                        type(owner).model_validate(
+                            {
+                                "game": {
+                                    "device_id": "-",
+                                    "unavailable_reason": DEVICE_DELETED_REASON,
+                                }
+                            }
+                        ),
+                        check_visibility=False,
                     )
 
     @staticmethod

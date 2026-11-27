@@ -49,6 +49,7 @@ from app.core import Config
 from app.core.i18n import AppLocale
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
+from app.models.config.game import is_deleted_device
 from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
@@ -570,7 +571,7 @@ async def plugin_game_options() -> ComboBoxOut:
 
 @_runtime.post("/options/devices", response_model=ComboBoxOut)
 async def plugin_device_options(body: PluginGameDevicesIn) -> ComboBoxOut:
-    """按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表。"""
+    """按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表；已删除的设备不列出。"""
     game = Config.GameConfig.get(body.gameId)
     return ComboBoxOut(
         data=[]
@@ -578,6 +579,7 @@ async def plugin_device_options(body: PluginGameDevicesIn) -> ComboBoxOut:
         else [
             ComboBoxItem(label=entry.info.name, value=str(uid))
             for uid, entry in game.devices.items()
+            if not is_deleted_device(entry)
         ]
     )
 
