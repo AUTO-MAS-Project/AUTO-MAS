@@ -1,7 +1,9 @@
 """删除模拟器实例后宿主移除设备条目，指向它的绑定与配置守卫基准一并处理。"""
 
 import asyncio
+from contextlib import contextmanager
 from dataclasses import dataclass
+from uuid import uuid4
 
 import pytest
 import pytest_asyncio
@@ -9,11 +11,16 @@ import pytest_asyncio
 from app.config import ConfigCollection, config_manager
 from app.config.errors import ConfigAggregateError
 from app.core import Config, GameManager, Plugin
+from app.core.config.game_upgrade import migrate_game_documents
 from app.core.game_manager import _GameManager
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.config.game import DEVICE_DELETED_REASON, device_removed
 from app.models.emulator import DeviceInfo, DeviceStatus
+from app.models.task import TaskScriptItem
+from app.task.game import GameSession
 from app.task.general.registration import build_config_handler
+from app.utils import io
+from tests.config_support import activate_config
 
 control_module = pytest.importorskip("ldplayer_adapter.control")
 from ldplayer_adapter.config import LDPlayerDevice, LDPlayerGame  # noqa: E402
@@ -51,10 +58,7 @@ class World:
     vendor: VendorBoundary
 
 
-@pytest_asyncio.fixture
-async def world(isolated_app_paths, tmp_path, monkeypatch):
-    vendor = VendorBoundary()
-
+def adapter_for(vendor):
     class Adapter(control_module.Control):
         async def set_block_ad(self, enabled):
             pass
@@ -62,6 +66,10 @@ async def world(isolated_app_paths, tmp_path, monkeypatch):
         async def build_backend(self, policy):
             return vendor
 
+    return Adapter
+
+
+def install_collections(monkeypatch):
     games = ConfigCollection.build([LDPlayerGame])
     scripts = ConfigCollection.build([GeneralConfig])
     monkeypatch.setitem(config_manager._collections, "games", games)
@@ -72,6 +80,26 @@ async def world(isolated_app_paths, tmp_path, monkeypatch):
         Config, "_script_config_handlers", {GeneralConfig: build_config_handler()}
     )
     monkeypatch.setattr(Plugin, "script_types", {})
+    return games, scripts
+
+
+@contextmanager
+def device_removed_connected():
+    before = len(device_removed.receivers)
+    device_removed.connect(GameManager.on_device_removed, weak=False)
+    connected = len(device_removed.receivers) > before
+    try:
+        yield
+    finally:
+        if connected:
+            device_removed.disconnect(GameManager.on_device_removed)
+
+
+@pytest_asyncio.fixture
+async def world(isolated_app_paths, tmp_path, monkeypatch):
+    vendor = VendorBoundary()
+    Adapter = adapter_for(vendor)
+    games, scripts = install_collections(monkeypatch)
     executable = tmp_path / "ldconsole.exe"
     executable.touch()
     await games.activate()
@@ -99,10 +127,7 @@ async def world(isolated_app_paths, tmp_path, monkeypatch):
     user_id = script.UserData.add(GeneralUserConfig, payload=binding)
     await script.UserData.commit()
 
-    before = len(device_removed.receivers)
-    device_removed.connect(GameManager.on_device_removed, weak=False)
-    connected = len(device_removed.receivers) > before
-    try:
+    with device_removed_connected():
         yield World(
             games,
             game,
@@ -112,9 +137,6 @@ async def world(isolated_app_paths, tmp_path, monkeypatch):
             script.UserData[user_id],
             vendor,
         )
-    finally:
-        if connected:
-            device_removed.disconnect(GameManager.on_device_removed)
 
 
 async def run_trigger(entry, field_name):
@@ -264,3 +286,148 @@ async def test_tombstone_bound_by_running_script_waits_for_next_refresh(world):
     assert list(game.devices.keys()) == [world.kept.uid]
     assert_cleared(world.script, game)
     assert_cleared(world.user, game)
+
+
+async def finish_sweep(game):
+    """等宿主在占用解除后自行安排的补做清理跑完（测试不替它调用清理）。"""
+    task = GameManager._removal_sweeps.get(game.uid)
+    if task is not None:
+        await asyncio.wait_for(task, timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_removal_deferred_while_subscribed_runs_after_release(world, monkeypatch):
+    """同一安装下别的实例在跑时删除实例只留墓碑；会话退订后无需手动刷新即被收走。
+
+    退订发生在持有托管 X 锁的任务里；补做必须在那个上下文之外，
+    托管仍持锁期间不能借它的锁改写它的绑定。
+    """
+    monkeypatch.setattr(GameManager, "REMOVAL_SWEEP_DELAYS", (0.0, 0.3, 0.3, 0.3))
+    game = world.game
+    _, ticket = await GameManager.subscribe(game.uid)
+
+    result = await run_trigger(world.removed, "delete_instance")
+
+    assert result is not None and result.state == "succeeded", result
+    assert world.vendor.deleted == ["1"]
+    assert world.removed.uid in game.devices
+    assert world.script.game.device_id == world.removed.uid
+
+    async def releasing_script():
+        script_ticket = await world.script.lock_x(cascade=False)
+        try:
+            await GameManager.unsubscribe(ticket)
+            # 补做已有机会执行，但托管仍持锁：绑定不得被改写
+            await asyncio.sleep(0.1)
+            assert world.removed.uid in game.devices
+            assert world.script.game.device_id == world.removed.uid
+        finally:
+            await world.script.unlock(script_ticket)
+
+    await asyncio.wait_for(releasing_script(), timeout=5)
+    await finish_sweep(game)
+
+    assert list(game.devices.keys()) == [world.kept.uid]
+    assert set(game.info.baselines) == {str(world.kept.uid)}
+    assert_cleared(world.script, game)
+    assert_cleared(world.user, game)
+
+
+@pytest.mark.asyncio
+async def test_run_refuses_deleted_device_before_and_after_removal(world, monkeypatch):
+    """运行前检查：墓碑设备与已移除设备都报「设备实例已删除」，继承托管的账号同样如此。"""
+    monkeypatch.setattr(GameManager, "REMOVAL_SWEEP_DELAYS", (0.0,))
+    script, game = world.script, world.game
+    await script.update(GeneralConfig.model_validate({"Game": {"Enabled": True}}))
+    inherited_id = script.UserData.add(GeneralUserConfig)
+    await script.UserData.commit()
+    inherited = script.UserData[inherited_id]
+    world.vendor.instances.pop("1")
+    world.removed.info.tombstone = True
+    await world.removed.commit()
+
+    session = GameSession(TaskScriptItem.build(), script)
+    try:
+        with pytest.raises(ValueError, match=DEVICE_DELETED_REASON):
+            await session.select()
+    finally:
+        await session.release()
+    await finish_sweep(game)
+
+    assert list(game.devices.keys()) == [world.kept.uid]
+    assert_cleared(script, game)
+    assert inherited.game.game_id == "-"
+    for owner in (inherited, world.user):
+        session = GameSession(TaskScriptItem.build(), script)
+        try:
+            with pytest.raises(ValueError, match=DEVICE_DELETED_REASON):
+                await session.select(owner)
+        finally:
+            await session.release()
+        assert session.game_uid is None
+
+
+@pytest.mark.asyncio
+async def test_upgraded_tombstone_binding_becomes_device_deleted_on_startup(
+    isolated_app_paths, tmp_path, monkeypatch
+):
+    """旧 Emulator 2.0 墓碑槽位经升级迁移成墓碑设备，启动维护后绑定改为「设备已删除」。"""
+    root = tmp_path / "upgrade"
+    root.mkdir()
+    console = root / "ldconsole.exe"
+    console.touch()
+    emulator, script_id, user_id = (str(uuid4()) for _ in range(3))
+    slots = [
+        {"slot": 1, "pathId": "ld", "nativeIndex": "0", "state": "active"},
+        {"slot": 2, "pathId": "ld", "nativeIndex": "1", "state": "tombstone"},
+    ]
+    path = {"pathId": "ld", "type": "ldplayer", "installPath": str(console)}
+    io.write_file(
+        root / "emulators.yaml",
+        {
+            "order": [{"uid": emulator, "type": "EmulatorConfig"}],
+            "data": {
+                emulator: {
+                    "Info": {"Type": "emulator2", "Paths": [path], "Slots": slots}
+                }
+            },
+        },
+    )
+    io.write_file(
+        root / "scripts.yaml",
+        {
+            "order": [{"uid": script_id, "type": "GeneralConfig"}],
+            "data": {
+                script_id: {
+                    "Game": {"Enabled": True},
+                    "Emulator": {"Id": emulator, "Index": "2"},
+                    "UserData": {
+                        "order": [{"uid": user_id, "type": "GeneralUserConfig"}],
+                        "data": {user_id: {}},
+                    },
+                }
+            },
+        },
+    )
+    migrate_game_documents(root)
+
+    games, scripts = install_collections(monkeypatch)
+    vendor = VendorBoundary()
+    vendor.instances = {"0": "kept"}
+    await activate_config(games, root / "games.yaml")
+    (game,) = games.values()
+    game.bind_runtime_signals()
+    _GameManager.create_control(config=game, control_class=adapter_for(vendor))
+    await activate_config(scripts, root / "scripts.yaml")
+    script = scripts[script_id]
+    deleted = script.game.device_id
+    assert script.game.game_id == game.uid
+    assert game.devices[deleted].info.tombstone
+
+    with device_removed_connected():
+        await GameManager.startup_maintenance()
+
+    assert deleted not in game.devices
+    assert len(game.devices) == 1
+    assert_cleared(script, game)
+    assert script.UserData[user_id].game.game_id == "-"

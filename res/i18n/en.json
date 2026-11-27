@@ -2748,6 +2748,7 @@
   "core.games.expandEdit": "Edit",
   "core.games.forceBeforeLaunch": "Clear residual processes before launch",
   "core.games.forceClose": "Force close target process",
+  "core.games.forceCloseDataLossWarning": "May cause emulator data loss",
   "core.games.generalHint": "After adding, create a device connection with its ADB address and launch arguments.",
   "core.games.hide": "Hide",
   "core.games.import": "Add",

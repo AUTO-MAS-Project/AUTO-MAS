@@ -2748,6 +2748,7 @@
   "core.games.expandEdit": "展開して編集",
   "core.games.forceBeforeLaunch": "起動前に残留プロセスを終了",
   "core.games.forceClose": "対象プロセスを強制終了",
+  "core.games.forceCloseDataLossWarning": "エミュレーターのデータが失われる可能性があります",
   "core.games.generalHint": "追加後に接続を作成し、ADB アドレスと起動引数を設定してください。",
   "core.games.hide": "非表示",
   "core.games.import": "追加",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { ActiveTriggerField } from '@/api'
-import type { GameRow } from '@/types/games'
+import { gameDevices, type GameRow } from '@/types/games'
 import {
   buildTargetOperationsMap,
   filterGameTargetRows,
@@ -70,6 +70,17 @@ describe('gamePresentation', () => {
     expect(
       resolveEditableDeviceTarget([targetB], 'game-a', 'game-a-dev-0', 'delete_instance')
     ).toBeUndefined()
+  })
+
+  it('删除实例后尚未移除的墓碑设备不列入目标的设备', () => {
+    const target = makeRow('game-a', '目标 A')
+    const devices = target.document.devices!
+    devices.order!.push({ uid: 'game-a-dev-1', type: 'MuMuDevice' })
+    devices.data!['game-a-dev-1'] = {
+      info: { name: '目标 A-1', index: '1', status: 5, tombstone: true },
+    } as NonNullable<typeof devices.data>[string]
+
+    expect(gameDevices(target).map(device => device.uid)).toEqual(['game-a-dev-0'])
   })
 
   it('目标数降到 5 个以内隐藏搜索框时忽略旧关键词，避免把剩余目标藏空', () => {
