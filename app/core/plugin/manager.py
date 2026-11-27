@@ -1605,18 +1605,29 @@ class _PluginManager:
                 break
         return "plugin_unavailable"
 
+    def registered_script(
+        self, record: PluginRecord
+    ) -> tuple[str, ScriptTypeDecl] | None:
+        """取得该插件当前可创建的脚本标识和宿主登记的声明。"""
+        cls = record._plugin_cls
+        decl = self.script_types.get(record.uid)
+        if (
+            decl is not None
+            and record.info.state == PluginState.ENABLED
+            and cls is not None
+            and issubclass(cls, ScriptAdapterPlugin)
+        ):
+            return cls.script_type_key, decl
+        return None
+
     def script_classes(self):
         """返回已登记专项的创建标识和配置类，供通用配置管理使用。"""
-        return {
-            record._plugin_cls.script_type_key: self.script_types[
-                record.uid
-            ].script_type
-            for record in self.list_plugins()
-            if record.uid in self.script_types
-            and record.info.state == PluginState.ENABLED
-            and record._plugin_cls is not None
-            and issubclass(record._plugin_cls, ScriptAdapterPlugin)
-        }
+        classes = {}
+        for record in self.list_plugins():
+            if registration := self.registered_script(record):
+                key, decl = registration
+                classes[key] = decl.script_type
+        return classes
 
     async def check_prefetch(self, config):
         """只读取当前声明，公开调用门防止与插件卸载并发。"""

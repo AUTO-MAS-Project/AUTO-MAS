@@ -1258,6 +1258,7 @@ export type { PluginMeta_info } from './models/PluginMeta_info';
 export type { PluginMeta_infoInput } from './models/PluginMeta_infoInput';
 export type { PluginMetaInput } from './models/PluginMetaInput';
 export type { PluginPlanOptionsIn } from './models/PluginPlanOptionsIn';
+export type { PluginProvidedScriptType } from './models/PluginProvidedScriptType';
 export type { PluginRecord_info } from './models/PluginRecord_info';
 export type { PluginRegistryDocument } from './models/PluginRegistryDocument';
 export type { PluginRegistryGetIn } from './models/PluginRegistryGetIn';
