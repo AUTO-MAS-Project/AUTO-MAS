@@ -84,5 +84,12 @@ export function useQueueTimeSets(activeQueueId: Ref<string>, pageInstance: numbe
     }
   )
 
-  return { timeSetList, currentTimeSets, refreshTimeSets }
+  // 子表就地保存成功后同步缓存和当前显示，同一队列里组件重挂载时不会显示保存前的值
+  const onTimeSetSaved = (queueId: string, timeSetId: string, change: Partial<QueueTimeSet>) => {
+    timeSetList.patch(queueId, timeSetId, item =>
+      Object.assign(item, JSON.parse(JSON.stringify(change)))
+    )
+  }
+
+  return { timeSetList, currentTimeSets, refreshTimeSets, onTimeSetSaved }
 }
