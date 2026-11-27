@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
+import { EyeOutlined, EyeInvisibleOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { AppModal } from '@/components/ui'
 import {
   DESKTOP_SESSION_CREDENTIAL_ERRORS,
@@ -302,7 +302,6 @@ onBeforeUnmount(() => {
         gap="middle"
         class="empty"
       >
-        <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
         <template v-if="snapshot?.closing">
           <a-spin />
         </template>
@@ -357,6 +356,7 @@ onBeforeUnmount(() => {
     <AppModal
       v-model:open="passwordDialog"
       size="sm"
+      :icon="LockOutlined"
       :title="t('bootstrap.desktopSession.passwordTitle')"
       :ok-text="t('bootstrap.desktopSession.connect')"
       :cancel-text="t('bootstrap.desktopSession.cancel')"

@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type OkwwConfig_RunInput = {
     /**
-     * 单独启动托管时使用的 Windows 会话
+     * 已弃用：宿主不再读取，仅在升级时迁入桌面分身清单
      */
     ExecutionSession?: ('main' | 'desktop' | null);
     /**

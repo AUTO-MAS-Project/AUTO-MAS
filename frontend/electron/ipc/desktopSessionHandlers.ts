@@ -96,11 +96,36 @@ function supportsDesktopSession(): boolean {
   return process.platform === 'win32' && process.arch === 'x64' && getBackendOwnership() === 'owned'
 }
 
+/** 设置页保存的连接参数；单独启动托管时自动打开的分身沿用它们，非法值回退到默认。 */
+export interface DesktopSessionConnectionPreferences {
+  mode?: unknown
+  resolution?: unknown
+}
+
 export function registerDesktopSession(
   getMainWindow: () => BrowserWindow | null,
   icon: string,
-  getLanguage: () => unknown
+  getLanguage: () => unknown,
+  getConnectionPreferences: () => DesktopSessionConnectionPreferences = () => ({})
 ) {
+  function taskConnectRequest(): DesktopSessionRequest {
+    let preferences: DesktopSessionConnectionPreferences = {}
+    try {
+      preferences = getConnectionPreferences() ?? {}
+    } catch {
+      // 读不到偏好时按默认参数连接，不挡住任务启动。
+    }
+    const { mode, resolution } = preferences
+    return {
+      queueIds: [],
+      mode: MODES.includes(mode as DesktopSessionRequest['mode'])
+        ? (mode as DesktopSessionRequest['mode'])
+        : 'proxy',
+      resolution: RESOLUTIONS.includes(resolution as DesktopSessionRequest['resolution'])
+        ? (resolution as DesktopSessionRequest['resolution'])
+        : '1080p',
+    }
+  }
   function labels() {
     const configured = getLanguage()
     const locale = (typeof configured === 'string' ? configured : app.getLocale()).toLowerCase()
@@ -476,7 +501,7 @@ export function registerDesktopSession(
       if (autoConnect) return autoConnect.result
       if (preview && unresponsive.has(preview)) return Promise.resolve('preview_unavailable')
       if (!preview && !service.active) openedForTask = true
-      const request: DesktopSessionRequest = { queueIds: [], mode: 'proxy', resolution: '1080p' }
+      const request = taskConnectRequest()
       let finish: (result: DesktopSessionConnectResult) => void = () => undefined
       const result = new Promise<DesktopSessionConnectResult>(resolve => {
         finish = resolve

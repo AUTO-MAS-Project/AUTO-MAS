@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import ScriptRunLimitField from './ScriptRunLimitField.vue'
 
 defineProps<{
-  hideExecutionSession?: boolean
   hideDaily?: boolean
   columnSpan?: number
   dailyLabel?: string
@@ -29,7 +27,6 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <ScriptExecutionSessionField v-if="!hideExecutionSession" />
   <a-row :gutter="24">
     <slot name="before-limits" />
     <a-col :xs="24" :md="columnSpan ?? 12">

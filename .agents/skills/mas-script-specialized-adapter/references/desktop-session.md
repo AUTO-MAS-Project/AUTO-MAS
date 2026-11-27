@@ -1,10 +1,10 @@
 # 插件专项接入桌面分身
 
-## 声明能力和执行会话
+## 声明能力与分身清单
 
 1. 在现有 `ScriptTypeDecl` 中支持 `TaskMode.AUTO_PROXY`，并传入 `desktop_session_check`。回调接收当前托管配置和宿主是否已提权，同步返回 `None`（可用）、`admin_required`（需要管理员权限）或 `unsupported_config`（当前配置不兼容）。回调可重复执行，只读配置和权限，避免阻塞 I/O、写配置或启动进程。省略回调时插件仍可在主会话运行。
-2. 如需保存手动单托管的会话偏好，让现有 `RunFields` 继承 SDK 的 `DesktopSessionRunFields`，继续使用 `Run.ExecutionSession`，取值 `main` 或 `desktop`。迁移时保留合法值、托管和账号 UID、顺序及队列引用，缺字段默认 `main`。队列按整条派发，定时任务沿用原有规则。
-3. 宿主按托管实际注册的配置类查找已启用插件，通过调用门检查能力。详情、预览和正式受理共用检查，持有托管锁后执行前再复核。要求分身但暂时不可用时，保留已保存的选择，并返回原因。需要改在主会话运行时，沿用用户改选或确认入口。
+2. 哪些托管和队列在分身运行，由宿主在「设置 → 功能」桌面分身卡片里集中管理，分两份全局设置：`DesktopSession.Targets` 是单独启动时进分身的托管，`DesktopSession.StartOnOpen` 是「打开分身并启动任务」一并派发的队列和托管。新插件不必声明 `Run.ExecutionSession`。已经继承 SDK `DesktopSessionRunFields` 或自行声明该字段的保留即可：宿主只在升级时读一次，把取值为 `desktop` 的托管只并入 `Targets`，之后不再读取，也不写回。单独启动托管只看 `Targets`；队列只在从桌面分身卡片派发时整条进分身，手动启动队列和定时任务在主会话运行。
+3. 宿主按托管实际注册的配置类查找已启用插件，通过调用门检查能力。详情、预览和正式受理共用检查，持有托管锁后执行前再复核。托管在清单里但暂时不可用时，保留清单条目并返回原因，不悄悄改到主会话。需要改在主会话运行时，由用户把它移出清单，或在派发确认里选择主会话。
 
 需要宿主提权的适配器可在其现有 `ScriptTypeDecl(...)` 中传入下面的 `desktop_session_check`，奇想盒采用此条件。
 
@@ -18,7 +18,7 @@ def desktop_session_check(
     return None if elevated else "admin_required"
 ```
 
-插件使用 [SDK 导出](../../../../plugins/auto_mas_core/src/auto_mas_core/adapters/script.py) 接入，宿主无需为每个专项新增分身注册项。发布前按目标宿主核对实际提供的 SDK 符号。如果要兼容同版本号且缺少接口的旧宿主，像奇想盒一样探测声明参数和 SDK 字段，旧宿主继续使用主会话，并按原路径保留执行会话值。
+插件使用 [SDK 导出](../../../../plugins/auto_mas_core/src/auto_mas_core/adapters/script.py) 接入，宿主无需为每个专项新增分身注册项。发布前按目标宿主核对实际提供的 SDK 符号。如果要兼容同版本号且缺少接口的旧宿主，像奇想盒一样探测声明参数和 SDK 字段，旧宿主继续使用主会话，并按原路径保留 `Run.ExecutionSession` 的值。
 
 ## 进程启动与收尾
 

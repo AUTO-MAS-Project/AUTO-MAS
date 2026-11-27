@@ -6,12 +6,12 @@ import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 
 export function useVirtualDisplaySettings(settings: () => GlobalConfig) {
   const { t } = useI18n()
-  // 驱动状态在打开设置页时实时探测一次（只跑前两段，不动桌面拓扑，实测 0.2ms）。
+  // 驱动状态在打开工具页的虚拟显示器标签时实时探测一次（只跑前两段，不动桌面拓扑，实测 0.2ms）。
   // 刻意不缓存也不持久化：存下来的状态只会变陈旧——驱动可能被卸载、被显卡驱动更新搞坏、
   // 或者配置被同步到另一台机器，而实时问一次永远是对的。
   const vddDriverReady = ref<boolean | null>(null)
   const vddDriverMessage = ref('')
-  // 守卫此刻挂着的那块屏（设备名与模式），没挂时为 null。只是打开设置页时的一次快照，
+  // 守卫此刻挂着的那块屏（设备名与模式），没挂时为 null。只是打开这张卡片时的一次快照，
   // 「立即拆除」按钮不按它禁用——守卫几秒一轮，快照很快就旧了，点了没挂后端会说没挂。
   const vddHolding = ref<string | null>(null)
 

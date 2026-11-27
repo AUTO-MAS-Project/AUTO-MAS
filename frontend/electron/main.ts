@@ -2470,7 +2470,11 @@ app.whenReady().then(async () => {
   desktopSession = registerDesktopSession(
     () => mainWindow,
     mainWindowIcon,
-    () => loadConfig().language
+    () => loadConfig().language,
+    () => {
+      const config = loadConfig()
+      return { mode: config.desktopSessionMode, resolution: config.desktopSessionResolution }
+    }
   )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
