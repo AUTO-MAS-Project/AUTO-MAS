@@ -11,6 +11,13 @@ export interface PlanListItem {
   typeLabel: string
 }
 
+/** SDK 计划的名称在 info.name，已有专项沿用 Info.Name。 */
+export function nameField(data: PlanConfigData) {
+  return data.Info?.Name === undefined && 'info' in data && data.info
+    ? { path: 'info.name', value: data.info.name }
+    : { path: 'Info.Name', value: data.Info?.Name }
+}
+
 export function projectPlanList(
   response: { index: { uid: string; type: string }[]; data: PlanGetOut['data'] },
   plugins: PluginScriptTypes,
@@ -35,7 +42,7 @@ export function projectPlanList(
       return
     }
 
-    let planName = planData.Info?.Name || ''
+    let planName = nameField(planData).value || ''
     if (!planName || planName === planDescriptor.defaultName) {
       planName = generateUniquePlanName(planDescriptor.defaultName, allPlanNames)
     }

@@ -27,13 +27,11 @@ export function useScriptCreation(options: CreationOptions) {
   const logger = window.electronAPI.getLogger('脚本创建')
   const addLoading = ref(false)
   const copyingScriptId = ref<string | null>(null)
-  const navigate = async (scriptId: string, type: ScriptType, data?: Record<string, unknown>) => {
+  const navigate = (scriptId: string, type: ScriptType, data?: Record<string, unknown>) => {
     const state = data
       ? { scriptData: { id: scriptId, type, config: JSON.parse(JSON.stringify(data)) } }
       : undefined
-    if (!openEditor(type, isMfwFamily(type) ? 'setup' : 'script', { id: scriptId }, state)) {
-      await options.reloadScripts()
-    }
+    openEditor(type, isMfwFamily(type) ? 'setup' : 'script', { id: scriptId }, state)
   }
 
   const submit = async (request: ScriptCreateRequest) => {
@@ -65,7 +63,7 @@ export function useScriptCreation(options: CreationOptions) {
           message.error(t('core.scripts.toast.reuseFailed', { reason }))
         }
         options.closeDialog()
-        await navigate(result.scriptId, type)
+        navigate(result.scriptId, type)
         return
       }
       if (request.kind === 'general-template') {
@@ -88,15 +86,23 @@ export function useScriptCreation(options: CreationOptions) {
         outcome = 'success'
       if (request.kind === 'general-template') await options.reloadScripts()
       options.closeDialog()
-      await navigate(
-        result.scriptId,
-        type,
-        request.kind === 'general-template' ? undefined : result.data
-      )
+      navigate(result.scriptId, type, request.kind === 'general-template' ? undefined : result.data)
     } catch (error) {
       logger.error(`创建脚本失败: ${error instanceof Error ? error.message : String(error)}`)
     } finally {
       operation.finish({ create_kind, script_type: analyticsScriptType(type), outcome })
+      addLoading.value = false
+    }
+  }
+
+  const createUser = async (script: Pick<ScriptListItem, 'id' | 'type'>) => {
+    const scriptId = script.id
+    if (addLoading.value || openEditor(script.type, 'userAdd', { scriptId })) return
+    addLoading.value = true
+    try {
+      const user = await addUser(scriptId)
+      if (user?.userId) openEditor(script.type, 'user', { scriptId, userId: user.userId })
+    } finally {
       addLoading.value = false
     }
   }
@@ -123,5 +129,5 @@ export function useScriptCreation(options: CreationOptions) {
       copyingScriptId.value = null
     }
   }
-  return { addLoading, copyingScriptId, submit, copy }
+  return { addLoading, copyingScriptId, submit, copy, createUser }
 }

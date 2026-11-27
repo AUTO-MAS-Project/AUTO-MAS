@@ -407,6 +407,7 @@ const {
   copyingScriptId,
   submit: handleSubmitScriptCreate,
   copy: handleCopyScript,
+  createUser: handleAddUser,
 } = useScriptCreation({
   reloadScripts: () => loadScripts(),
   closeDialog: () => {
@@ -466,14 +467,10 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   }
 }
 
-const handleAddUser = (script: ScriptListItem) => {
-  openEditor(script.type, 'userAdd', { scriptId: script.id })
-}
-
 const handleEditUser = (user: ScriptListUser) => {
   const script = scripts.value.find(item => item.id === user.scriptId)
   if (script) {
-    openEditor(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
+    openEditor(script.type, 'user', { scriptId: script.id, userId: user.id })
   } else {
     message.error(t('core.scripts.toast.scriptNotFound'))
   }

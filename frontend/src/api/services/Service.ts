@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ConfigUpdateOut } from '../models/ConfigUpdateOut';
 import type { ActiveTriggersOut } from '../models/ActiveTriggersOut';
 import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
@@ -885,7 +886,7 @@ export class Service {
      */
     public static updateScriptApiScriptsUpdatePost(
         requestBody: ScriptUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/update',
@@ -1037,7 +1038,7 @@ export class Service {
      */
     public static updateUserApiScriptsUserUpdatePost(
         requestBody: UserUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
@@ -2949,7 +2950,7 @@ export class Service {
      */
     public static updatePlanApiPlanUpdatePost(
         requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/update',

@@ -1,5 +1,31 @@
+import type { PluginConfigUi } from '@/api'
 import type { DeclarativeHint } from '@/composables/useDeclarativeOptions'
 import type { DeclarativeTableHint } from './DeclarativeTable.vue'
+
+export const declarativeGroups = (ui?: PluginConfigUi | null) =>
+  Object.entries(ui?.hints ?? {}).flatMap(([name, hints]) =>
+    Array.isArray(hints) && hints.length ? [{ name, hints }] : []
+  )
+
+/** 接口按组分列，表单按组分行，再由表格组件应用 transpose。 */
+export const declarativeTables = (ui?: PluginConfigUi | null) =>
+  (ui?.tables ?? []).map(table => ({ ...table, rows: table.columns, columns: table.rows }))
+
+export function declarativeValues(
+  groups: ReturnType<typeof declarativeGroups>,
+  document: Record<string, unknown>
+): Record<string, Record<string, unknown>> {
+  return Object.fromEntries(
+    groups.map(({ name, hints }) => {
+      const source = document[name]
+      const values = source && typeof source === 'object' ? Object.entries(source) : []
+      const fields = values.filter(
+        ([field]) => !hints.some(hint => hint.field === field && hint.state !== undefined)
+      )
+      return [name, Object.fromEntries(fields)]
+    })
+  )
+}
 
 function isTileSwitch(hint: DeclarativeHint) {
   return (

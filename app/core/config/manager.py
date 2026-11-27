@@ -213,6 +213,13 @@ def _clear_legacy_history() -> None:
         (Path.cwd() / name).unlink(missing_ok=True)
 
 
+async def _update_config_entry(entry: ConfigEntry, data: dict[str, Any]) -> None:
+    """按目标类型创建补丁，任一字段热校验失败时撤回整次编辑。"""
+    patch = type(entry).model_validate(data)
+    async with config_manager.transaction():
+        await entry.update(patch)
+
+
 class QueueNotFoundError(LookupError):
     """查询的调度队列已不存在。"""
 
@@ -1417,9 +1424,7 @@ class AppConfig:
         if handler is not None and handler.validate_update is not None:
             handler.validate_update(data)
 
-        # 补丁由目标的实际类型创建；通过基类视图保留同型 update 的配对关系。
-        entry = cast(ConfigEntry, self.ScriptConfig[uid])
-        await entry.update(type(entry).model_validate(data))
+        await _update_config_entry(self.ScriptConfig[uid], data)
 
     async def del_script(
         self,
@@ -1753,7 +1758,7 @@ class AppConfig:
             and (handler is None or handler.prepare_user_update is None)
         ):
             # 插件没有保存前钩子时只走配置基类已定义的更新入口，信号由插件内部负责。
-            await user_config.update(type(user_config).model_validate(data))
+            await _update_config_entry(user_config, data)
             return True
 
         guard: Callable[[], None] | None = None
@@ -1786,8 +1791,7 @@ class AppConfig:
                         script_id=script_id,
                         user_id=user_id,
                     )
-            entry = cast(ConfigEntry, user_config)
-            await entry.update(type(entry).model_validate(data))
+            await _update_config_entry(user_config, data)
         return True
 
     async def import_script_config_file(
@@ -2064,8 +2068,7 @@ class AppConfig:
                 data["Info"]["ScriptId"]
             ) != str(plan.Info.ScriptId):
                 raise ValueError("通用脚本计划表所属脚本不可修改")
-        entry = cast(ConfigEntry, plan)
-        await entry.update(type(entry).model_validate(data))
+        await _update_config_entry(plan, data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""

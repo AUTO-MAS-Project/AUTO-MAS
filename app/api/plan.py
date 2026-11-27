@@ -28,14 +28,22 @@ from pydantic import (
     BaseModel,
     Field,
     SerializeAsAny,
-    model_validator,
+    SkipValidation,
+    ValidationError,
 )
 
 import app.models.config as _config_models
+from app.api._config_editors import config_detail_ui, config_update_data
 from app.api._error_codes import config_error_code
+from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
 from app.core import Config
-from app.models.schema import ConfigSnapshotOut, OutBase, UnavailableConfigItem
+from app.models.schema import (
+    ConfigUpdateOut,
+    DeclarativeConfigGetOut,
+    OutBase,
+    UnavailableConfigItem,
+)
 from app.utils import get_logger
 
 OkwwPlanConfig = ConfigPayload[_config_models.OkwwPlanConfig]
@@ -81,14 +89,14 @@ type PlanConfigData = (
     | OkNtePlanConfig
     | OkwwPlanConfig
 )
-type PlanConfigDataInput = (
+type PlanConfigDataInput = SkipValidation[
     SerializeAsAny[BaseModel]
     | MaaEndPlanConfigInput
     | BAAHPlanConfigInput
     | UniversalPlanConfigInput
     | OkNtePlanConfigInput
     | OkwwPlanConfigInput
-)
+]
 
 
 class PlanCreateIn(BaseModel):
@@ -111,7 +119,7 @@ class PlanGetIn(BaseModel):
     )
 
 
-class PlanGetOut(ConfigSnapshotOut):
+class PlanGetOut(DeclarativeConfigGetOut):
     index: List[PlanIndexItem] = Field(..., description="计划索引列表")
     data: Dict[str, PlanConfigData] = Field(..., description="计划列表或单个计划数据")
     unavailable: List[UnavailableConfigItem] = Field(
@@ -123,21 +131,6 @@ class PlanGetOut(ConfigSnapshotOut):
 class PlanUpdateIn(BaseModel):
     planId: str = Field(..., description="计划ID")
     data: PlanConfigDataInput = Field(..., description="计划更新数据")
-
-    @model_validator(mode="before")
-    @classmethod
-    def select_config_contract(cls, value):
-        """按目标配置选输入类型，避免联合类型丢弃其他专项的同组字段。"""
-        if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
-            return value
-        try:
-            target = Config.PlanConfig[value["planId"]]
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return value
-        payload = config_contract(
-            type(target), mode="input", extra="forbid"
-        ).model_validate(value["data"])
-        return {**value, "data": payload}
 
 
 class PlanDeleteIn(BaseModel):
@@ -201,6 +194,11 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     try:
         raw_index, raw_data = await Config.get_plan(plan.planId)
         index = [PlanIndexItem(**_) for _ in raw_index]
+        ui = (
+            config_detail_ui(Config.PlanConfig[plan.planId], raw_data)
+            if plan.planId
+            else None
+        )
         data: dict[str, PlanConfigData] = {}
 
         for item in raw_index:
@@ -223,6 +221,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
             data={},
         )
     return PlanGetOut(
+        ui=ui,
         index=index,
         data=data,
         unavailable=(
@@ -238,21 +237,26 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     "/update",
     tags=["Update"],
     summary="更新计划表配置信息",
-    response_model=OutBase,
+    response_model=ConfigUpdateOut,
     status_code=200,
 )
-async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
+async def update_plan(plan: PlanUpdateIn = Body(...)) -> ConfigUpdateOut:
 
     try:
-        await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
+        data = config_update_data(
+            Config.PlanConfig[plan.planId], plan.data, extra="forbid"
+        )
+        await Config.update_plan(plan.planId, data)
+    except (ValidationError, ConfigAggregateError) as e:
+        return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:
         logger.opt(exception=True).warning(f"update_plan失败: {type(e).__name__}: {e}")
-        return OutBase(
+        return ConfigUpdateOut(
             code=config_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
         )
-    return OutBase()
+    return ConfigUpdateOut()
 
 
 @router.post(
