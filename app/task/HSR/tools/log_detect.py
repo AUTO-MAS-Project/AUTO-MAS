@@ -38,8 +38,10 @@ HSR_EOW_COMPLETE_MARKERS: tuple[str, ...] = (
     "体力计划已完成：历战余响",
     "历战余响尚未刷新",
 )
-HSR_EOW_REWARD_COUNT_RE = re.compile(r"历战余响本周可领取奖励次数[:：]\s*(\d+)\s*/\s*3")
-# 现行 M7A / SRA 都不再打这句（M7A 走上一条「可领取奖励次数」），留作旧版兼容。
+HSR_EOW_REWARD_COUNT_RE = re.compile(
+    r"历战余响本周(?:可领取|剩余)奖励次数[:：]\s*(\d+)\s*/\s*3"
+)
+# 旧版外部脚本的剩余次数日志。
 HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
