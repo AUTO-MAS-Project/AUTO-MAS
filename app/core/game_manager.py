@@ -249,6 +249,8 @@ class _GameManager:
                     f"移除游戏目标「{entry.info.name}」已删除的设备失败，"
                     f"留待下次刷新：{error}"
                 )
+        # 删除实例 / 目标时没被改到的盘上绑定（当时托管旁挂着）在这里补做。
+        await self.repair_dangling_bindings()
 
     def _note_removal(self, entry: GameEntry, reason: str, message: str) -> None:
         """推迟或失败的原因同一目标同一原因只按 ``info`` / ``warning`` 记一次，其余记 debug。"""
@@ -598,6 +600,74 @@ class _GameManager:
                         ),
                         check_visibility=False,
                     )
+
+    @staticmethod
+    def _dangling_binding_patch(owner: GameBindingOwner) -> dict[str, str] | None:
+        """盘上绑定指向已不存在的设备 / 目标时，给出与删除时处理一致的规整结果。"""
+        from app.core import Config
+
+        binding = owner.game
+        if binding.device_id == "-":
+            return None
+        cleared = {"game_id": "-", "device_id": "-", "unavailable_reason": ""}
+        if binding.game_id == "-":
+            # 目标已删除（ref 回落为「-」）：照删除整个目标时的口径清空。
+            return cleared
+        game = Config.GameConfig.get(binding.game_id)
+        if game is None:
+            # 目标所属插件不可用、原样旁挂着：等插件恢复，不动。
+            if Config.GameConfig.is_unresolved(binding.game_id):
+                return None
+            return cleared
+        if binding.device_id in game.devices:
+            # 墓碑设备由 remove_deleted_devices 移除时一并处理。
+            return None
+        return {"device_id": "-", "unavailable_reason": DEVICE_DELETED_REASON}
+
+    async def repair_dangling_bindings(
+        self, scripts: Iterable[Any] | None = None
+    ) -> None:
+        """把加载时放行的悬空绑定规整成「设备已删除」或未绑定。
+
+        删除实例 / 目标时只改得到已加载的托管；旁挂期间（专项插件没加载）或其它
+        途径留在盘上的绑定，在启动维护与插件恢复转正后由这里补做。托管正在运行
+        （被锁）或写不进去时不动，留到下次；已规整的不再改动，可重复调用。
+        """
+        from app.config import config_manager
+        from app.core import Config
+        from app.models.script_access import script_users
+
+        for script in list(
+            Config.ScriptConfig.values() if scripts is None else scripts
+        ):
+            try:
+                patches = [
+                    (owner, patch)
+                    for owner in (script, *script_users(script).values())
+                    if isinstance(owner, GameBindingOwner)
+                    and (patch := self._dangling_binding_patch(owner)) is not None
+                ]
+                if not patches:
+                    continue
+                if script.is_locked:
+                    logger.info(
+                        f"托管 {script.uid} 正在使用，悬空的游戏绑定留到下次规整"
+                    )
+                    continue
+                async with config_manager.transaction(new_boundary=True):
+                    for owner, patch in patches:
+                        await owner.update(
+                            type(owner).model_validate({"game": patch}),
+                            check_visibility=False,
+                        )
+                logger.info(
+                    f"托管 {script.uid} 的游戏绑定指向已不存在的设备或目标，已规整"
+                )
+            except Exception as error:
+                logger.warning(
+                    f"规整托管 {getattr(script, 'uid', script)} 悬空的游戏绑定失败，"
+                    f"留到下次：{type(error).__name__}: {error}"
+                )
 
     @staticmethod
     def create_control(

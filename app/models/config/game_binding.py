@@ -65,18 +65,21 @@ class GameBinding(ConfigGroup):
             or entry.activation_state == NodeState.INACTIVE
         ):
             return value
+        # 盘上已有的绑定加载时放行：目标已删除（ref 回落为「-」）、设备已移除
+        # （托管旁挂期间删掉的实例）或只剩墓碑，都由宿主随后规整；在这里拒绝
+        # 会让整条托管读不进来。用户保存时照旧拒绝。
+        loading = entry.activation_state == NodeState.INITIALIZING
         game_id = info.data.get("game_id")
         if game_id is None or game_id == "-":
+            if loading and game_id == "-":
+                return value
             raise ValueError("选择设备前须先选择游戏目标")
         game = config_manager.get_collection("games").get(game_id)
         if game is None or value not in game.devices:
+            if loading:
+                return value
             raise ValueError("设备不属于所选游戏目标")
-        # 盘上已有的绑定（升级迁移或推迟移除留下的墓碑）加载时放行，由宿主随后
-        # 改为「设备已删除」；在这里拒绝会让整条托管读不进来。
-        if (
-            is_deleted_device(game.devices[value])
-            and entry.activation_state != NodeState.INITIALIZING
-        ):
+        if is_deleted_device(game.devices[value]) and not loading:
             raise ValueError("所选设备实例已删除")
         return value
 
