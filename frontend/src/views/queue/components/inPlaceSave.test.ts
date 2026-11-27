@@ -125,10 +125,11 @@ function mountList<T extends { id: string }>(
     list.select('q')
     return list.items.value
   }
-  /** 切到某个队列并读回它的列表 */
+  /** 切到某个队列，随后读回它的列表。与页面一样分两步：新子表先带着占位内容挂载，回读后到 */
   const switchTo = async (queueId: string, loaded: T[]) => {
     active.value = queueId
     list.select(queueId)
+    await flush()
     list.commit(queueId, loaded)
     await flush()
   }
