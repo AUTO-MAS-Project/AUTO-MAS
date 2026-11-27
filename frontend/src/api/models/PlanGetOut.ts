@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { PlanConfigData } from './PlanConfigData';
 import type { PlanIndexItem } from './PlanIndexItem';
 import type { UnavailableConfigItem } from './UnavailableConfigItem';
@@ -19,6 +20,7 @@ export type PlanGetOut = {
      */
     message?: string;
     uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 计划索引列表
      */

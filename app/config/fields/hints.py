@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import Enum
@@ -41,6 +41,19 @@ class OptionHint(TypedDict):
     label: NotRequired[str]
 
 
+@dataclass(frozen=True)
+class UiStep:
+    key: str
+    title: str | None = None
+
+
+@dataclass(frozen=True)
+class UiSection:
+    step: str | None = None
+    collapsible: bool = False
+    default_collapsed: bool = False
+
+
 class TriggerUiState(str, Enum):
     IDLE = "idle"
     BUSY = "busy"
@@ -67,6 +80,9 @@ class ComponentHint(TypedDict, total=False):
     multiple: bool
     ordered: bool
     endpoint: str | None
+    option_source: str
+    depends_on: dict[str, str]
+    action_ref: str
     plan_type: str
     deps: list[str] | None
     widget: str | None
@@ -110,6 +126,7 @@ class UiHintMarker:
     secret: bool = False
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None
     options: tuple[OptionValue, ...] = ()
+    action_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +136,15 @@ class Select:
     endpoint: str | None = None
     ordered: bool = False
     plan_type: str | None = None
+    option_source: str | None = None
+    depends_on: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        source = self.option_source
+        if source is not None and (
+            source in ("", ".") or ".." in source or any(c in source for c in "/\\?#")
+        ):
+            raise ValueError(f"option_source 必须是单个路径段: {source!r}")
 
 
 @dataclass(frozen=True)
@@ -138,6 +164,7 @@ def ui(
     secret: bool = False,
     options: list[OptionValue] | None = None,
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None,
+    action_ref: str | None = None,
 ) -> UiHintMarker:
     """生成 UI 覆盖标记，置于 ``Annotated`` 内。
 
@@ -150,14 +177,26 @@ def ui(
         secret=secret,
         options=tuple(options or ()),
         visibility=visibility,
+        action_ref=action_ref,
     )
 
 
 def select(
-    *, endpoint: str | None = None, ordered: bool = False, plan_type: str | None = None
+    *,
+    endpoint: str | None = None,
+    ordered: bool = False,
+    plan_type: str | None = None,
+    option_source: str | None = None,
+    depends_on: Mapping[str, str] | None = None,
 ) -> Select:
     """生成 select 标记（等价于 ``Select(...)``）。"""
-    return Select(endpoint=endpoint, ordered=ordered, plan_type=plan_type)
+    return Select(
+        endpoint=endpoint,
+        ordered=ordered,
+        plan_type=plan_type,
+        option_source=option_source,
+        depends_on=tuple(depends_on.items()) if depends_on else (),
+    )
 
 
 def legacy(
@@ -276,6 +315,10 @@ def hint_for_field(
             hint["component"] = "select"
             if m.endpoint:
                 hint["endpoint"] = m.endpoint
+            if m.option_source is not None:
+                hint["option_source"] = m.option_source
+            if m.depends_on:
+                hint["depends_on"] = dict(m.depends_on)
             if m.plan_type is not None:
                 hint["plan_type"] = m.plan_type
             if m.ordered:
@@ -290,6 +333,8 @@ def hint_for_field(
                 hint["format"] = m.format
             if m.deps:
                 hint["deps"] = list(m.deps)
+            if m.action_ref is not None:
+                hint["action_ref"] = m.action_ref
             if m.secret:
                 hint["secret"] = True
         elif isinstance(m, (Ge, Gt)):
@@ -303,9 +348,10 @@ def hint_for_field(
             hint["plan_type"] = ref.entry_types[0].__name__
 
     # ── Python / Literal / Enum 类型推导 ──
-    # 无 endpoint 的 select 仍从 Literal / Enum 推导静态选项；有 endpoint 时由接口供值。
-    infer_static_options = hint.get("component") == "input" or (
-        hint.get("component") == "select" and not hint.get("endpoint")
+    # 有动态来源的 select 由接口供值；其余 Literal / Enum 仍推导静态选项。
+    infer_static_options = "option_source" not in hint and (
+        hint.get("component") == "input"
+        or (hint.get("component") == "select" and not hint.get("endpoint"))
     )
     if infer_static_options:
         borigin = get_origin(base)

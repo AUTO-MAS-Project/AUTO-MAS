@@ -2,6 +2,8 @@ import { useConfigLoader, type ConfigSnapshot } from '@/services/configUiSync'
 import { Service, type ScriptGetOut } from '@/api'
 import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
 import { ref } from 'vue'
+import { fetchPluginScriptTypes } from '@/composables/usePluginScriptTypes'
+import type { PluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { translate as t } from '@/i18n'
 import { getApiErrorMessage } from '@/utils/apiError'
@@ -22,14 +24,21 @@ export function useScriptList() {
   const loadedOnce = ref(false)
 
   const getScriptUsers = async (
-    scriptId: string
+    scriptId: string,
+    plugins?: PluginScriptTypes
   ): Promise<{ users: ScriptListUser[]; error: string | null }> => {
     try {
       const response = await Service.getUserApiScriptsUserGetPost({ scriptId })
       if (response.code !== 200)
         throw new Error(response.message || t('core.apiErrors.userListFailed'))
+      const types = plugins ?? (await fetchPluginScriptTypes())
       const users = response.index.flatMap(index => {
-        const user = toScriptListUser(scriptId, index, response.data[index.uid])
+        const user = toScriptListUser(
+          scriptId,
+          index,
+          response.data[index.uid],
+          types.byUserConfigType.get(index.type)
+        )
         return user ? [user] : []
       })
       return { users, error: null }
@@ -48,13 +57,16 @@ export function useScriptList() {
     try {
       let snapshot: ScriptGetOut | null = null
       // 列表页呈现失败原因与重试，避免请求层再弹同一错误。
-      const scripts = await getScripts(false, {
-        showError: false,
-        read: response => {
-          snapshot = response as ScriptGetOut
-          read?.(response)
-        },
-      })
+      const [scripts, plugins] = await Promise.all([
+        getScripts(false, {
+          showError: false,
+          read: response => {
+            snapshot = response as ScriptGetOut
+            read?.(response)
+          },
+        }),
+        fetchPluginScriptTypes(read),
+      ])
       error.value = requestError.value
       // 所属插件不可用（没装上、解析不了或已停用）的托管只给只读卡片，不进可运行的列表。
       const disabled = new Set(
@@ -84,7 +96,7 @@ export function useScriptList() {
         scripts
           .filter(script => !disabled.has(script.uid))
           .map(async script => {
-            const result = await getScriptUsers(script.uid)
+            const result = await getScriptUsers(script.uid, plugins)
             return toScriptListItem(script, result.users, result.error)
           })
       )

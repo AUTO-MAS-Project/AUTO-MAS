@@ -4,8 +4,13 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { buildMaaFWRoutes } from './maafwRoutes'
-import { buildScriptEditorRoutes } from './scriptEditorRoutes'
-import { MAAFW_FAMILY_ADAPTERS, SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
+import { buildScriptEditorRoutes, genericEditorRoutes } from './scriptEditorRoutes'
+import { isBuiltinScriptType } from '@/utils/scriptMetadata'
+import {
+  MAAFW_FAMILY_ADAPTERS,
+  SCRIPT_PLUGIN_BINDINGS,
+  SCRIPT_PLUGIN_ROUTES,
+} from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
@@ -116,6 +121,7 @@ const routes = [
     meta: { title: '脚本管理' },
   },
   ...buildScriptEditorRoutes(),
+  ...genericEditorRoutes,
   ...maafwRoutes.script,
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
@@ -337,8 +343,14 @@ router.beforeEach(async (to, from, next) => {
 
 // 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
 router.beforeResolve(async to => {
-  const type = to.meta.scriptType
-  if (type !== 'MAA' && type !== 'SRC') return
+  const type = to.meta.scriptType ?? to.params.scriptType
+  if (typeof type !== 'string') return
+  // 随宿主提供的编辑器可以直接打开；静态插件入口和新插件路由都检查实际能力。
+  if (
+    isBuiltinScriptType(type) &&
+    !SCRIPT_PLUGIN_BINDINGS.some(binding => binding.scriptType === type)
+  )
+    return
   try {
     const types = await fetchScriptCapabilities()
     if (types.includes(type)) return

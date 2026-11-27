@@ -11,9 +11,9 @@ export type ConfigBackupEnsureIn = {
      */
     scriptId: string;
     /**
-     * 目标账号ID
+     * 目标账号ID，托管级池可省略
      */
-    userId: string;
+    userId?: (string | null);
     /**
      * 归档目标（取值由专项池定义）
      */

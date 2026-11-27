@@ -1,16 +1,24 @@
 <script setup lang="ts">
-import { computed, useId, useTemplateRef } from 'vue'
+import { computed, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { UiSection, UiStep } from '@/api'
 import { useDeclarativeOptions, type DeclarativeHint } from '@/composables/useDeclarativeOptions'
 import DeclarativeTable, { type DeclarativeTableHint } from './DeclarativeTable.vue'
-import { fieldRuns, isWideField, tableColumnTypes } from './declarativeLayout'
+import { declarativeLayout, isWideField, useDeclarativeSteps } from './declarativeLayout'
 import { SectionCard } from '@/components/ui'
+import type { SettingsChange } from '@/views/plugins/settings/usePluginSettingsDraft'
 import DeclarativeField from './DeclarativeField.vue'
 
 const props = withDefaults(
   defineProps<{
     groups: Array<{ name: string; hints: DeclarativeHint[] }>
     tables?: DeclarativeTableHint[]
+    steps?: UiStep[]
+    sections?: Record<string, UiSection>
+    pluginName?: string | null
+    setupMode?: boolean
+    submitDisabled?: boolean
+    submitting?: boolean
     errors?: Record<string, string>
     values: Record<string, Record<string, unknown>>
     runningKey?: string | null
@@ -19,17 +27,33 @@ const props = withDefaults(
     namespace: string
     disabled?: boolean
   }>(),
-  { tables: () => [], errors: () => ({}), runningKey: null, activeFields: () => [] }
+  {
+    tables: () => [],
+    steps: () => [],
+    sections: () => ({}),
+    pluginName: null,
+    errors: () => ({}),
+    runningKey: null,
+    activeFields: () => [],
+  }
 )
 
 const { t, te } = useI18n()
+const emit = defineEmits<{
+  'update:value': [group: string, field: string, value: unknown]
+  'update:optionsInvalid': [invalid: boolean]
+  action: [group: string, hint: DeclarativeHint, value: unknown, owner?: SettingsChange]
+  finish: []
+}>()
 // 动态选项按当前插件配置、字段声明和依赖值查询。
 const target = computed(() => ({
   ...props.values,
   uid: props.uid,
+  pluginName: props.pluginName,
   ui: { hints: Object.fromEntries(props.groups.map(group => [group.name, group.hints])) },
 }))
-const { optionsFor, stateFor } = useDeclarativeOptions(target)
+const { optionsFor, stateFor, validationErrors, optionsInvalid } = useDeclarativeOptions(target)
+watch(optionsInvalid, invalid => emit('update:optionsInvalid', invalid), { immediate: true })
 const options = (group: string, hint: DeclarativeHint) =>
   /* 取得字段静态或动态选项，并应用插件命名空间中的选项翻译。 */ optionsFor(group, hint).map(
     option => {
@@ -39,41 +63,21 @@ const options = (group: string, hint: DeclarativeHint) =>
     }
   )
 
-const emit = defineEmits<{
-  'update:value': [group: string, field: string, value: unknown]
-  action: [group: string, hint: DeclarativeHint, value: unknown]
-}>()
-
-const hintsByGroup = computed(
-  () =>
-    new Map(
-      props.groups.map(group => [group.name, new Map(group.hints.map(hint => [hint.field, hint]))])
-    )
+const layout = computed(() =>
+  declarativeLayout(props.groups, props.tables, props.steps, props.sections)
 )
-const visibleTables = computed(() =>
-  props.tables
-    .map(table => ({
-      ...table,
-      rows: table.rows.filter(group =>
-        table.columns.some(field => hintsByGroup.value.get(group)?.has(field))
-      ),
-      columns: table.columns.filter(field =>
-        table.rows.some(group => hintsByGroup.value.get(group)?.has(field))
-      ),
-    }))
-    .filter(table => table.rows.length && table.columns.length)
+const { current, collapsed } = useDeclarativeSteps(
+  layout,
+  () => props.uid,
+  () => props.errors
 )
-const remainingGroups = computed(() =>
-  Array.from(hintsByGroup.value, ([name, fields]) => ({
-    name,
-    hints: [...fields.values()].filter(
-      hint =>
-        !visibleTables.value.some(
-          table => table.rows.includes(name) && table.columns.includes(hint.field ?? '')
-        )
-    ),
-  })).filter(group => group.hints.length)
+const stepItems = computed(() =>
+  layout.value.steps.map(step => {
+    const label = `${props.namespace}.steps.${step.key}.label`
+    return { title: te(label) ? t(label) : step.title || step.key, disabled: props.disabled }
+  })
 )
+const wizard = computed(() => props.setupMode || stepItems.value.length > 1)
 
 const form = useTemplateRef<HTMLElement>('form')
 const formId = useId()
@@ -82,28 +86,19 @@ function sectionTitle(name: string) {
   const key = `${props.namespace}.${name}`
   return te(`${key}.label`) ? t(`${key}.label`) : te(key) ? t(key) : name
 }
-const sections = computed(() => [
-  ...visibleTables.value.map((table, index) => ({
-    id: `${formId}-table-${index}`,
-    key: `table-${index}-${table.key ?? ''}`,
-    title: table.key ? sectionTitle(table.key) : t('core.plugins.table'),
-    badge: t('core.plugins.table'),
-    table,
-    columnTypes: tableColumnTypes(table, (group, field) =>
-      hintsByGroup.value.get(group)?.get(field)
-    ),
-  })),
-  ...remainingGroups.value.map((group, index) => ({
-    id: `${formId}-group-${index}`,
-    key: `group-${group.name}`,
-    title: sectionTitle(group.name),
-    badge: group.hints.length,
-    group,
-    runs: fieldRuns(group.hints),
-  })),
-])
+const cards = computed(() =>
+  (layout.value.steps[current.value]?.cards ?? []).map((card, index) => {
+    const name = 'group' in card ? card.group.name : card.table.key
+    return {
+      ...card,
+      id: `${formId}-section-${index}`,
+      title: name ? sectionTitle(name) : t('core.plugins.table'),
+      badge: 'group' in card ? card.group.hints.length : t('core.plugins.table'),
+    }
+  })
+)
 const navItems = computed(() =>
-  sections.value.map(({ id, title, badge }) => ({
+  cards.value.map(({ id, title, badge }) => ({
     key: id,
     href: `#${id}`,
     title,
@@ -111,10 +106,16 @@ const navItems = computed(() =>
   }))
 )
 
+function actionBusy(group: string, hint: DeclarativeHint) {
+  const key = `${group}.${hint.field}`
+  return hint.state === 'busy' || props.activeFields.includes(key) || props.runningKey === key
+}
+
 function fieldBindings(group: string, hint: DeclarativeHint) {
   const field = hint.field ?? ''
   const key = `${group}.${field}`
   const state = stateFor(group, hint)
+  const action = layout.value.actions.get(key)
   return {
     group,
     hint,
@@ -123,14 +124,16 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
     options: options(group, hint),
     disabled: props.disabled,
     disabledReason: hint.editable === false ? t('core.plugins.readOnly') : undefined,
-    loading:
-      hint.state === 'busy' ||
-      props.activeFields.includes(key) ||
-      props.runningKey === key ||
-      state?.loading.value,
-    error: props.errors[key] || state?.error.value || undefined,
+    loading: actionBusy(group, hint) || state?.loading.value,
+    error: props.errors[key] || validationErrors.value[key] || state?.error.value || undefined,
     retry: state?.error.value ? state.execute : undefined,
     onAction: (value: unknown) => emit('action', group, hint, value),
+    inlineAction: action && {
+      ...action,
+      options: options(action.group, action.hint),
+      loading: actionBusy(action.group, action.hint),
+      run: (value: unknown) => emit('action', action.group, action.hint, value, { group, field }),
+    },
   }
 }
 </script>
@@ -139,11 +142,11 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   <section
     ref="form"
     class="plugin-form"
-    :class="{ 'with-nav': sections.length >= 3 }"
+    :class="{ 'with-nav': cards.length >= 3 }"
     :aria-label="t('core.plugins.settingsForm')"
   >
     <nav
-      v-if="sections.length >= 3"
+      v-if="cards.length >= 3"
       class="section-nav"
       :aria-label="t('core.setting.navigation.ariaLabel')"
     >
@@ -164,9 +167,17 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
       </a-anchor>
     </nav>
     <div class="section-list">
-      <template v-for="section in sections" :key="section.key">
+      <a-steps
+        v-if="stepItems.length > 1"
+        v-model:current="current"
+        :items="stepItems"
+        size="small"
+      />
+      <template v-for="section in cards" :key="section.key">
         <DeclarativeTable
           v-if="'table' in section"
+          v-model:collapsed="collapsed[section.key]"
+          :collapsible="section.collapsible"
           :id="section.id"
           :table="section.table"
           :column-types="section.columnTypes"
@@ -176,14 +187,21 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
         >
           <template #cell="{ group, field, update }">
             <DeclarativeField
-              v-if="hintsByGroup.get(group)?.has(field)"
-              v-bind="fieldBindings(group, hintsByGroup.get(group)!.get(field)!)"
+              v-if="layout.hintFor(group, field)"
+              v-bind="fieldBindings(group, layout.hintFor(group, field)!)"
               table-cell
               @update:value="update"
             />
           </template>
         </DeclarativeTable>
-        <SectionCard v-else :id="section.id" variant="card" :title="section.title">
+        <SectionCard
+          v-else
+          :id="section.id"
+          v-model:collapsed="collapsed[section.key]"
+          variant="card"
+          :title="section.title"
+          :collapsible="section.collapsible"
+        >
           <div
             v-for="run in section.runs"
             :key="run.hints[0]?.field"
@@ -203,6 +221,36 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           </div>
         </SectionCard>
       </template>
+      <a-flex v-if="wizard || $slots.actions" justify="end" align="center" gap="small">
+        <slot name="actions" :wizard="wizard" />
+        <template v-if="wizard">
+          <a-button
+            v-if="stepItems.length > 1"
+            :disabled="disabled || current === 0"
+            @click="current--"
+          >
+            {{ t('core.edit.previousStep') }}
+          </a-button>
+          <a-button
+            v-if="current < stepItems.length - 1"
+            type="primary"
+            :disabled="disabled"
+            @click="current++"
+          >
+            {{ t('core.edit.next') }}
+          </a-button>
+          <a-button
+            v-else
+            type="primary"
+            :disabled="disabled || optionsInvalid || submitDisabled"
+            :loading="submitting"
+            @click="emit('finish')"
+          >
+            {{ t('core.taskboard.complete') }}
+          </a-button>
+        </template>
+      </a-flex>
+      <slot name="footer" :wizard="wizard" />
     </div>
   </section>
 </template>
@@ -246,6 +294,9 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
 }
 .section-list {
   min-width: 0;
+}
+.section-list > .ant-steps {
+  margin-bottom: 16px;
 }
 .declarative-switch-grid,
 .declarative-field-grid {

@@ -1,6 +1,7 @@
 from app.models.config.script import DesktopSessionRunFields
 from app.plugin.base.script import (
     DesktopSessionCheckReason,
+    FirstAccountMode,
     ScriptAdapterPlugin,
     ScriptTypeDecl,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "in_desktop_session",
     "DesktopSessionCheckReason",
     "DesktopSessionRunFields",
+    "FirstAccountMode",
     "MODE_WORKERS",
     "AutoProxyWorker",
     "ScriptViewWorker",

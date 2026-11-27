@@ -213,6 +213,13 @@ def _clear_legacy_history() -> None:
         (Path.cwd() / name).unlink(missing_ok=True)
 
 
+async def _update_config_entry(entry: ConfigEntry, data: dict[str, Any]) -> None:
+    """按目标类型创建补丁，任一字段热校验失败时撤回整次编辑。"""
+    patch = type(entry).model_validate(data)
+    async with config_manager.transaction():
+        await entry.update(patch)
+
+
 class QueueNotFoundError(LookupError):
     """查询的调度队列已不存在。"""
 
@@ -251,6 +258,8 @@ class AppConfig:
             Callable[["ConfigEntry"], list["_utils_config_restore.ConfigRestorePool"]]
             | None
         ) = None
+        # 不同托管也可能指向同一脚本目录，失败回滚不能覆盖另一份已恢复的文件。
+        self._backup_restore_lock = asyncio.Lock()
 
         logger.info("")
         logger.info("===================================")
@@ -1417,9 +1426,7 @@ class AppConfig:
         if handler is not None and handler.validate_update is not None:
             handler.validate_update(data)
 
-        # 补丁由目标的实际类型创建；通过基类视图保留同型 update 的配对关系。
-        entry = cast(ConfigEntry, self.ScriptConfig[uid])
-        await entry.update(type(entry).model_validate(data))
+        await _update_config_entry(self.ScriptConfig[uid], data)
 
     async def del_script(
         self,
@@ -1549,6 +1556,7 @@ class AppConfig:
         *,
         payload: dict[str, Any] | None = None,
         native_defaults: bool = False,
+        first_only: bool = False,
     ) -> tuple[
         uuid.UUID,
         UserEntry
@@ -1564,24 +1572,26 @@ class AppConfig:
 
         logger.info(f"{script_id} 添加账号配置")
 
-        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        async with config_manager.execution_gate():
+            script_config = self.ScriptConfig[uuid.UUID(script_id)]
+            users = script_users(script_config)
+            if first_only and (existing := next(users.items(), None)) is not None:
+                return existing
 
-        handler = self._get_script_config_handler(script_config)
-        if isinstance(script_config, ScriptEntry):
-            # 插件用户集合在类型声明时已收窄，不再通过另一份处理器登记账号类。
-            user_class = next(iter(script_config.users.entry_types.values()))
-        else:
-            user_class = handler.user_config_class if handler is not None else None
-        if user_class is None:
-            raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
+            handler = self._get_script_config_handler(script_config)
+            if isinstance(script_config, ScriptEntry):
+                # 插件用户集合在类型声明时已收窄，不再通过另一份处理器登记账号类。
+                user_class = next(iter(script_config.users.entry_types.values()))
+            else:
+                user_class = handler.user_config_class if handler is not None else None
+            if user_class is None:
+                raise TypeError(f"不支持的托管配置类型: {type(script_config)}")
 
-        # handler 选择具体用户类，集合登记表在 add 时核验；联合类型不保留这层配对。
-        users = cast(ConfigCollection[ConfigEntry], script_users(script_config))
-        if native_defaults and payload is None:
-            payload = self._native_user_defaults(script_config)
-        uid = users.add(user_class, payload=payload)
-        await users.commit()
-        config = script_users(script_config)[uid]
+            if native_defaults and payload is None:
+                payload = self._native_user_defaults(script_config)
+            uid = users.add(user_class, payload=payload)
+            await users.commit()
+            config = users[uid]
         if handler is not None and handler.initialize_user is not None:
 
             async def rollback() -> None:
@@ -1611,7 +1621,7 @@ class AppConfig:
 
     @contextmanager
     def _using_restore_service(
-        self, script_id: str, user_id: str, *, force: bool = False
+        self, script_id: str, user_id: str | None, target: str, *, force: bool = False
     ) -> Iterator["_utils_config_restore.ConfigRestoreService"]:
         """[兼容旧专项] 通过原有解析函数取得恢复池并构建运行时服务。
 
@@ -1633,6 +1643,14 @@ class AppConfig:
                 raise RuntimeError("配置恢复未初始化：请先由宿主装配恢复池解析函数")
             scope = nullcontext(self._restore_pool_resolver(script_config))
         with scope as pools:
+            pool = next((pool for pool in pools if pool.key == target), None)
+            if pool is None:
+                raise ValueError(f"不支持的恢复目标: {target}")
+            if user_id is None:
+                if pool.editor_scope != "script":
+                    raise ValueError(f"恢复目标 {target} 需要 userId")
+            elif user_id not in script_users(script_config):
+                raise ValueError(f"账号 {user_id} 不属于托管 {script_id}")
             yield _utils_config_restore.build_restore_service(
                 _utils_config_restore.RestoreContext(
                     config=self,
@@ -1645,7 +1663,7 @@ class AppConfig:
             )
 
     async def list_config_backups(
-        self, script_id: str, user_id: str, target: str
+        self, script_id: str, user_id: str | None, target: str
     ) -> dict:
         """列出配置备份（时间倒序，每项带 base 来源标注）与当前 base 来源。
 
@@ -1654,14 +1672,14 @@ class AppConfig:
         target 取值由专项池定义。
         """
 
-        with self._using_restore_service(script_id, user_id) as service:
+        with self._using_restore_service(script_id, user_id, target) as service:
             return {
                 "items": await service.list(target),
                 "base": await service.current_base(target),
             }
 
     async def ensure_config_backup(
-        self, script_id: str, user_id: str, target: str
+        self, script_id: str, user_id: str | None, target: str
     ) -> dict:
         """按需归档目标池当前配置（指纹去重，无变化自动跳过）。
 
@@ -1669,11 +1687,17 @@ class AppConfig:
         （各专项任务流程调用专项归档函数，不经本方法）。
         """
 
-        with self._using_restore_service(script_id, user_id) as service:
+        with self._using_restore_service(script_id, user_id, target) as service:
             return await service.ensure(target)
 
     async def restore_config_backup(
-        self, script_id: str, user_id: str, ts: str, target: str, *, force: bool = False
+        self,
+        script_id: str,
+        user_id: str | None,
+        ts: str,
+        target: str,
+        *,
+        force: bool = False,
     ) -> dict:
         """把指定备份恢复到目标位置（恢复前存底、跨来源切换由服务层自理）。
 
@@ -1687,25 +1711,26 @@ class AppConfig:
         确认。
         """
 
-        uid = uuid.UUID(script_id)
-        if self.ScriptConfig[uid].is_locked:
-            raise RuntimeError(f"托管 {script_id} 正在运行, 无法恢复配置")
-
-        with self._using_restore_service(script_id, user_id, force=force) as service:
-            await service.restore(target, ts)
+        async with self._backup_restore_lock:
+            with self._using_restore_service(
+                script_id, user_id, target, force=force
+            ) as service:
+                if self.ScriptConfig[script_id].is_locked:
+                    raise RuntimeError(f"托管 {script_id} 正在运行, 无法恢复配置")
+                await service.restore(target, ts)
         return {"target": target}
 
     async def get_config_backup_preview(
-        self, script_id: str, user_id: str, ts: str, target: str
+        self, script_id: str, user_id: str | None, ts: str, target: str
     ) -> dict:
         """读取指定备份的配置摘要（纯读不恢复）；载荷结构由专项定义。"""
 
-        with self._using_restore_service(script_id, user_id) as service:
+        with self._using_restore_service(script_id, user_id, target) as service:
             payload = await service.preview(target, ts)
         return {"time": ts, "target": target, "data": payload}
 
     async def get_config_backup_file(
-        self, script_id: str, user_id: str, ts: str, target: str, path: str
+        self, script_id: str, user_id: str | None, ts: str, target: str, path: str
     ) -> dict:
         """只读读取指定备份内一个文本文件（预览「查看原始文件」用）。
 
@@ -1713,7 +1738,7 @@ class AppConfig:
         ``config_archive.read_backup_text`` 与专项池函数保证。
         """
 
-        with self._using_restore_service(script_id, user_id) as service:
+        with self._using_restore_service(script_id, user_id, target) as service:
             content = await service.read_backup_file(target, ts, path)
         return {"time": ts, "target": target, **content}
 
@@ -1753,7 +1778,7 @@ class AppConfig:
             and (handler is None or handler.prepare_user_update is None)
         ):
             # 插件没有保存前钩子时只走配置基类已定义的更新入口，信号由插件内部负责。
-            await user_config.update(type(user_config).model_validate(data))
+            await _update_config_entry(user_config, data)
             return True
 
         guard: Callable[[], None] | None = None
@@ -1786,8 +1811,7 @@ class AppConfig:
                         script_id=script_id,
                         user_id=user_id,
                     )
-            entry = cast(ConfigEntry, user_config)
-            await entry.update(type(entry).model_validate(data))
+            await _update_config_entry(user_config, data)
         return True
 
     async def import_script_config_file(
@@ -2064,8 +2088,7 @@ class AppConfig:
                 data["Info"]["ScriptId"]
             ) != str(plan.Info.ScriptId):
                 raise ValueError("通用脚本计划表所属脚本不可修改")
-        entry = cast(ConfigEntry, plan)
-        await entry.update(type(entry).model_validate(data))
+        await _update_config_entry(plan, data)
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
