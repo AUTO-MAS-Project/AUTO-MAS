@@ -20,6 +20,7 @@ from .m7a_config import (
     load_m7a_native_config,
     overlay_m7a_managed_options,
 )
+from .m7a_paths import resolve_m7a_config_path
 from .managed_fields import (
     AUTO_FIELD_GROUP,
     SRA_REWARD_LABELS,
@@ -618,7 +619,7 @@ def list_m7a_managed_modules(
     if not raw_root:
         raise FileNotFoundError("请先设置三月七路径")
     root = Path(raw_root)
-    source = root / "config.yaml"
+    source = resolve_m7a_config_path(root)
     if not source.is_file():
         raise FileNotFoundError(f"三月七原生配置不存在：{source}")
     payload = load_m7a_native_config(script_config)
