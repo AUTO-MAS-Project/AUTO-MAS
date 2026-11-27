@@ -22,7 +22,7 @@
 
 import asyncio
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -173,6 +173,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_config: ConfigCollection[HSRUserConfig],
         user_item: UserItem,
         runtime: HSRRuntimeState,
+        *,
+        prepare_m7a_config: Callable[[], Awaitable[None]],
     ) -> None:
         super().__init__()
         if script_info.task_info is None:
@@ -186,6 +188,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.cur_user_uid: uuid.UUID = uuid.UUID(user_item.user_id)
         self.cur_user_config: HSRUserConfig = self.user_config[self.cur_user_uid]
         self.runtime = runtime
+        self._prepare_m7a_config = prepare_m7a_config
         self._log_lines: list[str] = runtime.log_lines
         # 账号级任务前/后脚本成对标记：前置跑过才收尾后置，且每账号只收尾一次。
         self._extra_scripts_started = False
@@ -1943,10 +1946,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
             await self._finish_current_user_log("HSR 本轮无需执行，已跳过")
             return
 
-        # 执行任务前脚本（每账号仅一次，补跑不重复执行）
-        self._extra_scripts_started = True
-        await run_script_before_task(user_cfg)
-
         permanent_failures: list[HSRRunItem] = []
         pending_daily = {
             id(item)
@@ -1966,6 +1965,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             try:
                 if attempt == 1:
+                    if any(item.script == "M7A" for item in current_items):
+                        await self._prepare_m7a_config()
+                    # 迁移和备份先完成，再执行可能修改配置的用户前置脚本。
+                    self._extra_scripts_started = True
+                    await run_script_before_task(user_cfg)
                     await self._prepare_before_first_attempt(
                         user_name=user_name,
                         login_plan=login_plan,
