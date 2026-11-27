@@ -522,10 +522,11 @@ test.describe('@plugins plugin foundation', () => {
     await expect(page.locator('main .ant-empty')).toHaveCount(0)
   })
 
-  test('confirms uninstall before submitting a disabled adapter command', async ({ app, page }) => {
-    // 隔离注册表与命令接口，验证已禁用适配器仍提示清空配置，取消不提交，确认仅提交一次。
+  test('uninstalls a disabled adapter with the confirmed configuration choice', async ({
+    app,
+    page,
+  }) => {
     const configUid = '8f34836e-8498-4a6d-8fbe-a5d4db9d8ca6'
-    const taskId = '9545fe42-3ef9-40d6-a0f0-b1b178bfb58b'
     let installed = true
     const submissions: unknown[] = []
     await page.route('**/api/plugin_registry/get?*', route =>
@@ -553,17 +554,10 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/config/triggers/write', route => {
+    await page.route('**/api/plugin/uninstall?*', route => {
       submissions.push(route.request().postDataJSON())
-      return route.fulfill({
-        json: { code: 200, data: taskId },
-      })
-    })
-    await page.route('**/api/config/triggers/result', route => {
       installed = false
-      return route.fulfill({
-        json: { code: 200, data: { state: 'succeeded' } },
-      })
+      return route.fulfill({ json: { code: 200 } })
     })
     await app.goto('/plugins')
     const row = installedRow(page, 'Installed adapter')
@@ -575,9 +569,9 @@ test.describe('@plugins plugin foundation', () => {
     await uninstall()
     const confirm = page.getByRole('dialog').filter({ hasText: 'Uninstall plugin?' })
     await expect(confirm).toContainText('Installed adapter')
-    await expect(confirm).toContainText('permanently delete')
-    await expect(confirm).toContainText('managed scripts')
-    await expect(confirm).toContainText('accounts')
+    const purge = confirm.getByRole('checkbox', { name: /permanently delete/i })
+    await expect(purge).not.toBeChecked()
+    await purge.check()
     expect(submissions).toEqual([])
     await app.evidence('plugins-uninstall-confirm')
     await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -585,12 +579,24 @@ test.describe('@plugins plugin foundation', () => {
     await expect(row).toBeVisible()
     expect(submissions).toEqual([])
     await uninstall()
+    await expect(purge).not.toBeChecked()
     await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click()
     await expect(row).toHaveCount(0)
-    expect(submissions).toEqual([{ configUid, group: 'info', field: 'uninstall', value: true }])
+    expect(submissions).toEqual([{ recordId: configUid, purge_config: false }])
+
+    installed = true
+    await page.reload()
+    await uninstall()
+    await purge.check()
+    await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click()
+    await expect(row).toHaveCount(0)
+    expect(submissions).toEqual([
+      { recordId: configUid, purge_config: false },
+      { recordId: configUid, purge_config: true },
+    ])
   })
 
-  test('confirms adapter data deletion and updates an open creation dialog after real toggles', async ({
+  test('preserves adapter data and updates an open creation dialog after real toggles', async ({
     app,
     page,
   }) => {
@@ -650,35 +656,10 @@ test.describe('@plugins plugin foundation', () => {
         await row.getByRole('button', { name: 'More actions', exact: true }).hover()
         await page.getByRole('menuitem', { name: 'Disable', exact: true }).click()
       }
-      // 有托管在用时前端拦住：列出在用托管、引导去托管管理，不提交命令。
       await expect(row).toContainText('Managed scripts: 1')
       await disable()
-      const guard = page.getByRole('dialog').filter({ hasText: "can't be disabled right now" })
-      await expect(guard).toContainText('Managed scripts still using it: 1')
-      await expect(guard.getByRole('button', { name: 'Go to managed scripts' })).toBeVisible()
-      await app.evidence('plugins-disable-blocked-in-use')
-      await guard
-        .locator('.ant-modal-footer')
-        .getByRole('button', { name: 'Close', exact: true })
-        .click()
-      await expect(guard).not.toBeVisible()
-      expect(submissions).toEqual([])
-      const preserved = await (
-        await page.request.post(`${backend}/api/scripts/get`, {
-          data: { scriptId: created.scriptId },
-        })
-      ).json()
-      expect(preserved.code).toBe(200)
-      // 删掉托管后照原流程：确认提示会永久删除专项数据，取消不提交，确认后停用。
-      await page.request.post(`${backend}/api/scripts/delete`, {
-        data: { scriptId: created.scriptId },
-      })
-      await page.reload()
-      await expect(row.getByText('Running', { exact: true })).toBeVisible()
-      await expect(row).not.toContainText('Managed scripts:')
-      await disable()
       const confirm = page.getByRole('dialog').filter({ hasText: 'Disable plugin?' })
-      await expect(confirm).toContainText('permanently delete')
+      await expect(confirm).toContainText('temporarily unavailable')
       await expect(confirm).toContainText('managed scripts')
       await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
       await expect(confirm).not.toBeVisible()
@@ -700,6 +681,13 @@ test.describe('@plugins plugin foundation', () => {
           await page.request.post(`${backend}/api/plugin/maa_adapter/stages/options`, { data: {} })
         ).status()
       ).toBe(404)
+      const detached = await (
+        await page.request.post(`${backend}/api/scripts/get`, { data: {} })
+      ).json()
+      expect(detached.unavailable).toContainEqual(
+        expect.objectContaining({ uid: created.scriptId })
+      )
+      expect(detached.data[created.scriptId]).toBeUndefined()
       // 静态 MAA 页面仍随宿主交付，未提供能力时直达路由和计划创建入口均关闭。
       await page.goto(`/#/scripts/${created.scriptId}/users/missing/cultivate/maa`)
       await expect(page).toHaveURL(/#\/plugins\/market$/)
@@ -719,6 +707,12 @@ test.describe('@plugins plugin foundation', () => {
       await expect(dialog.getByRole('radio', { name: /^General / })).toBeChecked()
       await command('enable')
       await expect(dialog.getByRole('radio', { name: /^MAA / })).toBeVisible()
+      const restored = await (
+        await page.request.post(`${backend}/api/scripts/get`, {
+          data: { scriptId: created.scriptId },
+        })
+      ).json()
+      expect(restored.data[created.scriptId]).toBeDefined()
       await app.evidence('plugins-live-script-capabilities')
       await app.goto('/plans')
       await page.getByRole('button', { name: /^New plan/ }).click()
@@ -739,49 +733,6 @@ test.describe('@plugins plugin foundation', () => {
           data: { scriptId: created.scriptId },
         })
       }
-    }
-  })
-  test('re-reads managed usage on click so a script created after page load still blocks disable', async ({
-    app,
-    page,
-  }) => {
-    // 进页时没有托管；停留期间用公开接口新建一个，不刷新页面直接点停用，仍应被拦住且不提交命令。
-    const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
-    const submissions: unknown[] = []
-    page.on('request', request => {
-      if (request.url().endsWith('/api/config/triggers/write'))
-        submissions.push(request.postDataJSON())
-    })
-    let created: { scriptId?: string } = {}
-    try {
-      // 用量读取的最后一个请求是计划表；等它返回，保证进页快照确实不含下面新建的托管，
-      // 否则点击时可能复用还在途的进页读取（守不住重取），或快照本身已含新托管（假绿）。
-      const usageLoaded = page.waitForResponse(
-        response =>
-          response.url().endsWith('/api/plan/get') && response.request().method() === 'POST'
-      )
-      await app.goto('/plugins')
-      const row = installedRow(page, 'MAA Adapter')
-      await usageLoaded
-      await expect(row.getByText('Running', { exact: true })).toBeVisible()
-      await expect(row).not.toContainText('Managed scripts:')
-      created = await (
-        await page.request.post(`${backend}/api/scripts/add`, { data: { type: 'MAA' } })
-      ).json()
-      expect(created.scriptId).toBeTruthy()
-      await row.getByRole('button', { name: 'More actions', exact: true }).hover()
-      const item = page.getByRole('menuitem', { name: 'Disable', exact: true })
-      await item.click()
-      const guard = page.getByRole('dialog').filter({ hasText: "can't be disabled right now" })
-      await expect(guard).toContainText('Managed scripts still using it: 1')
-      expect(submissions).toEqual([])
-      // 拦截弹层出现后「更多」菜单收起，不浮在弹层旁边。
-      await expect(item).toBeHidden()
-    } finally {
-      if (created.scriptId)
-        await page.request.post(`${backend}/api/scripts/delete`, {
-          data: { scriptId: created.scriptId },
-        })
     }
   })
 

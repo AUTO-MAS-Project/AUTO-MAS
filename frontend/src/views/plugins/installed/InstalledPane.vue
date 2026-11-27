@@ -1,8 +1,7 @@
 <script setup lang="ts">
 /**
  * 「已安装」页签：按核心、专项适配、扩展、本地源码分组的行列表。
- * 取数、锁与命令来自 usePluginCenter()；分组、筛选、用量与拦截判断一律调 pluginCenterModel。
- * 注册表或目录读取失败的重试条由外壳显示，这里只管用量读取失败（拦截要用它）。
+ * 注册表与目录读取失败由外壳提示，用量读取失败可在此重试。
  */
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -11,7 +10,6 @@ import NoData from '@/components/NoData.vue'
 import { groupInstalled, matchesInstalledFilter, matchesSearch } from '../pluginCenterModel'
 import { usePluginCenter } from '../usePluginCenter'
 import InstalledRow from './InstalledRow.vue'
-import LifecycleGuardDialog from './LifecycleGuardDialog.vue'
 import { useInstalledActions } from './useInstalledActions'
 
 const SKELETON_ROWS = 3
@@ -64,7 +62,7 @@ const goMarket = () => router.push({ name: 'PluginMarket' })
       :message="t('core.plugins.usageLoadFailed')"
     >
       <template #action>
-        <a-button size="small" :loading="data.usage.loading.value" @click="actions.retryUsage">{{
+        <a-button size="small" :loading="data.usage.loading.value" @click="data.reloadUsage">{{
           t('core.common.retry')
         }}</a-button>
       </template>
@@ -111,14 +109,6 @@ const goMarket = () => router.push({ name: 'PluginMarket' })
         }}</a-button>
       </NoData>
     </template>
-    <LifecycleGuardDialog
-      :view="actions.guardView.value"
-      :action="actions.guardAction.value"
-      :decision="actions.guardDecision.value"
-      :usage-loading="data.usage.loading.value"
-      @close="actions.closeGuard"
-      @retry="actions.retryUsage"
-    />
   </div>
 </template>
 

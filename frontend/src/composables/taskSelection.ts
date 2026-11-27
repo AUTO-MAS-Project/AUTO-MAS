@@ -109,7 +109,11 @@ export function scopeRequest(draft: TaskScopeDraft, mode = TaskMode.AUTO_PROXY):
 }
 
 /** 配置刷新只更新展示值，保留选择意图及失效 ID，让启动显式报错。 */
-export function reconcileScope(fresh: TaskScopeDraft, previous?: TaskScopeDraft): TaskScopeDraft {
+export function reconcileScope(
+  fresh: TaskScopeDraft,
+  previous?: TaskScopeDraft,
+  unavailableItems?: ReadonlySet<string>
+): TaskScopeDraft {
   if (!previous || previous.uid !== fresh.uid || previous.kind !== fresh.kind) return fresh
   const choices = new Map(previous.entries.map(entry => [entry.uid, entry]))
   const entries = fresh.entries.map(entry => {
@@ -131,7 +135,11 @@ export function reconcileScope(fresh: TaskScopeDraft, previous?: TaskScopeDraft)
   // 删除了显式选中的队列项，保留失效分支供用户确认，不悄悄扩大范围。
   if (previous.selection !== 'all') {
     for (const old of previous.entries) {
-      if (old.selection !== 'none' && !fresh.entries.some(entry => entry.uid === old.uid))
+      if (
+        old.selection !== 'none' &&
+        !unavailableItems?.has(old.uid) &&
+        !fresh.entries.some(entry => entry.uid === old.uid)
+      )
         entries.push({ ...old, missing: true })
     }
   }

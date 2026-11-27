@@ -1716,7 +1716,10 @@ class ManagedEntriesReport:
 
 
 def normalize_m9a_managed_entries(
-    script_config_path: Path, *, now: datetime | None = None
+    script_config_path: Path,
+    *,
+    registered_types: Collection[str],
+    now: datetime | None = None,
 ) -> ManagedEntriesReport:
     """启动期入口：全部 M9A 用户按 ``managed.py`` 的规则整理一遍，幂等，改了才写盘。
 
@@ -1726,7 +1729,7 @@ def normalize_m9a_managed_entries(
 
     report = ManagedEntriesReport()
     path = Path(script_config_path)
-    if not path.is_file():
+    if "M9AConfig" not in registered_types or not path.is_file():
         return report
     tmp = path.with_name(f"{path.name}.m9a-normalizing")
     try:

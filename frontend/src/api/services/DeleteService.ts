@@ -7,6 +7,7 @@ import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
 import type { GameIdIn } from '../models/GameIdIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
+import type { PluginUninstallIn } from '../models/PluginUninstallIn';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
@@ -270,6 +271,30 @@ export class DeleteService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/delete',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 卸载插件
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginApiPluginUninstallPost(
+        requestBody: PluginUninstallIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/uninstall',
+            query: {
+                'locale': locale,
+            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

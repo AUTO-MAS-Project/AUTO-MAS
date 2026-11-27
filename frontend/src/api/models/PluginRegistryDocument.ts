@@ -15,7 +15,7 @@ export type PluginRegistryDocument = {
     uid: string;
     ui: PluginConfigUi;
     /**
-     * 停用本插件及其级联下游时会删除的配置领域
+     * 停用本插件及其级联下游时暂不可用的配置领域
      */
     disableImpact?: Array<'scripts' | 'games' | 'plans'>;
     /**

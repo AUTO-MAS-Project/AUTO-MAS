@@ -1,5 +1,9 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import { SCRIPT_BUILTIN_PLANS, SCRIPT_PLUGIN_PLANS } from '@/plugins/scriptAdapters'
+import {
+  SCRIPT_BUILTIN_PLANS,
+  SCRIPT_PLUGIN_BINDINGS,
+  SCRIPT_PLUGIN_PLANS,
+} from '@/plugins/scriptAdapters'
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
@@ -111,9 +115,15 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
 }
 
 export const DEFAULT_PLAN_CONFIG_TYPE: PlanConfigType = PLAN_CONFIG_TYPES.MAA
-export const PLAN_TYPE_DESCRIPTORS = Object.values(PLAN_TYPE_REGISTRY)
 
 // ==================== 查询方法 ====================
+
+export function getAvailablePlanTypes(scriptTypes: readonly string[]) {
+  return Object.values(PLAN_TYPE_REGISTRY).filter(plan => {
+    const owner = SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === plan.configType)
+    return !owner || scriptTypes.includes(owner.scriptType)
+  })
+}
 
 export const isKnownPlanType = (planType: string): planType is PlanConfigType =>
   Object.prototype.hasOwnProperty.call(PLAN_TYPE_REGISTRY, planType)

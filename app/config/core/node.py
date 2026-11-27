@@ -53,6 +53,8 @@ class ExportContext:
     audience: Literal["api", "persist", "export"] = "api"
     """api：明文、含响应式、尊重 UI；persist：密文完整文档；export：明文完整文档。"""
 
+    use_workspace: bool = False
+
     @classmethod
     def from_dump(cls, context: object | None) -> ExportContext:
         """从 ``model_dump(context=…)`` 归一化；无 context 时默认 ``audience=api``。"""
@@ -501,7 +503,7 @@ class ConfigNode(BaseModel):
             ctx = ctx.parent
         return self
 
-    def _build_workspace(self) -> None:
+    def _build_workspace(self, *, persist: bool = True) -> None:
         ctx = config_manager.current
         if ctx is None:
             return
@@ -512,6 +514,9 @@ class ConfigNode(BaseModel):
         workspaces: dict[UUID, ConfigNode] = cast(
             "dict[str, Any]", self.__pydantic_private__
         )["_workspace"]
+        if persist:
+            root = self.root
+            ctx.persist_roots[root.uid] = (root, False)
         if ctx.scope_id not in workspaces:
             workspaces[ctx.scope_id] = self._make_workspace_shell(self.effective)
             config_manager._register_workspace(self)
@@ -750,6 +755,8 @@ class ConfigNode(BaseModel):
                         activate_error = exc
                     self.effective._activation_state = NodeState.ACTIVE
                     self.effective._pending_payload = None
+                    if self._pending_payload is None and self.persist_path is not None:
+                        ctx.persist_roots[self.uid] = (self, True)
             finally:
                 if owns_activation and activation is not None:
                     activation.active = False
@@ -777,12 +784,16 @@ class ConfigNode(BaseModel):
     ) -> None:
         raise NotImplementedError
 
-    async def _delete(self) -> None:
+    async def _delete(self, *, persist: bool = True) -> None:
         """内部软删；外部请用 Collection.remove / 框架生命周期，勿直接调用。"""
         if config_manager.is_registered_collection(self):
             raise RuntimeError("已登记 name 的 Collection 不可 delete")
         assert config_manager.in_transaction, "_delete 须在事务内"
-        self._build_workspace()
+        if not persist and any(
+            any(scopes.values()) for scopes in self._staged_by_owner.values()
+        ):
+            raise ValueError(f"配置有尚未提交的修改，无法旁挂: {self.uid}")
+        self._build_workspace(persist=persist)
         if self.deleted:
             raise DeletedNodeError(self.uid)
         # 先递归子节点再给自己打标记：Collection.iter_children 经 values()/__getitem__
@@ -790,7 +801,7 @@ class ConfigNode(BaseModel):
         # 非空嵌套集合的 Entry（ScriptEntry.users / GameEntry.devices）连自己的成员
         # 都枚举不出来，remove 与 remove_type 的级联会整笔 commit 失败。
         for child in self.iter_children():
-            await child._delete()
+            await child._delete(persist=persist)
         self.effective._deleted = True
         config_manager.mark_ui_changed(self)
 
@@ -919,7 +930,8 @@ class ConfigNode(BaseModel):
         落盘请用 ``to_dict`` 或显式 ``ExportContext(audience="persist")``。
         """
         ctx = ExportContext.from_dump(context)
-        return super().model_dump(
+        source = self.effective if ctx.use_workspace else self
+        return super(ConfigNode, source).model_dump(
             mode=mode,
             include=include,
             exclude=exclude,

@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import Version
 
 from app.core.config.upgrade import is_blank_file
 from app.plugin.types import PluginCodeDrift, PluginState
 from app.utils import io as _utils_io
+
+if TYPE_CHECKING:
+    from app.models.config import PluginRegistryCollection
+
 
 # 只列入已经完成插件化的专项；后续专项迁移随对应的数据升级段落扩展。
 _ADAPTER_PLUGINS = {
@@ -54,6 +58,21 @@ def adapter_package(config_type: str) -> str | None:
     """已插件化的托管或计划表类型由哪个发行包提供；不认识的类型返回 None。"""
     target = _ADAPTER_PLUGINS.get(config_type)
     return target[1] if target else None
+
+
+def automatic_plugin_packages(
+    required: dict[str, str], registry: PluginRegistryCollection, uninstalled: list[str]
+) -> dict[str, str]:
+    """已升级的数据只补装首次接手或仍希望启用的插件；发现新包前读取持久意图。"""
+    return {
+        name: package
+        for name, package in required.items()
+        if (
+            record.info.enabled
+            if (record := registry.by_name(name)) is not None
+            else name not in uninstalled
+        )
+    }
 
 
 def _index_types(config_path: Path) -> list[str]:
@@ -135,7 +154,7 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         and record.info.version
         and Version(record.info.version) < minimum
     )
-    # 专项的旧版本不能接手配置；游戏插件没有旁挂区，仍按原样启用。
+    # 专项的旧版本不能接手配置，要等新版代码就绪。
     hold = bool(needs_upgrade) and name in _ADAPTER_PLUGIN_NAMES
     if (
         record is None
