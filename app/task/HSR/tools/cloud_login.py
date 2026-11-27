@@ -54,6 +54,7 @@ from .external_locks import (
 )
 from .log_detect import is_cloud_login_success, is_m7a_self_browser_start
 from .m7a_control import HSRM7AControl
+from .m7a_paths import prepare_m7a_config
 from .m7a_runtime import M7ARunner
 from .run_model import HSRRuntimeState, external_result_failure_summary
 
@@ -112,7 +113,6 @@ async def run_cloud_login(
         ) from e
 
     m7a_root = Path(str(script_config.Info.M7APath or "").strip())
-    config_path = m7a_root / "config.yaml"
     runtime = HSRRuntimeState(log_lines=[], completion_writebacks=[])
     switcher = HSRAccountSwitcher(
         script_config=script_config,
@@ -126,7 +126,9 @@ async def run_cloud_login(
     background: set[asyncio.Task] = set()
     result: object | None = None
     original: bytes | None = None
+    config_path: Path | None = None
     try:
+        config_path = await prepare_m7a_config(m7a_root)
         if not config_path.is_file():
             raise ValueError(
                 f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"
@@ -176,7 +178,7 @@ async def run_cloud_login(
             logged_in or bool(getattr(result, "success", False))
         )
     finally:
-        if original is not None:
+        if config_path is not None and original is not None:
             try:
                 config_path.write_bytes(original)
             except OSError as e:

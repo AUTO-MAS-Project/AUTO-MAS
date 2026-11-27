@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from app.utils import constants as _utils_constants
 
+from .m7a_paths import resolve_m7a_config_path
 from .m7a_runtime import M7ARunner
 from .run_model import HSRPhase
 from .sra_runtime import (
@@ -372,7 +373,7 @@ class M7ADirectControlSession:
     async def run(self, timeout_seconds: int) -> HSRRunResult:
         self._log(
             f"三月七将直接使用脚本当前的原生配置运行"
-            f"（{self._root / 'config.yaml'}）；MAS 只负责外部进程生命周期"
+            f"（{resolve_m7a_config_path(self._root)}）；MAS 只负责外部进程生命周期"
         )
         self._runner = M7ARunner(self._root, log_callback=self._log)
         if self._script_config is not None:
@@ -404,9 +405,9 @@ class M7ANativeControlProvider:
         return Path(_script_path(script_config, "M7A"))
 
     def native_config_path(self, script_config: Any) -> Path:
-        """三月七安装根目录下的 config.yaml，原生来源直接运行它。"""
+        """三月七当前数据目录的配置文件，原生来源直接运行它。"""
 
-        return self._root(script_config) / "config.yaml"
+        return resolve_m7a_config_path(self._root(script_config))
 
     def inspect(self, script_config: Any) -> HSRNativeControlSnapshot:
         raw_root = _script_path(script_config, "M7A")
