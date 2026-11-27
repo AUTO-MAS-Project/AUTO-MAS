@@ -44,7 +44,7 @@
           @enabled="
             value => {
               record.enabled = value
-              queued(record.id, () => updateTimeSetStatus(record))
+              queued(record.id, () => updateTimeSetStatus(record, value))
             }
           "
           @days="
@@ -242,11 +242,11 @@ const updateTimeSetTime = async (
 }
 
 // 更新定时项状态
-const updateTimeSetStatus = async (timeSet: any) => {
+// enabled 取操作当时的值：排队等到执行时，这一行可能已被再次拨动或被前一次失败回滚
+const updateTimeSetStatus = async (timeSet: any, enabled: boolean) => {
   if (readOnly.value) return
   try {
     const queueId = props.queueId
-    const enabled = timeSet.enabled
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId,
       timeSetId: timeSet.id,
@@ -266,15 +266,15 @@ const updateTimeSetStatus = async (timeSet: any) => {
           error: response.message || t('core.queue.toast.unknownError'),
         })
       )
-      // 回滚状态
-      timeSet.enabled = !timeSet.enabled
+      // 回滚状态（之后又拨过的不动）
+      if (timeSet.enabled === enabled) timeSet.enabled = !enabled
     }
   } catch (error: any) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`更新状态失败: ${errorMsg}`)
     message.error(t('core.queue.toast.updateStatusFailed', { error: errorMsg }))
-    // 回滚状态
-    timeSet.enabled = !timeSet.enabled
+    // 回滚状态（之后又拨过的不动）
+    if (timeSet.enabled === enabled) timeSet.enabled = !enabled
   }
 }
 

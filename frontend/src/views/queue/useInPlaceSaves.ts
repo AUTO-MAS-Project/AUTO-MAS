@@ -17,17 +17,18 @@ export function useInPlaceSaves(sync: () => void) {
   /** 执行一次就地保存；同一 `rowId` 的调用排队，前一次结束（无论成败）后才开始。 */
   async function queued<R>(rowId: string, save: () => Promise<R>): Promise<R> {
     const previous = tails.get(rowId)
+    let settled: Promise<void> | undefined
     inFlight.value++
-    const turn = previous ? previous.then(save) : save()
-    const settled = turn.then(
-      () => {},
-      () => {}
-    )
-    tails.set(rowId, settled)
     try {
+      const turn = previous ? previous.then(save) : save()
+      settled = turn.then(
+        () => {},
+        () => {}
+      )
+      tails.set(rowId, settled)
       return await turn
     } finally {
-      if (tails.get(rowId) === settled) tails.delete(rowId)
+      if (settled && tails.get(rowId) === settled) tails.delete(rowId)
       inFlight.value--
     }
   }

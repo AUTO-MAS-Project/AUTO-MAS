@@ -195,31 +195,36 @@ describe('定时列表连续就地保存', () => {
     expect(view.cached().map(item => item.enabled)).toEqual([true, true])
   })
 
-  it('后一条保存失败时只回滚它自己', async () => {
-    const first = deferred<typeof ok>()
-    const second = deferred<{ code: number; message: string }>()
+  it('前一次保存失败时，排在后面的那次仍按用户最后的操作发出', async () => {
+    const first = deferred<{ code: number; message?: string }>()
+    const second = deferred<typeof ok>()
     api.updateTimeSet.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
     const view = mount()
 
     await fire(view.node('time-row', 0), 'onToggle', false)
-    await fire(view.node('time-row', 1), 'onToggle', false)
-    first.resolve(ok)
-    second.resolve({ code: 500, message: 'boom' })
+    await fire(view.node('time-row', 0), 'onToggle', true)
+    first.resolve({ code: 500, message: 'boom' })
     await flush()
-    expect(view.shown('time-row', 'enabled')).toEqual([false, true])
+    second.resolve(ok)
+    await flush()
+    // 失败回滚不能把用户刚拨回去的值翻掉，更不能由后一次请求写进后台
+    expect(api.updateTimeSet.mock.calls.map(([input]) => input.data.Info.Enabled)).toEqual([
+      false,
+      true,
+    ])
+    expect(view.shown('time-row', 'enabled')).toEqual([true, true])
+    expect(view.cached().map(item => item.enabled)).toEqual([true, true])
   })
 
-  it('保存在途期间到达的整表刷新，在保存返回后补上', async () => {
-    const pending = deferred<typeof ok>()
-    api.updateTimeSet.mockReturnValueOnce(pending.promise)
+  it('最后一次保存失败时回到上一次已保存的值', async () => {
+    api.updateTimeSet.mockResolvedValueOnce(ok).mockResolvedValueOnce({ code: 500, message: 'x' })
     const view = mount()
 
     await fire(view.node('time-row', 0), 'onToggle', false)
-    view.list().commit('q', [...rows(), { id: 'c', time: '10:00', enabled: true, days: [] }])
+    await fire(view.node('time-row', 0), 'onToggle', true)
     await flush()
-    pending.resolve(ok)
-    await flush()
-    expect(view.shown('time-row', 'enabled')).toEqual([false, true, true])
+    expect(view.shown('time-row', 'enabled')).toEqual([false, true])
+    expect(view.cached().map(item => item.enabled)).toEqual([false, true])
   })
 })
 
