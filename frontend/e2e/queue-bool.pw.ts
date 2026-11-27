@@ -104,7 +104,7 @@ test.describe('@queue boolean controls', () => {
       const delay = page.locator('.after-action-delay input')
       await expect(delay).toHaveCount(0)
       await expect(page.locator('.queue-cycle-settings')).toHaveCount(0)
-      const extraFields = page.locator('.queue-config-card .form-section')
+      const extraFields = page.locator('.queue-extra-settings')
       expect(
         (await extraFields.locator('.setting-toggle-button').first().boundingBox())!.height
       ).toBe(40)
@@ -123,14 +123,13 @@ test.describe('@queue boolean controls', () => {
         }, theme)
         await page.locator('.queue-trigger-settings').scrollIntoViewIfNeeded()
         await app.evidence(`queue-bool-${theme}`)
-        await page.locator('.queue-config-card .form-section').scrollIntoViewIfNeeded()
+        await extraFields.scrollIntoViewIfNeeded()
         await app.evidence(`queue-bool-extra-${theme}`)
       }
       await page.setViewportSize({ width: 760, height: 720 })
-      const extra = page.locator('.queue-config-card .form-section')
-      await extra.scrollIntoViewIfNeeded()
-      const toggleBox = await extra.locator('.setting-toggle-button').first().boundingBox()
-      const inputBox = await extra.locator('input').first().boundingBox()
+      await extraFields.scrollIntoViewIfNeeded()
+      const toggleBox = await extraFields.locator('.setting-toggle-button').first().boundingBox()
+      const inputBox = await extraFields.locator('input').first().boundingBox()
       expect(toggleBox!.x + toggleBox!.width).toBeLessThanOrEqual(inputBox!.x)
       await app.evidence('queue-bool-narrow')
       const narrowTrigger = page.locator('.queue-trigger-settings')

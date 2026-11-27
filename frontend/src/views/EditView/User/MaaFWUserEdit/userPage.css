@@ -1,0 +1,13 @@
+/* MFW 用户页的页面级样式：通用 MFW 与 M9A、MSS 专属用户页共用（各页 <style scoped src> 引入） */
+
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.maafw-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--ant-color-text);
+}
+
+.maafw-preview-title + .ant-descriptions {
+  margin-bottom: 8px;
+}

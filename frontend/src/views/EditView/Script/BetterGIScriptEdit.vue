@@ -1,173 +1,154 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <ScriptEditHeader
-        script-type="BetterGI"
-        :title="t('core.edit.editScript')"
-        :doc-url="MAS_DOC_URLS.scripts"
-        @cancel="handleCancel"
-      />
+  <ScriptEditLayout
+    :script-id="scriptId"
+    :loading="pageLoading"
+    :header="{
+      scriptType: 'BetterGI',
+      title: t('core.edit.editScript'),
+      docUrl: MAS_DOC_URLS.scripts,
+    }"
+    :form="{ model: formData, rules }"
+    :form-label="t('core.edit.bettergiScriptConfiguration')"
+    @cancel="handleCancel"
+  >
+    <template #basic>
+      <ScriptBasicInfoCard
+        v-model:name="formData.name"
+        :name-hint="t('core.edit.bettergiInstanceNameHint')"
+        @save-name="handleChange('Info', 'Name', $event)"
+      >
+        <template #path>
+          <a-form-item name="path" :rules="rules.path">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.bettergiPath')"
+                :hint="t('core.edit.bettergiPickExeDir')"
+                variant="form"
+              />
+            </template>
+            <PathPickerField
+              v-model="formData.path"
+              mode="folder"
+              :placeholder="t('core.edit.bettergiPickExeDirPlaceholder')"
+              :pick-label="t('core.edit.pickDirectory')"
+              :disabled="isSaving"
+              @pick="selectRootPath"
+            />
+          </a-form-item>
+        </template>
+      </ScriptBasicInfoCard>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-spin :spinning="pageLoading">
-        <a-form
-          :aria-label="t('core.edit.bettergiScriptConfiguration')"
-          :model="formData"
-          :rules="rules"
-          layout="vertical"
-          class="config-form"
-        >
-          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item name="name">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.scriptName')"
-                      :hint="t('core.edit.bettergiInstanceNameHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="formData.name"
-                    :placeholder="t('core.edit.enterScriptName')"
-                    class="modern-input"
-                    @blur="handleChange('Info', 'Name', formData.name)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item name="path" :rules="rules.path">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.bettergiPath')"
-                      :hint="t('core.edit.bettergiPickExeDir')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="formData.path"
-                    mode="folder"
-                    :placeholder="t('core.edit.bettergiPickExeDirPlaceholder')"
-                    :pick-label="t('core.edit.pickDirectory')"
-                    :disabled="isSaving"
-                    @pick="selectRootPath"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <BetterGIProgramUpdateSettings
-            v-model:update="bettergiConfig.Update"
-            :ready="!pageLoading && !isSaving"
-            @save="(key, value) => handleChange('Update', key, value)"
-          />
-
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.gameConfiguration')"
-            :icon="ControlOutlined"
-          >
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.controller')"
-                      :hint="t('core.edit.bettergiControllerHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="bettergiConfig.Game.Controller"
-                    style="width: 100%"
-                    @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
-                  >
-                    <a-select-option value="电脑端-前台">
-                      {{ t('core.edit.bettergiControllerForeground') }}
-                    </a-select-option>
-                    <a-select-option value="电脑端-云原神" disabled>
-                      {{ t('core.edit.bettergiControllerCloud') }}
-                    </a-select-option>
-                    <a-select-option value="电脑端-桌面分身" disabled>
-                      {{ t('core.edit.bettergiControllerDesktopClone') }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.bettergiAccountSwitchMethod')"
-                      :hint="t('core.edit.bettergiAccountSwitchMethodHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-segmented
-                    :value="bettergiConfig.Run.AccountSwitchMethod"
-                    :options="accountSwitchOptions"
-                    block
-                    @change="handleAccountSwitchMethodChange"
-                  />
-                  <span class="control-hint">{{ t('core.edit.accountSwitch16x9Only') }}</span>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="[24, 12]">
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="bettergiConfig.Game.CloseOnFinish"
-                  :title="t('core.edit.bettergiCloseGameOnFinish')"
-                  :description="t('core.edit.bettergiCloseGameOnFinishHint')"
-                  @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
+    <template #game-config>
+      <SectionCard variant="card" :title="t('core.edit.gameConfiguration')" :icon="ControlOutlined">
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.controller')"
+                  :hint="t('core.edit.bettergiControllerHint')"
+                  variant="form"
                 />
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="bettergiConfig.Game.IfAutoUpdate"
-                  :title="t('core.edit.genshinUpdateAuto')"
-                  :description="t('core.edit.genshinUpdateAutoHint')"
-                  @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
+              </template>
+              <a-select
+                v-model:value="bettergiConfig.Game.Controller"
+                style="width: 100%"
+                @change="handleChange('Game', 'Controller', bettergiConfig.Game.Controller)"
+              >
+                <a-select-option value="电脑端-前台">
+                  {{ t('core.edit.bettergiControllerForeground') }}
+                </a-select-option>
+                <a-select-option value="电脑端-云原神" disabled>
+                  {{ t('core.edit.bettergiControllerCloud') }}
+                </a-select-option>
+                <a-select-option value="电脑端-桌面分身" disabled>
+                  {{ t('core.edit.bettergiControllerDesktopClone') }}
+                </a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.bettergiAccountSwitchMethod')"
+                  :hint="t('core.edit.bettergiAccountSwitchMethodHint')"
+                  variant="form"
                 />
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.runConfiguration')"
-            :icon="ThunderboltOutlined"
-          >
-            <ScriptRunLimitsSection
-              v-model:hard-time-limit="bettergiConfig.Run.HardTimeLimit"
-              v-model:daily-limit="bettergiConfig.Run.ProxyTimesLimit"
-              v-model:retry-limit="bettergiConfig.Run.RunTimesLimit"
-              v-model:timeout="bettergiConfig.Run.RunTimeLimit"
-              :retry-hint="t('core.edit.bettergiRetryLimitHint')"
-              :timeout-hint="t('core.edit.bettergiRunTimeoutHint')"
-              enhanced
-              @save="key => handleChange('Run', key, bettergiConfig.Run[key])"
+              </template>
+              <a-segmented
+                :value="bettergiConfig.Run.AccountSwitchMethod"
+                :options="accountSwitchOptions"
+                block
+                @change="handleAccountSwitchMethodChange"
+              />
+              <span class="control-hint">{{ t('core.edit.accountSwitch16x9Only') }}</span>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="[24, 12]">
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="bettergiConfig.Game.CloseOnFinish"
+              :title="t('core.edit.bettergiCloseGameOnFinish')"
+              :description="t('core.edit.bettergiCloseGameOnFinishHint')"
+              @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
             />
-          </SectionCard>
-        </a-form>
-      </a-spin>
-    </ConfigLockPanel>
-  </ConfigEditShell>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="bettergiConfig.Game.IfAutoUpdate"
+              :title="t('core.edit.genshinUpdateAuto')"
+              :description="t('core.edit.genshinUpdateAutoHint')"
+              @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
+            />
+          </a-col>
+        </a-row>
+      </SectionCard>
+    </template>
+
+    <template #run>
+      <SectionCard
+        variant="card"
+        :title="t('core.edit.runConfiguration')"
+        :icon="ThunderboltOutlined"
+      >
+        <ScriptRunLimitsSection
+          v-model:hard-time-limit="bettergiConfig.Run.HardTimeLimit"
+          v-model:daily-limit="bettergiConfig.Run.ProxyTimesLimit"
+          v-model:retry-limit="bettergiConfig.Run.RunTimesLimit"
+          v-model:timeout="bettergiConfig.Run.RunTimeLimit"
+          :retry-hint="t('core.edit.bettergiRetryLimitHint')"
+          :timeout-hint="t('core.edit.bettergiRunTimeoutHint')"
+          enhanced
+          @save="key => handleChange('Run', key, bettergiConfig.Run[key])"
+        />
+      </SectionCard>
+    </template>
+
+    <template #program-update>
+      <ScriptTakeoverUpdateCard
+        v-model:update="bettergiConfig.Update"
+        :ready="!pageLoading && !isSaving"
+        :title="t('core.edit.bettergiProgramUpdate')"
+        :takeover-hint="t('core.edit.bettergiProgramUpdateHint')"
+        @save="(key, value) => handleChange('Update', key, value)"
+      />
+    </template>
+  </ScriptEditLayout>
 </template>
 
 <script setup lang="ts">
-import { AppstoreOutlined, ControlOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
-import BetterGIProgramUpdateSettings from './components/BetterGIProgramUpdateSettings.vue'
+import { ControlOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import ScriptTakeoverUpdateCard from './components/ScriptTakeoverUpdateCard.vue'
 import type { BetterGIConfig_Update } from '@/api'
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
-import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
+import ScriptBasicInfoCard from '@/components/ScriptBasicInfoCard.vue'
+import ScriptEditLayout from '@/components/ScriptEditLayout.vue'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

@@ -24,6 +24,7 @@ from app.services.common.update.transport import (
     request_mirror_resource,
 )
 from app.utils import io as io_utils
+from app.utils.common.process.operations import iter_process_info
 
 REPOSITORY = "BlueArchiveArisHelper/BAAH"
 PROTECTED = frozenset({"baah_configs", ".git"})
@@ -58,10 +59,10 @@ def read_version(root: Path) -> Version:
 def assert_idle(root: Path, *, allow_background_adb: bool = False) -> None:
     """切换目录必须完全空闲；只确认旧安装可启动时允许内置 ADB server。"""
     root = root.resolve()
-    for process in psutil.process_iter(["exe", "name"]):
+    for _, info in iter_process_info(["exe", "name"]):
         try:
-            exe = process.info["exe"]
-            name = str(process.info.get("name", "")).casefold()
+            exe = info["exe"]
+            name = str(info.get("name", "")).casefold()
             if not exe and name in {"baah.exe", "baah_update.exe", "update_temp.exe"}:
                 raise script_install.InstallUnsafeError(
                     "无法确认 BAAH 更新器已退出，请以管理员身份重试"

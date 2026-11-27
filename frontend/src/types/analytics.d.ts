@@ -296,8 +296,8 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
     duration_bucket: AnalyticsDurationBucket
   }
   community_login_finished: {
-    provider: 'miyoushe' | 'skland'
-    stage: 'create' | 'scan' | 'save'
+    provider: 'miyoushe' | 'skland' | 'kuro' | 'taygedo'
+    stage: 'create' | 'scan' | 'save' | 'sms' | 'password'
     outcome:
       | 'saved'
       | 'confirmed_unsaved'
@@ -306,6 +306,7 @@ export interface AnalyticsEventProps extends FeatureAnalyticsEventProps {
       | 'cancelled'
       | 'replaced'
       | 'unmounted'
+      | 'unsupported'
     duration_bucket: AnalyticsDurationBucket
   }
   notification_test_finished: {

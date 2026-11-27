@@ -25,6 +25,16 @@
 | 自动发现与手动选择 | 使用同一组哨兵文件；保存失败恢复旧值并显示原因 |
 | 配置会话 | 启动、错误、完成、保存、超时、卸载均停止任务并清理订阅 |
 
+### 脚本编辑页布局
+
+所有脚本编辑页必须使用 `ScriptEditLayout.vue`。布局将页头与正文居中对齐，最大宽度为 `1040px`，并按以下顺序渲染插槽。页面只填适用项，设置向导沿用相同顺序。
+
+页头 → `notice`（页级提示）→ `before-basic`（向导步骤）→ `basic`（基本信息）→ 模拟器/游戏客户端 → `script-config`（脚本自带配置）→ `game-config`（游戏/控制配置）→ `game-update`（游戏更新）→ `run`（运行配置）→ `program-update`（程序/后端/项目更新）→ `advanced`（高级维护）→ `after-form`（表单后操作）。
+
+布局在基础表单与配置表单之间自动放置 `GameBindingSection`（`DesktopOutlined`）。向导用 `binding-visible` 控制其可见性，表单插槽直接放字段或卡片，避免嵌套表单。
+
+标准专项的基本信息复用 `ScriptBasicInfoCard.vue`，MaaFW 系列复用 `BasicInfoSection.vue`，图标均为 `AppstoreOutlined`。游戏更新与程序更新接管按需分别复用 `ScriptGameUpdateCard.vue`（`CloudSyncOutlined`）和 `ScriptTakeoverUpdateCard.vue`（`CloudDownloadOutlined`）。脚本自带配置用 `SettingOutlined`，游戏/控制配置用 `ControlOutlined`，运行配置用 `ThunderboltOutlined`。
+
 ## 3. 任务模块（`app/task/Xxx/`）
 
 | 必做 | 类 |

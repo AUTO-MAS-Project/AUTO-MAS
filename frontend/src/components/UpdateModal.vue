@@ -1,9 +1,10 @@
 <template>
-  <a-modal
+  <AppModal
     v-model:open="visible"
     :title="t('core.comp.foundNewVersion', { version: latestVersion || '' })"
     :width="800"
-    :footer="null"
+    footer="none"
+    scroll="none"
     :mask-closable="false"
     :z-index="9999"
     class="update-modal"
@@ -24,7 +25,7 @@
         </div>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 
   <!-- 独立的下载窗口 -->
   <UpdateDownloadModal />
@@ -33,6 +34,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import { AppModal } from '@/components/ui'
 import ChangelogView from './ChangelogView.vue'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
@@ -89,11 +91,8 @@ const handleCancel = () => {
 <style scoped>
 /* 弹窗壳由 Ant Design 渲染，使用专属类定位传送到 body 的节点。 */
 :global(.update-modal .ant-modal-body) {
-  display: flex;
-  flex-direction: column;
   padding: 16px 24px;
   max-height: 70vh;
-  overflow: hidden;
 }
 
 .update-container {

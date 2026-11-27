@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
@@ -61,8 +62,8 @@ class RestoreContext:
     script_id: str
     """托管 ID。"""
 
-    user_id: str
-    """目标账号 ID。"""
+    user_id: str | None = None
+    """目标账号 ID，托管级池可省略。"""
 
     force: bool = False
     """损坏时跳过保护步骤的强制恢复（仅消费它的专项池读取，其余忽略）。"""
@@ -91,7 +92,7 @@ class ConfigRestorePool:
     key: str
     """目标标识（如 ``mas`` / ``onedragon`` / ``native``），前端与后端路由共用。"""
 
-    kind: str
+    kind: Literal["user", "script"]
     """池类别：``user`` 或 ``script``。
 
     用于构建校验与来源增强的作用域判定（``mas_base`` 仅 user 池生效）；
@@ -178,6 +179,9 @@ class ConfigRestorePool:
     缺省 ``None``：跨来源恢复（备份 base ≠ 当前 base）时拒绝执行并报错，
     避免「目录写过去了状态没切回、下次运行 owner 又变回去」的半恢复。
     """
+
+    editor_scope: Literal["user", "script"] | None = None
+    """展示此池的通用编辑器；仅托管编辑器的池允许省略账号。"""
 
 
 @dataclass
@@ -309,10 +313,8 @@ class ConfigRestoreService:
         ``tri_state`` 池的 mas 备份若标注的 base ≠ 当前 base，先把
         ``Info.Base`` 写回备份时点再执行——专项 restore 按当前 base 解析
         owner，写回后目标即备份 base 的目录（跨来源恢复 = 目录重定向 +
-        状态切回）。**顺序固定为 set_base 先于 restore**：若 restore 失败
-        （如目标目录被占用），base 已停在备份时点而目录未恢复，下次运行
-        会按备份时点 base 读当前目录——恢复前 force 归档已留存底，可手动
-        找回，勿调整为可交换顺序。其余情况（同来源 / 无标注旧备份 /
+        状态切回）。恢复失败则撤回本次来源切换和文件替换。
+        其余情况（同来源 / 无标注旧备份 /
         非 tri_state）直接执行，行为与未声明来源一致。前端据 ``list``
         返回的当前来源提示。
         """
@@ -320,26 +322,26 @@ class ConfigRestoreService:
         target = self.get_target(key)
         if target.restore is None:
             raise ValueError(f"目标「{key}」不支持恢复")
-        if (
-            target.mas_base == "tri_state"
-            and target.backup_dir_for is not None
-            and target.current_base is not None
-        ):
-            backup_dir = await target.backup_dir_for(ts)
-            if backup_dir is not None:
-                backup_base = _utils_config_archive.read_backup_base(backup_dir)
-                current_base = await target.current_base()
-                if (
-                    backup_base in (BASE_SHARED, BASE_INDEPENDENT)
-                    and current_base
-                    and backup_base != current_base
-                ):
-                    if target.set_base is None:
-                        raise ValueError(
-                            "该备份来自其他配置来源，当前专项不支持来源切换恢复"
-                        )
-                    await target.set_base(backup_base)
-        await target.restore(ts)
+        async with AsyncExitStack() as rollback:
+            if target.mas_base == "tri_state" and target.backup_dir_for is not None:
+                backup_dir = await target.backup_dir_for(ts)
+                if backup_dir is not None:
+                    backup_base = _utils_config_archive.read_backup_base(backup_dir)
+                    current_base = await self.current_base(key)
+                    if (
+                        backup_base in (BASE_SHARED, BASE_INDEPENDENT)
+                        and current_base
+                        and backup_base != current_base
+                    ):
+                        if target.set_base is None:
+                            raise ValueError(
+                                "该备份来自其他配置来源，当前专项不支持来源切换恢复"
+                            )
+                        await target.set_base(backup_base)
+                        rollback.push_async_callback(target.set_base, current_base)
+            with _utils_config_archive.restore_file_transaction():
+                await target.restore(ts)
+            rollback.pop_all()
 
     async def ensure(self, key: str) -> dict:
         """归档目标池当前配置（指纹去重，无变化自动跳过）。

@@ -8,5 +8,5 @@ import type { MSSPlanConfig } from './MSSPlanConfig';
 import type { OkNtePlanConfig } from './OkNtePlanConfig';
 import type { OkwwPlanConfig } from './OkwwPlanConfig';
 import type { UniversalPlanConfig } from './UniversalPlanConfig';
-export type PlanConfigData = (MaaEndPlanConfig | MSSPlanConfig | UniversalPlanConfig | OkNtePlanConfig | OkwwPlanConfig | MaaPlanConfig);
+export type PlanConfigData = (MaaEndPlanConfig | UniversalPlanConfig | OkNtePlanConfig | OkwwPlanConfig | MaaPlanConfig | MSSPlanConfig);
 

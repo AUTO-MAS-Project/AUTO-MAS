@@ -12,8 +12,8 @@ export namespace PlanCreateIn {
         OK_NTE_PLAN = 'OkNtePlan',
         UNIVERSAL_PLAN = 'UniversalPlan',
         MAA_END_PLAN = 'MaaEndPlan',
-        MSSPLAN = 'MSSPlan',
         MAA_PLAN_CONFIG = 'MaaPlanConfig',
+        MSSPLAN_CONFIG = 'MSSPlanConfig',
     }
 }
 

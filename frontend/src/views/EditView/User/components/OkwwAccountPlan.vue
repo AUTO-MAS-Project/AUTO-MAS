@@ -1,12 +1,10 @@
 <template>
   <SectionCard variant="plain" :title="t('core.edit.taskConfiguration')">
     <template #actions>
-      <a-space>
-        <a-button size="small" @click="emit('restore')">
-          <template #icon><HistoryOutlined /></template>
-          {{ t('core.edit.configRestoreTitle') }}
-        </a-button>
-      </a-space>
+      <a-button size="small" @click="emit('restore')">
+        <template #icon><HistoryOutlined /></template>
+        {{ t('core.edit.configRestoreTitle') }}
+      </a-button>
     </template>
 
     <OkwwTaskConfigSection

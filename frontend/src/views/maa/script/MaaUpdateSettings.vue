@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { CloudDownloadOutlined } from '@ant-design/icons-vue'
 import ProgramUpdateSettings from '@/views/EditView/Script/components/ProgramUpdateSettings.vue'
 import UpdatePackageMode from '@/views/EditView/Script/components/UpdatePackageMode.vue'
 import { onScopeDispose, ref, watch } from 'vue'
@@ -66,6 +67,8 @@ const handleChannel = (channel: 'stable' | 'beta') => {
 
 <template>
   <ProgramUpdateSettings
+    variant="card"
+    :icon="CloudDownloadOutlined"
     :ready="ready"
     :enabled="update.TakeoverEnabled"
     :channel="update.Channel"

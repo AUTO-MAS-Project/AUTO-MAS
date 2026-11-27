@@ -12,10 +12,7 @@
 
 <script setup lang="ts">
 import UserEditHeader from '@/components/UserEditHeader.vue'
-import type {
-  MaaFWUserHeaderSectionEmits,
-  MaaFWUserHeaderSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserHeaderSectionEmits, MaaFWUserHeaderSectionProps } from './sectionProps'
 
 defineProps<MaaFWUserHeaderSectionProps>()
 const emit = defineEmits<MaaFWUserHeaderSectionEmits>()

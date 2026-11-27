@@ -1,12 +1,10 @@
 <template>
-  <a-card class="plan-selector-card app-page-surface" :bordered="false">
+  <SectionCard class="plan-selector-card">
     <template #title>
-      <div class="card-title">
-        <span>{{ t('core.plan.selectLabel') }}</span>
-        <a-tag :color="planList.length > 0 ? 'success' : 'default'">
-          {{ t('core.plan.count', { count: planList.length }, planList.length) }}
-        </a-tag>
-      </div>
+      <span>{{ t('core.plan.selectLabel') }}</span>
+      <a-tag :color="planList.length > 0 ? 'success' : 'default'">
+        {{ t('core.plan.count', { count: planList.length }, planList.length) }}
+      </a-tag>
     </template>
 
     <div class="plan-selection-container">
@@ -57,7 +55,7 @@
             <span v-else class="plan-name">{{ plan.name }}</span>
 
             <a-tag v-if="hasMixedPlanTypes()" size="small" color="blue" class="plan-type-tag">
-              {{ getPlanTypeLabel(plan.type) }}
+              {{ plan.typeLabel }}
             </a-tag>
 
             <a-button
@@ -77,7 +75,7 @@
         </template>
       </draggable>
     </div>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -85,18 +83,13 @@ import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
+import { SectionCard } from '@/components/ui'
+import type { PlanListItem } from '../planList'
 
 const { t } = useI18n()
 
-interface Plan {
-  id: string
-  name: string
-  type: PlanConfigType
-}
-
 interface Props {
-  planList: Plan[]
+  planList: PlanListItem[]
   activePlanId: string
 }
 
@@ -116,14 +109,14 @@ const handlePlanClick = (planId: string) => {
   emit('plan-change', planId)
 }
 
-const onReorder = (plans: Plan[]) => {
+const onReorder = (plans: PlanListItem[]) => {
   emit(
     'reorder',
     plans.map(plan => plan.id)
   )
 }
 
-const startRename = async (plan: Plan) => {
+const startRename = async (plan: PlanListItem) => {
   editingPlanId.value = plan.id
   editingName.value = plan.name
   await nextTick()
@@ -158,15 +151,11 @@ const hasMixedPlanTypes = () => {
   const firstType = props.planList[0].type
   return !props.planList.every(plan => plan.type === firstType)
 }
-
-const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planType].selectorTag
 </script>
 
 <style scoped>
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.plan-selector-card.ui-section-card {
+  margin-bottom: 0;
 }
 
 .plan-buttons-container {

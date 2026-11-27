@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -17,13 +17,13 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserAccountHeading
-            :user-name="formData.userName"
-            :options="{ isEdit, logoSrc: accountIcon }"
-          />
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+      <StateView :loading="pageLoading">
+        <UserAccountHeading
+          :user-name="formData.userName"
+          :options="{ isEdit, logoSrc: accountIcon }"
+        />
+        <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <a-form :model="formData" layout="vertical">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -121,16 +121,15 @@
                   <a-select
                     v-model:value="formData.Notify.PushLogMode"
                     size="large"
-                    class="modern-select"
                     :options="pushLogModeOptions"
                     @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
                 </a-form-item>
               </a-col>
             </a-row>
-          </SectionCard>
-        </a-form>
-      </a-card>
+          </a-form>
+        </SectionCard>
+      </StateView>
 
       <OkNteTaskConfigSection
         v-model:task-index="formData.Task.TaskIndex"
@@ -142,18 +141,15 @@
         @change="handleTaskIndexChange"
       />
 
-      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
-        <h3>{{ t('core.edit.okNteConfiguration') }}</h3>
-        <a-space>
+      <SectionCard variant="plain" :title="t('core.edit.okNteConfiguration')">
+        <template #actions>
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
             {{ t('core.edit.configRestoreTitle') }}
           </a-button>
-        </a-space>
-      </a-flex>
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
+        </template>
         <OkNteConfigEditor
-          v-if="activeUserId"
+          v-if="formData.Info.IfQuickConfig && activeUserId"
           ref="configEditor"
           :script-id="scriptId"
           :user-id="activeUserId"
@@ -161,19 +157,17 @@
           @saving-change="configEditorSaving = $event"
           @saved="handleConfigSaved"
         />
-      </a-card>
+      </SectionCard>
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="pageLoading"
-            :script-id="scriptId"
-            :user-id="activeUserId"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+      <a-form :model="formData" layout="vertical" class="config-form">
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="pageLoading"
+          :script-id="scriptId"
+          :user-id="activeUserId"
+          @save="saveField"
+        />
+      </a-form>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -248,7 +242,7 @@
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-nte.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -258,7 +252,8 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   EyeOutlined,
   HistoryOutlined,
@@ -281,6 +276,7 @@ import OkNteTaskConfigSection from './OkNteUserEdit/OkNteTaskConfigSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const logger = window.electronAPI.getLogger('OK-NTE用户编辑')
 const route = useRoute()
@@ -577,47 +573,44 @@ const handleRestored = (target: string) => {
 // mas 备份：恢复到 MAS 目录后启动查看会话（下发为查看的必经复制，GUI 所见
 // 即备份）；原生备份：恢复到 ok-nte 本体后启动脚本级查看会话（跳过下发，
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) => {
-  if (configLocked.value) return Promise.resolve(false)
-  return new Promise<boolean>(resolve => {
-    Modal.confirm({
-      title: t('core.edit.configRestoreDetailView'),
-      content: h(
-        'p',
-        { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('core.edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
-      ),
-      okText: t('core.edit.configRestoreConfirmOk'),
-      okType: 'danger',
-      cancelText: t('core.edit.cancel'),
-      onOk: async () => {
-        if (configLocked.value) {
-          message.error(t('core.edit.configLocked'))
-          resolve(false)
-          return
+const handleRestoreView = async (target: string, item: { time: string }) => {
+  if (configLocked.value) return false
+  let restored = false
+  await confirm({
+    tone: 'danger',
+    title: t('core.edit.configRestoreDetailView'),
+    description: h(
+      'p',
+      { style: { color: 'var(--ant-color-error)', margin: 0 } },
+      t('core.edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
+    ),
+    okText: t('core.edit.configRestoreConfirmOk'),
+    cancelText: t('core.edit.cancel'),
+    onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('core.edit.configLocked'))
+        return
+      }
+      try {
+        const resp = await restoreApi.restore(target, item.time)
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('core.edit.configRestoreFailed'))
         }
-        try {
-          const resp = await restoreApi.restore(target, item.time)
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (target === 'mas') {
-            await startSession(userId, true, 'user')
-          } else {
-            await startSession(scriptId, true, 'script')
-          }
-          resolve(true)
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
-          resolve(false)
+        restoreOpen.value = false
+        if (target === 'mas') {
+          await startSession(userId, true, 'user')
+        } else {
+          await startSession(scriptId, true, 'script')
         }
-      },
-      onCancel: () => resolve(false),
-    })
+        restored = true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
+      }
+    },
   })
+  return restored
 }
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
@@ -651,8 +644,6 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped src="@/styles/userEditForm.css"></style>
-
 <style scoped>
 .form-label {
   display: flex;
@@ -679,11 +670,5 @@ onUnmounted(() => {
 
 .oknte-preview-box {
   margin-bottom: 4px;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

@@ -29,13 +29,10 @@ SCRIPT_CALENDAR_GAMES = {
     for script, game in {
         "MaaEnd": "endfield",
         "HSR": "starrail",
-        "BetterGI": "genshin",
         "ZzzOd": "zenless",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
-        "M9A": "reverse1999",
         "BAAH": "bluearchive",
-        "MSS": "stellasora",
     }.items()
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}

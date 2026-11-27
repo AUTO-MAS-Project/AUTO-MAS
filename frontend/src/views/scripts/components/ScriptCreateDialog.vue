@@ -1,11 +1,9 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :width="960"
-    :closable="!submitting"
-    :keyboard="!submitting"
-    :mask-closable="!submitting"
-    :confirm-loading="submitting"
+    :submitting="submitting"
+    footer="custom"
     :z-index="900"
     :body-style="{ height: '500px', minHeight: 0, overflowY: 'auto' }"
     class="script-create-dialog"
@@ -21,32 +19,24 @@
           />
           <ScriptTypeStep
             v-model="selectedType"
-            :types="capabilities.types.value"
+            :options="availableTypes"
             :loading="capabilities.loading.value"
             :error="capabilities.error.value"
             @retry="capabilities.refresh"
           />
         </template>
 
-        <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目）。
-             选项列表是可由特调替换的分节 create.source，选中状态留在这里；
-             之后是特调的插入点 create.afterSourceStep -->
+        <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目），
+             选中状态留在这里 -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
           <StepHeading :title="t('core.scripts.create.mfwSourceHeading')" />
-          <component
-            :is="createSections.source"
+          <MaaFWSourceStep
             v-model:value="selectedMfwChoice"
-            :type="createFlavor.type"
+            :type="createMfwType"
             :choices="mfwReuseChoices"
             :loading="mfwSourcesLoading"
             :error="mfwSourcesError"
             @retry="emit('request-mfw-sources')"
-          />
-          <MaaFWFlavorSlot
-            part="create"
-            name="afterSourceStep"
-            :flavor="createFlavor"
-            :context="createSlotContext"
           />
         </template>
 
@@ -186,7 +176,7 @@
               {{ t('core.scripts.create.modeNew') }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('core.scripts.create.labelType')">
-              {{ t(getTypeOption(selectedType).titleKey) }}
+              {{ availableTypes.find(option => option.value === selectedType)?.title }}
             </a-descriptions-item>
             <a-descriptions-item
               v-if="selectedType === 'General'"
@@ -224,12 +214,13 @@
         </a-space>
       </div>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import ScriptTypeStep from './ScriptTypeStep.vue'
+import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
 import { computed, defineComponent, h, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import {
@@ -240,26 +231,19 @@ import {
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import type { ScriptType } from '@/types/script'
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import {
-  prepareMaaFWFlavorPage,
-  resolveMaaFWFlavor,
-  useMaaFWSections,
-  type MaaFWCreateSlotContext,
-} from '@/composables/useMaaFWFlavor'
-import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
-import { openExternalUrl } from '@/utils/openExternal'
+import { resolveMaaFWAdapter } from '@/plugins/maafwFamily'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
   buildCreateSteps,
   isMfwFamily,
-  SCRIPT_TYPE_OPTIONS,
+  getScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
   type ScriptCreateRequest,
@@ -304,7 +288,7 @@ const emit = defineEmits<{
 const TEMPLATE_SEARCH_DEBOUNCE = 400
 
 const currentStep = ref<CreateStepKey>('type')
-const selectedType = ref<ScriptType>('MAA')
+const selectedType = ref('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
 const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
@@ -334,7 +318,7 @@ const canGoBack = computed(
 )
 const capabilities = useScriptCapabilities(toRef(props, 'open'))
 const availableTypes = computed(() =>
-  SCRIPT_TYPE_OPTIONS.filter(option => capabilities.types.value.includes(option.value))
+  getScriptTypeOptions(capabilities.types.value, capabilities.provided.value, t)
 )
 watch(capabilities.error, error => {
   // 能力读取失败时返回带重试入口的步骤，避免配置步骤只剩不可用的下一步按钮。
@@ -355,13 +339,8 @@ const selectedTemplate = computed(() =>
   props.templates.find(template => template.configKey === selectedTemplateKey.value)
 )
 const isMfwStep = computed(() => currentStep.value === 'config' && isMfwFamily(selectedType.value))
-// MFW 家族第二步按选中的类型卡片取特调：分节可被它替换（默认是 MaaFWSourceStep），后面跟它的插入点
-const createFlavor = computed(() => resolveMaaFWFlavor(selectedType.value))
-const createSections = useMaaFWSections(createFlavor, 'create', { source: MaaFWSourceStep })
-const createSlotContext = computed<MaaFWCreateSlotContext>(() => ({
-  type: createFlavor.value.type,
-  selection: selectedMfwChoice.value,
-}))
+// MFW 家族第二步：只列与选中的类型卡片同类型的项目
+const createMfwType = computed(() => resolveMaaFWAdapter(selectedType.value).type)
 const nextDisabled = computed(() => {
   if (
     props.submitting ||
@@ -380,6 +359,7 @@ const nextDisabled = computed(() => {
 })
 const primaryButtonText = computed(() => {
   if (currentStep.value === 'type') {
+    if (!isBuiltinScriptType(selectedType.value)) return t('core.scripts.create.title')
     return steps.value.length > 1 && !skipMfwSourceStep.value
       ? t('core.scripts.create.next')
       : t('core.scripts.create.createAndConfigure')
@@ -447,9 +427,6 @@ const formatPublishedAt = (publishedAt: string | undefined) =>
 
 onBeforeUnmount(cancelScheduledSearch)
 
-const getTypeOption = (type: ScriptType) =>
-  SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
-
 const handleBack = () => {
   if (props.submitting) return
   if (currentStep.value === 'config' && configView.value === 'templates') {
@@ -468,8 +445,6 @@ const handleNext = () => {
       currentStep.value = 'config'
       if (isMfwFamily(selectedType.value)) {
         emit('request-mfw-sources')
-        // 特调替换的分节与插入点按需加载：进这一步时预取（从不往外抛）
-        void prepareMaaFWFlavorPage(createFlavor.value, 'create')
       }
     } else {
       submitCurrentSelection()
@@ -502,9 +477,7 @@ const submitCurrentSelection = () => {
   if (request) emit('submit', request)
 }
 
-const handleCancel = () => {
-  if (!props.submitting) emit('update:open', false)
-}
+const handleCancel = () => emit('update:open', false)
 
 const chooseCustomConfig = () => {
   selectedConfigMode.value = 'custom'

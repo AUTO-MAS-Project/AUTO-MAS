@@ -7,9 +7,9 @@
           ><template #icon><ArrowLeftOutlined /></template>{{ t('core.edit.back') }}</a-button
         >
       </a-flex>
-      <a-card class="config-card">
+      <SectionCard class="config-card">
         <OkwwPlanOverrideEditor ref="editor" :plan-id="planId" :day="day" />
-      </a-card>
+      </SectionCard>
     </div>
   </div>
 </template>
@@ -17,6 +17,7 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { SectionCard } from '@/components/ui'
 import { navigateTo } from '@/router'
 import { planDayLabel } from '@/utils/planDays'
 import OkwwPlanOverrideEditor from './components/OkwwPlanOverrideEditor.vue'
@@ -57,19 +58,18 @@ async function back() {
 .detail-header h2 {
   margin: 0;
 }
-.config-card {
+.user-edit-content > .config-card {
   flex: 1;
   min-height: 0;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  margin-bottom: 0;
+  padding-block: var(--section-card-padding);
 }
-.config-card :deep(.ant-card-body) {
+.config-card > :deep(.ui-section-card-body) {
   height: 100%;
-  padding: 24px;
 }
 @media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
+  .user-edit-content > .config-card {
+    --section-card-padding: 20px;
   }
 }
 </style>

@@ -66,7 +66,7 @@
     "disconnectOnly": "仅断开连接",
     "logoffDesktopSession": "关闭桌面分身",
     "mainFallbackTitle": "确认任务分发",
-    "mainFallbackConfirm": "确认后将按下方列表分发。需要模拟器的任务会在主会话启动。",
+    "mainFallbackConfirm": "确认后将按下列会话运行所选托管和队列。",
     "mainFallbackContinue": "确认",
     "mainFallbackDesktopOnly": "仅运行桌面分身任务",
     "mainFallbackMainGroup": "主会话",
@@ -165,7 +165,13 @@
     "tryRepair": "尝试修复环境",
     "exportLogs": "导出分身日志",
     "exportLogsFailed": "无法导出分身日志。",
-    "authenticationDetail": "Windows 安全事件 4625 · {time} · 状态 {status} / {substatus}"
+    "authenticationDetail": "Windows 安全事件 4625 · {time} · 状态 {status} / {substatus}",
+    "reasons": {
+      "admin_required": "以管理员身份启动 AUTO-MAS 即可使用桌面分身。",
+      "unsupported_config": "当前托管配置不支持桌面分身。",
+      "plugin_unavailable": "托管插件当前不可用。",
+      "environment_unavailable": "请使用 Windows x64 桌面版，并由桌面应用管理后端。"
+    }
   },
   "en-US": {
     "title": "Desktop Session",
@@ -234,7 +240,7 @@
     "disconnectOnly": "Disconnect only",
     "logoffDesktopSession": "Close Desktop Session",
     "mainFallbackTitle": "Confirm task dispatch",
-    "mainFallbackConfirm": "Confirm to run the listed tasks in their assigned sessions. Tasks that need an emulator will start in the main session.",
+    "mainFallbackConfirm": "Confirm to run the selected scripts and queues in the sessions listed below.",
     "mainFallbackContinue": "Confirm",
     "mainFallbackDesktopOnly": "Run Desktop Session tasks only",
     "mainFallbackMainGroup": "Main session",
@@ -333,7 +339,13 @@
     "tryRepair": "Try to repair environment",
     "exportLogs": "Export desktop session logs",
     "exportLogsFailed": "Could not export desktop session logs.",
-    "authenticationDetail": "Windows Security event 4625 · {time} · Status {status} / {substatus}"
+    "authenticationDetail": "Windows Security event 4625 · {time} · Status {status} / {substatus}",
+    "reasons": {
+      "admin_required": "Run AUTO-MAS as administrator to use Desktop Session.",
+      "unsupported_config": "This script configuration does not support Desktop Session.",
+      "plugin_unavailable": "The script adapter is currently unavailable.",
+      "environment_unavailable": "Use the Windows x64 desktop app with its app-managed backend."
+    }
   },
   "ja-JP": {
     "title": "デスクトップセッション",
@@ -402,7 +414,7 @@
     "disconnectOnly": "接続のみ切断",
     "logoffDesktopSession": "デスクトップ分身を閉じる",
     "mainFallbackTitle": "タスクの実行先を確認",
-    "mainFallbackConfirm": "確認すると、一覧に示されたセッションでタスクを実行します。エミュレーターが必要なタスクはメインセッションで起動します。",
+    "mainFallbackConfirm": "確認すると、選択したスクリプトとキューが以下のセッションで実行されます。",
     "mainFallbackContinue": "確認",
     "mainFallbackDesktopOnly": "デスクトップ分身のタスクのみ実行",
     "mainFallbackMainGroup": "メインセッション",
@@ -501,6 +513,12 @@
     "tryRepair": "環境の修復を試みる",
     "exportLogs": "デスクトップ分身ログをエクスポート",
     "exportLogsFailed": "ログをエクスポートできませんでした。",
-    "authenticationDetail": "Windows セキュリティイベント 4625 · {time} · 状態 {status} / {substatus}"
+    "authenticationDetail": "Windows セキュリティイベント 4625 · {time} · 状態 {status} / {substatus}",
+    "reasons": {
+      "admin_required": "デスクトップ分身を使用するには AUTO-MAS を管理者として起動してください。",
+      "unsupported_config": "現在のスクリプト設定ではデスクトップ分身を使用できません。",
+      "plugin_unavailable": "現在、スクリプトプラグインを利用できません。",
+      "environment_unavailable": "Windows x64 デスクトップ版で、アプリが管理するバックエンドを使用してください。"
+    }
   }
 }

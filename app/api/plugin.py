@@ -38,11 +38,11 @@ from fastapi import APIRouter, Body, Depends, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
-from app.config.fields.hints import UiHintsMap, UiTablesList
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.i18n import AppLocale
@@ -52,11 +52,14 @@ from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
     ConfigSnapshotOut,
+    ConfigUpdateOut,
     OutBase,
     PluginInstallation,
 )
+from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
-from app.plugin.errors import PluginBusyError
+from app.plugin.base.script import FirstAccountMode
+from app.plugin.errors import PluginBusyError, PluginPrecheckError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import (
     RESTRICTED_PLUGIN_NAMES,
@@ -95,9 +98,34 @@ class PluginRegistryGetIn(BaseModel):
     )
 
 
+class PluginUninstallIn(BaseModel):
+    recordId: str = Field(..., description="PluginRecord.uid")
+    purge_config: bool = Field(
+        default=False, description="同时清理此插件的配置与托管数据"
+    )
+
+
 class PluginConfigUi(BaseModel):
     hints: UiHintsMap = Field(default_factory=dict)
     tables: UiTablesList = Field(default_factory=list)
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
+
+
+class PluginProvidedScriptType(BaseModel):
+    """已启用专项在宿主登记的配置类型及能力。"""
+
+    scriptKey: str = Field(description="创建托管时使用的脚本类型标识")
+    scriptConfigType: str
+    userConfigType: str
+    planConfigType: str | None = None
+    supportsGameBinding: bool
+    supportsDesktopSession: bool = Field(
+        description="是否支持自动代理桌面分身，单个托管的可用性由运行时检查决定"
+    )
+    hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
+    hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
+    firstAccountMode: FirstAccountMode = "direct"
 
 
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
@@ -105,7 +133,23 @@ class PluginRegistryDocument(ConfigPayload[PluginRecord]):
 
     uid: UUID
     ui: PluginConfigUi
-    disableImpact: list[Literal["scripts", "games"]] = Field(default_factory=list)
+    providedScript: PluginProvidedScriptType | None = None
+    disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
+        default_factory=list,
+        description="停用本插件及其级联下游时暂不可用的配置领域",
+    )
+    dependsOn: list[str] = Field(
+        default_factory=list, description="直接上游插件名（requires 的提供者）"
+    )
+    missingServices: list[str] = Field(
+        default_factory=list, description="requires 中当前找不到提供者的服务名"
+    )
+    disableCascade: list[str] = Field(
+        default_factory=list, description="停用或重载时会一并拆掉的下游插件名"
+    )
+    uninstallCascade: list[str] = Field(
+        default_factory=list, description="卸载时会一并卸掉的下游插件名"
+    )
 
 
 class PluginCatalogDocument(ConfigPayload[PluginMeta]):
@@ -166,6 +210,10 @@ class PluginConfigUpdateIn(BaseModel):
     )
 
 
+class PluginConfigUpdateOut(ConfigUpdateOut):
+    """保留已发布的插件设置响应模型名。"""
+
+
 class PluginListItem(BaseModel):
     name: str
     state: str
@@ -197,6 +245,33 @@ logger = get_logger("插件 API")
 # ==================== 注册表 plugin_registry ====================
 
 
+def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
+    registration = Plugin.registered_script(record)
+    if registration is None:
+        return None
+    script_key, decl = registration
+    info = decl.user_type.model_fields.get("Info")
+    info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
+    return PluginProvidedScriptType(
+        scriptKey=script_key,
+        firstAccountMode=decl.first_account_mode,
+        scriptConfigType=decl.script_type.__name__,
+        userConfigType=decl.user_type.__name__,
+        planConfigType=decl.plan_type.__name__ if decl.plan_type else None,
+        supportsGameBinding=decl.supports_game_binding is not False,
+        supportsDesktopSession=TaskMode.AUTO_PROXY in decl.supported_modes
+        and (
+            decl.desktop_session_check is not None or decl.desktop_session is not None
+        ),
+        hasAccountField="Id" in info_fields,
+        hasPasswordField="Password" in info_fields,
+    )
+
+
+# 前端客户端由 /api/plugin_registry/get 生成，两个入口共用一个 OpenAPI 操作。
+@_runtime.post(
+    "/registry/get", response_model=PluginRegistryGetOut, include_in_schema=False
+)
 @_registry.post(
     "/get",
     tags=["Get"],
@@ -220,7 +295,9 @@ async def get_plugin_registry(
                 str(uid): PluginRegistryDocument.model_validate(
                     {
                         "uid": uid,
+                        "providedScript": _provided_script(col[uid]),
                         "disableImpact": Plugin.disable_impact(col[uid]),
+                        **Plugin.dependency_view(col[uid]),
                         **col[uid].model_dump(mode="json", context={"audience": "api"}),
                     }
                 )
@@ -373,30 +450,55 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
     "/update",
     tags=["Update"],
     summary="修改插件自有配置（凭注册表项定位）",
-    response_model=OutBase,
+    response_model=PluginConfigUpdateOut,
 )
 async def update_plugin_config(
     body: PluginConfigUpdateIn = Body(...),
-) -> OutBase:
+) -> PluginConfigUpdateOut:
     """按插件实际配置类型校验并保存局部补丁，返回配置更新结果。"""
     try:
         record = Config.plugin_registry[UUID(body.recordId)]
         cfg = record._config
         if cfg is None:
-            return OutBase(code=400, status="error", message="插件未启用或无自有配置")
-        # 用同类型冷态补丁；失败由 ConfigAggregateError 上抛
+            return PluginConfigUpdateOut(
+                code=400, status="error", message="插件未启用或无自有配置"
+            )
         patch = type(cfg).model_validate(body.data)
         await cfg.update(patch)
     except KeyError:
-        return OutBase(code=404, status="error", message="未找到对应插件配置")
-    except ConfigAggregateError as e:
-        return OutBase(code=500, status="error", message=str(e))
+        return PluginConfigUpdateOut(
+            code=404, status="error", message="未找到对应插件配置"
+        )
+    except (ValidationError, ConfigAggregateError) as e:
+        return PluginConfigUpdateOut.from_validation_error(
+            e, code=422 if isinstance(e, ValidationError) else 500
+        )
     except Exception as e:
-        return OutBase(code=500, status="error", message=f"{type(e).__name__}: {e}")
-    return OutBase()
+        return PluginConfigUpdateOut(
+            code=500, status="error", message=f"{type(e).__name__}: {e}"
+        )
+    return PluginConfigUpdateOut()
 
 
 # ==================== 运行时列表 /api/plugin/list ====================
+
+
+@_runtime.post(
+    "/uninstall", tags=["Delete"], summary="卸载插件", response_model=OutBase
+)
+async def uninstall_plugin(body: PluginUninstallIn) -> OutBase:
+    record = Config.plugin_registry.get(body.recordId)
+    if record is None:
+        return OutBase(code=404, status="error", message="未找到对应插件")
+    try:
+        await Plugin.uninstall(record, purge_config=body.purge_config)
+    except (PluginBusyError, PluginPrecheckError) as error:
+        return OutBase(code=409, status="error", message=str(error))
+    except Exception as error:
+        return OutBase(
+            code=500, status="error", message=f"{type(error).__name__}: {error}"
+        )
+    return OutBase()
 
 
 @_runtime.post(
@@ -465,7 +567,7 @@ async def plugin_plan_options(
     from app.models.config import PlanEntry
 
     plan_type = PlanEntry
-    if body.type is not None:
+    if body.type is not None and body.type != PlanEntry.__name__:
         declared = Config.PlanConfig.entry_types.get(body.type)
         if declared is None or not issubclass(declared, PlanEntry):
             return ComboBoxOut(
@@ -612,8 +714,6 @@ async def prepare_plugin_installation_restart(
     body: PluginInstallationRestartIn,
 ) -> PluginInstallationOut:
     """业务忙时保持等待；空闲后取得重启资格并暂停新任务和插件命令。"""
-    from app.plugin.errors import PluginPrecheckError
-
     try:
         ready = await Plugin.prepare_installation_restart(body.installationId)
     except PluginBusyError:

@@ -200,5 +200,5 @@ test.describe('@my-feature', () => {
 - 页面与路由：[`frontend/src/router/index.ts`](../../frontend/src/router/index.ts)、[`useHomeQuickStart.ts`](../../frontend/src/views/home/useHomeQuickStart.ts)
 - 队列配置：[`queue/index.vue`](../../frontend/src/views/queue/index.vue)、[`app/api/queue.py`](../../app/api/queue.py)
 - 调度与运行态：[`useSchedulerLogic.ts`](../../frontend/src/views/scheduler/useSchedulerLogic.ts)、[`useTaskRuntimeState.ts`](../../frontend/src/composables/useTaskRuntimeState.ts)、[`app/api/dispatch.py`](../../app/api/dispatch.py)、[`app/core/task_manager.py`](../../app/core/task_manager.py)
-- 模拟器与账号：[`app/api/emulator/config.py`](../../app/api/emulator/config.py)、[`app/api/scripts/`](../../app/api/scripts/)、[`TabGameSign.vue`](../../frontend/src/views/gamesign/TabGameSign.vue)
+- 模拟器与账号：[`app/api/games.py`](../../app/api/games.py)、[`app/api/scripts/`](../../app/api/scripts/)、[`index.vue`](../../frontend/src/views/gamesign/index.vue)
 - 历史与设置：[`useHistoryLogic.ts`](../../frontend/src/views/history/useHistoryLogic.ts)、[`app/api/history.py`](../../app/api/history.py)、[`setting/index.vue`](../../frontend/src/views/setting/index.vue)、[`app/api/setting.py`](../../app/api/setting.py)

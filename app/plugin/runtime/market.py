@@ -34,6 +34,48 @@ _SIMPLE_TIMEOUT = 45.0
 _PYPI = "https://pypi.org"
 _CATALOG_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download"
 _ATTEMPTS = 3
+# 开发用：刚发到 PyPI 的插件，数据站目录和 PyPI 总索引都可能还没收录。默认不设（不补）；
+# 设为逗号分隔的发行包名时，刷新目录逐个读 PyPI 单包元数据补进目录，插件中心才能看到并安装。
+_EXTRA_PACKAGES_ENV = "AUTO_MAS_PLUGIN_EXTRA_PACKAGES"
+
+
+def _extra_packages() -> list[str]:
+    """读取需要按包名补进目录的发行包，规范化后去重。"""
+    text = os.environ.get(_EXTRA_PACKAGES_ENV, "")
+    return list(
+        dict.fromkeys(package_key(item) for item in text.split(",") if item.strip())
+    )
+
+
+async def _extra_drafts(present: set[str]) -> list[PluginMeta]:
+    """按包名从 PyPI 读取目录里还没有的插件；读不到只记日志，不影响本次刷新。"""
+    names = [name for name in _extra_packages() if name not in present]
+    if not names:
+        return []
+    drafts: list[PluginMeta] = []
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0), follow_redirects=True, proxy=Config.proxy
+    ) as client:
+        for name in names:
+            try:
+                response = await client.get(
+                    f"{_PYPI}/pypi/{name}/json",
+                    headers={"User-Agent": "AUTO-MAS-PluginMarket/2.0"},
+                )
+                response.raise_for_status()
+                draft = parse_to_plugin_meta(response.json())
+            except (httpx.HTTPError, ValueError) as error:
+                logger.warning(f"按包名补充插件目录失败：{name}: {error}")
+                continue
+            if draft is None:
+                logger.warning(f"按包名补充插件目录跳过：{name} 不是插件发行包")
+                continue
+            drafts.append(draft)
+    if drafts:
+        logger.info(
+            f"按包名从 PyPI 补充插件目录：{', '.join(d.info.package_name for d in drafts)}"
+        )
+    return drafts
 
 
 async def refresh() -> None:
@@ -54,6 +96,9 @@ async def refresh() -> None:
             drafts = [
                 PluginMeta.build(info=entry) for entry in snapshot.document["plugins"]
             ]
+            drafts += await _extra_drafts(
+                {package_key(item.info.package_name) for item in drafts}
+            )
             await _replace_catalog(drafts)
             catalog.store_cache(cache, snapshot)
             logger.info(f"数据站插件目录刷新完成：{len(drafts)} 个插件")
@@ -112,6 +157,7 @@ async def _refresh_pypi() -> None:
         text = str(record.info.package_name or "").strip()
         if text:
             seed.add(package_key(text))
+    seed.update(_extra_packages())
 
     timeout = httpx.Timeout(_SIMPLE_TIMEOUT)
     proxy = Config.proxy

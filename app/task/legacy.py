@@ -153,8 +153,14 @@ def maintenance_requirements(target_id: str) -> TaskRequirements:
             None,
         )
         user_id = str(target)
+    from app.core import Plugin
+
+    decl = Plugin.script_decl(script) if script is not None else None
+    if decl is not None and decl.maintenance_expander is not None:
+        if user_id == "default":
+            raise ValueError("更新任务需要指定账号，请刷新后重试")
+        return {0: {"uid": str(script.uid), "children": {0: {"uid": user_id}}}}
     if script is None or type(script).__name__ not in {
-        "BetterGIConfig",
         "MaaEndConfig",
         "OkwwConfig",
     }:

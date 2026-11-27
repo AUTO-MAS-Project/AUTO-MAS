@@ -1,5 +1,6 @@
 """运行时配置触发器的字段写入、在途投影与任务结果。"""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -7,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from app.config import config_manager
 from app.config.core.manager import TriggerUnavailable
+from app.config.fields.hints import OptionValue
 from app.core.background_tasks import BackgroundTaskState
 from app.models.schema import ConfigSnapshotOut, OutBase
 
@@ -18,6 +20,9 @@ class TriggerWriteIn(BaseModel):
     group: str
     field: str
     value: StrictBool | None
+    option: OptionValue | None = Field(
+        default=None, description="下拉动作启动时传给处理器的选项值"
+    )
 
 
 class TriggerWriteOut(OutBase):
@@ -31,6 +36,12 @@ class TriggerResultIn(BaseModel):
 class TriggerTaskResult(BaseModel):
     state: BackgroundTaskState
     errorCode: str | None = None
+    message: str | None = Field(
+        default=None, description="失败原因，仅可展示的异常（如插件错误）填写"
+    )
+    detail: dict[str, Any] | None = Field(
+        default=None, description="失败原因的结构化附加信息"
+    )
 
 
 class TriggerResultOut(OutBase):
@@ -57,7 +68,11 @@ async def write_config_trigger(body: TriggerWriteIn) -> TriggerWriteOut:
     """写入三态命令并立即返回受影响的任务 UUID。"""
     try:
         uid = config_manager.write_trigger(
-            body.configUid, group=body.group, field=body.field, value=body.value
+            body.configUid,
+            group=body.group,
+            field=body.field,
+            value=body.value,
+            option=body.option,
         )
     except TriggerUnavailable as error:
         return TriggerWriteOut(code=409, status="error", message=str(error))
@@ -91,5 +106,10 @@ async def get_config_trigger_result(body: TriggerResultIn) -> TriggerResultOut:
             code=404, status="error", message="trigger_task_not_found"
         )
     return TriggerResultOut(
-        data=TriggerTaskResult(state=result.state, errorCode=result.error_code)
+        data=TriggerTaskResult(
+            state=result.state,
+            errorCode=result.error_code,
+            message=result.message,
+            detail=result.detail,
+        )
     )

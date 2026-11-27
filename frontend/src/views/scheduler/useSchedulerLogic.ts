@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { storeToRefs } from 'pinia'
 import { message } from 'ant-design-vue'
 import { openAlert, openConfirm } from '@/composables/useConfirm'
@@ -8,7 +8,11 @@ import { useSchedulerStore } from '@/stores/scheduler'
 import { TaskStartCancelled, useTaskApi } from '@/composables/useTaskApi'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { scopeRequest, reconcileScope } from '@/composables/taskSelection'
-import { fetchTaskTargets, fetchTaskScope, type TaskTarget } from '@/composables/useTaskOptions'
+import {
+  fetchTaskTargetSnapshot,
+  fetchTaskScope,
+  type TaskTargetSnapshot,
+} from '@/composables/useTaskOptions'
 import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import { WS_ID_MAIN, WS_POWER_SIGN_UPDATED } from '@/services/websocket/types'
@@ -24,7 +28,8 @@ export function useSchedulerLogic() {
     panels: schedulerPanels,
   } = storeToRefs(store)
   const taskApi = useTaskApi()
-  const taskOptions = ref<TaskTarget[]>([])
+  const taskTargets = shallowRef<TaskTargetSnapshot>({ targets: [], unavailableScriptIds: [] })
+  const taskOptions = computed(() => taskTargets.value.targets)
   const taskOptionsLoading = ref(false)
   const powerAction = ref(PowerSignal.NO_ACTION)
   const latestScopeRequest = new WeakMap<SchedulerTab, object>()
@@ -46,9 +51,9 @@ export function useSchedulerLogic() {
     tab.scopeLoading = true
     tab.scopeError = undefined
     try {
-      const fresh = await fetchTaskScope(target, taskOptions.value)
+      const { scope, unavailableItems } = await fetchTaskScope(target, taskTargets.value)
       if (latestScopeRequest.get(tab) === request && tab.selectedTaskId === target.value)
-        tab.scope = reconcileScope(fresh, tab.scope)
+        tab.scope = reconcileScope(scope, tab.scope, unavailableItems)
     } catch (error) {
       if (latestScopeRequest.get(tab) === request)
         tab.scopeError =
@@ -67,12 +72,13 @@ export function useSchedulerLogic() {
     const request = (optionsRequest = {})
     if (!taskOptions.value.length) taskOptionsLoading.value = true
     try {
-      const options = await fetchTaskTargets(read)
+      const snapshot = await fetchTaskTargetSnapshot()
+      read(snapshot)
       if (optionsRequest !== request) return
-      taskOptions.value = options
+      taskTargets.value = snapshot
       for (const tab of schedulerTabs.value) {
         if (store.statusFor(tab) === '运行' || tab.starting) continue
-        if (!options.some(option => option.value === tab.selectedTaskId)) {
+        if (!snapshot.targets.some(option => option.value === tab.selectedTaskId)) {
           tab.selectedTaskId = null
           tab.scope = undefined
         } else if (viewActive) void loadTaskScope(tab)

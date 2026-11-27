@@ -345,7 +345,11 @@ onBeforeUnmount(() => {
               : result.code === 'power_action'
                 ? t('bootstrap.desktopSession.powerAction')
                 : result.code === 'unsupported_target'
-                  ? t('bootstrap.desktopSession.unsupportedTarget')
+                  ? t(
+                      result.reason
+                        ? `bootstrap.desktopSession.reasons.${result.reason}`
+                        : 'bootstrap.desktopSession.unsupportedTarget'
+                    )
                   : t('bootstrap.desktopSession.dispatchFailed')
         }}
       </a-typography-text>

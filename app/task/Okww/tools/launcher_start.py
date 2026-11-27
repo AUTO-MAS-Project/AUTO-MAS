@@ -68,7 +68,7 @@ from app.tools import ocr as _tool_ocr
 from app.utils import IS_WINDOWS, get_logger
 from app.utils import display as _utils_display
 from app.utils.common import game_window as _game_window
-from app.utils.common.process.operations import iter_processes
+from app.utils.common.process.operations import iter_scoped_process_info
 
 from .maintenance import GameMaintenanceDetected, find_game_maintenance_text
 
@@ -242,12 +242,12 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
     """
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
-    for process in iter_processes(["name", "exe"]):
+    for process, info in iter_scoped_process_info(["name", "exe"]):
         try:
-            name = (process.info["name"] or "").casefold()
+            name = (info["name"] or "").casefold()
             if name not in _LAUNCHER_PROCESS_NAMES:
                 continue
-            exe = process.info["exe"]
+            exe = info["exe"]
             if exe is None:
                 logger.warning(
                     f"同名启动器进程 exe 不可读，跳过清理以免误杀: pid={process.pid}"
@@ -276,14 +276,14 @@ def find_game_pids(
 
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
-    for process in iter_processes(
+    for process, info in iter_scoped_process_info(
         ["name", "exe", "create_time"], current_session_only=True
     ):
         try:
-            name = (process.info["name"] or "").casefold()
+            name = (info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
                 continue
-            exe = process.info["exe"]
+            exe = info["exe"]
             if exe is None:
                 logger.warning(
                     f"同名游戏进程 exe 不可读，跳过清理以免误杀: pid={process.pid}"
@@ -291,7 +291,7 @@ def find_game_pids(
                 continue
             if not exe.casefold().startswith(root_prefix):
                 continue
-            created = process.info["create_time"]
+            created = info["create_time"]
             if started_at is not None and (created is None or created < started_at):
                 continue
             pids.append(process.pid)
@@ -314,12 +314,12 @@ def find_client_pids(client_exe: Path | None, launcher_path: Path | None) -> set
     if client_exe is None:
         return pids
     target = str(client_exe).casefold()
-    for process in iter_processes(["name", "exe"]):
+    for process, info in iter_scoped_process_info(["name", "exe"]):
         try:
-            name = (process.info["name"] or "").casefold()
+            name = (info["name"] or "").casefold()
             if name != _GAME_PROCESS.casefold():
                 continue
-            exe = process.info["exe"]
+            exe = info["exe"]
             if exe is not None and exe.casefold() == target:
                 pids.add(process.pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):

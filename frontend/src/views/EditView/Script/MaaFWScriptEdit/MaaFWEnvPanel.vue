@@ -49,7 +49,7 @@ import {
   LoadingOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWEnvOutcome } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWEnvOutcome } from './sectionProps'
 
 /**
  * 脚本页基础信息里的「运行环境」面板：平时只有一行结论和「准备运行环境」按钮，日志收着、可点开；

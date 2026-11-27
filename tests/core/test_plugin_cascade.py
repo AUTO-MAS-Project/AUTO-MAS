@@ -2,15 +2,18 @@
 
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
 
+from app.config import ConfigCollection, config_manager
 from app.core.plugin.manager import _PluginManager
 from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
-from app.plugin.errors import PluginBusyError, PluginOperationError
+from app.plugin.errors import PluginBusyError, PluginOperationError, PluginPrecheckError
 from app.plugin.runtime import loader
 from app.plugin.types import PluginState
+from app.utils import io
 
 
 @pytest_asyncio.fixture
@@ -35,10 +38,11 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
             if name in adapters:
                 header = (
                     "from app.config import ConfigCollection, collection\n"
-                    "from app.models.config import ScriptEntry, UserEntry\n"
+                    "from app.models.config import PlanEntry, ScriptEntry, UserEntry\n"
                     "from app.models.task import TaskMode\n"
                     "from app.task.user_expander import UserExpander\n"
                     "from app.plugin.base.script import ScriptAdapterPlugin as BasePlugin, ScriptTypeDecl\n"
+                    "class ProbePlan(PlanEntry): pass\n"
                     "class ProbeUser(UserEntry): pass\n"
                     "class ProbeExpander(UserExpander): pass\n"
                     "class ProbeScript(ScriptEntry):\n"
@@ -46,7 +50,9 @@ async def cascade_plugins(isolated_app_paths, monkeypatch, tmp_path):
                 )
                 declaration = (
                     "    script_type_key = 'probe'\n"
-                    "    decl = ScriptTypeDecl(script_type=ProbeScript, user_type=ProbeUser, expander_class=ProbeExpander, supported_modes=(TaskMode.AUTO_PROXY,))\n"
+                    "    decl = ScriptTypeDecl(script_type=ProbeScript, user_type=ProbeUser, expander_class=ProbeExpander, plan_type=ProbePlan, supported_modes=(TaskMode.AUTO_PROXY,))\n"
+                    "    async def on_script_removed(self, script_id):\n"
+                    "        self.events.append(('removed', script_id))\n"
                 )
             (package / "__init__.py").write_text(
                 header
@@ -464,3 +470,185 @@ async def test_reload_checks_locked_indirect_adapter_before_tearing_down(
     finally:
         await scripts[uid].unlock(ticket)
         await manager.disable(records["cascade_a"])
+
+
+@pytest_asyncio.fixture
+async def cascaded_adapter(cascade_plugins, isolated_app_paths, monkeypatch):
+    from app import core
+    from app.core import plugin
+    from app.models.config import PlanEntry, QueueConfig, ScriptEntry
+
+    config = isolated_app_paths
+    scripts = ConfigCollection[ScriptEntry].build(
+        file=config.config_path / "scripts.yaml", keep_unknown_types=True
+    )
+    plans = ConfigCollection[PlanEntry].build(
+        file=config.config_path / "plans.yaml", keep_unknown_types=True
+    )
+    queues = ConfigCollection.build(
+        [QueueConfig], file=config.config_path / "queues.yaml"
+    )
+    for name, collection in (
+        ("PlanConfig", plans),
+        ("ScriptConfig", scripts),
+        ("QueueConfig", queues),
+    ):
+        monkeypatch.setitem(config_manager._collections, name, collection)
+        monkeypatch.setattr(config, name, collection)
+        await collection.activate()
+    manager, records = await cascade_plugins(
+        {"cascade_a": (), "cascade_c": ("cascade_a",)},
+        adapters=("cascade_c",),
+        source="installed",
+    )
+    monkeypatch.setattr(plugin, "Plugin", manager)
+    monkeypatch.setattr(core, "Plugin", manager)
+    config_manager.register_root(config.setting, config.config_path / "setting.yaml")
+    adapter = records["cascade_c"]
+    await manager.enable(adapter)
+    decl = adapter._plugin.decl
+    pid = plans.add(decl.plan_type)
+    await plans.commit()
+    sid = scripts.add(decl.script_type)
+    await scripts.commit()
+    users = scripts[sid].users
+    uid = users.add(
+        decl.user_type, payload={"info": {"name": "原账号", "plan_id": str(pid)}}
+    )
+    await users.commit()
+    qid, queue = await config.add_queue()
+    await config.add_queue_item(str(qid), payload={"Info": {"ScriptId": str(sid)}})
+    data = config.data_path / str(sid)
+    data.mkdir()
+    (data / "account.txt").write_bytes(b"account data")
+    settings = config.config_path / "plugins" / "cascade_c.yaml"
+    settings.parent.mkdir(exist_ok=True)
+    settings.write_bytes(b"saved: value\n")
+    await config_manager.flush()
+    return SimpleNamespace(
+        manager=manager,
+        provider=records["cascade_a"],
+        adapter=adapter,
+        scripts=scripts,
+        plans=plans,
+        queue=queue,
+        sid=sid,
+        pid=pid,
+        uid=uid,
+        data=data,
+        settings=settings,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "locked"), [("disable", "plans"), ("uninstall", "scripts")]
+)
+async def test_teardown_prechecks_locked_descendant(cascaded_adapter, action, locked):
+    env = cascaded_adapter
+    entry = next(getattr(env, locked).values())
+    ticket = await entry.lock_s()
+    try:
+        with pytest.raises(PluginPrecheckError, match="已锁定"):
+            if action == "disable":
+                await env.manager.disable(env.provider)
+            else:
+                await env.manager.uninstall(env.provider, purge_config=True)
+        assert env.adapter.info.state == env.provider.info.state == PluginState.ENABLED
+        assert env.sid in env.scripts and env.pid in env.plans
+        assert not env.scripts.unresolved() and not env.plans.unresolved()
+        assert (env.data / "account.txt").is_file()
+    finally:
+        await entry.unlock(ticket)
+
+
+@pytest.mark.asyncio
+async def test_disable_and_enable_preserve_managed_documents(cascaded_adapter):
+    env = cascaded_adapter
+    old = env.scripts[env.sid]
+    files = [col.persist_path for col in (env.scripts, env.plans)]
+    before = [(path.read_bytes(), path.stat().st_mtime_ns) for path in files]
+    await env.manager.disable(env.provider)
+    await config_manager.flush()
+    assert old.deleted and old.users.deleted
+    for col, uid, path in zip(
+        (env.scripts, env.plans), (env.sid, env.pid), files, strict=True
+    ):
+        (item,) = col.unresolved()
+        assert (
+            item.uid == uid
+            and item.payload == io.read_dict_file(path)["data"][str(uid)]
+        )
+    assert [(path.read_bytes(), path.stat().st_mtime_ns) for path in files] == before
+    assert next(env.queue.QueueItem.values()).Info.ScriptId == env.sid
+    assert (env.data / "account.txt").read_bytes() == b"account data"
+    assert env.settings.read_bytes() == b"saved: value\n"
+
+    await env.manager.enable(env.adapter)
+    await config_manager.flush()
+    assert [(path.read_bytes(), path.stat().st_mtime_ns) for path in files] == before
+    for col, path in zip((env.scripts, env.plans), files, strict=True):
+        assert not col.unresolved()
+        assert await col.to_dict() == io.read_dict_file(path)
+    assert env.scripts[env.sid].users[env.uid].info.plan_id == env.pid
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("purge", "disabled", "upstream"),
+    [
+        (False, False, False),
+        (True, False, False),
+        (True, True, False),
+        (True, False, True),
+    ],
+)
+async def test_uninstall_only_purges_selected_adapter(
+    cascaded_adapter, monkeypatch, purge, disabled, upstream
+):
+    import httpx
+    from fastapi import FastAPI
+
+    from app.api import plugin as api
+    from app.plugin import uv
+
+    env = cascaded_adapter
+    uninstall = AsyncMock()
+    monkeypatch.setattr(uv, "uninstall", uninstall)
+    events = env.adapter._plugin.events
+    if disabled:
+        await env.manager.disable(env.adapter)
+    target = env.provider if upstream else env.adapter
+    package = target.info.plugin_name
+    app = FastAPI()
+    app.include_router(api.router)
+    monkeypatch.setattr(api, "Plugin", env.manager)
+    body = {"recordId": str(target.uid)}
+    if purge:
+        body["purge_config"] = True
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post("/api/plugin/uninstall", json=body)
+    assert response.json()["status"] == "success", response.text
+    uninstall.assert_awaited_once_with(package)
+    await config_manager.flush()
+
+    assert (
+        package
+        in io.read_dict_file(env.settings.parents[1] / "setting.yaml")["plugin"][
+            "uninstalled"
+        ]
+    )
+    keep = not purge or upstream
+    for col, uid in ((env.scripts, env.sid), (env.plans, env.pid)):
+        assert col.is_unresolved(uid) == keep
+        assert (str(uid) in io.read_dict_file(col.persist_path)["data"]) == keep
+    assert [item.Info.ScriptId for item in env.queue.QueueItem.values()] == (
+        [env.sid] if keep else []
+    )
+    assert (env.data / "account.txt").exists() == keep
+    assert env.settings.exists() == keep
+    assert (("removed", str(env.sid)) in events) == (
+        purge and not disabled and not upstream
+    )

@@ -154,6 +154,7 @@ const browserDevElectronAPI = {
     success: false,
     error: '浏览器预览不支持读取封面图片',
   }),
+  onOnlineAppearancePrepareProgress: () => () => undefined,
   onAppearanceChanged: () => () => undefined,
   onThemeConfigChanged: () => () => undefined,
   backendStatus: async () => ({ isRunning: true, runtimeSupervised: false }),

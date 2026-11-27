@@ -6,29 +6,18 @@ import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import NoData from '@/components/NoData.vue'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
-import type { ScriptType } from '@/types/script'
 import {
-  SCRIPT_TYPE_OPTIONS,
   filterScriptTypeOptions,
   splitScriptTypeOptions,
+  type ScriptTypeOption,
 } from './scriptCreateFlow'
 
-const props = defineProps<{ types: string[]; loading: boolean; error: string | null }>()
-const selectedType = defineModel<ScriptType>({ required: true })
+const props = defineProps<{ options: ScriptTypeOption[]; loading: boolean; error: string | null }>()
+const selectedType = defineModel<string>({ required: true })
 const emit = defineEmits<{ retry: [] }>()
 const { t } = useI18n()
 const typeKeyword = ref('')
-const typeOptions = computed(() =>
-  // 仅展示后端已启用的能力；前端元数据只提供卡片的文案、分组和图标。
-  SCRIPT_TYPE_OPTIONS.filter(option => props.types.includes(option.value)).map(option => ({
-    ...option,
-    title: t(option.titleKey),
-    description: t(option.descriptionKey),
-  }))
-)
-const filteredTypes = computed(() =>
-  filterScriptTypeOptions(typeOptions.value, typeKeyword.value, t)
-)
+const filteredTypes = computed(() => filterScriptTypeOptions(props.options, typeKeyword.value))
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
 const clearTypeFilters = () => {
   // 清空类型搜索，重新展示全部可创建类型。

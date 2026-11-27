@@ -126,171 +126,6 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
     /**
-     * 查询插件注册表配置
-     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
-     * @param requestBody
-     * @param locale
-     * @returns PluginRegistryGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginRegistryApiPluginRegistryGetPost(
-        requestBody: PluginRegistryGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginRegistryGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_registry/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询插件目录配置
-     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
-     * @param requestBody
-     * @param locale
-     * @returns PluginCatalogGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginCatalogApiPluginCatalogGetPost(
-        requestBody: PluginCatalogGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginCatalogGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_catalog/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询插件自有配置（凭注册表项定位）
-     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
-     * @param requestBody
-     * @param locale
-     * @returns PluginConfigGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginConfigApiPluginConfigGetPost(
-        requestBody: PluginConfigGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginConfigGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin_config/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出已加载插件（运行时）
-     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
-     * @param locale
-     * @returns PluginRuntimeListOut Successful Response
-     * @throws ApiError
-     */
-    public static listPluginsApiPluginListPost(
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginRuntimeListOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/list',
-            query: {
-                'locale': locale,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Plugin Installation
-     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
-     * @param requestBody
-     * @param locale
-     * @returns PluginInstallationOut Successful Response
-     * @throws ApiError
-     */
-    public static getPluginInstallationApiPluginInstallationGetPost(
-        requestBody: PluginInstallationGetIn,
-        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<PluginInstallationOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/plugin/installation/get',
-            query: {
-                'locale': locale,
-            },
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * Get Active Config Triggers
-     * 读取当前占用的配置触发器字段。
-     * @returns ActiveTriggersOut Successful Response
-     * @throws ApiError
-     */
-    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/config/triggers/active',
-        });
-    }
-    /**
-     * Get Config Trigger Result
-     * 读取任务执行状态和近期终态。
-     * @param requestBody
-     * @returns TriggerResultOut Successful Response
-     * @throws ApiError
-     */
-    public static getConfigTriggerResultApiConfigTriggersResultPost(
-        requestBody: TriggerResultIn,
-    ): CancelablePromise<TriggerResultOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/config/triggers/result',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询工具配置
-     * 获取工具设置
-     * @returns ToolsGetOut Successful Response
-     * @throws ApiError
-     */
-    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/get',
-        });
-    }
-    /**
      * 获取游戏已完成活动
      * @param game
      * @param server
@@ -1140,6 +975,18 @@ export class GetService {
         });
     }
     /**
+     * 查询工具配置
+     * 获取工具设置
+     * @returns ToolsGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getToolsApiToolsGetPost(): CancelablePromise<ToolsGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/tools/get',
+        });
+    }
+    /**
      * 查询全局 Mirror 酱 CDK 状态与到期时间
      * @param requestBody
      * @returns SettingMirrorCdkOut Successful Response
@@ -1567,6 +1414,159 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/ocr/check/image/all',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Active Config Triggers
+     * 读取当前占用的配置触发器字段。
+     * @returns ActiveTriggersOut Successful Response
+     * @throws ApiError
+     */
+    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/config/triggers/active',
+        });
+    }
+    /**
+     * Get Config Trigger Result
+     * 读取任务执行状态和近期终态。
+     * @param requestBody
+     * @returns TriggerResultOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigTriggerResultApiConfigTriggersResultPost(
+        requestBody: TriggerResultIn,
+    ): CancelablePromise<TriggerResultOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config/triggers/result',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件注册表配置
+     * 读取单个或全部已安装插件记录，按配置 API 格式返回条目顺序与展示数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginRegistryGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginRegistryApiPluginRegistryGetPost(
+        requestBody: PluginRegistryGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRegistryGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_registry/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件目录配置
+     * 读取单个或全部市场插件条目，返回展示顺序、版本及安装操作所需的配置数据。
+     * @param requestBody
+     * @param locale
+     * @returns PluginCatalogGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginCatalogApiPluginCatalogGetPost(
+        requestBody: PluginCatalogGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginCatalogGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_catalog/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询插件自有配置（凭注册表项定位）
+     * 读取已安装插件的专属配置，未声明配置时返回空值，记录不存在时返回未找到错误。
+     * @param requestBody
+     * @param locale
+     * @returns PluginConfigGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginConfigApiPluginConfigGetPost(
+        requestBody: PluginConfigGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginConfigGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin_config/get',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出已加载插件（运行时）
+     * 汇总已发现插件的运行状态、版本、来源和依赖，供前端插件管理页展示。
+     * @param locale
+     * @returns PluginRuntimeListOut Successful Response
+     * @throws ApiError
+     */
+    public static listPluginsApiPluginListPost(
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginRuntimeListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/list',
+            query: {
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Plugin Installation
+     * 读取本次市场安装的持久结果，后端业务初始化失败时也允许查询。
+     * @param requestBody
+     * @param locale
+     * @returns PluginInstallationOut Successful Response
+     * @throws ApiError
+     */
+    public static getPluginInstallationApiPluginInstallationGetPost(
+        requestBody: PluginInstallationGetIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<PluginInstallationOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/installation/get',
+            query: {
+                'locale': locale,
+            },
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -1,6 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.projectUpdate')" :icon="CloudSyncOutlined">
+  <MaaFWFormSection :title="t('core.edit.projectUpdate')" :icon="CloudDownloadOutlined">
     <a-alert
       v-if="isAutoUpdateDisabled"
       class="update-alert"
@@ -172,7 +172,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { CloudSyncOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CloudDownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import {
   resolveCdkHint,
   resolveCdkWarning,
@@ -183,16 +183,13 @@ import { handleExternalLink } from '@/utils/openExternal'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import UpdateProcessPanel from './UpdateProcessPanel.vue'
 import UpdatePackageMode from '../components/UpdatePackageMode.vue'
-import type {
-  MaaFWScriptUpdateSectionEmits,
-  MaaFWScriptUpdateSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptUpdateSectionEmits, MaaFWScriptUpdateSectionProps } from './sectionProps'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
 const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()

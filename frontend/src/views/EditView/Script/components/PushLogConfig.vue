@@ -114,7 +114,7 @@ const toggleCollapsed = () => {
 
 <template>
   <div class="log-rule-config" :class="{ collapsed }">
-    <div class="log-rule-config-header push-config-header">
+    <div class="log-rule-config-header sub-section-header">
       <h3>
         <a-tooltip
           :title="collapsed ? t('core.edit.expandRulesArea') : t('core.edit.collapseRulesArea')"
@@ -212,34 +212,6 @@ const toggleCollapsed = () => {
 <style scoped src="./logRuleConfig.css"></style>
 
 <style scoped>
-.push-config-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 6px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.push-config-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.push-config-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
-}
-
 .docs-btn {
   display: inline-flex;
   align-items: center;

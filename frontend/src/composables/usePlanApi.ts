@@ -4,11 +4,7 @@ import { message } from 'ant-design-vue'
 import type { PlanCreateIn, PlanDeleteIn, PlanGetIn, PlanReorderIn, PlanUpdateIn } from '@/api'
 import { Service } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import {
-  getPlanCreateType,
-  getPlanTypeDescriptor,
-  type PlanConfigType,
-} from '@/utils/planTypeRegistry'
+import { getPlanTypeDescriptor, type PlanTypeOption } from '@/utils/planTypeRegistry'
 import { analyticsCountBucket, beginAnalyticsOperation } from '@/utils/analytics'
 import type { AnalyticsPlanType } from '@/types/analytics'
 
@@ -45,27 +41,24 @@ export function usePlanApi() {
   }
 
   // 创建计划
-  const createPlan = async (type: PlanConfigType, owner?: { scriptId: string }) => {
+  const createPlan = async (plan: PlanTypeOption, owner?: { scriptId: string }) => {
     const operation = beginAnalyticsOperation('plan_manage_finished')
     const dimensions = {
       action: 'create' as const,
-      plan_type: getPlanTypeDescriptor(type)?.configType ?? ('unknown' as const),
+      plan_type: getPlanTypeDescriptor(plan.configType)?.configType ?? ('unknown' as const),
       count_bucket: '1' as const,
     }
     loading.value = true
     try {
-      const createType = getPlanCreateType(type)
-      if (!createType) {
-        throw new Error(t('core.misc.unsupportedPlanTypeP0', { p0: type }))
-      }
-
-      const params: PlanCreateIn = { type: createType, ...owner }
+      // 插件使用注册表给出的配置类名；生成枚举只包含构建时的类型。
+      const params: PlanCreateIn = { type: plan.createType as PlanCreateIn['type'], ...owner }
       const response = await Service.addPlanApiPlanAddPost(params)
       operation.finish({
         ...dimensions,
         outcome: response.code === 200 && response.planId ? 'success' : 'failure',
       })
-      if (response.code === 200 && response.planId) rememberPlanType(response.planId, type)
+      if (response.code === 200 && response.planId)
+        rememberPlanType(response.planId, plan.configType)
 
       // 播放添加计划成功音频
       const { playSound } = useAudioPlayer()

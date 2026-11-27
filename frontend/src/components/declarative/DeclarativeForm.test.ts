@@ -1,19 +1,63 @@
-import { describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, defineComponent, h } from 'vue'
+// @vitest-environment vue-client
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
+import { computed, createSSRApp, defineComponent, h, nextTick, reactive, ref } from 'vue'
+import axios, { type AxiosResponse } from 'axios'
+import { deferred, fire, testView } from '../../../tests/vueRenderer'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import Antd from 'ant-design-vue'
-import { PathKind } from '@/api'
-import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
+import { PathKind, Service } from '@/api'
+import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { requestApi } from '@/utils/apiResult'
+import { declarativeTables } from './declarativeLayout'
 import DeclarativeForm from './DeclarativeForm.vue'
 
+beforeEach(() => vi.stubGlobal('window', {}))
+afterEach(() => vi.unstubAllGlobals())
+
+function mountForm(
+  props: () => InstanceType<typeof DeclarativeForm>['$props'],
+  client: QueryClient
+) {
+  const view = testView(defineComponent(() => () => h(DeclarativeForm, props())))
+  view.stub({
+    ASteps: 'steps',
+    AFlex: 'div',
+    ATable: 'table',
+    AButton: 'button',
+    AInput: 'input',
+    AInputPassword: 'input',
+    ASelect: 'select',
+  })
+  view.app.use(VueQueryPlugin, { queryClient: client }).use(
+    createI18n({
+      legacy: false,
+      locale: 'en',
+      missingWarn: false,
+      fallbackWarn: false,
+      messages: { en: { demo: { steps: { start: { label: 'Translated start' } } } } },
+    })
+  )
+  view.mount()
+  return view
+}
+
 /** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
-async function render(transpose: boolean, includeOptionsGroup = true) {
+async function render(
+  transpose: boolean,
+  includeOptionsGroup = true,
+  errors: Record<string, string> = {
+    'alpha.enabled': 'invalid switch',
+    'alpha.missing_dir': 'missing directory',
+  }
+) {
   const update = vi.fn()
   const action = vi.fn()
   const edit = new Map<string, (value: string) => void>()
   const selectAction = new Map<string, () => void>()
+  const pick = new Map<string, () => void>()
   const groups = [
     {
       name: 'alpha',
@@ -21,7 +65,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
         { field: 'name' },
         { field: 'note' },
         { field: 'on', component: 'switch' },
-        { field: 'count', component: 'number' },
+        { field: 'count', component: 'number', min: 0, step: 0.1 },
         { field: 'extra' },
         { field: 'enabled', component: 'switch' },
         { field: 'locked', component: 'switch', editable: false },
@@ -33,7 +77,13 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
         },
         { field: 'single', component: 'switch' },
         { field: 'notes', widget: 'textarea' },
-        { field: 'exe', component: 'path', path_kind: PathKind.FILE, path_must_exist: true },
+        {
+          field: 'exe',
+          component: 'path',
+          path_kind: PathKind.FILE,
+          path_must_exist: true,
+          path_extensions: ['exe'],
+        },
         {
           field: 'missing_dir',
           component: 'path',
@@ -50,13 +100,21 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
         {
           field: 'refresh',
           component: 'dropdown-button',
-          options: [{ value: true, label: 'Refresh now' }],
+          options: [{ value: 'refresh', label: 'Refresh now' }],
         },
       ],
     },
   ]
   const values = {
-    alpha: { name: 'A1', note: 'A2', extra: 'outside', on: true, count: 4, enabled: true },
+    alpha: {
+      name: 'A1',
+      note: 'A2',
+      extra: 'outside',
+      on: true,
+      count: 4,
+      enabled: true,
+      exe: 'old.exe',
+    },
     beta: { name: 'B1', note: 'hidden' },
   }
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
@@ -70,7 +128,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
       values,
       uid: 'uid',
       namespace: 'demo',
-      tables: pluginSettingsTables({
+      tables: declarativeTables({
         tables: [
           {
             key: 'matrix',
@@ -81,11 +139,7 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
           { key: 'invisible', rows: ['absent'], columns: ['beta'], transpose: false },
         ],
       }),
-      errors: {
-        'beta.name': 'save failed',
-        'alpha.enabled': 'invalid switch',
-        'alpha.missing_dir': 'missing directory',
-      },
+      errors,
       'onUpdate:value': update,
       onAction: action,
     })
@@ -122,9 +176,13 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
       },
     })
   )
+  let numeric: Record<string, unknown> = {}
   let columns: Array<{ key: string; width?: number; align?: string }> = []
   app.mixin({
     created() {
+      if (this.$options.name === 'AButton' && this.$attrs['aria-label'])
+        pick.set(String(this.$attrs['aria-label']), () => this.$emit('click'))
+      if (this.$options.name === 'AInputNumber') numeric = this.$props
       if (this.$options.name === 'ATable') columns = this.$props.columns
       if (this.$options.name === 'AInput') {
         edit.set(String(this.$props.value), value => this.$emit('update:value', value))
@@ -133,10 +191,228 @@ async function render(transpose: boolean, includeOptionsGroup = true) {
   })
   const html = await renderToString(app)
   client.clear()
-  return { html, edit, update, action, selectAction, columns }
+  return { html, edit, update, action, selectAction, pick, columns, numeric }
 }
 
 describe('插件声明式表格与字段反馈', () => {
+  it('系统目录和文件选择保留筛选器，取消后保留草稿', async () => {
+    const selectFolder = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce('D:/folder')
+    const selectFile = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(['D:/demo.exe'])
+    vi.stubGlobal('window', { electronAPI: { selectFolder, selectFile } })
+    const { pick, update } = await render(false, false)
+    pick.get('core.edit.pickDirectory')!()
+    pick.get('core.comp.pickFile')!()
+    await nextTick()
+    expect(update).not.toHaveBeenCalled()
+    expect(selectFolder).toHaveBeenCalledOnce()
+    expect(selectFile).toHaveBeenCalledWith([{ name: 'exe', extensions: ['exe'] }])
+    pick.get('core.edit.pickDirectory')!()
+    pick.get('core.comp.pickFile')!()
+    await nextTick()
+    expect(update.mock.calls).toEqual([
+      ['alpha', 'missing_dir', 'D:/folder'],
+      ['alpha', 'exe', 'D:/demo.exe'],
+    ])
+  })
+  it('浏览器开发模式可以手动编辑和清空路径', async () => {
+    vi.stubGlobal('window', { __AUTO_MAS_BROWSER_DEV_MODE__: true })
+    const { html, pick, edit, update } = await render(false, false)
+    expect(pick.has('core.comp.pickFile')).toBe(false)
+    expect(pick.has('core.edit.pickDirectory')).toBe(false)
+    expect(html.match(/<input\b[^>]*value="old.exe"[^>]*>/)?.[0]).not.toContain('readonly')
+    edit.get('old.exe')!('new.exe')
+    edit.get('old.exe')!('')
+    expect(update.mock.calls).toEqual([
+      ['alpha', 'exe', 'new.exe'],
+      ['alpha', 'exe', null],
+    ])
+  })
+  it('步骤保留同一编辑稿，错误定位到收起的表格，同 UID 重读保留展开选择', async () => {
+    const draft = usePluginSettingsDraft()
+    draft.reset({ Main: { Path: 'old' }, Run: { Count: 2 } }, { keepDraft: false })
+    const uid = ref('uid')
+    const groups = ref([
+      { name: 'Main', hints: [{ field: 'Path' }] },
+      { name: 'Run', hints: [{ field: 'Count' }] },
+    ])
+    const finish = vi.fn()
+    const client = new QueryClient()
+    const view = mountForm(
+      () => ({
+        uid: uid.value,
+        namespace: 'demo',
+        groups: groups.value,
+        values: draft.values,
+        errors: draft.errors.value,
+        steps: [
+          { key: 'start', title: 'Ignored title' },
+          { key: 'empty' },
+          { key: 'run', title: 'Run options' },
+        ],
+        sections: {
+          'group:Main': { collapsible: true, default_collapsed: true },
+          'table:retries': { step: 'run', collapsible: true, default_collapsed: true },
+        },
+        tables: [{ key: 'retries', rows: ['Run'], columns: ['Count'] }],
+        'onUpdate:value': draft.update,
+        onFinish: finish,
+      }),
+      client
+    )
+    const click = (label: string) => fire(view.find('button', label)!, 'onClick')
+    const toggle = () => view.all().find(node => 'aria-expanded' in node.props)!
+    try {
+      expect(view.find('steps')!.props.items).toMatchObject([
+        { title: 'Translated start' },
+        { title: 'Run options' },
+      ])
+      expect(toggle().props['aria-expanded']).toBe(false)
+      await fire(toggle(), 'onClick')
+      await fire(view.find('input')!, 'onUpdate:value', 'new')
+      await click('core.edit.next')
+      expect(toggle().props['aria-expanded']).toBe(false)
+      await fire(toggle(), 'onClick')
+      groups.value = [...groups.value]
+      await nextTick()
+      expect(toggle().props['aria-expanded']).toBe(true)
+      await click('core.taskboard.complete')
+      expect(finish).toHaveBeenCalledOnce()
+      await fire(toggle(), 'onClick')
+      await click('core.edit.previousStep')
+      expect(toggle().props['aria-expanded']).toBe(true)
+      expect(view.find('input')!.props.value).toBe('new')
+      await requestApi(
+        async () => ({ code: 422, fieldErrors: { 'Run.Count': 'invalid' } }),
+        'save failed'
+      ).catch(draft.saveFailed)
+      await nextTick()
+      expect(view.find('steps')!.props.current).toBe(1)
+      expect(toggle().props['aria-expanded']).toBe(true)
+      uid.value = 'other'
+      await nextTick()
+      expect(view.find('steps')!.props.current).toBe(0)
+      await fire(view.find('steps')!, 'onUpdate:current', 1)
+      expect(toggle().props['aria-expanded']).toBe(false)
+    } finally {
+      view.app.unmount()
+      client.clear()
+    }
+  })
+
+  it('级联查询只发送草稿里的可见依赖，迟到及失败的响应保留选择', async () => {
+    const profile = {
+      field: 'Profile',
+      component: 'select',
+      option_source: 'profiles',
+      depends_on: {
+        region: 'Setup.Region',
+        limit: 'Setup.Limit',
+        trial: 'Setup.Trial',
+      },
+    }
+    const hints = [
+      { field: 'Region' },
+      { field: 'Limit' },
+      { field: 'Trial' },
+      profile,
+      { field: 'Password', secret: true },
+      { field: 'Token', masked: true },
+      ...['Password', 'Token', 'Hidden'].map(field => ({
+        field: 'By' + field,
+        option_source: 'denied',
+        depends_on: { q: 'Setup.' + field },
+      })),
+    ]
+    const draft = reactive({
+      Region: '',
+      Limit: 0,
+      Trial: false,
+      Profile: 7 as number | boolean,
+      Password: 'private',
+      Token: 'masked',
+      Hidden: 'hidden',
+    })
+    const pending = new Map<string, ReturnType<typeof deferred<AxiosResponse>>>()
+    const urls: URL[] = []
+    const http = vi.spyOn(axios, 'request').mockImplementation(config => {
+      const url = new URL(config.url!, 'http://mas.test')
+      urls.push(url)
+      const response = deferred<AxiosResponse>()
+      pending.set(url.searchParams.get('region')!, response)
+      return response.promise
+    })
+    const complete = (region: string, values: Array<boolean | number>) =>
+      pending.get(region)!.resolve({
+        status: 200,
+        data: { code: 200, data: values.map(value => ({ value })) },
+      } as AxiosResponse)
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const invalid = vi.fn()
+    const view = mountForm(
+      () => ({
+        uid: 'uid',
+        namespace: 'demo',
+        pluginName: 'demo15',
+        setupMode: true,
+        groups: [{ name: 'Setup', hints }],
+        values: { Setup: draft },
+        'onUpdate:value': (_, field, value) => Object.assign(draft, { [field]: value }),
+        'onUpdate:optionsInvalid': invalid,
+      }),
+      client
+    )
+    const region = (value: string) => fire(view.find('input')!, 'onUpdate:value', value)
+    const submit = () => view.find('button', 'core.taskboard.complete')!
+    try {
+      await nextTick()
+      expect(urls).toEqual([])
+      await region('A')
+      await vi.waitFor(() => expect(pending.has('A')).toBe(true))
+      await region('B')
+      await vi.waitFor(() => expect(pending.has('B')).toBe(true))
+      expect(urls.map(url => [url.pathname, Object.fromEntries(url.searchParams)])).toEqual(
+        ['A', 'B'].map(region => [
+          '/api/plugin/demo15/options/profiles',
+          { region, limit: '0', trial: 'false', locale: 'en' },
+        ])
+      )
+      expect(view.find('select')!.props.loading).toBe(true)
+      expect(submit().props.disabled).toBe(true)
+      complete('B', [true, 3, false])
+      await vi.waitFor(() =>
+        expect(view.find('p', 'core.plugins.optionUnavailable')?.props.role).toBe('alert')
+      )
+      expect(invalid).toHaveBeenLastCalledWith(true)
+      expect(submit().props.disabled).toBe(true)
+      expect(draft.Profile).toBe(7)
+      await fire(view.find('select')!, 'onUpdate:value', true)
+      complete('A', [7])
+      await vi.waitFor(() => expect(client.isFetching()).toBe(0))
+      expect(view.find('select')!.props.options).toMatchObject([
+        { value: true },
+        { value: 3 },
+        { value: false },
+      ])
+      expect(view.find('p', 'core.plugins.optionUnavailable')).toBeUndefined()
+      expect(invalid).toHaveBeenLastCalledWith(false)
+      expect(submit().props.disabled).toBe(false)
+      await region('C')
+      await vi.waitFor(() => expect(pending.has('C')).toBe(true))
+      pending.get('C')!.reject(new Error('offline'))
+      await vi.waitFor(() => expect(view.find('p', 'offline')?.props.role).toBe('alert'))
+      expect(draft.Profile).toBe(true)
+      expect(submit().props.disabled).toBe(true)
+      const failed = pending.get('C')
+      await fire(view.find('button', 'core.common.retry')!, 'onClick')
+      await vi.waitFor(() => expect(pending.get('C')).not.toBe(failed))
+      complete('C', [true])
+      await vi.waitFor(() => expect(submit().props.disabled).toBe(false))
+    } finally {
+      view.app.unmount()
+      client.clear()
+      http.mockRestore()
+    }
+  })
   it.each([
     {
       transpose: false,
@@ -202,7 +478,8 @@ describe('插件声明式表格与字段反馈', () => {
   })
 
   it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {
-    const { columns, html } = await render(false)
+    const { columns, html, numeric } = await render(false)
+    expect(numeric).toMatchObject({ min: 0, step: 0.1 })
     expect(columns.map(({ width }) => width)).toEqual([108, undefined, undefined, 84, 116])
     expect(columns.find(column => column.key === 'on')?.align).toBe('center')
     const table = html.match(/<tbody\b[^>]*>([\s\S]*?)<\/tbody>/)![1]!
@@ -217,15 +494,64 @@ describe('插件声明式表格与字段反馈', () => {
   })
 
   it('保存错误留在对应单元格，选项加载失败在普通字段内显示并可重试', async () => {
-    const { html } = await render(false)
+    const draft = usePluginSettingsDraft()
+    await requestApi(
+      async () => ({
+        code: 422,
+        message: 'invalid settings',
+        fieldErrors: { 'beta.name': 'name already exists', 'alpha.extra': 'invalid extra' },
+      }),
+      'save failed'
+    ).catch(draft.saveFailed)
+    const { html } = await render(false, true, draft.errors.value)
     const cell = [...html.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].find(match =>
       match[1]!.includes('value="B1"')
     )
-    expect(cell?.[1]).toMatch(/role="alert"[^>]*>save failed</)
+    expect(cell?.[1]).toMatch(/role="alert"[^>]*>name already exists</)
     const ordinary = html.slice(html.indexOf('</table>'))
+    expect(ordinary).toMatch(/value="outside"[^<]*(?:<[^>]+>)*invalid extra</)
+    expect(html).not.toContain('invalid settings')
     expect(ordinary).toMatch(
       /device[\s\S]*role="alert"[^>]*>options unavailable<[\s\S]*core.common.retry/
     )
+  })
+
+  it('同一表单的两种计划和未筛选计划各自请求并缓存选项', async () => {
+    const endpoint = '/api/plugin/options/plans'
+    const hints = [
+      { field: 'first', endpoint, plan_type: 'FirstPlan' },
+      { field: 'second', endpoint, plan_type: 'SecondPlan' },
+      { field: 'all', endpoint },
+    ]
+    const request = vi.spyOn(Service, 'pluginPlanOptionsApiPluginOptionsPlansPost')
+    const client = new QueryClient({
+      defaultOptions: { queries: { enabled: false, retry: false } },
+    })
+    try {
+      for (const label of ['first', 'second', 'all'])
+        request.mockResolvedValueOnce({ code: 200, data: [{ value: label, label }] })
+      const app = createSSRApp(
+        defineComponent({
+          async setup() {
+            const target = computed(() => ({ uid: 'uid', ui: { hints: { plans: hints } } }))
+            const { stateFor } = useDeclarativeOptions(target)
+            const lists = await Promise.all(hints.map(hint => stateFor('plans', hint)!.execute()))
+            return () => h('span', lists.map(list => list.data?.[0]?.label).join(','))
+          },
+        })
+      )
+      app.use(VueQueryPlugin, { queryClient: client })
+      app.use(createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false }))
+      expect(await renderToString(app)).toContain('first,second,all')
+      expect(request.mock.calls.map(([, body]) => body)).toEqual([
+        { type: 'FirstPlan' },
+        { type: 'SecondPlan' },
+        undefined,
+      ])
+    } finally {
+      request.mockRestore()
+      client.clear()
+    }
   })
 
   it('下拉动作携带分组和字段声明，走独立动作入口', async () => {
@@ -234,7 +560,7 @@ describe('插件声明式表格与字段反馈', () => {
     expect(action).toHaveBeenCalledWith(
       'other',
       expect.objectContaining({ field: 'refresh', component: 'dropdown-button' }),
-      true
+      'refresh'
     )
     expect(update).not.toHaveBeenCalled()
   })

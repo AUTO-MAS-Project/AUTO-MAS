@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
+import { ApiResponseError } from '@/utils/apiResult'
 import { settingsChanges, usePluginSettingsDraft } from './usePluginSettingsDraft'
 
 describe('插件设置编辑稿', () => {
@@ -39,11 +40,16 @@ describe('插件设置编辑稿', () => {
     draft.reset({ group: { a: 1, b: 2, c: 3 } }, { keepDraft: false })
     draft.update('group', 'a', 10)
     draft.update('group', 'b', 20)
-    draft.saveFailed('failed')
-    expect(draft.errors.value).toEqual({ 'group.a': 'failed', 'group.b': 'failed' })
-    expect(draft.values.group).toEqual({ a: 10, b: 20, c: 3 })
+    draft.update('group', 'c', 30)
+    draft.saveFailed(
+      new ApiResponseError('invalid', { 'group.a': 'too large', 'group.b': 'too small' })
+    )
+    expect(draft.errors.value).toEqual({ 'group.a': 'too large', 'group.b': 'too small' })
+    draft.reset({ group: { a: 1, b: 2, c: 30 } }, { keepDraft: true })
+    expect(draft.errors.value).toEqual({ 'group.a': 'too large', 'group.b': 'too small' })
+    expect(draft.values.group).toEqual({ a: 10, b: 20, c: 30 })
     draft.update('group', 'a', 11)
-    expect(draft.errors.value).toEqual({ 'group.b': 'failed' })
+    expect(draft.errors.value).toEqual({ 'group.b': 'too small' })
     draft.discard()
     expect(draft.errors.value).toEqual({})
   })

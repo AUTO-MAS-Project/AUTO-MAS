@@ -1,218 +1,193 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <ScriptEditHeader
-        script-type="ZzzOd"
-        :title="t('core.edit.editScript')"
-        @cancel="handleCancel"
-      />
+  <ScriptEditLayout
+    :script-id="scriptId"
+    :loading="pageLoading"
+    :header="{ scriptType: 'ZzzOd', title: t('core.edit.editScript') }"
+    :form="{ model: formData, rules }"
+    :body-form="{ model: formData }"
+    :form-label="t('core.edit.zzzodScriptConfiguration')"
+    @cancel="handleCancel"
+  >
+    <template #basic>
+      <ScriptBasicInfoCard
+        v-model:name="formData.name"
+        :name-hint="t('core.edit.zzzodScriptNameHint')"
+        @save-name="handleChange('Info', 'Name', $event)"
+      >
+        <template #path>
+          <a-form-item name="path" :rules="rules.path">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.zzzodRootPath')"
+                :hint="t('core.edit.zzzodRootPathHint')"
+                variant="form"
+              />
+            </template>
+            <PathPickerField
+              v-model="formData.path"
+              mode="folder"
+              :placeholder="t('core.edit.zzzodRootPathPlaceholder')"
+              :pick-label="t('core.edit.pickDirectory')"
+              :disabled="isSaving"
+              @pick="selectRootPath"
+            />
+          </a-form-item>
+        </template>
+      </ScriptBasicInfoCard>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-spin :spinning="pageLoading">
-        <a-form
-          :aria-label="t('core.edit.zzzodScriptConfiguration')"
-          :model="formData"
-          :rules="rules"
-          layout="vertical"
-          class="config-form"
-        >
-          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item name="name">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.scriptName')"
-                      :hint="t('core.edit.zzzodScriptNameHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="formData.name"
-                    :placeholder="t('core.edit.enterScriptName')"
-                    class="modern-input"
-                    @blur="handleChange('Info', 'Name', formData.name)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item name="path" :rules="rules.path">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.zzzodRootPath')"
-                      :hint="t('core.edit.zzzodRootPathHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="formData.path"
-                    mode="folder"
-                    :placeholder="t('core.edit.zzzodRootPathPlaceholder')"
-                    :pick-label="t('core.edit.pickDirectory')"
-                    :disabled="isSaving"
-                    @pick="selectRootPath"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.gameConfiguration')"
-            :icon="ControlOutlined"
-          >
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.zzzodGamePath')"
-                      :hint="t('core.edit.zzzodGamePathHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <BoundGamePathField />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.zzzodAccountSwitch')"
-                      :hint="t('core.edit.zzzodAccountSwitchHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="zzzodConfig.Game.AccountSwitch"
-                    :options="accountSwitchOptions"
-                    style="width: 100%"
-                    @change="handleChange('Game', 'AccountSwitch', zzzodConfig.Game.AccountSwitch)"
-                  >
-                    <!-- 逐选项悬停提示：鼠标停在哪个选项上就显示哪个的说明 -->
-                    <template #option="{ label, hint }">
-                      <a-tooltip :title="hint" placement="right" :mouse-enter-delay="0.3">
-                        <div class="account-switch-option">{{ label }}</div>
-                      </a-tooltip>
-                    </template>
-                  </a-select>
-                  <span class="control-hint">
-                    {{
-                      t('core.edit.accountSwitch16x9ArgHint', {
-                        p0: '-screen-width 1920 -screen-height 1080',
-                      })
-                    }}
-                  </span>
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.launchArguments')"
-                      :hint="t('core.edit.zzzodGameArgumentsHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="zzzodConfig.Game.Arguments"
-                    :placeholder="t('core.edit.enterGameLaunchArguments')"
-                    style="width: 100%"
-                    :disabled="!zzzodConfig.Game.Enabled"
-                    @blur="handleChange('Game', 'Arguments', zzzodConfig.Game.Arguments)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.startupWait')"
-                      :hint="t('core.edit.howLongWaitAfter')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="zzzodConfig.Game.WaitTime"
-                    :min="0"
-                    :max="9999"
-                    style="width: 100%"
-                    :disabled="!zzzodConfig.Game.Enabled"
-                    @blur="handleChange('Game', 'WaitTime', zzzodConfig.Game.WaitTime)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-            <a-row :gutter="[24, 12]">
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="zzzodConfig.Game.Enabled"
-                  :title="t('core.edit.enableGameConfiguration')"
-                  :description="t('core.edit.masTakesOverStarting')"
-                  @change="handleChange('Game', 'Enabled', zzzodConfig.Game.Enabled)"
+    <template #game-config>
+      <SectionCard variant="card" :title="t('core.edit.gameConfiguration')" :icon="ControlOutlined">
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.zzzodGamePath')"
+                  :hint="t('core.edit.zzzodGamePathHint')"
+                  variant="form"
                 />
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="zzzodConfig.Game.LaunchBeforeTask"
-                  :title="t('core.edit.launchGameBeforeTask')"
-                  :description="t('core.edit.zzzodLaunchBeforeTaskHint')"
-                  :disabled="!zzzodConfig.Game.Enabled"
-                  @change="
-                    handleChange('Game', 'LaunchBeforeTask', zzzodConfig.Game.LaunchBeforeTask)
-                  "
+              </template>
+              <BoundGamePathField />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.zzzodAccountSwitch')"
+                  :hint="t('core.edit.zzzodAccountSwitchHint')"
+                  variant="form"
                 />
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="zzzodConfig.Game.CloseOnFinish"
-                  :title="t('core.edit.zzzodCloseGameOnFinish')"
-                  :description="t('core.edit.zzzodCloseGameOnFinishHint')"
-                  @change="handleChange('Game', 'CloseOnFinish', zzzodConfig.Game.CloseOnFinish)"
+              </template>
+              <a-select
+                v-model:value="zzzodConfig.Game.AccountSwitch"
+                :options="accountSwitchOptions"
+                style="width: 100%"
+                @change="handleChange('Game', 'AccountSwitch', zzzodConfig.Game.AccountSwitch)"
+              >
+                <!-- 逐选项悬停提示：鼠标停在哪个选项上就显示哪个的说明 -->
+                <template #option="{ label, hint }">
+                  <a-tooltip :title="hint" placement="right" :mouse-enter-delay="0.3">
+                    <div class="account-switch-option">{{ label }}</div>
+                  </a-tooltip>
+                </template>
+              </a-select>
+              <span class="control-hint">
+                {{
+                  t('core.edit.accountSwitch16x9ArgHint', {
+                    p0: '-screen-width 1920 -screen-height 1080',
+                  })
+                }}
+              </span>
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.launchArguments')"
+                  :hint="t('core.edit.zzzodGameArgumentsHint')"
+                  variant="form"
                 />
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.runConfiguration')"
-            :icon="ThunderboltOutlined"
-          >
-            <ScriptRunLimitsSection
-              v-model:hard-time-limit="zzzodConfig.Run.HardTimeLimit"
-              v-model:daily-limit="zzzodConfig.Run.ProxyTimesLimit"
-              v-model:retry-limit="zzzodConfig.Run.RunTimesLimit"
-              v-model:timeout="zzzodConfig.Run.RunTimeLimit"
-              :retry-hint="t('core.edit.zzzodRetryLimitHint')"
-              :timeout-hint="t('core.edit.zzzodRunTimeoutHint')"
-              enhanced
-              @save="key => handleChange('Run', key, zzzodConfig.Run[key])"
+              </template>
+              <a-input
+                v-model:value="zzzodConfig.Game.Arguments"
+                :placeholder="t('core.edit.enterGameLaunchArguments')"
+                style="width: 100%"
+                :disabled="!zzzodConfig.Game.Enabled"
+                @blur="handleChange('Game', 'Arguments', zzzodConfig.Game.Arguments)"
+              />
+            </a-form-item>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <a-form-item>
+              <template #label>
+                <FieldLabelWithHint
+                  :text="t('core.edit.startupWait')"
+                  :hint="t('core.edit.howLongWaitAfter')"
+                  variant="form"
+                />
+              </template>
+              <a-input-number
+                v-model:value="zzzodConfig.Game.WaitTime"
+                :min="0"
+                :max="9999"
+                style="width: 100%"
+                :disabled="!zzzodConfig.Game.Enabled"
+                @blur="handleChange('Game', 'WaitTime', zzzodConfig.Game.WaitTime)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+        <a-row :gutter="[24, 12]">
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="zzzodConfig.Game.Enabled"
+              :title="t('core.edit.enableGameConfiguration')"
+              :description="t('core.edit.masTakesOverStarting')"
+              @change="handleChange('Game', 'Enabled', zzzodConfig.Game.Enabled)"
             />
-          </SectionCard>
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="zzzodConfig.Game.LaunchBeforeTask"
+              :title="t('core.edit.launchGameBeforeTask')"
+              :description="t('core.edit.zzzodLaunchBeforeTaskHint')"
+              :disabled="!zzzodConfig.Game.Enabled"
+              @change="handleChange('Game', 'LaunchBeforeTask', zzzodConfig.Game.LaunchBeforeTask)"
+            />
+          </a-col>
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="zzzodConfig.Game.CloseOnFinish"
+              :title="t('core.edit.zzzodCloseGameOnFinish')"
+              :description="t('core.edit.zzzodCloseGameOnFinishHint')"
+              @change="handleChange('Game', 'CloseOnFinish', zzzodConfig.Game.CloseOnFinish)"
+            />
+          </a-col>
+        </a-row>
+      </SectionCard>
+    </template>
 
-          <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
-          <ZzzOdSlotManage :script-id="scriptId" />
-        </a-form>
-      </a-spin>
-    </ConfigLockPanel>
-  </ConfigEditShell>
+    <template #run>
+      <SectionCard
+        variant="card"
+        :title="t('core.edit.runConfiguration')"
+        :icon="ThunderboltOutlined"
+      >
+        <ScriptRunLimitsSection
+          v-model:hard-time-limit="zzzodConfig.Run.HardTimeLimit"
+          v-model:daily-limit="zzzodConfig.Run.ProxyTimesLimit"
+          v-model:retry-limit="zzzodConfig.Run.RunTimesLimit"
+          v-model:timeout="zzzodConfig.Run.RunTimeLimit"
+          :retry-hint="t('core.edit.zzzodRetryLimitHint')"
+          :timeout-hint="t('core.edit.zzzodRunTimeoutHint')"
+          enhanced
+          @save="key => handleChange('Run', key, zzzodConfig.Run[key])"
+        />
+      </SectionCard>
+    </template>
+
+    <template #advanced>
+      <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
+      <ZzzOdSlotManage :script-id="scriptId" />
+    </template>
+  </ScriptEditLayout>
 </template>
 
 <script setup lang="ts">
-import { AppstoreOutlined, ControlOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { ControlOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import ScriptRunLimitsSection from './components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import ScriptBasicInfoCard from '@/components/ScriptBasicInfoCard.vue'
+import ScriptEditLayout from '@/components/ScriptEditLayout.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
-import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'

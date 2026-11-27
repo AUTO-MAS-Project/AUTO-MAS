@@ -8,7 +8,7 @@
 </template>
 
 <script setup lang="ts">
-import type { MaaFWScriptControlSectionProps } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWScriptControlSectionProps } from './sectionProps'
 
 defineProps<{
   items: MaaFWScriptControlSectionProps['adbControlStrategyItems']

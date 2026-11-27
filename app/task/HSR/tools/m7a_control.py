@@ -28,6 +28,7 @@ from ..task_mapping import HSRTaskModule
 from . import m7a_config as m7a
 from .account_switch import HSRAccountSwitcher, build_platform_m7a_patch
 from .log_detect import detect_weekly_completion, find_cloud_non_retryable_marker
+from .m7a_paths import resolve_m7a_config_path
 from .m7a_runtime import M7ARunner
 from .run_model import (
     HSRNonRetryableTaskError,
@@ -229,7 +230,7 @@ class HSRM7AControl:
     ):
         """执行 M7A Daily 模块（副本、开始日与托管覆盖读 ``plan``）。"""
 
-        m7a_config_path = Path(m7a_path) / "config.yaml"
+        m7a_config_path = resolve_m7a_config_path(m7a_path)
         main_stage = resolve_m7a_main_stage(plan)
         platform_patch = await self.ensure_platform_ready()
 
@@ -283,9 +284,9 @@ class HSRM7AControl:
         """创建一个写入 M7A config.yaml patch 的队列项。"""
 
         timeout_seconds = self._module_timeout_seconds(module.key)
-        m7a_config_path = Path(m7a_path) / "config.yaml"
 
         async def run_m7a_patched():
+            m7a_config_path = resolve_m7a_config_path(m7a_path)
             if not m7a_config_path.exists():
                 raise RuntimeError(f"三月七 config.yaml 不存在: {m7a_config_path}")
 

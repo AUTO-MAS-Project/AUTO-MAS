@@ -294,8 +294,10 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     duration_bucket: duration,
   },
   community_login_finished: {
-    provider: ['miyoushe', 'skland'],
-    stage: ['create', 'scan', 'save'],
+    // 库街区短信登录与塔吉多账密登录并入同一事件：都是「社区凭据获取」的终态，
+    // 只是拿凭据的方式不同，用 provider/stage 区分即可，不必再建三个近乎相同的事件。
+    provider: ['miyoushe', 'skland', 'kuro', 'taygedo'],
+    stage: ['create', 'scan', 'save', 'sms', 'password'],
     outcome: [
       'saved',
       'confirmed_unsaved',
@@ -304,6 +306,8 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
       'cancelled',
       'replaced',
       'unmounted',
+      // 插件未启用 / 未解锁时不是登录失败，用户根本没走到验证环节
+      'unsupported',
     ],
     duration_bucket: duration,
   },

@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 import { useTheme } from '@/composables/useTheme'
 import type { MascotSummary } from '@/types/mascotPack'
 import { getConfig } from '@/utils/config'
@@ -14,9 +15,10 @@ const DEFAULT_CUSTOM_FPS = 60
 
 export function useMascotSettings() {
   const { t } = useI18n()
-  const { activeAppearance } = useTheme()
+  const { persistedAppearance } = useTheme()
   const [modal, modalContextHolder] = Modal.useModal()
-  const modalOptions = { zIndex: 100, wrapClassName: 'appearance-modal' }
+  const { confirm } = useConfirm(modal)
+  const modalOptions = { zIndex: 100 }
   const logger = window.electronAPI.getLogger('桌宠设置')
   const mascots = ref<MascotSummary[]>([])
   const selectedId = ref<string | null>(null)
@@ -40,7 +42,7 @@ export function useMascotSettings() {
   const available = computed(() =>
     selectedId.value
       ? mascots.value.some(item => item.id === selectedId.value)
-      : Boolean(activeAppearance.value?.mascotUrl)
+      : Boolean(persistedAppearance.value?.mascotUrl)
   )
   const options = computed(() => [
     { label: t('core.setting.basic.mascotFollowTheme'), value: 'theme' },
@@ -181,19 +183,14 @@ export function useMascotSettings() {
       }
       let result = await window.electronAPI.importMascot(paths[0])
       if (result.code === 'DUPLICATE_ID') {
-        const confirmed = await new Promise<boolean>(resolve =>
-          modal.confirm({
-            ...modalOptions,
-            title: t('core.setting.basic.mascotReplaceTitle'),
-            content: t('core.setting.basic.mascotReplaceContent', {
-              name: result.existing?.name ?? t('core.setting.basic.mascotSection'),
-            }),
-            okText: t('core.setting.basic.replaceAppearance'),
-            cancelText: t('core.common.cancel'),
-            onOk: () => resolve(true),
-            onCancel: () => resolve(false),
-          })
-        )
+        const confirmed = await confirm({
+          ...modalOptions,
+          title: t('core.setting.basic.mascotReplaceTitle'),
+          description: t('core.setting.basic.mascotReplaceContent', {
+            name: result.existing?.name ?? t('core.setting.basic.mascotSection'),
+          }),
+          okText: t('core.setting.basic.replaceAppearance'),
+        })
         if (!confirmed) {
           outcome = 'cancelled'
           return
@@ -228,15 +225,14 @@ export function useMascotSettings() {
   const removeMascot = (): void => {
     if (busy.value || selecting.value || !selectedId.value) return
     const id = selectedId.value
-    modal.confirm({
+    void confirm({
       ...modalOptions,
+      tone: 'danger',
       title: t('core.setting.basic.mascotRemoveTitle'),
-      content: t('core.setting.basic.mascotRemoveContent', {
+      description: t('core.setting.basic.mascotRemoveContent', {
         name: mascots.value.find(item => item.id === id)?.name ?? id,
       }),
       okText: t('core.setting.basic.removeMascot'),
-      okButtonProps: { danger: true },
-      cancelText: t('core.common.cancel'),
       onOk: async () => {
         saving.value = true
         try {

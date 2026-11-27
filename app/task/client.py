@@ -10,7 +10,10 @@ from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
 from app.task.game import current_game_session, selected_game_session
 from app.utils import ProcessInfo, ProcessManager, get_logger
-from app.utils.common.process.operations import iter_processes, managed_process
+from app.utils.common.process.operations import (
+    iter_scoped_process_info,
+    managed_process,
+)
 
 logger = get_logger("客户端进程")
 
@@ -103,11 +106,11 @@ class ClientProcess(ProcessManager):
 
         def find_started_client() -> tuple[int, float] | None:
             candidates = []
-            for proc in iter_processes(
+            for proc, info in iter_scoped_process_info(
                 ["exe", "create_time"], current_session_only=True
             ):
-                exe = proc.info["exe"]
-                created = proc.info["create_time"]
+                exe = info["exe"]
+                created = info["create_time"]
                 if (
                     exe
                     and Path(exe) == client_path

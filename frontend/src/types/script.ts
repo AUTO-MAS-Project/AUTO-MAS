@@ -7,6 +7,7 @@ import type {
   GeneralConfig,
   SrcConfig,
   ScriptCreateIn,
+  PluginProvidedScriptType,
   ScriptGetOut,
   ScriptIndexItem as ApiScriptIndexItem,
 } from '@/api'
@@ -21,7 +22,8 @@ import type {
   SanityTaskType,
 } from '@/utils/maaEndProtocolSpace'
 
-export type ScriptType = `${ScriptCreateIn['type']}`
+export type BuiltinScriptType = `${ScriptCreateIn['type']}`
+export type ScriptType = PluginProvidedScriptType['scriptKey']
 
 // 草稿由显式默认值初始化；路径保留 null，其余可编辑字段要求有值。
 type DraftGroup<T, Nullable extends keyof T = never> = {
@@ -531,6 +533,7 @@ export function resolveTaskMappingValue(
 // API 读取用于展示，不充当已初始化草稿或更新 Payload。
 export interface ScriptDetail extends Pick<ApiScriptIndexItem, 'uid' | 'activityGame'> {
   type: ScriptType
+  scriptConfigType: string
   name: string
   config: ScriptGetOut['data'][string]
 }

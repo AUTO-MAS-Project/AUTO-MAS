@@ -132,6 +132,9 @@ export default defineConfig(({ command }) => {
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用
     },
     test: {
+      alias: {
+        'vitest-environment-vue-client': path.resolve(__dirname, 'tests/vueClientEnvironment.ts'),
+      },
       // Vitest v4 compatibility: preserve mock call history.
       // Remove after tests no longer rely on calls from setup or earlier tests.
       // https://viteplus.dev/guide/vitest-v5#remove-unneeded-compatibility-settings

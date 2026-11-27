@@ -19,12 +19,12 @@ def bind_script_handlers() -> None:
     """有托管的隔离副本和后端启动使用相同的专项初始化入口。"""
     from app.task.builtin_registration import build_builtin_script_capabilities
     from app.task.MaaEnd.api_service import MaaEndConfigService
-    from app.task.MaaFW.tools.embedded.game_resolution import (
+    from app.task.ZzzOd.config_context import ZzzOdContext
+    from app.task.ZzzOd.recovery import ZzzOdRecovery
+    from app.utils.common.game_resolution import (
         read_unity_display_type,
         read_unity_resolution,
     )
-    from app.task.ZzzOd.config_context import ZzzOdContext
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     capabilities = build_builtin_script_capabilities(
         maaend=MaaEndConfigService(
@@ -65,7 +65,7 @@ async def main() -> None:
                 ),
             )
     else:
-        for name in ("maa_adapter", "src_adapter"):
+        for name in ("maa_adapter", "src_adapter", "bettergi_adapter"):
             if (repo_plugins / name / "pyproject.toml").is_file():
                 continue
             if not (test_plugins / name).is_dir():
@@ -81,7 +81,7 @@ async def main() -> None:
     # 首次配置升级会清理旧历史，先走正式迁移，再写入现行格式的种子。
     bind_script_handlers()
     await Config.check_data(prepare_plugins=Plugin.initialize)
-    for name in ("maa_adapter", "src_adapter"):
+    for name in ("maa_adapter", "src_adapter", "bettergi_adapter"):
         await Plugin.enable(Config.plugin_registry.by_name(name))
     if source_projects:
         for name in (
