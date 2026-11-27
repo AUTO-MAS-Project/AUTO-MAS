@@ -61,6 +61,7 @@
         :client-type="clientType"
         :types="types"
         show-adapter-select
+        creating
         @update:selected-type="value => (selectedType = value)"
         @pick-path="pickPath"
       />

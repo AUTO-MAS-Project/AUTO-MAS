@@ -71,7 +71,12 @@ class GameBinding(ConfigGroup):
         game = config_manager.get_collection("games").get(game_id)
         if game is None or value not in game.devices:
             raise ValueError("设备不属于所选游戏目标")
-        if is_deleted_device(game.devices[value]):
+        # 盘上已有的绑定（升级迁移或推迟移除留下的墓碑）加载时放行，由宿主随后
+        # 改为「设备已删除」；在这里拒绝会让整条托管读不进来。
+        if (
+            is_deleted_device(game.devices[value])
+            and entry.activation_state != NodeState.INITIALIZING
+        ):
             raise ValueError("所选设备实例已删除")
         return value
 

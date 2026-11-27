@@ -2746,6 +2746,7 @@
   "core.games.expandEdit": "展开编辑",
   "core.games.forceBeforeLaunch": "启动前清理残留进程",
   "core.games.forceClose": "强制关闭目标进程",
+  "core.games.forceCloseDataLossWarning": "可能导致模拟器数据丢失",
   "core.games.generalHint": "添加后建立设备连接，分别配置 ADB 地址和启动参数",
   "core.games.hide": "隐藏",
   "core.games.import": "添加",

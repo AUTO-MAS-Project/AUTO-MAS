@@ -199,7 +199,7 @@ export function formatTargetConfigSummary(row: GameRow, t: (key: string) => stri
     if (row.type.type !== 'avd' && info && 'stable_mode' in info && info.stable_mode) {
       parts.push(t('core.games.summary.stableMode'))
     }
-    if (info && 'config_guard' in info && info.config_guard) {
+    if (row.type.type !== 'avd' && info && 'config_guard' in info && info.config_guard) {
       parts.push(t('core.games.summary.configGuard'))
     }
     if (

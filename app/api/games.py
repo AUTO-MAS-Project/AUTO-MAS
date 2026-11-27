@@ -209,6 +209,8 @@ def _action_hints(entry: GameEntry) -> dict[str, list[ComponentHint]]:
     capabilities = control.capabilities
     busy = entry.actions_busy
     can_edit_game = not (busy or entry.is_locked)
+    # ModAVD 自己不改被守的设置，配置守卫对它没有意义，不给「记录基准」入口。
+    mod_avd = isinstance(control, EmulatorControl) and control.kind == "avd"
     game_hints = [
         hint
         for hint in entry._get_ui_hints().get("action", [])
@@ -220,7 +222,7 @@ def _action_hints(entry: GameEntry) -> dict[str, list[ComponentHint]]:
             ("save", True),
             ("delete", True),
             ("stable_mode", "stable_mode" in capabilities),
-            ("capture", "settings" in capabilities),
+            ("capture", "settings" in capabilities and not mod_avd),
         )
         if supported
     )
