@@ -43,28 +43,28 @@ export const asString = (value: unknown): string => (typeof value === 'string' ?
 export const CREDENTIAL_ROWS = [
   {
     field: 'SklandToken',
-    label: 'core.gamesign.edit.skland',
-    placeholder: 'core.gamesign.edit.sklandPlaceholder',
+    label: 'core.signflow.edit.skland',
+    placeholder: 'core.signflow.edit.sklandPlaceholder',
   },
   {
     field: 'MiyousheToken',
-    label: 'core.gamesign.edit.miyoushe',
-    placeholder: 'core.gamesign.edit.miyoushePlaceholder',
+    label: 'core.signflow.edit.miyoushe',
+    placeholder: 'core.signflow.edit.miyoushePlaceholder',
   },
   {
     field: 'CloudGenshinToken',
-    label: 'core.gamesign.cred.cloudGenshin',
-    placeholder: 'core.gamesign.edit.miyoushePlaceholder',
+    label: 'core.signflow.cred.cloudGenshin',
+    placeholder: 'core.signflow.edit.miyoushePlaceholder',
   },
   {
     field: 'TaygedoToken',
-    label: 'core.gamesign.edit.taygedo',
-    placeholder: 'core.gamesign.edit.taygedoPlaceholder',
+    label: 'core.signflow.edit.taygedo',
+    placeholder: 'core.signflow.edit.taygedoPlaceholder',
   },
   {
     field: 'KuroToken',
-    label: 'core.gamesign.edit.kuro',
-    placeholder: 'core.gamesign.edit.kuroPlaceholder',
+    label: 'core.signflow.edit.kuro',
+    placeholder: 'core.signflow.edit.kuroPlaceholder',
   },
 ] as const
 

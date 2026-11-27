@@ -82,11 +82,11 @@ const handleSave = async (account: AccountInstance, patch: Record<string, unknow
 const handleRemove = async (account: AccountInstance) => {
   const confirmed = await confirm({
     tone: 'danger',
-    title: t('core.gamesign.toast.deleteTitle'),
-    description: t('core.gamesign.toast.deleteContent', {
-      name: account.Name || t('core.gamesign.defaultUserName'),
+    title: t('core.signflow.toast.deleteTitle'),
+    description: t('core.signflow.toast.deleteContent', {
+      name: account.Name || t('core.signflow.defaultUserName'),
     }),
-    okText: t('core.gamesign.list.del'),
+    okText: t('core.signflow.list.del'),
   })
   if (!confirmed) return
   await removeAccount(account)
@@ -116,12 +116,12 @@ onMounted(() => {
   <div class="accounts-page">
     <div class="accounts-header">
       <div class="accounts-heading">
-        <h3>{{ t('core.gamesign.account.title') }}</h3>
-        <p class="accounts-sub">{{ t('core.gamesign.account.subtitle') }}</p>
+        <h3>{{ t('core.signflow.account.title') }}</h3>
+        <p class="accounts-sub">{{ t('core.signflow.account.subtitle') }}</p>
       </div>
       <a-button type="primary" :loading="adding" @click="handleAdd">
         <template #icon><PlusOutlined /></template>
-        {{ t('core.gamesign.list.add') }}
+        {{ t('core.signflow.list.add') }}
       </a-button>
     </div>
 
@@ -149,10 +149,10 @@ onMounted(() => {
       </draggable>
 
       <div v-else-if="!loading" class="accounts-empty">
-        <a-empty :description="t('core.gamesign.list.empty')">
+        <a-empty :description="t('core.signflow.list.empty')">
           <template #description>
-            <p class="empty-title">{{ t('core.gamesign.list.empty') }}</p>
-            <p class="empty-guide">{{ t('core.gamesign.list.emptyGuide') }}</p>
+            <p class="empty-title">{{ t('core.signflow.list.empty') }}</p>
+            <p class="empty-guide">{{ t('core.signflow.list.emptyGuide') }}</p>
           </template>
         </a-empty>
       </div>

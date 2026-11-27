@@ -20,23 +20,23 @@ export function useManualSign(onFinished?: () => Promise<void> | void) {
       const response = await manualSign()
       if (response.code === 409) {
         logger.warn('自动签到正在执行，已跳过本次手动签到')
-        message.warning(t('core.gamesign.toast.autoSignRunning'))
+        message.warning(t('core.signflow.toast.autoSignRunning'))
         return
       }
       if (response.code !== 200 && response.code !== 0) {
-        throw new Error(response.message || t('core.gamesign.toast.signFailed'))
+        throw new Error(response.message || t('core.signflow.toast.signFailed'))
       }
       if (response.status === 'warning') {
-        message.warning(t('core.gamesign.toast.signPartialNotify'))
+        message.warning(t('core.signflow.toast.signPartialNotify'))
       } else {
-        message.success(t('core.gamesign.toast.signDone'))
+        message.success(t('core.signflow.toast.signDone'))
       }
       // 结果由后端写入配置，这里立刻刷新一次，不必等下一轮轮询
       await onFinished?.()
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`手动签到失败: ${errorMessage}`)
-      message.error(t('core.gamesign.toast.signError', { error: errorMessage }))
+      message.error(t('core.signflow.toast.signError', { error: errorMessage }))
     } finally {
       signLoading.value = false
     }

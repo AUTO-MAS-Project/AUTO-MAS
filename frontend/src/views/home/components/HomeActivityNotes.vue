@@ -71,10 +71,10 @@ const { notes, selectedNote, selectNote } = useHomeActivityNoteSelection(
 )
 const noteLabel = (snapshot: ActivitySnapshot) =>
   [
-    snapshot.account || t('core.gamesign.unknownUser'),
+    snapshot.account || t('core.signflow.unknownUser'),
     snapshot.roleName !== snapshot.account ? snapshot.roleName : '',
     snapshot.server,
-    snapshot.roleUid ? t('core.gamesign.activity.roleUid', { uid: snapshot.roleUid }) : '',
+    snapshot.roleUid ? t('core.signflow.activity.roleUid', { uid: snapshot.roleUid }) : '',
   ]
     .filter(Boolean)
     .join(' · ')
@@ -123,11 +123,11 @@ onMounted(() => {
       <div v-if="showNoteFeedback" class="note-feedback" role="status">
         <a-spin v-if="loading" size="small" />
         <span>{{
-          loading ? t('core.home.activityNotes.loading') : t('core.gamesign.activity.queryFailed')
+          loading ? t('core.home.activityNotes.loading') : t('core.signflow.activity.queryFailed')
         }}</span>
         <span v-if="!loading" class="notes-daily-hint">{{ activityError }}</span>
         <a-button v-if="!loading" type="link" size="small" @click="refresh">{{
-          t('core.gamesign.activity.refresh')
+          t('core.signflow.activity.refresh')
         }}</a-button>
       </div>
       <HomeActivityNoteStrip

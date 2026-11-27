@@ -40,10 +40,10 @@ const VIEW_KEYS: readonly CommunityView[] = ['sign', 'activity', 'gacha', 'accou
 
 /** 导航文案显式列出：动态拼接的 key 无法被 i18n 审计识别 */
 const VIEW_LABELS: Record<CommunityView, string> = {
-  sign: 'core.gamesign.nav.sign',
-  activity: 'core.gamesign.nav.activity',
-  gacha: 'core.gamesign.nav.gacha',
-  accounts: 'core.gamesign.nav.accounts',
+  sign: 'core.signflow.nav.sign',
+  activity: 'core.signflow.nav.activity',
+  gacha: 'core.signflow.nav.gacha',
+  accounts: 'core.signflow.nav.accounts',
 }
 
 const { loading, getTools, updateTools } = useToolsApi()
@@ -149,7 +149,7 @@ const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPo
   },
   isActive: () => toolsConfig.SignFlow?.Enabled === true,
   enabled: () => activeView.value === 'sign',
-  invalidMessage: () => t('core.gamesign.statusInvalid'),
+  invalidMessage: () => t('core.signflow.statusInvalid'),
   logger,
 })
 
@@ -265,11 +265,11 @@ onUnmounted(() => {
 
 <template>
   <AppPage layout="scroll">
-    <PageHeader :title="t('core.gamesign.title')" :subtitle="t('core.gamesign.subtitle')">
+    <PageHeader :title="t('core.signflow.title')" :subtitle="t('core.signflow.subtitle')">
       <template #actions>
         <a-button :disabled="loading" @click="goAccounts">
           <template #icon><UsergroupAddOutlined /></template>
-          {{ t('core.gamesign.nav.accounts') }}
+          {{ t('core.signflow.nav.accounts') }}
         </a-button>
         <a-button
           type="primary"
@@ -278,7 +278,7 @@ onUnmounted(() => {
           @click="runManualSign"
         >
           <template #icon><CheckSquareOutlined /></template>
-          {{ t('core.gamesign.section.signAll') }}
+          {{ t('core.signflow.section.signAll') }}
         </a-button>
       </template>
     </PageHeader>

@@ -58,7 +58,7 @@ const platforms = computed<ResultPlatform[]>(() =>
         alias: getSignDetailAlias(
           group,
           group.games?.[0] ?? { game: '' },
-          t('core.gamesign.unknownUser')
+          t('core.signflow.unknownUser')
         ),
         signed: items.filter(item => SIGNED_STATUSES.includes(item.status)).length,
         total: items.length,
@@ -66,9 +66,9 @@ const platforms = computed<ResultPlatform[]>(() =>
           key: `${name}-${group.account_uid}-${index}`,
           title:
             item.kind === 'community'
-              ? t('core.gamesign.list.kuroCoinSign')
+              ? t('core.signflow.list.kuroCoinSign')
               : item.kind === 'game'
-                ? t('core.gamesign.list.gameSignTask', { game: item.game })
+                ? t('core.signflow.list.signTask', { game: item.game })
                 : item.game,
           status: item.status,
           statusLabel: t(getSignStatusKey(item.status)),
@@ -109,21 +109,21 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
   <section class="sign-result">
     <div class="result-header">
       <div class="result-heading">
-        <h3>{{ t('core.gamesign.result.title') }}</h3>
-        <p class="result-sub">{{ t('core.gamesign.result.subtitle') }}</p>
+        <h3>{{ t('core.signflow.result.title') }}</h3>
+        <p class="result-sub">{{ t('core.signflow.result.subtitle') }}</p>
       </div>
       <a-space :size="8">
         <a-button
           size="small"
           :loading="loading"
-          :aria-label="t('core.gamesign.result.refresh')"
+          :aria-label="t('core.signflow.result.refresh')"
           @click="emit('refresh')"
         >
           <template #icon><ReloadOutlined /></template>
-          {{ t('core.gamesign.result.refresh') }}
+          {{ t('core.signflow.result.refresh') }}
         </a-button>
         <a-button type="primary" size="small" :loading="loading" @click="emit('sign')">
-          {{ t('core.gamesign.section.signAll') }}
+          {{ t('core.signflow.section.signAll') }}
         </a-button>
       </a-space>
     </div>
@@ -132,15 +132,15 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
       <div class="result-summary">
         <div class="summary-cell is-success">
           <span class="summary-value">{{ summary.signed }}</span>
-          <span class="summary-label">{{ t('core.gamesign.result.signed') }}</span>
+          <span class="summary-label">{{ t('core.signflow.result.signed') }}</span>
         </div>
         <div class="summary-cell is-failed">
           <span class="summary-value">{{ summary.failed }}</span>
-          <span class="summary-label">{{ t('core.gamesign.result.failed') }}</span>
+          <span class="summary-label">{{ t('core.signflow.result.failed') }}</span>
         </div>
         <div class="summary-cell is-risk">
           <span class="summary-value">{{ summary.risk }}</span>
-          <span class="summary-label">{{ t('core.gamesign.result.risk') }}</span>
+          <span class="summary-label">{{ t('core.signflow.result.risk') }}</span>
         </div>
       </div>
 
@@ -148,7 +148,7 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
         <h4 class="platform-title">
           {{ platform.name }}
           <span class="platform-count">
-            {{ platform.groups.length }} {{ t('core.gamesign.result.total') }}
+            {{ platform.groups.length }} {{ t('core.signflow.result.total') }}
           </span>
         </h4>
         <div class="result-grid">
@@ -161,7 +161,7 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
               >
                 {{ group.signed }}/{{ group.total }}
                 <template v-if="group.signed > 0 && group.signed < group.total">
-                  · {{ t('core.gamesign.signStatus.partialFailure') }}
+                  · {{ t('core.signflow.signStatus.partialFailure') }}
                 </template>
               </a-tag>
             </header>
@@ -180,8 +180,8 @@ const hasRecords = computed(() => platforms.value.some(platform => platform.grou
     </template>
 
     <div v-else class="result-empty">
-      <p class="result-empty-title">{{ t('core.gamesign.result.empty') }}</p>
-      <p class="result-empty-desc">{{ t('core.gamesign.result.emptyGuide') }}</p>
+      <p class="result-empty-title">{{ t('core.signflow.result.empty') }}</p>
+      <p class="result-empty-desc">{{ t('core.signflow.result.emptyGuide') }}</p>
     </div>
   </section>
 </template>

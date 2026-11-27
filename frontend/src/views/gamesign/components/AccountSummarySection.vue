@@ -22,8 +22,8 @@ const accountRows = computed(() =>
     const bound = CREDENTIAL_ROWS.filter(row => hasCredential(account, row.field))
     return {
       uid: account.uid,
-      name: account.Name || t('core.gamesign.defaultUserName'),
-      mark: (account.Name || t('core.gamesign.defaultUserName')).slice(0, 1).toUpperCase(),
+      name: account.Name || t('core.signflow.defaultUserName'),
+      mark: (account.Name || t('core.signflow.defaultUserName')).slice(0, 1).toUpperCase(),
       enabled: account.Enabled !== false,
       boundLabels: bound.map(row => t(row.label)),
       boundFields: new Set(bound.map(row => row.field)),
@@ -37,7 +37,7 @@ const credentialSummary = computed(() => {
       count + CREDENTIAL_ROWS.filter(row => hasCredential(account, row.field)).length,
     0
   )
-  return t('core.gamesign.account.credentialCount', { n: total })
+  return t('core.signflow.account.credentialCount', { n: total })
 })
 </script>
 
@@ -45,14 +45,14 @@ const credentialSummary = computed(() => {
   <section class="account-summary">
     <div class="summary-header">
       <div class="summary-heading">
-        <h3>{{ t('core.gamesign.home.accounts') }}</h3>
+        <h3>{{ t('core.signflow.home.accounts') }}</h3>
         <p class="summary-sub">
-          {{ t('core.gamesign.account.count', { n: accounts.length }) }} ·
+          {{ t('core.signflow.account.count', { n: accounts.length }) }} ·
           {{ credentialSummary }}
         </p>
       </div>
       <a-button size="small" :disabled="loading" @click="emit('manage')">
-        {{ t('core.gamesign.home.manage') }}
+        {{ t('core.signflow.home.manage') }}
       </a-button>
     </div>
 
@@ -63,14 +63,14 @@ const credentialSummary = computed(() => {
           <div class="summary-name-line">
             <span class="summary-name">{{ row.name }}</span>
             <a-tag v-if="!row.enabled" class="summary-tag">
-              {{ t('core.gamesign.account.disabledTag') }}
+              {{ t('core.signflow.account.disabledTag') }}
             </a-tag>
           </div>
           <p class="summary-detail">
             {{
               row.boundLabels.length > 0
                 ? row.boundLabels.join(' · ')
-                : t('core.gamesign.account.noCredential')
+                : t('core.signflow.account.noCredential')
             }}
           </p>
         </div>
@@ -85,7 +85,7 @@ const credentialSummary = computed(() => {
       </article>
     </div>
 
-    <p v-else class="summary-empty">{{ t('core.gamesign.account.emptyGuide') }}</p>
+    <p v-else class="summary-empty">{{ t('core.signflow.account.emptyGuide') }}</p>
   </section>
 </template>
 

@@ -25,10 +25,10 @@ const props = defineProps<{
 const { t } = useI18n()
 
 const modalTitle = computed(() =>
-  t(props.provider === 'skland' ? 'core.gamesign.qr.sklandTitle' : 'core.gamesign.qr.title')
+  t(props.provider === 'skland' ? 'core.signflow.qr.sklandTitle' : 'core.signflow.qr.title')
 )
 const modalHint = computed(() =>
-  t(props.provider === 'skland' ? 'core.gamesign.qr.sklandHint' : 'core.gamesign.qr.hint')
+  t(props.provider === 'skland' ? 'core.signflow.qr.sklandHint' : 'core.signflow.qr.hint')
 )
 
 /**
@@ -52,7 +52,7 @@ const emit = defineEmits<{
         v-if="qrCodeDataUrl && status !== 'error' && status !== 'expired'"
         class="qr-code-wrapper"
       >
-        <img :src="qrCodeDataUrl" :alt="t('core.gamesign.qr.alt')" class="qr-code-img" />
+        <img :src="qrCodeDataUrl" :alt="t('core.signflow.qr.alt')" class="qr-code-img" />
       </div>
 
       <!-- 加载中 -->
@@ -90,7 +90,7 @@ const emit = defineEmits<{
       <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
         <a-button type="primary" size="small" :loading="loading" @click="emit('retry')">
           <template #icon><ReloadOutlined /></template>
-          {{ t('core.gamesign.qr.retry') }}
+          {{ t('core.signflow.qr.retry') }}
         </a-button>
       </div>
     </div>

@@ -86,12 +86,12 @@ const refresh = async () => {
     const failed = result.items.filter(item => !item.refreshed)
     if (failed.length) {
       message.warning(
-        t('core.gamesign.token.refreshPartial', {
+        t('core.signflow.token.refreshPartial', {
           items: failed.map(item => item.message).join('；'),
         })
       )
     } else {
-      message.success(t('core.gamesign.token.refreshDone'))
+      message.success(t('core.signflow.token.refreshDone'))
     }
     // 刷新成功的字段由后端直接写库，通知抽屉回读该字段
     for (const item of result.items) {
@@ -129,7 +129,7 @@ watch(
 <template>
   <section v-if="!unavailable" class="token-block">
     <div class="token-head">
-      <span class="token-title">{{ t('core.gamesign.token.title') }}</span>
+      <span class="token-title">{{ t('core.signflow.token.title') }}</span>
       <a-button
         v-if="refreshable.length"
         type="link"
@@ -138,7 +138,7 @@ watch(
         @click="refresh"
       >
         <template #icon><ReloadOutlined /></template>
-        {{ t('core.gamesign.token.refresh') }}
+        {{ t('core.signflow.token.refresh') }}
       </a-button>
     </div>
     <div v-if="items.length" class="token-list">
@@ -146,12 +146,12 @@ watch(
         <span class="token-platform">{{ item.platform }}</span>
         <span class="token-message">{{ item.message }}</span>
         <StatusChip :tone="toneOf(item)">
-          {{ item.valid ? t('core.gamesign.token.valid') : t('core.gamesign.token.invalid') }}
+          {{ item.valid ? t('core.signflow.token.valid') : t('core.signflow.token.invalid') }}
         </StatusChip>
       </div>
     </div>
     <p v-else-if="!loading && !errorMessage" class="token-empty">
-      {{ t('core.gamesign.token.empty') }}
+      {{ t('core.signflow.token.empty') }}
     </p>
     <a-alert v-if="errorMessage" type="error" show-icon :message="errorMessage" />
   </section>

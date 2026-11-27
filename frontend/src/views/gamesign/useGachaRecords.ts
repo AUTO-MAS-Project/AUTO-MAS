@@ -74,7 +74,7 @@ export function useGachaRecords() {
       games.value = Array.isArray(result.games) ? result.games : []
     } catch (error) {
       if (isPluginUnavailable(error)) {
-        unavailable.value = t('core.gamesign.gacha.pluginMissing')
+        unavailable.value = t('core.signflow.gacha.pluginMissing')
         return
       }
       // 后端还没起来之类的临时故障不算「插件未启用」，允许下次重试
@@ -127,7 +127,7 @@ export function useGachaRecords() {
         return
       }
       if (isPluginUnavailable(error)) {
-        unavailable.value = t('core.gamesign.gacha.pluginMissing')
+        unavailable.value = t('core.signflow.gacha.pluginMissing')
         finish('unsupported')
         return
       }
@@ -167,10 +167,10 @@ export function useGachaRecords() {
       finish('success')
       const warnings = Array.isArray(result.warnings) ? result.warnings : []
       if (warnings.length) {
-        message.warning(t('core.gamesign.gacha.fetchWarnings', { warnings: warnings.join('；') }))
+        message.warning(t('core.signflow.gacha.fetchWarnings', { warnings: warnings.join('；') }))
       } else {
         message.success(
-          t('core.gamesign.gacha.fetchDone', { added: result.added, fetched: result.fetched })
+          t('core.signflow.gacha.fetchDone', { added: result.added, fetched: result.fetched })
         )
       }
       // 读取完成后回到第一页，让新记录立刻可见；刷新沿用页面当前选中的卡池，
@@ -187,7 +187,7 @@ export function useGachaRecords() {
         return
       }
       if (isPluginUnavailable(error)) {
-        unavailable.value = t('core.gamesign.gacha.pluginMissing')
+        unavailable.value = t('core.signflow.gacha.pluginMissing')
         finish('unsupported')
         return
       }

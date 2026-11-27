@@ -41,8 +41,8 @@ const { t } = useI18n()
       class="sign-disclaimer"
       type="warning"
       show-icon
-      :message="t('core.gamesign.disclaimer.title')"
-      :description="t('core.gamesign.disclaimer.description')"
+      :message="t('core.signflow.disclaimer.title')"
+      :description="t('core.signflow.disclaimer.description')"
     />
 
     <section class="home-block">

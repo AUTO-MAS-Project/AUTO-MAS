@@ -111,13 +111,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="activity-view" :aria-label="t('core.gamesign.activity.title')">
+  <section class="activity-view" :aria-label="t('core.signflow.activity.title')">
     <header class="activity-toolbar">
       <div class="activity-heading">
-        <h2 class="activity-title">{{ t('core.gamesign.activity.title') }}</h2>
+        <h2 class="activity-title">{{ t('core.signflow.activity.title') }}</h2>
         <span v-if="lastUpdated" class="activity-updated">
           {{
-            t('core.gamesign.activity.queriedAt', {
+            t('core.signflow.activity.queriedAt', {
               time: formatTime(lastUpdated),
             })
           }}
@@ -126,7 +126,7 @@ onMounted(() => {
       <div class="activity-actions">
         <a-popover trigger="click" placement="bottomRight" :overlay-inner-style="editPopoverStyle">
           <template #title>
-            <span class="activity-edit-title">{{ t('core.gamesign.activity.editTitle') }}</span>
+            <span class="activity-edit-title">{{ t('core.signflow.activity.editTitle') }}</span>
           </template>
           <template #content>
             <div class="activity-edit-list">
@@ -135,26 +135,26 @@ onMounted(() => {
                 <a-switch
                   size="small"
                   :checked="!isGameHidden(game)"
-                  :aria-label="t('core.gamesign.activity.editGame', { game })"
+                  :aria-label="t('core.signflow.activity.editGame', { game })"
                   @change="toggleGame(game)"
                 />
               </div>
               <div v-if="!availableGames.length" class="activity-edit-empty">
-                {{ t('core.gamesign.activity.empty') }}
+                {{ t('core.signflow.activity.empty') }}
               </div>
             </div>
           </template>
           <a-button type="text" size="small" :disabled="!availableGames.length">
             <template #icon><EditOutlined /></template>
-            {{ t('core.gamesign.activity.edit') }}
+            {{ t('core.signflow.activity.edit') }}
           </a-button>
         </a-popover>
-        <a-tooltip :title="t('core.gamesign.activity.refresh')">
+        <a-tooltip :title="t('core.signflow.activity.refresh')">
           <a-button
             type="text"
             shape="circle"
             :loading="loading"
-            :aria-label="t('core.gamesign.activity.refresh')"
+            :aria-label="t('core.signflow.activity.refresh')"
             @click="loadActivity"
           >
             <ReloadOutlined />
@@ -177,7 +177,7 @@ onMounted(() => {
 
     <NoData
       v-else-if="showEmpty"
-      :description="t('core.gamesign.activity.empty')"
+      :description="t('core.signflow.activity.empty')"
       class="activity-state"
     />
 
@@ -186,7 +186,7 @@ onMounted(() => {
         v-if="visibleGames.length"
         class="activity-switcher"
         role="tablist"
-        :aria-label="t('core.gamesign.activity.switchTitle')"
+        :aria-label="t('core.signflow.activity.switchTitle')"
       >
         <button
           v-for="game in visibleGames"
@@ -204,7 +204,7 @@ onMounted(() => {
 
       <NoData
         v-if="showAllHidden"
-        :description="t('core.gamesign.activity.allHidden')"
+        :description="t('core.signflow.activity.allHidden')"
         class="activity-state"
       />
 

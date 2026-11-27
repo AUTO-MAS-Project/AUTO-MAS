@@ -78,7 +78,7 @@ watch(
   { immediate: true }
 )
 
-const accountName = computed(() => props.account?.Name || t('core.gamesign.defaultUserName'))
+const accountName = computed(() => props.account?.Name || t('core.signflow.defaultUserName'))
 const boundCount = computed(
   () => CREDENTIAL_ROWS.filter(row => hasCredential(form.value, row.field)).length
 )
@@ -212,17 +212,17 @@ onBeforeUnmount(() => {
 <template>
   <a-drawer
     v-model:open="drawerOpen"
-    :title="t('core.gamesign.edit.title', { name: accountName })"
+    :title="t('core.signflow.edit.title', { name: accountName })"
     :width="520"
     :root-style="drawerRootStyle"
     placement="right"
   >
     <div class="editor-body">
       <section class="editor-block">
-        <span class="editor-title">{{ t('core.gamesign.edit.userName') }}</span>
+        <span class="editor-title">{{ t('core.signflow.edit.userName') }}</span>
         <a-input v-model:value="form.Name" size="large" :maxlength="40" :disabled="saving" />
         <div class="editor-switch-row">
-          <span class="editor-switch-label">{{ t('core.gamesign.account.enabled') }}</span>
+          <span class="editor-switch-label">{{ t('core.signflow.account.enabled') }}</span>
           <a-switch v-model:checked="form.Enabled" size="small" :disabled="saving" />
         </div>
       </section>
@@ -254,20 +254,20 @@ onBeforeUnmount(() => {
         class="editor-notice"
         type="warning"
         show-icon
-        :message="t('core.gamesign.disclaimer.title')"
-        :description="t('core.gamesign.disclaimer.description')"
+        :message="t('core.signflow.disclaimer.title')"
+        :description="t('core.signflow.disclaimer.description')"
       />
     </div>
 
     <template #footer>
       <div class="editor-footer">
         <span class="editor-count">
-          {{ t('core.gamesign.account.credentialCount', { n: boundCount }) }}
+          {{ t('core.signflow.account.credentialCount', { n: boundCount }) }}
         </span>
         <a-space :size="8">
           <a-button @click="emit('close')">{{ t('core.common.cancel') }}</a-button>
           <a-button type="primary" :loading="saving" @click="handleSave">
-            {{ t('core.gamesign.edit.save') }}
+            {{ t('core.signflow.edit.save') }}
           </a-button>
         </a-space>
       </div>

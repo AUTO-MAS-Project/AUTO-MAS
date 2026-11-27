@@ -28,9 +28,9 @@ const { t } = useI18n()
 const bound = computed(() => props.value.trim().length > 0)
 
 const actionLabel = computed(() => {
-  if (props.action === 'qr') return t('core.gamesign.edit.qrLogin')
-  if (props.action === 'password') return t('core.gamesign.edit.passwordLogin')
-  if (props.action === 'sms') return t('core.gamesign.edit.smsLogin')
+  if (props.action === 'qr') return t('core.signflow.edit.qrLogin')
+  if (props.action === 'password') return t('core.signflow.edit.passwordLogin')
+  if (props.action === 'sms') return t('core.signflow.edit.smsLogin')
   return ''
 })
 
@@ -43,7 +43,7 @@ const onInput = (value: string) => emit('update:value', value)
       <span class="row-title">{{ props.label }}</span>
       <span class="row-tools">
         <a-button v-if="bound" type="link" size="small" :disabled="disabled" @click="emit('clear')">
-          {{ t('core.gamesign.cred.clear') }}
+          {{ t('core.signflow.cred.clear') }}
         </a-button>
         <a-button
           v-if="action"
@@ -55,7 +55,7 @@ const onInput = (value: string) => emit('update:value', value)
           <template v-if="action === 'qr'" #icon><QrcodeOutlined /></template>
           {{ actionLabel }}
         </a-button>
-        <span v-else class="row-manual">{{ t('core.gamesign.account.manualHint') }}</span>
+        <span v-else class="row-manual">{{ t('core.signflow.account.manualHint') }}</span>
       </span>
     </div>
     <a-input-password

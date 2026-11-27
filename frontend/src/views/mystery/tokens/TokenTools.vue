@@ -57,8 +57,8 @@ const {
         name: account.name,
         platform: t(
           qrProvider.value === 'skland'
-            ? 'core.gamesign.edit.skland'
-            : 'core.gamesign.edit.miyoushe'
+            ? 'core.signflow.edit.skland'
+            : 'core.signflow.edit.miyoushe'
         ),
       }
     }
@@ -90,7 +90,7 @@ const loadAccounts = async () => {
       return [
         {
           uid: instance.uid,
-          name: config?.SignFlowAccount?.Name || t('core.gamesign.defaultUserName'),
+          name: config?.SignFlowAccount?.Name || t('core.signflow.defaultUserName'),
         },
       ]
     })
@@ -143,7 +143,7 @@ const submitTaygedo = async () => {
       message.error(response.message || t('core.mystery.tokens.taygedoFailed'))
       return
     }
-    saved.value = { name: account.name, platform: t('core.gamesign.edit.taygedo') }
+    saved.value = { name: account.name, platform: t('core.signflow.edit.taygedo') }
     loginRequest = undefined
     closeTaygedo()
   } catch {
@@ -222,33 +222,33 @@ onBeforeUnmount(() => {
 
     <a-row :gutter="[16, 16]">
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('core.gamesign.edit.miyoushe')" class="token-card">
+        <a-card :title="t('core.signflow.edit.miyoushe')" class="token-card">
           <p>{{ t('core.mystery.tokens.miyousheDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openQr('miyoushe')">
             <template #icon><QrcodeOutlined /></template>
-            {{ t('core.gamesign.edit.qrLogin') }}
+            {{ t('core.signflow.edit.qrLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('core.gamesign.edit.skland')" class="token-card">
+        <a-card :title="t('core.signflow.edit.skland')" class="token-card">
           <p>{{ t('core.mystery.tokens.sklandDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openQr('skland')">
             <template #icon><QrcodeOutlined /></template>
-            {{ t('core.gamesign.edit.qrLogin') }}
+            {{ t('core.signflow.edit.qrLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('core.gamesign.edit.taygedo')" class="token-card">
+        <a-card :title="t('core.signflow.edit.taygedo')" class="token-card">
           <p>{{ t('core.mystery.tokens.taygedoDescription') }}</p>
           <a-button type="primary" :disabled="!canLogin" @click="openTaygedo">
-            {{ t('core.gamesign.edit.passwordLogin') }}
+            {{ t('core.signflow.edit.passwordLogin') }}
           </a-button>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="12">
-        <a-card :title="t('core.gamesign.edit.kuro')" class="token-card">
+        <a-card :title="t('core.signflow.edit.kuro')" class="token-card">
           <p>{{ t('core.mystery.tokens.kuroDescription') }}</p>
           <a-button @click="openBmt">{{ t('core.mystery.tokens.openBmt') }}</a-button>
         </a-card>
@@ -257,7 +257,7 @@ onBeforeUnmount(() => {
 
     <AppModal
       :open="taygedoVisible"
-      :title="t('core.gamesign.login.taygedoTitle')"
+      :title="t('core.signflow.login.taygedoTitle')"
       footer="none"
       :width="420"
       @cancel="closeTaygedo"
@@ -269,17 +269,17 @@ onBeforeUnmount(() => {
         class="token-notice"
       />
       <a-form :model="taygedoForm" layout="vertical" @finish="submitTaygedo">
-        <a-form-item :label="t('core.gamesign.login.currentAccount')">
+        <a-form-item :label="t('core.signflow.login.currentAccount')">
           <a-input :value="selectedAccount?.name || ''" disabled />
         </a-form-item>
         <a-form-item
           name="phone"
-          :label="t('core.gamesign.login.taygedoAccount')"
+          :label="t('core.signflow.login.taygedoAccount')"
           :rules="[
             {
               required: true,
               whitespace: true,
-              message: t('core.gamesign.login.taygedoAccountPlaceholder'),
+              message: t('core.signflow.login.taygedoAccountPlaceholder'),
             },
           ]"
         >
@@ -287,27 +287,27 @@ onBeforeUnmount(() => {
             v-model:value="taygedoForm.phone"
             autocomplete="off"
             :disabled="taygedoLoading"
-            :placeholder="t('core.gamesign.login.taygedoAccountPlaceholder')"
+            :placeholder="t('core.signflow.login.taygedoAccountPlaceholder')"
           />
         </a-form-item>
         <a-form-item
           name="password"
-          :label="t('core.gamesign.login.password')"
+          :label="t('core.signflow.login.password')"
           :rules="[
-            { required: true, message: t('core.gamesign.login.taygedoPasswordPlaceholder') },
+            { required: true, message: t('core.signflow.login.taygedoPasswordPlaceholder') },
           ]"
         >
           <a-input-password
             v-model:value="taygedoForm.password"
             autocomplete="new-password"
             :disabled="taygedoLoading"
-            :placeholder="t('core.gamesign.login.taygedoPasswordPlaceholder')"
+            :placeholder="t('core.signflow.login.taygedoPasswordPlaceholder')"
           />
         </a-form-item>
         <a-space class="login-actions">
           <a-button @click="closeTaygedo">{{ t('core.common.cancel') }}</a-button>
           <a-button type="primary" html-type="submit" :loading="taygedoLoading">
-            {{ t('core.gamesign.login.submit') }}
+            {{ t('core.signflow.login.submit') }}
           </a-button>
         </a-space>
       </a-form>
