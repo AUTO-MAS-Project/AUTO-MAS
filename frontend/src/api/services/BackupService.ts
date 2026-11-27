@@ -18,23 +18,23 @@ export class BackupService {
      * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
      * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
-     * @param userId
      * @param target
+     * @param userId
      * @returns ConfigBackupListOut Successful Response
      * @throws ApiError
      */
     public static listConfigBackupsApiApiScriptsBackupListGet(
         scriptId: string,
-        userId: string,
         target: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupListOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/list',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'target': target,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -88,26 +88,26 @@ export class BackupService {
      * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
      * data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。
      * @param scriptId
-     * @param userId
      * @param time
      * @param target
+     * @param userId
      * @returns ConfigBackupPreviewOut Successful Response
      * @throws ApiError
      */
     public static getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
         scriptId: string,
-        userId: string,
         time: string,
         target: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupPreviewOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/preview',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'time': time,
                 'target': target,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -118,29 +118,29 @@ export class BackupService {
      * 只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）
      * 路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。
      * @param scriptId
-     * @param userId
      * @param time
      * @param target
      * @param path
+     * @param userId
      * @returns ConfigBackupFileOut Successful Response
      * @throws ApiError
      */
     public static getConfigBackupFileApiApiScriptsBackupFileGet(
         scriptId: string,
-        userId: string,
         time: string,
         target: string,
         path: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupFileOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/file',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'time': time,
                 'target': target,
                 'path': path,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,

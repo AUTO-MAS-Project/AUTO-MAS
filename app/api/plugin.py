@@ -31,7 +31,6 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterator
 from typing import Any, Literal, Optional
 from uuid import UUID
 
@@ -43,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
-from app.config.fields.hints import UiHintsMap, UiTablesList
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.i18n import AppLocale
@@ -54,11 +53,13 @@ from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
     ConfigSnapshotOut,
+    ConfigUpdateOut,
     OutBase,
     PluginInstallation,
 )
 from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
+from app.plugin.base.script import FirstAccountMode
 from app.plugin.errors import PluginBusyError, PluginPrecheckError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import (
@@ -108,6 +109,8 @@ class PluginUninstallIn(BaseModel):
 class PluginConfigUi(BaseModel):
     hints: UiHintsMap = Field(default_factory=dict)
     tables: UiTablesList = Field(default_factory=list)
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
 
 
 class PluginProvidedScriptType(BaseModel):
@@ -123,6 +126,7 @@ class PluginProvidedScriptType(BaseModel):
     )
     hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
     hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
+    firstAccountMode: FirstAccountMode = "direct"
 
 
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
@@ -207,10 +211,8 @@ class PluginConfigUpdateIn(BaseModel):
     )
 
 
-class PluginConfigUpdateOut(OutBase):
-    fieldErrors: dict[str, str] = Field(
-        default_factory=dict, description="按 group.field 定位的校验错误"
-    )
+class PluginConfigUpdateOut(ConfigUpdateOut):
+    """保留已发布的插件设置响应模型名。"""
 
 
 class PluginListItem(BaseModel):
@@ -253,6 +255,7 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
     info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
     return PluginProvidedScriptType(
         scriptKey=script_key,
+        firstAccountMode=decl.first_account_mode,
         scriptConfigType=decl.script_type.__name__,
         userConfigType=decl.user_type.__name__,
         planConfigType=decl.plan_type.__name__ if decl.plan_type else None,
@@ -444,22 +447,6 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
         )
 
 
-def _config_update_issues(
-    error: Exception, field_path: tuple[str, str] | None = None
-) -> Iterator[tuple[tuple[str | int, ...], str]]:
-    """冷态校验给出完整路径，热态赋值使用提交时的字段坐标。"""
-    if isinstance(error, ConfigAggregateError):
-        for cause in error.errors:
-            yield from _config_update_issues(cause, error.field_path or field_path)
-    elif isinstance(error, ValidationError):
-        for issue in error.errors(
-            include_input=False, include_context=False, include_url=False
-        ):
-            yield field_path or issue["loc"], issue["msg"]
-    else:
-        yield (), str(error)
-
-
 @_config.post(
     "/update",
     tags=["Update"],
@@ -484,18 +471,8 @@ async def update_plugin_config(
             code=404, status="error", message="未找到对应插件配置"
         )
     except (ValidationError, ConfigAggregateError) as e:
-        messages: list[str] = []
-        fields: dict[str, list[str]] = {}
-        for path, message in _config_update_issues(e):
-            label = ".".join(map(str, path))
-            messages.append(f"{label}: {message}" if label else message)
-            if len(path) >= 2:
-                fields.setdefault(f"{path[0]}.{path[1]}", []).append(message)
-        return PluginConfigUpdateOut(
-            code=422 if isinstance(e, ValidationError) else 500,
-            status="error",
-            message="\n".join(messages),
-            fieldErrors={key: "\n".join(items) for key, items in fields.items()},
+        return PluginConfigUpdateOut.from_validation_error(
+            e, code=422 if isinstance(e, ValidationError) else 500
         )
     except Exception as e:
         return PluginConfigUpdateOut(

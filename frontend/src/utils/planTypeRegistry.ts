@@ -7,6 +7,8 @@ import {
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
+import { translate as t } from '@/i18n'
+import type { PluginScriptTypes } from './pluginScriptTypes'
 
 // ==================== 类型定义 ====================
 
@@ -114,16 +116,7 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
   ...SCRIPT_BUILTIN_PLANS,
 }
 
-export const DEFAULT_PLAN_CONFIG_TYPE: PlanConfigType = PLAN_CONFIG_TYPES.MAA
-
 // ==================== 查询方法 ====================
-
-export function getAvailablePlanTypes(scriptTypes: readonly string[]) {
-  return Object.values(PLAN_TYPE_REGISTRY).filter(plan => {
-    const owner = SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === plan.configType)
-    return !owner || scriptTypes.includes(owner.scriptType)
-  })
-}
 
 export const isKnownPlanType = (planType: string): planType is PlanConfigType =>
   Object.prototype.hasOwnProperty.call(PLAN_TYPE_REGISTRY, planType)
@@ -136,5 +129,40 @@ export const getPlanTypeDescriptor = (planType?: string | null): PlanTypeDescrip
   return PLAN_TYPE_REGISTRY[planType]
 }
 
-export const getPlanCreateType = (planType: string): PlanCreateType | null =>
-  getPlanTypeDescriptor(planType)?.createType ?? null
+export function getPlanTypeOption(configType: string, plugins: PluginScriptTypes) {
+  const stored = getPlanTypeDescriptor(configType)
+  if (stored) {
+    return {
+      configType,
+      createType: stored.createType,
+      displayName: t(stored.displayNameKey),
+      selectorTag: stored.selectorTag,
+      defaultName: stored.defaultName,
+    }
+  }
+  const plugin = plugins.byPlanConfigType.get(configType)
+  if (plugin) {
+    const name = plugin.displayName
+    return {
+      configType,
+      createType: configType,
+      displayName: name,
+      selectorTag: name,
+      defaultName: name,
+    }
+  }
+}
+
+export type PlanTypeOption = NonNullable<ReturnType<typeof getPlanTypeOption>>
+
+export function getAvailablePlanTypes(scriptTypes: readonly string[], plugins: PluginScriptTypes) {
+  const types = new Set([...Object.keys(PLAN_TYPE_REGISTRY), ...plugins.byPlanConfigType.keys()])
+  const available: PlanTypeOption[] = []
+  for (const type of types) {
+    const owner =
+      plugins.byPlanConfigType.get(type)?.scriptKey ??
+      SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === type)?.scriptType
+    if (!owner || scriptTypes.includes(owner)) available.push(getPlanTypeOption(type, plugins)!)
+  }
+  return available
+}

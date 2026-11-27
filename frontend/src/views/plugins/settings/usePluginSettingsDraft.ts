@@ -80,9 +80,21 @@ export function usePluginSettingsDraft() {
     assign(baseline.value)
   }
 
+  const discardField = (group: string, field: string) =>
+    update(group, field, clone(baseline.value[group]?.[field]))
+
   /** 只标出接口确认校验失败的字段。 */
   const saveFailed = (error: unknown) => {
     errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
+  }
+
+  function patch(submitted: SettingsValues) {
+    const data: SettingsValues = {}
+    for (const { group, field } of changes.value) {
+      const fields = (data[group] ??= {})
+      fields[field] = submitted[group]?.[field]
+    }
+    return data
   }
 
   /** 提交时刻的编辑值快照，保存成功后交给 commit。 */
@@ -106,7 +118,9 @@ export function usePluginSettingsDraft() {
     reset,
     update,
     discard,
+    discardField,
     snapshot,
+    patch,
     commit,
   }
 }
