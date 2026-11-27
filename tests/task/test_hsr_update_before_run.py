@@ -1044,7 +1044,12 @@ async def test_module_verdict_remains_independent_of_deferred_prefetch(
     await user.set_state(status="运行")
     runtime = HSRRuntimeState(log_lines=[], completion_writebacks=[])
     proxy = HSRAutoProxyTask(
-        script, HSRConfig(Game={"Enabled": False}), users, user, runtime
+        script,
+        HSRConfig(Game={"Enabled": False}),
+        users,
+        user,
+        runtime,
+        prepare_m7a_config=AsyncMock(),
     )
     result = SRACommandResult(
         "DivergentUniverseTask", "unused.json", success=True, output=output
