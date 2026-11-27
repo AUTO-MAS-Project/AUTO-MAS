@@ -6,8 +6,10 @@ import { useMcpApi } from '@/composables/useMcpApi'
 import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
 import McpStartupSwitch from './components/McpStartupSwitch.vue'
 import McpAgentPrompt from './components/McpAgentPrompt.vue'
+import VirtualDisplayTool from './components/VirtualDisplayTool.vue'
 
 const { t } = useI18n()
+const activeTab = ref('mcp')
 const { status, loading, retrying, error, refresh, retry, dispose } = useMcpApi()
 const tick = ref(0)
 const observedAt = ref(performance.now())
@@ -52,7 +54,7 @@ onUnmounted(() => {
   <AppPage layout="scroll" class="tools-page">
     <PageHeader :title="t('core.tools.title')" />
     <PageSurface padding="none" :scrollable="false">
-      <a-tabs active-key="mcp" type="card" class="tools-tabs">
+      <a-tabs v-model:active-key="activeTab" type="card" class="tools-tabs">
         <a-tab-pane key="mcp" :tab="t('core.tools.mcp.title')">
           <div class="tools-panel">
             <a-alert v-if="error" type="error" show-icon :message="error" class="tools-error">
@@ -111,6 +113,11 @@ onUnmounted(() => {
                 <McpAgentPrompt :address="address" />
               </template>
             </StateView>
+          </div>
+        </a-tab-pane>
+        <a-tab-pane key="virtualDisplay" :tab="t('core.setting.display.section')">
+          <div class="tools-panel">
+            <VirtualDisplayTool />
           </div>
         </a-tab-pane>
       </a-tabs>
