@@ -78,7 +78,7 @@ from .tools.external_locks import (
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config, load_m7a_yaml
-from .tools.m7a_paths import prepare_m7a_config
+from .tools.m7a_paths import prepare_m7a_config, resolve_m7a_config_path
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
     native_provider,
@@ -196,6 +196,7 @@ class HSRManager(NotificationTaskBase):
         )
         self.temp_path: Path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
+        self._m7a_config_prepared: bool = False
         # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
         self._external_path_lock: HSRExternalPathLockLease | None = None
         self._recovered_update_engines: set[str] = set()
@@ -229,22 +230,42 @@ class HSRManager(NotificationTaskBase):
         self._external_config_targets.append((label, source, backup, existed))
 
     async def _prepare_m7a_runtime_config(self) -> None:
-        """首个实际使用三月七的账号在改写配置前完成迁移并备份。"""
+        """首个实际使用三月七的账号开跑前完成迁移，并更新运行期备份的恢复目标。"""
 
-        if self._m7a_backup_target() is not None:
+        if self._m7a_config_prepared:
             return
         m7a_root = resolve_script_path(self.script_config, "M7A")
         if not m7a_root:
             raise RuntimeError("请先设置三月七路径")
+        target = self._m7a_backup_target()
+        if target is not None:
+            label, source, backup, existed = target
+            # 先跑纯 SRA 账号时，其前置脚本可能同时改写过旧位置的 config.yaml；
+            # 触发上游迁移前先还原成启动前原件，避免把临时配置迁进 userdata。
+            if existed and (
+                not source.is_file() or source.read_bytes() != backup.read_bytes()
+            ):
+                _restore_path_from_backup(label, source, backup)
         config_path = await prepare_m7a_config(Path(m7a_root))
-        self._backup_external_config(
-            label=_M7A_CONFIG_LABEL,
-            source=config_path,
-            backup=self.temp_path / "ExternalConfig" / "M7A" / "config.yaml",
-        )
+        if target is None:
+            self._backup_external_config(
+                label=_M7A_CONFIG_LABEL,
+                source=config_path,
+                backup=self.temp_path / "ExternalConfig" / "M7A" / "config.yaml",
+            )
+        else:
+            label, source, backup, existed = target
+            if source != config_path:
+                self._external_config_targets = [
+                    (label, config_path, backup, existed)
+                    if item[0] == _M7A_CONFIG_LABEL
+                    else item
+                    for item in self._external_config_targets
+                ]
+        self._m7a_config_prepared = True
 
-    def _backup_sra_configs(self) -> None:
-        """运行前备份 SRA 的真实配置文件。"""
+    def _backup_external_configs(self) -> None:
+        """运行前备份 M7A/SRA 当前已有的真实配置文件，不触发三月七迁移。"""
 
         if self.script_config is None:
             return
@@ -252,6 +273,15 @@ class HSRManager(NotificationTaskBase):
         backup_root = self.temp_path / "ExternalConfig"
         shutil.rmtree(backup_root, ignore_errors=True)
         self._external_config_targets = []
+        self._m7a_config_prepared = False
+
+        m7a_path = resolve_script_path(self.script_config, "M7A")
+        if m7a_path:
+            self._backup_external_config(
+                label=_M7A_CONFIG_LABEL,
+                source=resolve_m7a_config_path(m7a_path),
+                backup=backup_root / "M7A" / "config.yaml",
+            )
 
         if resolve_script_path(self.script_config, "SRA"):
             sra_app_data = get_sra_app_data_dir()
@@ -261,7 +291,9 @@ class HSRManager(NotificationTaskBase):
                     source=sra_app_data / name,
                     backup=backup_root / "SRA" / name,
                 )
-            self._append_log("HSR 已备份 SRA 配置")
+
+        if self._external_config_targets:
+            self._append_log("HSR 外部脚本配置已备份")
 
     def _restore_external_config_targets(self) -> None:
         """运行后恢复 M7A/SRA 配置，并清理备份目录。"""
@@ -281,6 +313,14 @@ class HSRManager(NotificationTaskBase):
                     logger.info(f"{label} 原配置不存在，已清理任务期新增路径：{source}")
                     continue
 
+                if (
+                    backup.is_file()
+                    and source.is_file()
+                    and source.read_bytes() == backup.read_bytes()
+                ):
+                    logger.info(f"{label} 未变化，跳过恢复：{source}")
+                    continue
+
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{label}: {e}")
@@ -296,6 +336,7 @@ class HSRManager(NotificationTaskBase):
             pass
 
         self._external_config_targets = []
+        self._m7a_config_prepared = False
         if errors:
             raise RuntimeError("；".join(errors))
 
@@ -1055,7 +1096,7 @@ class HSRManager(NotificationTaskBase):
                 self.check_result = update_error
                 raise RuntimeError(update_error)
             m7a_root = resolve_script_path(self.script_config, "M7A")
-            self._backup_sra_configs()
+            self._backup_external_configs()
             # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
             # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
             # 失败不阻断任务）
@@ -1418,7 +1459,7 @@ class HSRManager(NotificationTaskBase):
         直接写进真实 config.yaml，整轮结束才按运行期备份还原；三月七自己也会
         把运行状态（各任务时间戳等）写回同一个文件。同一轮里排在别的用户之后的
         原生来源账号不还原，跑的就是上一个账号留下的配置，而不是「原样跑原生配置」。
-        备份在首个使用三月七的账号开跑前取得，还原不动备份，收尾照常再还原一次。
+        备份在 ``prepare`` 里取（不触发迁移），迁移在首个使用三月七的账号开跑前执行并更新恢复路径，还原不动备份，收尾照常再还原一次。
         """
 
         for label, source, backup, existed in self._external_config_targets:
