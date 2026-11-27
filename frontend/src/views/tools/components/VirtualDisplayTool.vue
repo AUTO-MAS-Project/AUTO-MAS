@@ -92,6 +92,7 @@ onMounted(() => {
 
     <SettingRow
       :label="t('core.setting.display.enable')"
+      :description="t('core.setting.display.enableSummary')"
       :hint="t('core.setting.display.enableTip')"
     >
       <a-switch
