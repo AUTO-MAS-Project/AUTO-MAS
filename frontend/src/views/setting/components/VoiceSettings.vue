@@ -28,10 +28,7 @@ const handleVoiceTypeChange = (value: unknown) => {
 <template>
   <!-- 语音：一个总开关 + 一个详细程度选择，关掉时类型选择跟着禁用 -->
   <SectionCard :title="t('core.setting.func.voiceSection')" :icon="SoundOutlined">
-    <SettingRow
-      :label="t('core.setting.func.voiceEnable')"
-      :hint="t('core.setting.func.voiceEnableTip')"
-    >
+    <SettingRow :label="t('core.setting.func.voiceEnable')">
       <a-switch
         :checked="settings?.Enabled === true"
         :aria-label="t('core.setting.func.voiceEnable')"
@@ -41,10 +38,7 @@ const handleVoiceTypeChange = (value: unknown) => {
       />
     </SettingRow>
 
-    <SettingRow
-      :label="t('core.setting.func.voiceType')"
-      :hint="t('core.setting.func.voiceTypeTip')"
-    >
+    <SettingRow :label="t('core.setting.func.voiceType')">
       <a-segmented
         :value="settings?.Type"
         :options="voiceTypeOptions"

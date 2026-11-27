@@ -11,17 +11,12 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.tellsOkNteScript')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #path>
           <a-form-item name="path" :rules="rules.path">
             <template #label>
-              <FieldLabelWithHint
-                :text="t('core.edit.okNtePath')"
-                :hint="t('core.edit.pickDirectoryHoldingOk3')"
-                variant="form"
-              />
+              <FieldLabelWithHint :text="t('core.edit.okNtePath')" variant="form" />
             </template>
             <PathPickerField
               v-model="formData.path"

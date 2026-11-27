@@ -69,11 +69,7 @@
       <a-col :span="12">
         <a-form-item name="server">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.server')"
-              :hint="t('core.edit.pickGameServerThis')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.server')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Info.Server"

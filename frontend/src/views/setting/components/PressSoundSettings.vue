@@ -259,10 +259,7 @@ const handlePressSoundPreview = (phase?: PressSoundPhase) => {
       </div>
     </SettingRow>
 
-    <SettingRow
-      :label="t('core.setting.basic.pressSoundVolume')"
-      :hint="t('core.setting.basic.pressSoundVolumeTip')"
-    >
+    <SettingRow :label="t('core.setting.basic.pressSoundVolume')">
       <div class="sound-volume-row">
         <a-slider
           class="sound-volume-slider"

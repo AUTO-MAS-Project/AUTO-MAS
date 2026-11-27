@@ -92,7 +92,6 @@
             <SwitchTile
               v-model:checked="bettergiConfig.Game.CloseOnFinish"
               :title="t('core.edit.bettergiCloseGameOnFinish')"
-              :description="t('core.edit.bettergiCloseGameOnFinishHint')"
               @change="handleChange('Game', 'CloseOnFinish', bettergiConfig.Game.CloseOnFinish)"
             />
           </a-col>

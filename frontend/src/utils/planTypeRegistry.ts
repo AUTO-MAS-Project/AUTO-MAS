@@ -22,7 +22,6 @@ export const PLAN_CONFIG_TYPES = {
   UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
-  BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
   MSS: PlanIndexItem.type.MSSPLAN_CONFIG,
 } as const
 
@@ -100,19 +99,7 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
     supportsSimpleView: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
   },
-  [PLAN_CONFIG_TYPES.BAAH]: {
-    configType: PLAN_CONFIG_TYPES.BAAH,
-    createType: PlanCreateIn.type.BAAHPLAN,
-    displayNameKey: 'core.plan.type.baah',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 BAAH 计划表',
-    selectorTag: 'BAAH',
-    reloadAfterSave: false,
-    // BAAH 两种排法都是一格一个控件，但要按行说明每一位是什么，转置成简化视图只会更难读
-    supportsSimpleView: false,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
-  },
-  // 随主程序编译的专项计划表（MSS，由 views/mss/entry.ts 登记），排在最后
+  // 随主程序编译的专项计划表由专项入口登记。
   ...SCRIPT_BUILTIN_PLANS,
 }
 
