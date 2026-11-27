@@ -5,7 +5,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vue'
+import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
@@ -27,7 +27,6 @@ import {
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
-import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -167,7 +166,7 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     return true
   } catch (error) {
     const reason = errorMessage(error)
-    draft.saveFailed(draft.dirtyCount.value === 1 ? reason : t('core.apiErrors.settingsSaveFailed'))
+    draft.saveFailed(error)
     message.error(reason)
     return false
   } finally {
@@ -179,7 +178,6 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
   // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
   const field = hint.field
   if (
-    value !== true ||
     !field ||
     !configUid.value ||
     hint.editable !== true ||
@@ -188,13 +186,22 @@ const runAction = async (group: string, hint: DeclarativeHint, value: unknown) =
     activeFields.value.includes(`${group}.${field}`)
   )
     return
+  const dropdown = hint.component === 'dropdown-button'
+  if (
+    (!dropdown && value !== true) ||
+    (typeof value !== 'boolean' && typeof value !== 'string' && typeof value !== 'number')
+  ) {
+    message.error(t('core.plugins.actionFailed'))
+    return
+  }
   runningKey.value = `${group}.${field}`
   try {
     const result = await api.runCommand('config', {
       configUid: configUid.value,
       group,
       field,
-      value,
+      value: true,
+      ...(dropdown ? { option: value } : {}),
     })
     message.success(result.message || t('core.plugins.actionComplete'))
     await fetchSettings()
@@ -254,7 +261,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         overlay-loading
         @retry="fetchSettings"
       >
-        <PluginDeclarativeForm
+        <DeclarativeForm
           v-if="groups.length"
           :groups="groups"
           :tables="tables"

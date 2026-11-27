@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from app.models.config import CLASS_BOOK
@@ -34,18 +33,12 @@ def build_builtin_script_capabilities(
     """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
     with startup_stage("后端/专项注册导入/BAAH.registration"):
         from app.task.BAAH.registration import REGISTRATION as baah
-    with startup_stage("后端/专项注册导入/BetterGI.registration"):
-        from app.task.BetterGI.registration import REGISTRATION as bettergi
     with startup_stage("后端/专项注册导入/general.registration"):
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
         from app.task.HSR.registration import REGISTRATION as hsr
     with startup_stage("后端/专项注册导入/MaaEnd.registration"):
         from app.task.MaaEnd.registration import registration as maaend_registration
-    with startup_stage("后端/专项注册导入/MaaFW.registration"):
-        from app.task.MaaFW.registration import REGISTRATION as maafw
-    with startup_stage("后端/专项注册导入/MaaFW.tools.embedded.script_lifecycle"):
-        from app.task.MaaFW.tools.embedded.script_lifecycle import cleanup_script_files
     with startup_stage("后端/专项注册导入/OkNte.registration"):
         from app.task.OkNte.registration import REGISTRATION as oknte
     with startup_stage("后端/专项注册导入/Okww.registration"):
@@ -53,8 +46,6 @@ def build_builtin_script_capabilities(
     capabilities = build_script_capabilities(
         (
             maaend_registration(maaend=maaend),
-            bettergi,
-            maafw,
             okww,
             general,
             oknte,
@@ -63,17 +54,4 @@ def build_builtin_script_capabilities(
         ),
         expected_types=CLASS_BOOK.values(),
     )
-    # 所有现有脚本 UUID 都清理可能残留的 MFW 视图；家族专属的
-    # 提交后对账仍只由 MaaFW handler 声明。目录和清理规则归 MFW。
-    return replace(
-        capabilities,
-        config_handlers=tuple(
-            (
-                entry_type,
-                replace(handler, cleanup_script_files=cleanup_script_files)
-                if handler is not None
-                else None,
-            )
-            for entry_type, handler in capabilities.config_handlers
-        ),
-    )
+    return capabilities

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onScopeDispose, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import AppModal from '@/components/ui/AppModal.vue'
 import type {
   DesktopSessionPrompt,
   DesktopSessionPromptAction,
@@ -11,6 +12,10 @@ const { t } = useI18n()
 const api = window.electronAPI
 const logger = api?.getLogger('桌面分身')
 const prompt = shallowRef<DesktopSessionPrompt | null>(null)
+const modalOpen = computed({
+  get: () => prompt.value !== null,
+  set: () => {},
+})
 let lastRead = 0
 let unsubscribe: (() => void) | undefined
 
@@ -35,7 +40,7 @@ const closePrompt = computed(() => {
 
 function taskLabel(task: DesktopSessionPromptTarget): string {
   if (task.targetKind === 'unknown') return task.label
-  return `${text(task.targetKind === 'queue' ? 'queueLabel' : 'scriptLabel')} · ${task.label}`
+  return `${text(task.targetKind === 'queue' ? 'queueLabel' : 'scriptLabel')} · ${task.label}${task.reason ? ` — ${text('reasons.' + task.reason)}` : ''}`
 }
 
 async function readPrompt() {
@@ -73,13 +78,13 @@ onScopeDispose(() => {
 </script>
 
 <template>
-  <a-modal
-    :open="prompt !== null"
+  <AppModal
+    v-model:open="modalOpen"
     :title="title"
     :width="560"
+    footer="custom"
     :closable="false"
     :mask-closable="false"
-    centered
     wrap-class-name="desktop-session-prompt"
     @cancel="respond(notice ? 'acknowledge' : 'cancel')"
   >
@@ -136,7 +141,7 @@ onScopeDispose(() => {
         </a-button>
       </a-space>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

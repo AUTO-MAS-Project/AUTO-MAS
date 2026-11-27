@@ -63,15 +63,14 @@
     <WindowControls :show-controls="!isMacOS" />
 
     <!-- Runtime 链路的后端更新进度与失败处置 -->
-    <a-modal
+    <AppModal
       v-model:open="updateModalVisible"
       :title="t('bootstrap.comp.backendUpdateTitle', { version: updateTargetVersion })"
       :width="620"
-      :footer="null"
+      footer="none"
       :mask-closable="false"
-      :closable="!updateRunning"
+      :submitting="updateRunning"
       :z-index="9999"
-      centered
       @cancel="closeUpdateModal"
     >
       <div class="backend-update-body">
@@ -127,7 +126,7 @@
           </div>
         </template>
       </div>
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
@@ -151,13 +150,15 @@ import {
 } from '@/composables/useQueueCloseConfirmation'
 import { resolveBackendUpdateActions } from '@/utils/backendUpdateActions'
 import { LoadingOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
 import { computed, h, onBeforeUnmount, onMounted } from 'vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import WindowControls from '@/components/WindowControls.vue'
+import { useConfirm } from '@/composables/useConfirm'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const logger = window.electronAPI.getLogger('标题栏')
 const isMacOS = window.electronAPI.isMacOS
@@ -246,9 +247,9 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 
 // 处理后端更新点击
 const handleBackendUpdateClick = () => {
-  Modal.confirm({
+  void confirm({
     title: t('bootstrap.comp.restartBackendUpdate'),
-    content:
+    description:
       runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
         ? h('div', [
             h('p', t('bootstrap.comp.backendUpdateReadyConfirm')),
@@ -273,7 +274,6 @@ const handleBackendUpdateClick = () => {
           ),
     okText: t('bootstrap.comp.confirm'),
     cancelText: t('bootstrap.comp.cancel'),
-    centered: true,
     onOk: async () => {
       // 同一 release 分支有新 Commit 时，重启应用让启动 bootstrap 在停机窗口完成同步。
       if (isRuntimeManaged.value && runtimeBackendUpdateAvailable.value) {

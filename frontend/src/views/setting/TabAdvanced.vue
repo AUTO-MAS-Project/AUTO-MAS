@@ -29,7 +29,7 @@ import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import UpgradeBackupSettings from './components/UpgradeBackupSettings.vue'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
-import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/plugins/maafwFamily'
 
 const { t } = useI18n()
 

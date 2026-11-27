@@ -26,14 +26,14 @@ const { saveField, isSaving } = useScriptSaveMutation({
 const unavailableSelection = computed(
   () => data.value?.value === 'desktop' && !data.value.supported
 )
-const options = computed(() => {
-  const choices: { value: ExecutionSession; label: string }[] = [
-    { value: 'main', label: t('bootstrap.desktopSession.mainFallbackMainGroup') },
-  ]
-  if (data.value?.supported)
-    choices.push({ value: 'desktop', label: t('bootstrap.desktopSession.title') })
-  return choices
-})
+const options = computed(() => [
+  { value: 'main', label: t('bootstrap.desktopSession.mainFallbackMainGroup') },
+  {
+    value: 'desktop',
+    label: t('bootstrap.desktopSession.title'),
+    disabled: !data.value?.supported,
+  },
+])
 
 function save(value: ExecutionSession) {
   if (value === data.value?.value) return
@@ -47,11 +47,7 @@ function save(value: ExecutionSession) {
       <a-form-item
         html-for="desktop-execution-session"
         :label="t('bootstrap.desktopSession.executionSession')"
-        :help="
-          unavailableSelection
-            ? t('bootstrap.desktopSession.executionSessionUnavailable')
-            : undefined
-        "
+        :help="data.reason ? t(`bootstrap.desktopSession.reasons.${data.reason}`) : undefined"
         :extra="
           unavailableSelection ? undefined : t('bootstrap.desktopSession.executionSessionHint')
         "
@@ -59,7 +55,7 @@ function save(value: ExecutionSession) {
       >
         <a-select
           id="desktop-execution-session"
-          :value="unavailableSelection ? undefined : data.value"
+          :value="data.value"
           :placeholder="t('bootstrap.desktopSession.chooseExecutionSession')"
           :options="options"
           :loading="isSaving"

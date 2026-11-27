@@ -21,16 +21,16 @@ export namespace UserIndexItem {
         OKWW_USER_CONFIG = 'OkwwUserConfig',
         OK_NTE_USER_CONFIG = 'OkNteUserConfig',
         MAA_END_USER_CONFIG = 'MaaEndUserConfig',
-        M9AUSER_CONFIG = 'M9AUserConfig',
-        MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
         HSRUSER_CONFIG = 'HSRUserConfig',
-        BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
         ZZZ_OD_USER_CONFIG = 'ZzzOdUserConfig',
         BAAHUSER_CONFIG = 'BAAHUserConfig',
-        MSSUSER_CONFIG = 'MSSUserConfig',
+        BETTER_GIUSER_CONFIG = 'BetterGIUserConfig',
+        M9AUSER_CONFIG = 'M9AUserConfig',
         MAA_USER_CONFIG = 'MaaUserConfig',
-        WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
+        MAA_FWUSER_CONFIG = 'MaaFWUserConfig',
+        MSSUSER_CONFIG = 'MSSUserConfig',
         SRC_USER_CONFIG = 'SrcUserConfig',
+        WHIMBOX_USER_CONFIG = 'WhimboxUserConfig',
     }
 }
 

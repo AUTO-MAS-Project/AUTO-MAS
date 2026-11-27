@@ -29,12 +29,9 @@ SCRIPT_CALENDAR_GAMES = {
     for script, game in {
         "MaaEnd": "endfield",
         "HSR": "starrail",
-        "BetterGI": "genshin",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
-        "M9A": "reverse1999",
         "BAAH": "bluearchive",
-        "MSS": "stellasora",
     }.items()
     if script in CLASS_BOOK
 }

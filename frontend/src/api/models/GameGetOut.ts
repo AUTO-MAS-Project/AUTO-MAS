@@ -24,7 +24,7 @@ export type GameGetOut = {
     message?: string;
     uiSources?: Array<string>;
     order?: Array<CollectionOrderItem>;
-    data?: Record<string, (MuMuGameDocument | LDPlayerGameDocument | ModAvdGameDocument | GeneralGameDocument | WinProcessGameDocument)>;
+    data?: Record<string, (GeneralGameDocument | LDPlayerGameDocument | ModAvdGameDocument | MuMuGameDocument | WinProcessGameDocument)>;
     runtime?: Record<string, GameRuntimeData>;
 };
 

@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -40,9 +40,6 @@ from .game_binding import GameBindingOwner
 from .plan import PlanEntry
 from .queue import Webhook
 from .tag import TagItem
-
-if TYPE_CHECKING:
-    from app.utils.common.config.restore import ConfigRestoreService
 
 
 class UserEntry(GameBindingOwner):
@@ -108,12 +105,6 @@ class ScriptEntry(GameBindingOwner):
     @classmethod
     def bind_runtime_signals(cls) -> None:
         """设备绑定由公共游戏目标模型校验，不再保留 info 下的旧游戏字段。"""
-
-    def create_restore_service(
-        self, user_id: str, *, force: bool = False
-    ) -> ConfigRestoreService:
-        """由专项提供自己的备份恢复服务。"""
-        raise ValueError("该专项暂不支持配置恢复")
 
     async def prepare_script_removal(self) -> None:
         """托管移除及通用数据清理前处理专项持有的资源。"""

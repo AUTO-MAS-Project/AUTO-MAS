@@ -109,6 +109,8 @@ class GameBindingOption(BaseModel):
 
 class GameBindingOptionsOut(ConfigSnapshotOut):
     data: list[GameBindingOption] = Field(default_factory=list)
+    supported: bool = True
+    accountOverrideSupported: bool = True
 
 
 class GameRoute(APIRoute):
@@ -143,20 +145,33 @@ async def game_binding_options(body: GameBindingOptionsIn) -> GameBindingOptions
 
     script = Config.ScriptConfig[body.scriptId]
     owner = script_users(script)[body.userId] if body.userId is not None else None
+    capabilities = Config.script_game_binding(script, {})
     options = []
-    for uid, entry in Config.GameConfig.items():
-        reason = await GameManager.validate_binding(
-            str(body.scriptId), {"game": {"game_id": uid}}, owner=owner
-        )
-        options.append(
-            GameBindingOption(value=uid, label=entry.info.name, disabledReason=reason)
-        )
+    if capabilities.supported and (
+        owner is None or capabilities.account_override_supported
+    ):
+        for uid, entry in Config.GameConfig.items():
+            reason = await GameManager.validate_binding(
+                str(body.scriptId),
+                {"game": {"game_id": uid}},
+                owner=owner,
+                script=script,
+                capabilities=capabilities,
+            )
+            options.append(
+                GameBindingOption(
+                    value=uid, label=entry.info.name, disabledReason=reason
+                )
+            )
     return GameBindingOptionsOut(
         data=options,
+        supported=capabilities.supported,
+        accountOverrideSupported=capabilities.account_override_supported,
         uiSources=[
             Config.GameConfig.uid,
             script.uid,
             *([owner.uid] if owner is not None else []),
+            Config.plugin_registry.uid,
         ],
     )
 

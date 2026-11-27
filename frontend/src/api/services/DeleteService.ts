@@ -7,6 +7,7 @@ import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
 import type { GameIdIn } from '../models/GameIdIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanDeleteIn } from '../models/PlanDeleteIn';
+import type { PluginUninstallIn } from '../models/PluginUninstallIn';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
@@ -278,6 +279,30 @@ export class DeleteService {
         });
     }
     /**
+     * 卸载插件
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginApiPluginUninstallPost(
+        requestBody: PluginUninstallIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/uninstall',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
      * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 账号池恢复到
      * 账号配置并按需回填前端表单。备份来自其他配置来源（托管级/账号级）时
@@ -310,12 +335,12 @@ export class DeleteService {
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError
      */
-    public static whimboxRestoreConfigBackupApiPluginWhimboxAdapterBackupRestorePost(
+    public static srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost(
         requestBody: ConfigBackupRestoreIn,
     ): CancelablePromise<ConfigBackupRestoreOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugin/whimbox_adapter/backup/restore',
+            url: '/api/plugin/src_adapter/backup/restore',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -333,12 +358,12 @@ export class DeleteService {
      * @returns ConfigBackupRestoreOut Successful Response
      * @throws ApiError
      */
-    public static srcRestoreConfigBackupApiPluginSrcAdapterBackupRestorePost(
+    public static whimboxRestoreConfigBackupApiPluginWhimboxAdapterBackupRestorePost(
         requestBody: ConfigBackupRestoreIn,
     ): CancelablePromise<ConfigBackupRestoreOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/plugin/src_adapter/backup/restore',
+            url: '/api/plugin/whimbox_adapter/backup/restore',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

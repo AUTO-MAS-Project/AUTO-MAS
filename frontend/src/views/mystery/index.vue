@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
-import { AppPage, PageHeader } from '@/components/ui'
+import { AppPage, PageHeader, SectionCard } from '@/components/ui'
 import { useMysteryStore } from '@/stores/mystery'
 import BilibiliAgreement from './BilibiliAgreement.vue'
 
@@ -102,11 +102,8 @@ const lock = async () => {
       <div v-else-if="!store.initialized" class="mystery-loading">
         <a-spin />
       </div>
-      <a-card
-        v-else-if="!store.unlocked"
-        :title="t('core.mystery.unlockTitle')"
-        class="mystery-unlock"
-      >
+      <SectionCard v-else-if="!store.unlocked" class="mystery-unlock">
+        <template #title>{{ t('core.mystery.unlockTitle') }}</template>
         <a-typography-paragraph>{{ t('core.mystery.accessCodeHint') }}</a-typography-paragraph>
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
@@ -129,7 +126,7 @@ const lock = async () => {
             {{ t('core.mystery.unlock') }}
           </a-button>
         </a-form>
-      </a-card>
+      </SectionCard>
       <!-- 子页面共用解锁门槛，锁定或跨日后卸载正在运行的功能。 -->
       <router-view v-else-if="isFeaturePage" />
       <a-row v-else :gutter="[16, 16]">
@@ -157,17 +154,20 @@ const lock = async () => {
 </template>
 
 <style scoped>
-.mystery-unlock {
+.mystery-unlock.ui-section-card {
   width: 100%;
   max-width: 520px;
+  margin-bottom: 0;
+  padding: 0;
 }
 
-.mystery-unlock :deep(.ant-card-head-title) {
-  text-align: center;
+.mystery-unlock.ui-section-card :deep(.section-header h3) {
+  grid-column: 1 / -1;
+  justify-content: center;
   font-size: 20px;
 }
 
-.mystery-unlock :deep(.ant-card-body) {
+.mystery-unlock :deep(.ui-section-card-body) {
   padding: 32px;
 }
 

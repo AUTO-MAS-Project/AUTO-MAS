@@ -1,10 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router'
-import type { MaaFWFlavorType } from '@/composables/maafwFlavorTypes'
 import type { ScriptType } from '@/types/script'
-import { SCRIPT_PLUGIN_EDITORS } from '@/plugins/scriptAdapters'
+import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<ScriptType, MaaFWFlavorType>
+type OrdinaryScriptType = Exclude<ScriptType, MaaFWFamilyType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -32,10 +31,6 @@ const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
   OkNte: {
     script: () => import('@/views/EditView/Script/OkNteScriptEdit.vue'),
     user: () => import('@/views/EditView/User/OkNteUserEdit.vue'),
-  },
-  BetterGI: {
-    script: () => import('@/views/EditView/Script/BetterGIScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/BetterGIUserEdit.vue'),
   },
 }
 

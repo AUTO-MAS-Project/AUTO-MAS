@@ -14,6 +14,25 @@ export type PluginRegistryDocument = {
     info?: (PluginRecord_info | null);
     uid: string;
     ui: PluginConfigUi;
-    disableImpact?: Array<'scripts' | 'games'>;
+    /**
+     * 停用本插件及其级联下游时暂不可用的配置领域
+     */
+    disableImpact?: Array<'scripts' | 'games' | 'plans'>;
+    /**
+     * 直接上游插件名（requires 的提供者）
+     */
+    dependsOn?: Array<string>;
+    /**
+     * requires 中当前找不到提供者的服务名
+     */
+    missingServices?: Array<string>;
+    /**
+     * 停用或重载时会一并拆掉的下游插件名
+     */
+    disableCascade?: Array<string>;
+    /**
+     * 卸载时会一并卸掉的下游插件名
+     */
+    uninstallCascade?: Array<string>;
 };
 

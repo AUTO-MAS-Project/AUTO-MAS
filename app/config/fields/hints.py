@@ -31,10 +31,13 @@ UI_MASKED_VALUE = "__AUTO_MAS_CONFIG_MASKED__"
 """API 掩码字段的保留占位符；原样提交表示不修改现值。"""
 
 
+type OptionValue = str | int | float | bool
+
+
 class OptionHint(TypedDict):
     """select 选项；ref 可携带展示字段的 label，其余文案由前端 i18n。"""
 
-    value: str
+    value: OptionValue
     label: NotRequired[str]
 
 
@@ -58,10 +61,13 @@ class ComponentHint(TypedDict, total=False):
     path_must_exist: bool
     min: float | None
     max: float | None
+    precision: int
+    step: float
     options: list[OptionHint] | None
     multiple: bool
     ordered: bool
     endpoint: str | None
+    plan_type: str
     deps: list[str] | None
     widget: str | None
 
@@ -103,6 +109,7 @@ class UiHintMarker:
     deps: tuple[str, ...] = ()
     secret: bool = False
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None
+    options: tuple[OptionValue, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +118,7 @@ class Select:
 
     endpoint: str | None = None
     ordered: bool = False
+    plan_type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +136,7 @@ def ui(
     format: str | None = None,
     deps: list[str] | None = None,
     secret: bool = False,
+    options: list[OptionValue] | None = None,
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None,
 ) -> UiHintMarker:
     """生成 UI 覆盖标记，置于 ``Annotated`` 内。
@@ -139,13 +148,16 @@ def ui(
         format=format,
         deps=tuple(deps or ()),
         secret=secret,
+        options=tuple(options or ()),
         visibility=visibility,
     )
 
 
-def select(*, endpoint: str | None = None, ordered: bool = False) -> Select:
+def select(
+    *, endpoint: str | None = None, ordered: bool = False, plan_type: str | None = None
+) -> Select:
     """生成 select 标记（等价于 ``Select(...)``）。"""
-    return Select(endpoint=endpoint, ordered=ordered)
+    return Select(endpoint=endpoint, ordered=ordered, plan_type=plan_type)
 
 
 def legacy(
@@ -264,12 +276,16 @@ def hint_for_field(
             hint["component"] = "select"
             if m.endpoint:
                 hint["endpoint"] = m.endpoint
+            if m.plan_type is not None:
+                hint["plan_type"] = m.plan_type
             if m.ordered:
                 hint["ordered"] = True
         elif isinstance(m, UiHintMarker):
             if m.widget:
                 hint["widget"] = m.widget
                 hint["component"] = m.widget
+            if m.options:
+                hint["options"] = [{"value": value} for value in m.options]
             if m.format:
                 hint["format"] = m.format
             if m.deps:
@@ -277,9 +293,14 @@ def hint_for_field(
             if m.secret:
                 hint["secret"] = True
         elif isinstance(m, (Ge, Gt)):
-            hint["min"] = getattr(m, "ge", None) or getattr(m, "gt", None)
+            hint["min"] = getattr(m, "ge", getattr(m, "gt", None))
         elif isinstance(m, (Le, Lt)):
-            hint["max"] = getattr(m, "le", None) or getattr(m, "lt", None)
+            hint["max"] = getattr(m, "le", getattr(m, "lt", None))
+
+    if hint.get("endpoint") == "/api/plugin/options/plans" and "plan_type" not in hint:
+        ref = next((m for m in meta if isinstance(m, RefField)), None)
+        if ref and ref.target == "PlanConfig" and len(ref.entry_types) == 1:
+            hint["plan_type"] = ref.entry_types[0].__name__
 
     # ── Python / Literal / Enum 类型推导 ──
     # 无 endpoint 的 select 仍从 Literal / Enum 推导静态选项；有 endpoint 时由接口供值。
@@ -300,8 +321,11 @@ def hint_for_field(
 
         if base is bool or borigin is bool:
             hint["component"] = "switch"
-        elif base is int or borigin is int:
+        elif base in (int, float):
             hint["component"] = "number"
+            hint["step"] = 1 if base is int else 0.1
+            if base is int:
+                hint["precision"] = 0
         elif base is time or (isinstance(base, type) and issubclass(base, time)):
             hint["component"] = "time"
             hint["format"] = hint.get("format") or "hm"

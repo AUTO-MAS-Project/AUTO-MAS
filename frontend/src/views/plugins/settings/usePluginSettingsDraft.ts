@@ -1,4 +1,5 @@
 import { computed, reactive, ref, shallowRef } from 'vue'
+import { ApiResponseError } from '@/utils/apiResult'
 
 export type SettingsValues = Record<string, Record<string, unknown>>
 
@@ -47,6 +48,7 @@ export function usePluginSettingsDraft() {
 
   /** 用读取结果替换编辑稿；keepDraft 时把仍存在的分组里的改动放回去。 */
   const reset = (next: SettingsValues, options: { keepDraft: boolean }) => {
+    const previousErrors = errors.value
     errors.value = {}
     const kept = options.keepDraft
       ? changes.value.map(change => ({
@@ -56,8 +58,14 @@ export function usePluginSettingsDraft() {
       : []
     baseline.value = clone(next)
     assign(next)
-    for (const change of kept)
-      if (values[change.group]) values[change.group][change.field] = change.value
+    for (const { group, field, value } of kept) {
+      const fields = values[group]
+      if (!fields) continue
+      const key = `${group}.${field}`
+      if (previousErrors[key] && !sameValue(fields[field], value))
+        errors.value[key] = previousErrors[key]
+      fields[field] = value
+    }
   }
 
   const update = (group: string, field: string, value: unknown) => {
@@ -72,11 +80,9 @@ export function usePluginSettingsDraft() {
     assign(baseline.value)
   }
 
-  /** 接口按整个补丁返回结果，逐项标出本次未能保存的改动。 */
-  const saveFailed = (reason: string) => {
-    errors.value = Object.fromEntries(
-      changes.value.map(({ group, field }) => [`${group}.${field}`, reason])
-    )
+  /** 只标出接口确认校验失败的字段。 */
+  const saveFailed = (error: unknown) => {
+    errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
   }
 
   /** 提交时刻的编辑值快照，保存成功后交给 commit。 */

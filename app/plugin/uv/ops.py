@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -23,9 +24,13 @@ from packaging.version import InvalidVersion, Version
 
 from app.utils import ProcessRunner, get_logger
 
-from ..errors import PluginError
+from ..errors import PluginError, PluginPrecheckError
 
 logger = get_logger("插件 uv")
+
+# 这次启动没能补上宿主内置托管要的库时的（原因, 恢复办法），给用到它的托管报错用。
+# 只放错误类别和包名，不放路径、用户输入或原始报错。
+library_failure: tuple[str, str] | None = None
 
 # ── PyPI simple 镜像（顺序即优先级）──
 _MIRRORS: list[str] = [
@@ -112,14 +117,155 @@ async def mark_ok(mirror_url: str) -> None:
     await Config.setting.commit()
 
 
+def _pinned_versions(pinned: list[str]) -> dict[str, str]:
+    """从保留目标里取钉在 ``==版本`` 的已装插件发行包；本地工程目录不在其列。"""
+    versions = {}
+    for item in pinned:
+        if Path(item).is_dir():
+            continue
+        requirement = Requirement(item)
+        specifiers = list(requirement.specifier)
+        if len(specifiers) == 1 and specifiers[0].operator == "==":
+            versions[canonicalize_name(requirement.name)] = specifiers[0].version
+    return versions
+
+
+def _installed_requires(package: str, path: Path | None = None) -> set[str]:
+    """已装发行包按 Requires-Dist 直接依赖的包名（规范化）；读不到的返回空集。
+
+    给了 ``path`` 时只在该目录里找：启动前插件目录还没进导入路径。
+    """
+    if path is None:
+        try:
+            requires = importlib_metadata.distribution(package).requires or []
+        except importlib_metadata.PackageNotFoundError:
+            return set()
+    else:
+        found = next(
+            (
+                dist
+                for dist in importlib_metadata.distributions(path=[str(path)])
+                if canonicalize_name(dist.name or "") == canonicalize_name(package)
+            ),
+            None,
+        )
+        if found is None:
+            return set()
+        requires = found.requires or []
+    names = set()
+    for text in requires:
+        try:
+            requirement = Requirement(text)
+        except ValueError:
+            continue
+        if requirement.marker is not None and not requirement.marker.evaluate(
+            {"extra": ""}
+        ):
+            continue
+        names.add(canonicalize_name(requirement.name))
+    return names
+
+
+async def _family_release(
+    package_specs: list[str],
+    pinned: list[str],
+    pins: list[str],
+    *,
+    installed_path: Path | None = None,
+) -> dict[str, str] | None:
+    """其余插件全钉住无解时，算出要一起放开的已装插件（包名 → 当前版本）。
+
+    范围：目标单独求解得到的依赖闭包里出现的已装插件，再加上直接依赖了目标或
+    已放开包的已装插件，反复到不再增加。别的插件照旧钉住。
+
+    目标单独求解也确定无解、且不涉及主程序钉住的包时返回 None：问题不在别的插件，
+    是索引里拿不到能装的目标（连同它的依赖）。
+    """
+    from app.core import Config
+    from app.plugin.runtime.discover import local_libraries
+
+    from .precheck import host_dependencies, resolve_environment
+
+    installed = _pinned_versions(pinned)
+    if not installed:
+        return {}
+    # 只求解不安装；本地源码库照常参与，别的插件不放进来，免得它们的钉子挡住求解。
+    alone = await resolve_environment(
+        targets=[*package_specs, *(str(library) for library in local_libraries())],
+        core_version=Config.VERSION,
+        dependencies=host_dependencies(),
+        constraints=pins,
+        partial=True,
+    )
+    if not alone.ok:
+        if alone.incomplete or alone.host_conflicts:
+            return {}
+        return None
+    targets = {canonicalize_name(Requirement(spec).name) for spec in package_specs}
+    released = {name for name in alone.resolved if name in installed}
+    frontier = released | targets
+    grown = True
+    while grown:
+        grown = False
+        for name in sorted(installed.keys() - released):
+            if _installed_requires(name, installed_path) & frontier:
+                released.add(name)
+                frontier.add(name)
+                grown = True
+    return {name: installed[name] for name in sorted(released)}
+
+
+def _release_pins(pinned: list[str], released: dict[str, str]) -> list[str]:
+    """把放开的插件从 ``==当前版本`` 改成 ``>=当前版本``（不许降级），其余原样保留。"""
+    result = []
+    for item in pinned:
+        if not Path(item).is_dir():
+            name = canonicalize_name(Requirement(item).name)
+            if name in released:
+                result.append(f"{name}>={released[name]}")
+                continue
+        result.append(item)
+    return result
+
+
+def _minimum_failure(
+    raised: Mapping[str, Version],
+    current: Mapping[str, str],
+    result,
+    unavailable: bool,
+) -> str:
+    """抬到版本下限没装成时的原因：要的下限、现装版本，以及是索引里拿不到还是解不开。"""
+    from .precheck import conflict_summary, incomplete_message
+
+    if result.incomplete:
+        return incomplete_message(result)
+    wanted = "、".join(
+        f"{name}>={minimum}" + (f"（当前 {current[name]}）" if name in current else "")
+        for name, minimum in raised.items()
+    )
+    if unavailable:
+        return f"索引里没有可装的 {wanted}"
+    summary = conflict_summary(result)
+    return f"没能装上 {wanted}" + (f"：涉及 {summary}" if summary else "")
+
+
 async def install(
     package_spec: str,
     *,
     plugin_name: str,
     meta_id: UUID | None = None,
     dry_run: bool = False,
+    libraries: Sequence[str] = (),
+    minimum: Version | None = None,
 ) -> bool:
-    """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。"""
+    """联合安装到候选目录；可热加载时发布文件，否则保留候选并返回需重启。
+
+    ``libraries``：宿主内置托管要的库（需求串），和已装插件一样留在重建后的环境里；
+    按需求原样求解，新插件要更高版本时可以一起升。
+
+    ``minimum``：存量配置要求的版本下限（``package_spec`` 已写成 ``>=下限``）；
+    装不成时按下限说原因。
+    """
     from packaging.requirements import Requirement
 
     from app.core import Config
@@ -128,18 +274,19 @@ async def install(
 
     from . import environment
     from .precheck import (
+        conflict_summary,
         host_constraints,
         host_dependencies,
+        incomplete_message,
         plugin_targets,
         resolve_environment,
     )
 
     environment.ensure_writable()
     replacing = Requirement(package_spec).name
-    targets = [
-        *plugin_targets(Config.plugin_registry.values(), replacing=replacing),
-        package_spec,
-    ]
+    pinned = plugin_targets(Config.plugin_registry.values(), replacing=replacing)
+    # 宿主内置托管要的库不在注册表里，不带上的话重建环境会把它移走。
+    targets = [*pinned, *libraries, package_spec]
     sources = {
         str(project.resolve()): project.read_text(encoding="utf-8")
         for item in targets
@@ -147,6 +294,10 @@ async def install(
     }
     target = site_dir()
     pins = host_constraints()
+    # 为求解放开钉子的已装插件：规范化包名 → 原版本。
+    released: dict[str, str] = {}
+    # 目标单独求解也无解：索引里拿不到能装的目标。
+    unavailable = False
     with tempfile.TemporaryDirectory(
         prefix=".install-", dir=target.parent
     ) as temporary:
@@ -157,10 +308,65 @@ async def install(
             dependencies=host_dependencies(),
             constraints=pins,
             destination=None if dry_run else prepared,
+            partial=True,
         )
         if not result.ok:
+            # 别的插件全钉住时无解：同族插件之间写了次版本上限，要一起升才解得开。
+            family = await _family_release([package_spec], pinned, pins)
+            unavailable = family is None
+            released = family or {}
+            if released:
+                logger.info(
+                    "安装 {} 时其余插件全部钉住无解，放开同族插件再求解：{}",
+                    package_spec,
+                    "、".join(
+                        f"{name}>={version}" for name, version in released.items()
+                    ),
+                )
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=[
+                        *_release_pins(pinned, released),
+                        *libraries,
+                        package_spec,
+                    ],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=None if dry_run else prepared,
+                    partial=True,
+                )
+        if not result.ok:
+            if result.incomplete:
+                raise PluginPrecheckError(
+                    incomplete_message(result),
+                    payload={
+                        "detail": result.detail,
+                        "conflicts": list(result.conflicts),
+                    },
+                )
+            if minimum is not None:
+                raise PluginError(
+                    _minimum_failure(
+                        {canonicalize_name(replacing): minimum},
+                        {
+                            name: dist.version
+                            for name, dist in environment.distributions(target).items()
+                        },
+                        result,
+                        unavailable,
+                    ),
+                    payload={
+                        "detail": result.detail,
+                        "conflicts": list(result.conflicts),
+                    },
+                )
+            summary = conflict_summary(result)
             raise PluginError(
-                "插件与共享环境的依赖无法共同满足", payload={"detail": result.detail}
+                "插件与共享环境的依赖无法共同满足"
+                + (f"：涉及 {summary}" if summary else ""),
+                payload={"detail": result.detail, "conflicts": list(result.conflicts)},
             )
         if dry_run:
             return False
@@ -178,9 +384,33 @@ async def install(
             distribution.metadata, package_name=replacing, plugin_name=plugin_name
         )
         environment.preserve_local_packages(target, prepared)
+        # 放开钉子后实际换了版本的已装插件；注册表版本由安装后的发现流程统一刷新。
+        upgraded = {
+            name: (old, installed[name].version)
+            for name, old in released.items()
+            if name in installed and Version(installed[name].version) != Version(old)
+        }
+        records = {
+            canonicalize_name(record.info.package_name): record
+            for record in Config.plugin_registry.values()
+            if record.info.package_name
+        }
         restart_required = bool(
             environment.changed_loaded_dependencies(prepared, replacing)
+        ) or any(
+            # 已加载的插件换版只能交给新进程；不能文件已换、进程里还是旧模块。
+            records[name]._plugin_cls is not None
+            for name in upgraded
+            if name in records
         )
+        family_note = ""
+        if upgraded:
+            family_note = "同族插件一起升级：" + "、".join(
+                f"{records[name].info.plugin_name if name in records else name}"
+                f" {old} → {new}"
+                for name, (old, new) in upgraded.items()
+            )
+            logger.info("安装 {} 时{}", replacing, family_note)
         existing_record = Config.plugin_registry.by_name(plugin_name)
         record = environment.InstallationRecord(
             progress=PluginInstallation(
@@ -191,8 +421,9 @@ async def install(
                 version=version,
                 state="waiting_restart" if restart_required else "applying",
                 message="插件依赖已准备，需要重启后端完成安装"
+                + (f"；{family_note}" if family_note else "")
                 if restart_required
-                else None,
+                else family_note or None,
             ),
             core_version=Config.VERSION,
             host_constraints=pins,
@@ -210,6 +441,7 @@ async def install(
             previous_record=existing_record.uid
             if existing_record is not None
             else None,
+            co_upgraded={name: new for name, (_, new) in upgraded.items()},
         )
         if restart_required:
             pending = target.with_suffix(".pending")
@@ -229,8 +461,359 @@ async def install(
         return False
 
 
-async def prepare_environment() -> None:
-    """首次导入前联合修复插件环境；校验成功后替换目录，不触发禁用或清配置。"""
+def _below_minimum(
+    records: list, existing: dict[str, str], minimums: Mapping[str, Version]
+) -> dict[str, Version]:
+    """已装版本低于下限的插件发行包：规范化包名 → 下限；只看给了下限的已装插件。"""
+    raised = {}
+    for record in records:
+        minimum = minimums.get(record.info.plugin_name)
+        if (
+            minimum is None
+            or record.info.source != "installed"
+            or not record.info.package_name
+        ):
+            continue
+        name = canonicalize_name(record.info.package_name)
+        version = existing.get(name)
+        if version is None:
+            continue
+        try:
+            if Version(version) < minimum:
+                raised[name] = minimum
+        except InvalidVersion:
+            continue
+    return raised
+
+
+def _lift_minimums(targets: list[str], raised: Mapping[str, Version]) -> list[str]:
+    """把低于下限的插件目标换成 ``>=下限``，其余原样保留。"""
+    result = []
+    for item in targets:
+        if not Path(item).is_dir():
+            name = canonicalize_name(Requirement(item).name)
+            if name in raised:
+                result.append(f"{name}>={raised[name]}")
+                continue
+        result.append(item)
+    return result
+
+
+async def _solve_minimums(
+    targets: list[str],
+    raised: Mapping[str, Version],
+    pins: list[str],
+    prepared: Path,
+    installed_path: Path,
+    current: Mapping[str, str],
+):
+    """带上版本下限求解并装进候选目录；解不开或出错时返回 None，由调用方按原样启动。
+
+    先只抬下限、别的插件钉住；无解时照安装时的做法放开同族插件再解一次。
+    ``current`` 是插件环境里现装的版本（规范化包名 → 版本），用来说明没装成的原因。
+    """
+    from app.core import Config
+
+    from .precheck import host_dependencies, resolve_environment
+
+    # 抬下限的目标单独求解也无解：索引里拿不到能装的版本。
+    unavailable = False
+    logger.info(
+        "存量配置要的插件低于版本下限，加载插件前一并升级：{}",
+        "、".join(f"{name}>={version}" for name, version in raised.items()),
+    )
+    try:
+        # 同族插件之间写了次版本上限，别的插件钉住时这一次常常无解，属预期内的重试。
+        result = await resolve_environment(
+            targets=_lift_minimums(targets, raised),
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=prepared,
+            partial=True,
+            retry_note="只抬下限，接下来放开同族插件再求解",
+        )
+        if not result.ok:
+            pinned = [
+                item
+                for item in targets
+                if Path(item).is_dir()
+                or canonicalize_name(Requirement(item).name) not in raised
+            ]
+            family = await _family_release(
+                [f"{name}>={version}" for name, version in raised.items()],
+                pinned,
+                pins,
+                installed_path=installed_path,
+            )
+            unavailable = family is None
+            released = family or {}
+            if released:
+                logger.info(
+                    "只抬下限无解，放开同族插件再求解：{}",
+                    "、".join(
+                        f"{name}>={version}" for name, version in released.items()
+                    ),
+                )
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=_lift_minimums(_release_pins(targets, released), raised),
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                    partial=True,
+                )
+    except Exception as error:  # noqa: BLE001
+        # 离线、镜像没同步、装包出错都不能挡启动；没达标的插件这一轮不接手。
+        logger.opt(exception=True).warning(
+            "启动前没能把插件升到版本下限，先按现有版本启动：{}", error
+        )
+        return None
+    if not result.ok:
+        logger.warning(
+            "启动前没能把插件升到版本下限，先按现有版本启动：{}",
+            _minimum_failure(raised, current, result, unavailable),
+        )
+        return None
+    return result
+
+
+def _library_targets(
+    libraries: Sequence[str], existing: Mapping[str, str]
+) -> tuple[list[str], list[str]]:
+    """宿主内置托管要的库的求解目标：已装且满足的钉 ``==现版本``，其余照需求原样。
+
+    第二项是还没装上或版本不满足的需求。
+    """
+    targets, missing = [], []
+    for text in libraries:
+        requirement = Requirement(text)
+        name = canonicalize_name(requirement.name)
+        version = existing.get(name)
+        if version is not None and requirement.specifier.contains(
+            version, prereleases=True
+        ):
+            targets.append(f"{name}=={version}")
+        else:
+            targets.append(text)
+            missing.append(text)
+    return targets, missing
+
+
+def _kept_libraries(
+    libraries: Sequence[str], existing: Mapping[str, str], *, upgrade: bool = False
+) -> list[str]:
+    """兜底求解时留住已装的宿主库：按现装版本钉住，``upgrade`` 时写成 ``>=现版本``
+    （和已装插件的联合升级一样不降级）；从没装上的不带，库装不上不挡启动。"""
+    kept = []
+    for text in libraries:
+        name = canonicalize_name(Requirement(text).name)
+        version = existing.get(name)
+        if version is not None:
+            kept.append(f"{name}>={version}" if upgrade else f"{name}=={version}")
+    return kept
+
+
+async def _solve_libraries(
+    targets: list[str], missing: list[str], pins: list[str], prepared: Path
+):
+    """带上宿主内置托管要的库求解并装进候选目录；解不开或出错时返回 None。
+
+    库装不上不挡启动：调用方退回不带库的原有流程，用到它的功能运行时再报错。
+    """
+    from app.core import Config
+
+    from .precheck import conflict_summary, host_dependencies, resolve_environment
+
+    if missing:
+        logger.info(
+            "宿主内置托管要的库还没装上，一并装进插件环境：{}", "、".join(missing)
+        )
+    try:
+        result = await resolve_environment(
+            targets=targets,
+            core_version=Config.VERSION,
+            dependencies=host_dependencies(),
+            constraints=pins,
+            destination=prepared,
+            partial=True,
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.opt(exception=True).warning(
+            "宿主内置托管要的库没装上，先照常启动，联网后重启会再装：{}", error
+        )
+        return None
+    if not result.ok:
+        summary = conflict_summary(result)
+        logger.warning(
+            "宿主内置托管要的库没装上，先照常启动：{}{}",
+            result.detail,
+            f"（涉及 {summary}）" if summary else "",
+        )
+        return None
+    return result
+
+
+def _move_new_distributions(
+    target: Path, extra: Path, existing: Mapping[str, str]
+) -> str | None:
+    """把 ``extra`` 里新装的发行包文件移进 ``target``；只添不覆盖，返回拒绝原因或 None。
+
+    中途移动失败时撤掉已移入的文件再抛出，``target`` 回到原样。
+    """
+    from . import environment
+
+    moves: list[Path] = []
+    root = extra.resolve()
+    for name, distribution in environment.distributions(extra).items():
+        if name in existing:
+            if distribution.version == existing[name]:
+                continue
+            return f"补装会改动已装的 {name}"
+        if distribution.files is None:
+            return f"{name} 缺少文件清单"
+        for file in distribution.files:
+            source = Path(distribution.locate_file(file)).resolve()
+            if not source.is_file():
+                continue
+            relative = source.relative_to(root)
+            if (target / relative).exists():
+                return f"{name} 的文件和插件环境里已有的文件重名"
+            moves.append(relative)
+    moved: list[Path] = []
+    try:
+        for relative in moves:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            # 同盘改名；目标已存在时 Windows 上直接失败，不会覆盖。
+            (extra / relative).rename(destination)
+            moved.append(relative)
+    except BaseException:
+        for relative in moved:
+            (target / relative).unlink(missing_ok=True)
+        environment._remove_empty_parents(target, set(moved))
+        raise
+    importlib.invalidate_caches()
+    importlib_metadata.MetadataPathFinder.invalidate_caches()
+    return None
+
+
+async def _add_libraries(
+    target: Path, missing: list[str], replacing: str | None
+) -> None:
+    """往刚换入的插件环境里追加还缺的宿主库及其新依赖；已有发行包全钉在现版本不动。
+
+    换入的候选是安装那一刻按当时的配置建的，之后才加的托管要的库在这里按最新配置补上。
+    只往 ``target`` 里添新文件：旧环境仍在 ``.previous``，这次启动没确认成功时照常整目录
+    回滚。补不上不挡启动，原因记进 ``library_failure``，用到库的托管运行时带上它报错。
+    """
+    global library_failure
+
+    from app.core import Config
+
+    from . import environment
+    from .precheck import (
+        _requirement_name,
+        host_constraints,
+        host_dependencies,
+        plugin_targets,
+        resolve_environment,
+    )
+
+    logger.info(
+        "换入的插件环境里没有宿主内置托管要的库，按当前配置补装：{}",
+        "、".join(missing),
+    )
+    retry_online = "联网后重启 AUTO-MAS 会自动安装"
+    failure: tuple[str, str] | None = None
+    try:
+        host = host_constraints()
+        existing = {
+            name: dist.version
+            for name, dist in environment.distributions(target).items()
+        }
+        # 本地源码工程以目录参与求解；它们的发行副本不钉版本，免得和源码自相冲突。
+        local = [
+            item
+            for item in plugin_targets(
+                Config.plugin_registry.values(),
+                replacing=replacing,
+                installed_path=target,
+            )
+            if Path(item).is_dir()
+        ]
+        own = {name for item in local if (name := _requirement_name(item))}
+        kept = [
+            f"{name}=={version}"
+            for name, version in sorted(existing.items())
+            if name not in own
+        ]
+        with tempfile.TemporaryDirectory(
+            prefix=".libraries-", dir=target.parent
+        ) as temporary:
+            extra = Path(temporary) / "site-packages"
+            # 已装的包写成约束：求解时钉住，也不再输出和安装，只装缺的库和它新带来的依赖。
+            result = await resolve_environment(
+                targets=[*local, *missing],
+                core_version=Config.VERSION,
+                dependencies=host_dependencies(),
+                constraints=[*host, *kept],
+                destination=extra,
+                partial=True,
+            )
+            if not result.ok:
+                if result.incomplete:
+                    failure = ("部分镜像没有响应，其余判定依赖解不开", retry_online)
+                else:
+                    pinned = {
+                        canonicalize_name(Requirement(item).name) for item in host
+                    }
+                    involved = "、".join(
+                        f"{name}（主程序依赖）" if name in pinned else name
+                        for name in result.conflicts
+                    )
+                    failure = (
+                        "依赖解不开" + (f"，涉及 {involved}" if involved else ""),
+                        "稍后重启 AUTO-MAS 会再尝试安装，仍装不上请更新涉及的插件",
+                    )
+            elif extra.exists() and (
+                refused := _move_new_distributions(target, extra, existing)
+            ):
+                failure = (refused, "重启 AUTO-MAS 会再尝试安装")
+    except PluginPrecheckError:
+        logger.opt(exception=True).warning("补装宿主内置托管要的库时没连上镜像")
+        failure = ("网络不通或镜像没有响应", retry_online)
+    except Exception as error:  # noqa: BLE001
+        # 补装出错不能挡启动：旧环境的回滚只看安装记录和 .previous，这里不碰它们。
+        logger.opt(exception=True).warning("补装宿主内置托管要的库出错")
+        failure = (
+            f"补装出错，错误类型 {type(error).__name__}",
+            "重启 AUTO-MAS 会再尝试安装",
+        )
+    library_failure = failure
+    if failure is not None:
+        logger.warning(
+            "换入的插件环境里没能补上宿主内置托管要的库，先照常启动：{}；{}",
+            *failure,
+        )
+
+
+async def prepare_environment(
+    minimums: Mapping[str, Version] | None = None,
+    libraries: Sequence[str] = (),
+) -> None:
+    """首次导入前联合修复插件环境；校验成功后替换目录，不触发禁用或清配置。
+
+    ``minimums``：存量配置要的插件（插件 ID → 版本下限）。已装版本低于下限时，这次
+    求解带上下限，整族在任何插件模块导入前换成达标的版本；解不开时只记警告、按现有
+    版本继续，没达标的插件由插件管理器这一轮不启用。
+
+    ``libraries``：宿主内置托管要的库（需求串，例如 MaaEnd 用的 MFW 解析库）。它们
+    不是插件，只作为求解目标装进同一个插件环境；已装且满足时不触发求解，装不上时
+    只记警告、照常启动。
+    """
     from app.core import Config
     from app.utils.common.tools import to_pep440
 
@@ -238,6 +821,7 @@ async def prepare_environment() -> None:
     from ..types import CORE_DISTRIBUTION_NAME, CORE_PLUGIN_NAME
     from . import environment
     from .precheck import (
+        conflict_summary,
         host_constraints,
         host_dependencies,
         plugin_targets,
@@ -248,6 +832,21 @@ async def prepare_environment() -> None:
     sys.path[:] = [item for item in sys.path if item != str(target.resolve())]
     installation = environment.read_installation()
     if await environment.apply_pending():
+        # 候选环境在安装时已带上当时要的库；之后才加的托管要的库，按最新配置往换入的
+        # 环境里追加（不重建：旧环境要留作回滚）。已有时不求解、不联网。
+        _, missing = _library_targets(
+            libraries,
+            {
+                name: dist.version
+                for name, dist in environment.distributions(target).items()
+            },
+        )
+        if missing:
+            await _add_libraries(
+                target,
+                missing,
+                installation.progress.packageName if installation else None,
+            )
         return
     if installation is not None and installation.progress.state != "succeeded":
         from app.plugin.runtime import discover
@@ -261,47 +860,127 @@ async def prepare_environment() -> None:
         target, targets=targets, pins=pins
     )
     marker = target.parent / "environment.json"
+    unchanged = False
     if marker.is_file():
         try:
-            if json.loads(marker.read_text(encoding="utf-8")) == fingerprint:
-                previous = target.with_suffix(".previous")
-                if previous.exists():
-                    shutil.rmtree(previous)
-                return
+            unchanged = json.loads(marker.read_text(encoding="utf-8")) == fingerprint
         except ValueError:
             logger.warning("插件环境记录损坏，重新准备依赖")
+    previous = target.with_suffix(".previous")
+    # 环境没变也要求解：已装版本低于存量配置要的下限，不能被指纹短路。
+    existing = fingerprint["installed"]
+    raised = _below_minimum(records, existing, minimums or {})
+    # 宿主内置托管要的库：已装且满足就钉在现版本，指纹里的已装版本照常管住它。
+    pinned_libraries, missing = _library_targets(libraries, existing)
+    if unchanged and not raised and not missing:
+        if previous.exists():
+            shutil.rmtree(previous)
+        return
 
     logger.info("正在检查并准备插件依赖环境，完成后加载插件")
-    previous = target.with_suffix(".previous")
     with tempfile.TemporaryDirectory(
         prefix=".prepare-", dir=target.parent
     ) as temporary:
         prepared = Path(temporary) / "site-packages"
-        result = await resolve_environment(
-            targets=targets,
-            core_version=Config.VERSION,
-            dependencies=host_dependencies(),
-            constraints=pins,
-            destination=prepared,
-        )
+        result = None
+        if raised:
+            result = await _solve_minimums(
+                [*targets, *libraries], raised, pins, prepared, target, existing
+            )
+            if result is None:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                if unchanged and not missing:
+                    if previous.exists():
+                        shutil.rmtree(previous)
+                    return
+        if result is None and libraries:
+            result = await _solve_libraries(
+                [*targets, *pinned_libraries], missing, pins, prepared
+            )
+            if result is None:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                if unchanged:
+                    if previous.exists():
+                        shutil.rmtree(previous)
+                    return
+        # 兜底求解也带上已装的宿主库，不然重建的环境会把它移走；带上它无解时才不带。
+        kept = _kept_libraries(libraries, existing)
+        # 不带已装的宿主库才解开、库会被移出插件环境时，记下来提醒。
+        dropped: list[str] = []
+        if result is None:
+            # 带库求解失败时库都已装且满足：同样的目标刚解过，不再重复。
+            if kept and kept != pinned_libraries:
+                result = await resolve_environment(
+                    targets=[*targets, *kept],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+            if result is None or not result.ok:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=targets,
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+                if result.ok:
+                    dropped = kept
         if not result.ok:
             # 保留当前版本无解时，才允许联合升级；禁用包仍参与，不降级、不转远端源码包。
-            if prepared.exists():
-                shutil.rmtree(prepared)
-            result = await resolve_environment(
-                targets=plugin_targets(records, upgrade=True, installed_path=target),
-                core_version=Config.VERSION,
-                dependencies=host_dependencies(),
-                constraints=pins,
-                destination=prepared,
+            upgrade = plugin_targets(records, upgrade=True, installed_path=target)
+            kept_upgrade = _kept_libraries(libraries, existing, upgrade=True)
+            result = None
+            if kept_upgrade:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=[*upgrade, *kept_upgrade],
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+            if result is None or not result.ok:
+                if prepared.exists():
+                    shutil.rmtree(prepared)
+                result = await resolve_environment(
+                    targets=upgrade,
+                    core_version=Config.VERSION,
+                    dependencies=host_dependencies(),
+                    constraints=pins,
+                    destination=prepared,
+                )
+                if result.ok:
+                    dropped = kept
+        if dropped:
+            logger.warning(
+                "带上已装的宿主内置托管要的库，插件依赖无解，只好不带它重建插件环境："
+                "{} 会被移出插件环境，用到它的内置托管（MaaEnd）运行时会报错，"
+                "下次启动再尝试装回",
+                "、".join(dropped),
             )
         if not result.ok:
-            raise PluginError(f"插件自动升级失败：{result.detail}")
+            summary = conflict_summary(result)
+            raise PluginError(
+                f"插件自动升级失败：{result.detail}"
+                + (f"（涉及 {summary}）" if summary else ""),
+                payload={"conflicts": list(result.conflicts)},
+            )
 
         # 源码覆盖只选择当前实现，不能顺带卸载被覆盖的发行包；源码移除后仍可回落。
         environment.preserve_local_packages(target, prepared)
 
-        installed = environment.distributions(prepared)
+        installed = {
+            name: dist
+            for dist in importlib_metadata.distributions(path=[str(prepared)])
+            if (name := environment.distribution_name(dist)) is not None
+        }
         retained = {
             canonicalize_name(Requirement(item).name)
             for item in targets

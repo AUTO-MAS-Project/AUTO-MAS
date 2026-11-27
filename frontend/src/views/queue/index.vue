@@ -45,14 +45,12 @@
     <!-- 队列内容 -->
     <div v-else class="queue-content">
       <!-- 队列选择卡片 -->
-      <a-card class="queue-selector-card app-page-surface" :bordered="false">
+      <SectionCard class="queue-selector-card">
         <template #title>
-          <div class="card-title">
-            <span>{{ t('core.queue.selectLabel') }}</span>
-            <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
-              {{ t('core.queue.count', { count: queueList.length }, queueList.length) }}
-            </a-tag>
-          </div>
+          <span>{{ t('core.queue.selectLabel') }}</span>
+          <a-tag color="success">
+            {{ t('core.queue.count', { count: queueList.length }, queueList.length) }}
+          </a-tag>
         </template>
 
         <div class="queue-selection-container">
@@ -72,34 +70,37 @@
             </a-space>
           </div>
         </div>
-      </a-card>
+      </SectionCard>
 
       <!-- 队列配置卡片 -->
-      <a-card class="queue-config-card app-page-surface" :bordered="false">
+      <SectionCard class="queue-config-card">
         <template #title>
-          <div class="queue-title-container">
-            <div v-if="!isEditingQueueName" class="queue-title-display">
-              <span class="queue-title-text">{{
-                currentQueueName || t('core.queue.configTitle')
-              }}</span>
-              <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
-                <template #icon>
-                  <EditOutlined />
-                </template>
-              </a-button>
-            </div>
-            <div v-else class="queue-title-edit">
-              <a-input
-                ref="queueNameInputRef"
-                v-model:value="currentQueueName"
-                :placeholder="t('core.queue.namePlaceholder')"
-                class="queue-title-input"
-                :maxlength="50"
-                @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName"
-              />
-            </div>
-          </div>
+          <span v-if="!isEditingQueueName" class="queue-title-display">
+            <span class="queue-title-text">{{
+              currentQueueName || t('core.queue.configTitle')
+            }}</span>
+            <a-button
+              type="text"
+              size="small"
+              class="queue-edit-btn"
+              :aria-label="t('core.comp.edit')"
+              @click="startEditQueueName"
+            >
+              <template #icon>
+                <EditOutlined />
+              </template>
+            </a-button>
+          </span>
+          <a-input
+            v-else
+            ref="queueNameInputRef"
+            v-model:value="currentQueueName"
+            :placeholder="t('core.queue.namePlaceholder')"
+            class="queue-title-input"
+            :maxlength="50"
+            @blur="finishEditQueueName"
+            @press-enter="finishEditQueueName"
+          />
         </template>
 
         <QueueTriggerSettings
@@ -129,23 +130,18 @@
           :queue-items="currentQueueItems"
           @refresh="refreshQueueItems"
         />
-        <a-card :title="t('core.comp.extraScripts')" class="queue-extra-settings">
-          <a-form layout="vertical">
-            <ExtraScriptSection
-              :key="activeQueueId"
-              v-model:form-data="extraScriptFormData"
-              :loading="
-                queueConfigLoading ||
-                extraScriptSaving ||
-                extraScriptConfigQueueId !== activeQueueId
-              "
-              scope="queue"
-              hide-section-header
-              @save="handleExtraScriptSave"
-            />
-          </a-form>
-        </a-card>
-      </a-card>
+        <a-form layout="vertical" class="queue-extra-settings">
+          <ExtraScriptSection
+            :key="activeQueueId"
+            v-model:form-data="extraScriptFormData"
+            :loading="
+              queueConfigLoading || extraScriptSaving || extraScriptConfigQueueId !== activeQueueId
+            "
+            scope="queue"
+            @save="handleExtraScriptSave"
+          />
+        </a-form>
+      </SectionCard>
     </div>
   </div>
 </template>
@@ -162,6 +158,7 @@ import QueueTriggerSettings from './components/QueueTriggerSettings.vue'
 import QueueCycleSettings from './components/QueueCycleSettings.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import { SectionCard } from '@/components/ui'
 import { EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
@@ -621,13 +618,6 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.5;
-}
-
 .header-actions {
   flex-shrink: 0;
 }
@@ -652,10 +642,8 @@ onUnmounted(() => {
   gap: var(--app-page-content-gap);
 }
 
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.queue-content > .ui-section-card {
+  margin-bottom: 0;
 }
 
 /* 队列按钮组 */
@@ -677,19 +665,7 @@ onUnmounted(() => {
   min-height: 600px;
 }
 
-.status-label {
-  color: var(--ant-color-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
 /* 队列名称编辑 */
-.queue-title-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .queue-title-display {
   display: flex;
   align-items: center;
@@ -713,31 +689,12 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 
-/* 定时项与队列项上下布局 */
-.managers-row {
-  margin-bottom: 24px;
-}
-
-.manager-col {
-  display: flex;
-  flex-direction: column;
-}
-
-.queue-extra-settings :deep(.ant-card-head-title) {
-  font-size: var(--app-page-card-title-size);
-  font-weight: var(--app-page-card-title-weight);
-  line-height: var(--app-page-card-title-line-height);
-}
 .queue-extra-settings :deep(.form-section) {
   margin-bottom: 0;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .page-description {
-    font-size: 14px;
-  }
-
   .queue-title-input {
     max-width: 100%;
   }
@@ -749,14 +706,6 @@ onUnmounted(() => {
   }
 }
 
-.queue-title-input :deep(.ant-input) {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.queue-title-input :deep(.ant-input:focus) {
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
 .empty-title {
   color: var(--ant-color-text);
   font-size: 18px;

@@ -1,11 +1,11 @@
 <template>
   <!-- ══ 配置恢复（历史备份浏览 / 预览 / 查看详细 / 一键恢复；MAS 在前脚本在后）══ -->
-  <a-modal
+  <AppModal
     :open="open"
     :title="t('core.edit.configRestoreTitle')"
-    :footer="null"
+    footer="none"
     width="520px"
-    @update:open="onOpenChange"
+    @update:open="emit('update:open', $event)"
   >
     <a-alert
       v-if="disabled"
@@ -59,16 +59,16 @@
         </template>
       </a-list>
     </a-spin>
-  </a-modal>
+  </AppModal>
 
   <!-- ══ 配置预览：备份摘要（纯读不恢复）══ -->
-  <a-modal
-    :open="previewOpen"
+  <AppModal
+    v-model:open="previewOpen"
+    footer="close"
     width="540px"
     :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
-    @update:open="previewOpen = $event"
   >
-    <template #title>
+    <template #header>
       <!-- 预览标题区：专项可用 #preview-title 插槽自定义，缺省用「配置预览 · 时间」 -->
       <slot name="preview-title" :time="previewTime">
         {{ `${t('core.edit.configRestorePreviewTitle')} · ${previewTime}` }}
@@ -190,35 +190,26 @@
         </a-collapse-panel>
       </a-collapse>
     </a-spin>
-    <template #footer>
+    <template v-if="onDetail" #footer-left>
       <!-- 操作按钮常驻弹窗底部（footer 不随 body 滚动）；「查看详细配置」
            依赖父组件的 onDetail 回调（恢复 + 拉起查看会话），专项未提供时
            不渲染，避免出现无响应的按钮 -->
-      <div class="preview-actions">
-        <a-tooltip
-          v-if="onDetail"
-          :title="t('core.edit.configRestoreDetailHint', { script: scriptName })"
-        >
-          <a-button :disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail">
-            {{ t('core.edit.configRestoreDetailView') }}
-          </a-button>
-        </a-tooltip>
-        <a-button @click="previewOpen = false">
-          {{ t('core.edit.close') }}
+      <a-tooltip :title="t('core.edit.configRestoreDetailHint', { script: scriptName })">
+        <a-button :disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail">
+          {{ t('core.edit.configRestoreDetailView') }}
         </a-button>
-      </div>
+      </a-tooltip>
     </template>
-  </a-modal>
+  </AppModal>
 
   <!-- ══ 备份文件内容（只读；等宽原文 + 复制）══ -->
-  <a-modal
-    :open="fileOpen"
-    :footer="null"
+  <AppModal
+    v-model:open="fileOpen"
+    footer="none"
     width="720px"
     :body-style="{ maxHeight: '65vh', overflowY: 'auto' }"
-    @update:open="fileOpen = $event"
   >
-    <template #title>
+    <template #header>
       <div class="file-modal-title">
         <span class="file-modal-path">{{ fileItem?.path }}</span>
         <a-button type="text" size="small" @click="copyFileContent">
@@ -230,13 +221,15 @@
       <p v-if="fileError" class="restore-desc">{{ fileError }}</p>
       <pre v-else class="backup-file-content">{{ fileContent }}</pre>
     </a-spin>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { computed, h, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { AppModal } from '@/components/ui'
+import { useConfirm } from '@/composables/useConfirm'
 import {
   buildCorruptedForceConfirm,
   buildRestoreConfirm,
@@ -246,6 +239,7 @@ import {
 } from '@/utils/configRestoreMode'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 /**
  * 通用配置恢复组件：MAS 用户配置（在前）与 {script} 原生配置（在后）两类备份的
@@ -333,10 +327,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', val: boolean): void
 }>()
-
-const onOpenChange = (val: boolean) => {
-  emit('update:open', val)
-}
 
 // ══ 目标池 ══
 const restoreTarget = ref(props.targets[0]?.key ?? '')
@@ -635,11 +625,11 @@ const runRestore = async (item: BackupItem, force = false) => {
 /** 损坏强制恢复二次确认：写明损坏位置与风险，确认后携带 force 重试 */
 const confirmForceRestore = (item: BackupItem, detail: string) => {
   const copy = buildCorruptedForceConfirm(t, detail)
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: copy.title,
-    content: corruptedForceConfirmContent(copy.detail, copy.desc),
+    description: corruptedForceConfirmContent(copy.detail, copy.desc),
     okText: copy.okText,
-    okType: 'danger',
     cancelText: t('core.edit.cancel'),
     onOk: async () => {
       try {
@@ -671,16 +661,16 @@ const confirmRestore = (item: BackupItem) => {
     item.base,
     currentSource.value
   )
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title,
-    content: h(
+    description: h(
       'div',
       paragraphs.map(text =>
         h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
       )
     ),
     okText: t('core.edit.configRestoreAction'),
-    okType: 'danger',
     onOk: async () => {
       try {
         const resp = await runRestore(item)
@@ -855,11 +845,5 @@ const confirmRestore = (item: BackupItem) => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.preview-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
 }
 </style>

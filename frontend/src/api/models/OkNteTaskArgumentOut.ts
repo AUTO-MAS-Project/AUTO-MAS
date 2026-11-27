@@ -17,3 +17,4 @@ export type OkNteTaskArgumentOut = {
     message?: string;
     data?: (string | null);
 };
+

@@ -1,21 +1,20 @@
-/* MAA / SRC / General 的编辑表单增强样式；通过 scoped 样式引入，不向其他页面广播。 */
-/* 内容区域 */
+/* MAA / SRC / General 等编辑页的统一表单样式；通过 scoped 样式引入，不向其他页面广播。 */
 
 .config-card {
-  border-radius: 16px;
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
 .config-card :deep(.ant-card-head) {
-  border-bottom: 2px solid var(--ant-color-border-secondary);
+  min-height: 52px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .config-card :deep(.ant-card-head-title) {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
   color: var(--ant-color-text);
 }
 
@@ -23,16 +22,10 @@
   background: var(--ant-color-bg-container);
 }
 
-.type-tag {
-  border: none;
-}
-
-/* 表单样式 */
 .config-form {
   max-width: none;
 }
 
-/* 表单标签 */
 .form-label {
   color: var(--ant-color-text);
   font-size: 14px;
@@ -40,7 +33,7 @@
 
 .help-icon {
   font-size: 14px;
-  transition: color 0.3s ease;
+  transition: color 0.15s ease;
 }
 
 .help-icon:hover {
@@ -48,10 +41,12 @@
 }
 
 .modern-input {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .modern-input:hover {
@@ -61,14 +56,16 @@
 .modern-input:focus,
 .modern-input.ant-input-focused {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
 }
 
 .modern-select :deep(.ant-select-selector) {
-  border: 2px solid var(--ant-color-border) !important;
-  border-radius: 8px !important;
+  border: 1px solid var(--ant-color-border) !important;
+  border-radius: var(--ant-border-radius) !important;
   background: var(--ant-color-bg-container) !important;
-  transition: all 0.3s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .modern-select:hover :deep(.ant-select-selector) {
@@ -77,18 +74,20 @@
 
 .modern-select.ant-select-focused :deep(.ant-select-selector) {
   border-color: var(--ant-color-primary) !important;
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1) !important;
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg) !important;
 }
 
 .modern-number-input {
-  border-radius: 8px;
+  border-radius: var(--ant-border-radius);
 }
 
 .modern-number-input :deep(.ant-input-number) {
-  border: 2px solid var(--ant-color-border);
-  border-radius: 8px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
   background: var(--ant-color-bg-container);
-  transition: all 0.3s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .modern-number-input :deep(.ant-input-number:hover) {
@@ -97,14 +96,15 @@
 
 .modern-number-input :deep(.ant-input-number-focused) {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
 }
 
-/* 路径输入组 */
 .path-input-group {
-  border-radius: 8px;
-  border: 2px solid var(--ant-color-border);
-  transition: all 0.3s ease;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .path-input-group:hover {
@@ -113,7 +113,7 @@
 
 .path-input-group:focus-within {
   border-color: var(--ant-color-primary);
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.1);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
 }
 
 .path-input {
@@ -125,117 +125,54 @@
 }
 
 .path-button {
-  transition: all 0.3s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .path-button:hover {
   background: var(--ant-color-primary);
-  color: white;
-  transform: none;
+  color: #fff;
 }
 
-/* 表单项间距 */
-
 .config-form :deep(.ant-form-item-label) {
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 
 .config-form :deep(.ant-form-item-label > label) {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ant-color-text);
 }
 
-/* 深色模式适配（跟随应用主题 html.dark，不用系统媒体查询） */
 html.dark .config-card {
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.3),
-    0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-html.dark .path-input-group:focus-within {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-input:focus,
-html.dark .modern-input.ant-input-focused {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-html.dark .modern-select.ant-select-focused :deep(.ant-select-selector) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2) !important;
-}
-
-html.dark .modern-number-input :deep(.ant-input-number-focused) {
-  box-shadow: 0 0 0 4px rgba(24, 144, 255, 0.2);
-}
-
-/* 响应式设计 */
-@media (max-width: 1200px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 24px;
-  }
+  box-shadow: none;
 }
 
 @media (max-width: 768px) {
-  /* 继续覆盖上面的 1200px 留白规则；公共表单中的窄屏规则先于本文件加载。 */
   .config-card :deep(.ant-card-body) {
-    padding: 20px;
+    padding: 16px;
   }
 
   .config-card :deep(.ant-card-head) {
-    padding: 16px 20px;
-  }
-
-  .config-card :deep(.ant-card-head-title) {
-    font-size: 20px;
+    padding: 12px 16px;
   }
 
   .path-button {
-    padding: 0 16px;
-    font-size: 14px;
+    padding: 0 14px;
+    font-size: 13px;
   }
 }
 
-/* 动画效果 */
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.form-section {
-  animation: fadeInUp 0.6s ease-out;
-}
-
-.form-section:nth-child(2) {
-  animation-delay: 0.1s;
-}
-
-.form-section:nth-child(3) {
-  animation-delay: 0.2s;
-}
-
-.form-section:nth-child(4) {
-  animation-delay: 0.3s;
-}
-
-/* Tooltip样式优化 */
 :deep(.ant-tooltip-inner) {
   background: var(--ant-color-bg-elevated);
   color: var(--ant-color-text);
   border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: var(--ant-border-radius);
+  padding: 10px 14px;
   font-size: 13px;
   line-height: 1.5;
   max-width: 300px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 :deep(.ant-tooltip-arrow::before) {

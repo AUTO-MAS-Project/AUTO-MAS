@@ -22,7 +22,7 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import { maafwScriptTypeByConfigType } from '@/composables/useMaaFWFlavor'
+import { maafwScriptTypeByConfigType } from '@/plugins/maafwFamily'
 import {
   analyticsConfigSection,
   analyticsCountBucket,
@@ -52,7 +52,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
   WhimboxConfig: 'Whimbox',
-  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  // MaaFW 家族（MaaFW / M9A / MSS）的配置类名登记在适配条目上
   ...maafwScriptTypeByConfigType(),
 }
 
@@ -68,9 +68,15 @@ export async function fetchScriptExecutionSession(scriptId: string, signal: Abor
   if (response.code !== 200) throw new Error(response.message)
   const run = response.data[scriptId]?.Run
   const configurable = run != null && 'ExecutionSession' in run
+  const capability = response.index[0]
+  const supported = environmentSupported === true && capability?.desktopSessionSupported === true
+  const reason = environmentSupported
+    ? (capability?.desktopSessionReason ?? 'unsupported_config')
+    : 'environment_unavailable'
   return {
     configurable,
-    supported: environmentSupported === true && response.index[0]?.desktopSessionSupported === true,
+    reason: supported ? undefined : reason,
+    supported,
     value: configurable ? (run.ExecutionSession ?? 'main') : 'main',
     uiSources: response.uiSources,
   }

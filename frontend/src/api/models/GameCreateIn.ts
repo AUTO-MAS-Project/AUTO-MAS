@@ -9,14 +9,14 @@ import type { MuMuGameInput } from './MuMuGameInput';
 import type { WinProcessGameInput } from './WinProcessGameInput';
 export type GameCreateIn = {
     type: GameCreateIn.type;
-    data?: (MuMuGameInput | LDPlayerGameInput | ModAvdGameInput | GeneralGameInput | WinProcessGameInput);
+    data?: (GeneralGameInput | LDPlayerGameInput | ModAvdGameInput | MuMuGameInput | WinProcessGameInput);
 };
 export namespace GameCreateIn {
     export enum type {
-        MUMU = 'mumu',
+        GENERAL_EMULATOR = 'general_emulator',
         LDPLAYER = 'ldplayer',
         AVD = 'avd',
-        GENERAL_EMULATOR = 'general_emulator',
+        MUMU = 'mumu',
         WIN_PROCESS = 'win_process',
     }
 }

@@ -18,7 +18,7 @@ from app.utils.windows.desktop_session.process_runner import (
 )
 from app.utils.windows.desktop_session.process_worker import main
 
-_MAINTENANCE_RETURN_CODE = 2
+MAINTENANCE_RETURN_CODE = 2
 _WORKER_MODULE = "app.task.desktop_session_worker"
 
 
@@ -35,7 +35,7 @@ async def run_desktop_action(
         on_log,
         worker_module=_WORKER_MODULE,
     )
-    if code == _MAINTENANCE_RETURN_CODE:
+    if code == MAINTENANCE_RETURN_CODE:
         raise GameMaintenanceDetected(stdout.decode("utf-8"))
     return code == 0
 
@@ -56,7 +56,7 @@ async def detect_desktop_maintenance(
 async def request_desktop_action(
     desktop: DesktopProcessTarget,
     action: str,
-    arguments: dict[str, str],
+    arguments: dict[str, str | bool | None],
     *,
     on_log: Callable[[str], None] | None = None,
     on_restart: Callable[[], Awaitable[None]] | None = None,
@@ -72,19 +72,53 @@ async def request_desktop_action(
     return code, json.loads(stdout) if stdout else None
 
 
+def _maafw_window_matches(controller: dict[str, Any]) -> list[Any]:
+    """按 interface 的窗口规则匹配分身桌面上的窗口。
+
+    匹配规则在 MFW 解析库 ``maafw_interface`` 里，宿主不带它：分身进程的导入路径里没有插件环境时，
+    从工作目录下的插件环境补上；仍找不到就报错，由发起方按查窗口失败处理。
+    """
+    import sys
+
+    from maa.toolkit import Toolkit
+
+    try:
+        from maafw_interface.controller_win32 import service
+    except ImportError:
+        site = str(Path.cwd() / "plugins" / "pypi" / "site-packages")
+        if site not in sys.path:
+            sys.path.append(site)
+        try:
+            from maafw_interface.controller_win32 import service
+        except ImportError as exc:
+            raise RuntimeError(
+                "桌面分身里查窗口要用 MFW 解析库 maafw_interface，没有找到："
+                "请在插件中心安装 MFW 插件"
+            ) from exc
+
+    def list_windows() -> list[Any]:
+        return [
+            service.MaaFWWin32Window(
+                hWnd=int(getattr(window.hwnd, "value", window.hwnd) or 0),
+                className=str(window.class_name or ""),
+                windowName=str(window.window_name or ""),
+            )
+            for window in Toolkit.find_desktop_windows()
+        ]
+
+    return service.MaaFWWin32ControllerService().match_controller_windows(
+        controller, list_windows=list_windows
+    )
+
+
 def run_action(pipe) -> None:
     request = receive(pipe)
     from app.utils.common.process.session import configure_parent_scope
     from app.utils.windows.desktop_session.native import set_dpi_awareness
 
     actions = {
-        "bettergi_switch_account": (
-            "BetterGI.tools.account_switch_native",
-            "account_switch",
-        ),
         "okww_switch_account": ("Okww.tools.account_switch", "account_switch"),
         "oknte_switch_account": ("OkNte.tools.account_switch", "account_switch"),
-        "okww_start_game": ("Okww.tools.launcher_start", "start_game_via_launcher"),
         "oknte_start_game": ("OkNte.tools.launcher_start", "start_game_via_launcher"),
         "oknte_wait_autoplay": ("OkNte.tools.launcher_start", "wait_autoplay_game"),
     }
@@ -132,6 +166,17 @@ def run_action(pipe) -> None:
             arguments["game_arguments"],
         )
         code = 0
+    elif action == "okww_start_game":
+        from app.task.Okww.tools.launcher_start import start_game_via_launcher
+
+        try:
+            pid = start_game_via_launcher(**arguments, on_log=on_log)
+        except GameMaintenanceDetected as error:
+            code = MAINTENANCE_RETURN_CODE
+            text = json.dumps(str(error))
+        else:
+            code = 0
+            text = json.dumps(pid)
     elif action == "maaend_launch":
         from app.task.MaaEnd.tools.launcher_start import start_game_via_launcher
 
@@ -139,6 +184,7 @@ def run_action(pipe) -> None:
         code = int(
             not start_game_via_launcher(
                 arguments["launcher_path"],
+                client_path=arguments.get("client_path"),
                 on_log=on_log,
                 on_error_screenshot=lambda path: screenshots.append(str(path)),
             )
@@ -171,15 +217,45 @@ def run_action(pipe) -> None:
             {"screenshots": screenshots, "notReady": not_ready, "error": error}
         )
         code = int(error is not None)
-    elif action == "maafw_windows":
+    elif action == "list_windows":
+        # 通用动作：列出分身桌面上的全部窗口，按 MaaFramework 的枚举顺序；匹配规则由调用方在本进程做。
+        import win32gui
+        import win32process
+        from maa.toolkit import Toolkit
+
+        rows = []
+        for window in Toolkit.find_desktop_windows():
+            hwnd = getattr(window.hwnd, "value", window.hwnd)
+            hwnd = int(hwnd) if hwnd is not None else 0
+            if not win32gui.IsWindow(hwnd):
+                continue
+            rows.append(
+                [
+                    hwnd,
+                    str(window.class_name or ""),
+                    str(window.window_name or ""),
+                    win32process.GetWindowThreadProcessId(hwnd)[1],
+                ]
+            )
+        text = json.dumps(rows)
+        code = 0
+    elif action == "window_in_session":
         import win32gui
         import win32process
 
-        from app.task.MaaFW.tools.core.controller_win32.service import (
-            MaaFWWin32ControllerService,
+        hwnd = int(arguments["hwnd"])
+        pid = (
+            win32process.GetWindowThreadProcessId(hwnd)[1]
+            if win32gui.IsWindow(hwnd)
+            else 0
         )
+        text = json.dumps(bool(pid and process_session(pid) == session_id))
+        code = 0
+    elif action == "maafw_windows":
+        # 兼容 MFW 插件 0.1.0 的运行积木：它在分身里查窗口仍发这个动作（新代码用 list_windows）。
+        import win32gui
+        import win32process
 
-        service = MaaFWWin32ControllerService()
         hwnd = arguments.get("hwnd")
         if hwnd is not None:
             hwnd = int(hwnd)
@@ -190,9 +266,6 @@ def run_action(pipe) -> None:
             )
             text = json.dumps(bool(pid and process_session(pid) == session_id))
         else:
-            windows = service.match_controller_windows(
-                json.loads(arguments["controller"])
-            )
             text = json.dumps(
                 [
                     [
@@ -201,7 +274,9 @@ def run_action(pipe) -> None:
                         item.windowName,
                         win32process.GetWindowThreadProcessId(item.hWnd)[1],
                     ]
-                    for item in windows
+                    for item in _maafw_window_matches(
+                        json.loads(arguments["controller"])
+                    )
                     if win32gui.IsWindow(item.hWnd)
                 ]
             )
@@ -225,6 +300,15 @@ def run_action(pipe) -> None:
 
         text = detect_game_maintenance_text()
         code = 0
+    elif action == "bettergi_switch_account":
+        import sys
+
+        search_path = arguments.pop("plugin_path")
+        sdk = Path(__file__).resolve().parents[2] / "plugins" / "auto_mas_core" / "src"
+        sys.path[:0] = [str(sdk), search_path]
+        from bettergi_adapter.tools.account_switch_native import account_switch
+
+        code = int(not account_switch(**arguments, on_log=on_log))
     else:
         module, name = actions[action]
         operation = getattr(import_module(f"app.task.{module}"), name)
@@ -232,7 +316,7 @@ def run_action(pipe) -> None:
             code = int(not operation(**arguments, on_log=on_log))
         except GameMaintenanceDetected as error:
             text = error.text
-            code = _MAINTENANCE_RETURN_CODE
+            code = MAINTENANCE_RETURN_CODE
     if text is not None:
         send(
             pipe,

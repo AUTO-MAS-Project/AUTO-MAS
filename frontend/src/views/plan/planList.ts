@@ -1,4 +1,5 @@
 import type { PlanGetOut } from '@/api'
+import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
 import { generateUniquePlanName } from '@/utils/planNameUtils'
 import {
   PLAN_TYPE_REGISTRY,
@@ -47,4 +48,18 @@ export function projectPlanList(
   })
 
   return { nextPlanDataMap, nextPlanList }
+}
+
+/** 所属插件不可用的计划表（不在 index / data 里），投影成只读卡片。 */
+export function projectUnavailablePlans(
+  response: Pick<PlanGetOut, 'unavailable'>
+): UnavailableConfigCard[] {
+  return (response.unavailable ?? []).map(item => ({
+    uid: item.uid,
+    name: item.name ?? '',
+    typeLabel: item.typeLabel,
+    reason: item.reason,
+    plugin: item.plugin,
+    detail: item.detail,
+  }))
 }

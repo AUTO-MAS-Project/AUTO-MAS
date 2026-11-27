@@ -9,15 +9,17 @@ from app.task.Okww.tools import launcher_start
 
 
 @pytest.mark.parametrize(
-    ("window_flow", "update_only"),
+    ("window_flow", "update_only", "unrelated_game_open"),
     [
-        ("reopen", True),
-        ("reopen", False),
-        ("same_window", True),
-        ("second_popup", False),
+        ("reopen", True, False),
+        ("reopen", False, True),
+        ("same_window", True, False),
+        ("second_popup", False, False),
     ],
 )
-def test_launcher_self_update_resumes(monkeypatch, tmp_path, window_flow, update_only):
+def test_launcher_self_update_resumes(
+    monkeypatch, tmp_path, window_flow, update_only, unrelated_game_open
+):
     monkeypatch.chdir(tmp_path)
     clock = SimpleNamespace(now=0)
     update_box = (1123, 642, 42, 23)
@@ -79,6 +81,12 @@ def test_launcher_self_update_resumes(monkeypatch, tmp_path, window_flow, update
     )
     monkeypatch.setattr(
         launcher_start,
+        "win32process",
+        SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (0, hwnd + 100)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        launcher_start,
         "time",
         SimpleNamespace(monotonic=lambda: clock.now, sleep=sleep),
     )
@@ -95,13 +103,23 @@ def test_launcher_self_update_resumes(monkeypatch, tmp_path, window_flow, update
     )
     monkeypatch.setattr(
         launcher_start,
-        "_find_game_hwnd",
-        lambda: 30 if (20, start_box) in clicks else None,
+        "find_client_pids",
+        lambda *_: {30, 91} if (20, start_box) in clicks else {91},
     )
 
-    assert launcher_start.start_game_via_launcher(
+    def find_game_window(pids=None):
+        if unrelated_game_open and (pids is None or 90 in pids):
+            return 90
+        if (20, start_box) in clicks and (pids is None or 30 in pids):
+            return 30
+        return None
+
+    monkeypatch.setattr(launcher_start, "_find_game_hwnd", find_game_window)
+
+    pid = launcher_start.start_game_via_launcher(
         Path("launcher.exe"), update_only=update_only
     )
+    assert pid == (None if update_only else 130)
     expected = [(10, update_box)]
     if window_flow == "second_popup":
         expected.append((20, update_box))

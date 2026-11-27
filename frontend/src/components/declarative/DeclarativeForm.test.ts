@@ -1,0 +1,299 @@
+import { describe, expect, it, vi } from 'vite-plus/test'
+import { computed, createSSRApp, defineComponent, h } from 'vue'
+import { renderToString } from '@vue/server-renderer'
+import { createI18n } from 'vue-i18n'
+import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
+import Antd from 'ant-design-vue'
+import { PathKind, Service } from '@/api'
+import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { requestApi } from '@/utils/apiResult'
+import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
+import DeclarativeForm from './DeclarativeForm.vue'
+
+/** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
+async function render(
+  transpose: boolean,
+  includeOptionsGroup = true,
+  errors: Record<string, string> = {
+    'alpha.enabled': 'invalid switch',
+    'alpha.missing_dir': 'missing directory',
+  }
+) {
+  const update = vi.fn()
+  const action = vi.fn()
+  const edit = new Map<string, (value: string) => void>()
+  const selectAction = new Map<string, () => void>()
+  const groups = [
+    {
+      name: 'alpha',
+      hints: [
+        { field: 'name' },
+        { field: 'note' },
+        { field: 'on', component: 'switch' },
+        { field: 'count', component: 'number', min: 0, step: 0.1 },
+        { field: 'extra' },
+        { field: 'enabled', component: 'switch' },
+        { field: 'locked', component: 'switch', editable: false },
+        {
+          field: 'layout',
+          component: 'segmented',
+          widget: 'segmented',
+          options: [{ value: false }],
+        },
+        { field: 'single', component: 'switch' },
+        { field: 'notes', widget: 'textarea' },
+        { field: 'exe', component: 'path', path_kind: PathKind.FILE, path_must_exist: true },
+        {
+          field: 'missing_dir',
+          component: 'path',
+          path_kind: PathKind.FOLDER,
+          path_must_exist: true,
+        },
+      ],
+    },
+    { name: 'beta', hints: [{ field: 'name' }] },
+    {
+      name: 'other',
+      hints: [
+        { field: 'device', component: 'select', endpoint: '/api/plugin/options/games' },
+        {
+          field: 'refresh',
+          component: 'dropdown-button',
+          options: [{ value: 'refresh', label: 'Refresh now' }],
+        },
+      ],
+    },
+  ]
+  const values = {
+    alpha: { name: 'A1', note: 'A2', extra: 'outside', on: true, count: 4, enabled: true },
+    beta: { name: 'B1', note: 'hidden' },
+  }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } })
+  await client.prefetchQuery({
+    queryKey: ['plugins', 'field-options', 'uid', '/api/plugin/options/games', []],
+    queryFn: () => Promise.reject(new Error('options unavailable')),
+  })
+  const app = createSSRApp(() =>
+    h(DeclarativeForm, {
+      groups: includeOptionsGroup ? groups : groups.slice(0, 2),
+      values,
+      uid: 'uid',
+      namespace: 'demo',
+      tables: pluginSettingsTables({
+        tables: [
+          {
+            key: 'matrix',
+            rows: ['name', 'note', 'on', 'count'],
+            columns: ['alpha', 'beta'],
+            transpose,
+          },
+          { key: 'invisible', rows: ['absent'], columns: ['beta'], transpose: false },
+        ],
+      }),
+      errors,
+      'onUpdate:value': update,
+      onAction: action,
+    })
+  )
+  app.use(Antd)
+  app.use(VueQueryPlugin, { queryClient: client })
+  app.use(
+    createI18n({
+      legacy: false,
+      locale: 'en',
+      missingWarn: false,
+      fallbackWarn: false,
+      messages: {
+        en: {
+          demo: { matrix: { label: 'Matrix' }, alpha: { label: 'First', name: { label: 'Name' } } },
+        },
+      },
+    })
+  )
+  app.component(
+    'ADropdown',
+    defineComponent({
+      setup(_, { slots }) {
+        return () => slots.overlay?.()
+      },
+    })
+  )
+  app.component(
+    'AMenuItem',
+    defineComponent({
+      setup(_, { emit, slots }) {
+        selectAction.set(String(slots.default?.()[0]?.children), () => emit('click'))
+        return () => h('span', slots.default?.())
+      },
+    })
+  )
+  let numeric: Record<string, unknown> = {}
+  let columns: Array<{ key: string; width?: number; align?: string }> = []
+  app.mixin({
+    created() {
+      if (this.$options.name === 'AInputNumber') numeric = this.$props
+      if (this.$options.name === 'ATable') columns = this.$props.columns
+      if (this.$options.name === 'AInput') {
+        edit.set(String(this.$props.value), value => this.$emit('update:value', value))
+      }
+    },
+  })
+  const html = await renderToString(app)
+  client.clear()
+  return { html, edit, update, action, selectAction, columns, numeric }
+}
+
+describe('插件声明式表格与字段反馈', () => {
+  it.each([
+    {
+      transpose: false,
+      headers: ['Name', 'note'],
+      rows: [
+        ['First', 'A1', 'A2'],
+        ['beta', 'B1'],
+      ],
+    },
+    {
+      transpose: true,
+      headers: ['First', 'beta'],
+      rows: [
+        ['Name', 'A1', 'B1'],
+        ['note', 'A2'],
+      ],
+    },
+  ])('转置=$transpose 时按展示坐标编辑同一个配置字段', async ({ transpose, headers, rows }) => {
+    const { html, edit, update } = await render(transpose)
+    const head = html.match(/<thead\b[^>]*>([\s\S]*?)<\/thead>/)![1]!
+    expect(head).toMatch(new RegExp(headers.join('[\\s\\S]*')))
+    const bodyRows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/g)].map(match => match[1]!)
+    for (const row of rows) {
+      expect(bodyRows.some(markup => new RegExp(row.join('[\\s\\S]*')).test(markup))).toBe(true)
+    }
+    expect(html).toContain('Matrix')
+    expect(html.match(/value="B1"/g)).toHaveLength(1)
+    expect(html).not.toContain('value="hidden"')
+    expect(html).toContain('value="outside"')
+    edit.get('B1')!('changed')
+    expect(update).toHaveBeenCalledWith('beta', 'name', 'changed')
+  })
+
+  it('目录只计入实际渲染的卡片，表格字段与空表不重复占位', async () => {
+    const three = await render(false)
+    const nav = three.html.match(/<nav\b[^>]*>([\s\S]*?)<\/nav>/)![1]!
+    const links = [...nav.matchAll(/href="#([^"]+)"/g)]
+    expect(links).toHaveLength(3)
+    for (const [, id] of links) expect(three.html).toContain(`id="${id}"`)
+    expect(nav).toContain('Matrix')
+    expect(nav).not.toContain('invisible')
+    expect((await render(false, false)).html).not.toContain('<nav')
+  })
+
+  it('只聚合连续开关，控件覆盖与孤立开关保留在普通栅格', async () => {
+    const { html } = await render(false)
+    expect(
+      [...html.matchAll(/class="declarative-(field|switch)-grid"/g)].map(match => match[1])
+    ).toEqual(['field', 'switch', 'field', 'field'])
+    const grids = html.split(/class="declarative-(?:field|switch)-grid"/)
+    expect(grids[1]).toContain('value="outside"')
+    expect(grids[2]!.match(/role="switch"/g)).toHaveLength(2)
+    expect(grids[2]).toContain('switch-tile--tile')
+    expect(grids[2]).toContain('aria-checked="true"')
+    expect(grids[2]).toMatch(
+      /enabled[\s\S]*invalid switch[\s\S]*locked[\s\S]*core.plugins.readOnly/
+    )
+    expect(grids[3]).toMatch(
+      /ant-segmented[\s\S]*single[\s\S]*setting-toggle-button[\s\S]*textarea/
+    )
+    expect(grids[3]).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
+    expect(grids[3]).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
+  })
+
+  it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {
+    const { columns, html, numeric } = await render(false)
+    expect(numeric).toMatchObject({ min: 0, step: 0.1 })
+    expect(columns.map(({ width }) => width)).toEqual([108, undefined, undefined, 84, 116])
+    expect(columns.find(column => column.key === 'on')?.align).toBe('center')
+    const table = html.match(/<tbody\b[^>]*>([\s\S]*?)<\/tbody>/)![1]!
+    expect(table).toContain('role="switch"')
+    expect(table).toContain('ant-input-number')
+    expect(table).not.toMatch(/ant-input(?:-number)?-lg/)
+    expect((await render(true)).columns.map(({ width }) => width)).toEqual([
+      108,
+      undefined,
+      undefined,
+    ])
+  })
+
+  it('保存错误留在对应单元格，选项加载失败在普通字段内显示并可重试', async () => {
+    const draft = usePluginSettingsDraft()
+    await requestApi(
+      async () => ({
+        code: 422,
+        message: 'invalid settings',
+        fieldErrors: { 'beta.name': 'name already exists', 'alpha.extra': 'invalid extra' },
+      }),
+      'save failed'
+    ).catch(draft.saveFailed)
+    const { html } = await render(false, true, draft.errors.value)
+    const cell = [...html.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/g)].find(match =>
+      match[1]!.includes('value="B1"')
+    )
+    expect(cell?.[1]).toMatch(/role="alert"[^>]*>name already exists</)
+    const ordinary = html.slice(html.indexOf('</table>'))
+    expect(ordinary).toMatch(/value="outside"[^<]*(?:<[^>]+>)*invalid extra</)
+    expect(html).not.toContain('invalid settings')
+    expect(ordinary).toMatch(
+      /device[\s\S]*role="alert"[^>]*>options unavailable<[\s\S]*core.common.retry/
+    )
+  })
+
+  it('同一表单的两种计划和未筛选计划各自请求并缓存选项', async () => {
+    const endpoint = '/api/plugin/options/plans'
+    const hints = [
+      { field: 'first', endpoint, plan_type: 'FirstPlan' },
+      { field: 'second', endpoint, plan_type: 'SecondPlan' },
+      { field: 'all', endpoint },
+    ]
+    const request = vi.spyOn(Service, 'pluginPlanOptionsApiPluginOptionsPlansPost')
+    const client = new QueryClient({
+      defaultOptions: { queries: { enabled: false, retry: false } },
+    })
+    try {
+      for (const label of ['first', 'second', 'all'])
+        request.mockResolvedValueOnce({ code: 200, data: [{ value: label, label }] })
+      const app = createSSRApp(
+        defineComponent({
+          async setup() {
+            const target = computed(() => ({ uid: 'uid', ui: { hints: { plans: hints } } }))
+            const { stateFor } = useDeclarativeOptions(target)
+            const lists = await Promise.all(hints.map(hint => stateFor('plans', hint)!.execute()))
+            return () => h('span', lists.map(list => list.data?.[0]?.label).join(','))
+          },
+        })
+      )
+      app.use(VueQueryPlugin, { queryClient: client })
+      app.use(createI18n({ legacy: false, locale: 'en', missingWarn: false, fallbackWarn: false }))
+      expect(await renderToString(app)).toContain('first,second,all')
+      expect(request.mock.calls.map(([, body]) => body)).toEqual([
+        { type: 'FirstPlan' },
+        { type: 'SecondPlan' },
+        undefined,
+      ])
+    } finally {
+      request.mockRestore()
+      client.clear()
+    }
+  })
+
+  it('下拉动作携带分组和字段声明，走独立动作入口', async () => {
+    const { action, selectAction, update } = await render(false)
+    selectAction.get('Refresh now')!()
+    expect(action).toHaveBeenCalledWith(
+      'other',
+      expect.objectContaining({ field: 'refresh', component: 'dropdown-button' }),
+      'refresh'
+    )
+    expect(update).not.toHaveBeenCalled()
+  })
+})

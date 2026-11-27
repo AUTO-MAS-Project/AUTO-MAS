@@ -1,15 +1,13 @@
 <template>
   <!-- 电源操作倒计时弹窗 - 倒计时状态由后端 power.countdown.updated 驱动 -->
-  <a-modal
+  <AppModal
     v-model:open="visible"
-    :title="null"
-    :footer="null"
+    size="sm"
+    footer="none"
     :closable="false"
     :keyboard="false"
     :mask-closable="false"
     :mask="{ blur: true }"
-    :width="480"
-    centered
     wrap-class-name="power-countdown-modal"
   >
     <div class="countdown-content">
@@ -40,12 +38,13 @@
         </a-button>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import { useAppLifecycle } from '@/composables/useAppLifecycle'
 
 const { t } = useI18n()

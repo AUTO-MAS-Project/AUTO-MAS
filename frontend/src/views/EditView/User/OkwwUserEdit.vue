@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -17,13 +17,13 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserAccountHeading
-            :user-name="formData.userName"
-            :options="{ isEdit, logoSrc: accountIcon }"
-          />
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+      <StateView :loading="pageLoading">
+        <UserAccountHeading
+          :user-name="formData.userName"
+          :options="{ isEdit, logoSrc: accountIcon }"
+        />
+        <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <a-form :model="formData" layout="vertical">
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
               v-model:status="formData.Info.Status"
@@ -53,7 +53,6 @@
                   <a-select
                     v-model:value="formData.Notify.PushLogMode"
                     size="large"
-                    class="modern-select"
                     :options="pushLogModeOptions"
                     @change="saveField('Notify.PushLogMode', formData.Notify.PushLogMode)"
                   />
@@ -98,16 +97,13 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </SectionCard>
-        </a-form>
-      </a-card>
+          </a-form>
+        </SectionCard>
+      </StateView>
 
-      <a-card class="config-card config-source-card" :loading="pageLoading">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.configurationSource') }}</h3>
-            </div>
+      <StateView :loading="pageLoading">
+        <SectionCard variant="plain" :title="t('core.edit.configurationSource')">
+          <a-form :model="formData" layout="vertical">
             <OkwwConfigSource
               :script-id="scriptId"
               :user-id="userId"
@@ -119,32 +115,28 @@
               @base-change="handleConfigModeChange"
               @quick-change="handleQuickConfigChange"
             />
-            <a-row :gutter="24">
-              <a-col :span="24" class="config-actions-tail">
-                <ConfigActionsSection
-                  :base="formData.Info.Base"
-                  script-label="ok-ww"
-                  :hint-override="
-                    formData.Info.IfQuickConfig
-                      ? {
-                          target: t('core.edit.okwwGuiPanelTarget'),
-                          impact: t('core.edit.okwwGuiPanelImpact'),
-                        }
-                      : undefined
-                  "
-                  :disabled="configActionsDisabled"
-                  :config-loading="okwwConfigLoading"
-                  :configuring="showOkwwConfigMask"
-                  :import-loading="okwwImportLoading"
-                  @configure="handleOkwwConfig"
-                  @import-config="handleImportOkwwConfig"
-                  @script-config="handleScriptConfig"
-                />
-              </a-col>
-            </a-row>
-          </div>
-        </a-form>
-      </a-card>
+            <ConfigActionsSection
+              :base="formData.Info.Base"
+              script-label="ok-ww"
+              :hint-override="
+                formData.Info.IfQuickConfig
+                  ? {
+                      target: t('core.edit.okwwGuiPanelTarget'),
+                      impact: t('core.edit.okwwGuiPanelImpact'),
+                    }
+                  : undefined
+              "
+              :disabled="configActionsDisabled"
+              :config-loading="okwwConfigLoading"
+              :configuring="showOkwwConfigMask"
+              :import-loading="okwwImportLoading"
+              @configure="handleOkwwConfig"
+              @import-config="handleImportOkwwConfig"
+              @script-config="handleScriptConfig"
+            />
+          </a-form>
+        </SectionCard>
+      </StateView>
 
       <OkwwAccountPlan
         v-model="formData"
@@ -158,27 +150,17 @@
         @busy="nativeConfigSaving = $event"
       />
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <ExtraScriptSection
-            v-model:form-data="formData"
-            :loading="pageLoading"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+      <a-form :model="formData" layout="vertical" class="config-form">
+        <ExtraScriptSection v-model:form-data="formData" :loading="pageLoading" @save="saveField" />
 
-      <a-card class="config-card" style="margin-top: 24px">
-        <a-form :model="formData" layout="vertical" class="config-form">
-          <UserNotifyConfig
-            v-model="formData.Notify"
-            :loading="pageLoading"
-            :script-id="scriptId"
-            :user-id="userId"
-            @save="saveField"
-          />
-        </a-form>
-      </a-card>
+        <UserNotifyConfig
+          v-model="formData.Notify"
+          :loading="pageLoading"
+          :script-id="scriptId"
+          :user-id="userId"
+          @save="saveField"
+        />
+      </a-form>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -245,7 +227,7 @@
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
 import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
@@ -259,7 +241,8 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { EyeOutlined, QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { OkwwUserConfig } from '@/api'
 import { useUserApi } from '@/composables/useUserApi'
@@ -277,6 +260,7 @@ import ConfigActionsSection from './ConfigActionsSection.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
+const { confirm, alert } = useConfirm()
 
 const logger = window.electronAPI.getLogger('ok-ww用户编辑')
 const route = useRoute()
@@ -409,9 +393,10 @@ const createUserImmediately = async (): Promise<boolean> => {
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建账号失败'
     if (addUserErrorCode.value === 409) {
-      Modal.warning({
+      void alert({
+        tone: 'warning',
         title: t('core.edit.noOkWwSettings'),
-        content: t('core.edit.currentOkWwInstall'),
+        description: t('core.edit.currentOkWwInstall'),
         okText: t('core.edit.backScriptList'),
         onOk: handleCancel,
       })
@@ -595,66 +580,63 @@ const handleRestored = async (target: string) => {
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
 // 与一键恢复同口径：单弹窗文案，跨配置来源时换标题并追加来源切换说明
 // （确认后由基座把配置来源切回备份时点再恢复）。
-const handleRestoreView = (
+const handleRestoreView = async (
   target: string,
   item: { time: string; base?: string | null },
   currentMode?: string | null
 ) => {
-  if (configLocked.value) return Promise.resolve(false)
+  if (configLocked.value) return false
 
-  return new Promise<boolean>(resolve => {
-    const { title, paragraphs } = buildRestoreConfirm(
-      t,
-      {
-        title: t('core.edit.configRestoreDetailView'),
-        desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
-      },
-      item.base,
-      currentMode
-    )
-    Modal.confirm({
-      title,
-      content: h(
-        'div',
-        paragraphs.map(text =>
-          h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
-        )
-      ),
-      okType: 'danger',
-      okText: t('core.edit.configRestoreConfirmOk'),
-      cancelText: t('core.edit.cancel'),
-      onOk: async () => {
-        if (configLocked.value) {
-          message.error(t('core.edit.configLocked'))
-          resolve(false)
-          return
-        }
+  let restored = false
+  const { title, paragraphs } = buildRestoreConfirm(
+    t,
+    {
+      title: t('core.edit.configRestoreDetailView'),
+      desc: t('core.edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+    },
+    item.base,
+    currentMode
+  )
+  await confirm({
+    tone: 'danger',
+    title,
+    description: h(
+      'div',
+      paragraphs.map(text =>
+        h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+      )
+    ),
+    okText: t('core.edit.configRestoreConfirmOk'),
+    cancelText: t('core.edit.cancel'),
+    onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('core.edit.configLocked'))
+        return
+      }
 
-        try {
-          const resp = await restoreApi.restore(target, item.time)
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (target === 'mas') {
-            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
-            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
-            await loadUser()
-            await startSession(userId.value, true, 'user')
-          } else {
-            await startSession(scriptId, true, 'script')
-          }
-          resolve(true)
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
-          resolve(false)
+      try {
+        const resp = await restoreApi.restore(target, item.time)
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('core.edit.configRestoreFailed'))
         }
-      },
-      onCancel: () => resolve(false),
-    })
+        restoreOpen.value = false
+        if (target === 'mas') {
+          // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
+          // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
+          await loadUser()
+          await startSession(userId.value, true, 'user')
+        } else {
+          await startSession(scriptId, true, 'script')
+        }
+        restored = true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
+      }
+    },
   })
+  return restored
 }
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
@@ -681,32 +663,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-/* 配置文件来源是独立卡片，与页面其它卡片一样自带上下的 24px 卡片间距
-   （卡片默认首尾相接，该卡片上下的 基本信息卡片 / 任务配置 标题会直接贴住卡边）。 */
-.config-source-card {
-  margin: 24px 0;
-}
-
-/* 该卡片只有一个分区，且尾部是配置操作项：卡片自身的 padding 已是底部留白，
-   去掉分区与操作项的尾距，避免卡片底部多出一整块空白。 */
-.config-source-card :deep(.form-section),
-.config-actions-tail :deep(.ant-form-item) {
-  margin-bottom: 0;
-}
-
-.section-header {
-  border-bottom-width: 1px;
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -732,11 +688,5 @@ onUnmounted(() => {
 
 .okww-preview-box {
   margin-bottom: 4px;
-}
-
-@media (max-width: 768px) {
-  .config-card :deep(.ant-card-body) {
-    padding: 20px;
-  }
 }
 </style>

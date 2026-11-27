@@ -25,42 +25,10 @@ def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
     from app.models.config import GeneralConfig
 
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
-    assert lifecycle.supports_task(general)
-    assert not lifecycle.supports_task(WhimboxConfig.build())
-
-
-@pytest.mark.parametrize(
-    ("controller", "supported"), [("桌面端", True), ("安卓端", False)]
-)
-def test_desktop_session_judges_mfw_project_by_its_controller(
-    monkeypatch, tmp_path, controller, supported
-):
-    import json
-
-    from app.models.config import MaaFWConfig
-    from app.task.MaaFW.tools.embedded import embedded_project
-
-    (tmp_path / "interface.json").write_text(
-        json.dumps(
-            {
-                "interface_version": 2,
-                "name": "Audit",
-                "controller": [
-                    {"name": "安卓端", "type": "Adb"},
-                    {"name": "桌面端", "type": "Win32", "win32": {}},
-                ],
-                "resource": [{"name": "Default", "path": ["resource"]}],
-                "task": [],
-            }
-        ),
-        encoding="utf-8",
+    assert lifecycle.task_unavailable_reason(general) is None
+    assert (
+        lifecycle.task_unavailable_reason(WhimboxConfig.build()) == "plugin_unavailable"
     )
-    monkeypatch.setattr(
-        embedded_project, "resolve_maafw_project_root", lambda *_: tmp_path
-    )
-    config = MaaFWConfig.model_validate({"Info": {"Controller": controller}})
-
-    assert lifecycle.supports_task(config) is supported
 
 
 @pytest.mark.asyncio
@@ -156,18 +124,28 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
     from app.utils.windows.desktop_session import native
 
     process = Mock(pid=100)
-    monkeypatch.setattr(operations.psutil, "process_iter", lambda _: iter([process]))
+    process.as_dict.return_value = {"pid": process.pid}
+    monkeypatch.setattr(
+        operations.psutil, "process_iter", lambda attrs=None: iter([process])
+    )
     monkeypatch.setattr(native, "process_session", lambda pid: 7)
     monkeypatch.setattr(session, "_parent_scope", None)
     assert list(operations.iter_processes(["pid"])) == [process]
+    assert list(operations.iter_scoped_process_info(["pid"])) == [
+        (process, {"pid": process.pid})
+    ]
 
     session.configure_parent_scope(lambda: 1)
     assert list(operations.iter_processes(["pid"])) == []
+    assert list(operations.iter_scoped_process_info(["pid"])) == []
     token = session.desktop_process_target.set(
         session.DesktopProcessTarget(7, Path.cwd(), Path.cwd())
     )
     try:
         assert list(operations.iter_processes(["pid"])) == [process]
+        assert list(operations.iter_scoped_process_info(["pid"])) == [
+            (process, {"pid": process.pid})
+        ]
     finally:
         session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
@@ -181,8 +159,9 @@ async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_p
 
     game = tmp_path / "game" / "Endfield.exe"
     process = Mock(pid=100)
-    process.info = {"pid": 100, "name": game.name, "exe": str(game)}
-    monkeypatch.setattr(operations.psutil, "process_iter", lambda _: iter([process]))
+    info = {"name": game.name, "exe": str(game)}
+    process.as_dict.side_effect = lambda *, attrs: {attr: info[attr] for attr in attrs}
+    monkeypatch.setattr(operations.psutil, "process_iter", lambda: iter([process]))
     monkeypatch.setattr(
         operations, "matches_session", lambda _, session_id: session_id in (None, 1)
     )
@@ -200,7 +179,7 @@ async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_p
         assert await operations.is_process_stopped(
             other_installation, all_sessions=True
         )
-        process.info["exe"] = None
+        info["exe"] = None
         assert not await operations.is_process_stopped(game, all_sessions=True)
     finally:
         session.desktop_process_target.reset(token)
@@ -680,6 +659,72 @@ async def test_manual_start_respects_configured_execution_session(monkeypatch, c
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
 @pytest.mark.asyncio
+@pytest.mark.parametrize("declared", [True, False])
+async def test_manual_start_reads_plugin_execution_session(monkeypatch, declared):
+    """插件托管的配置类不继承宿主的运行设置类：Run 上声明了执行会话才按它选分身。"""
+    from typing import Literal
+    from uuid import uuid4
+
+    from pydantic import Field
+
+    from app.api.dispatch import TaskCreateIn, add_task
+    from app.core import Config, Plugin, TaskManager
+    from app.models.config import ConfigGroup, ScriptEntry
+    from app.utils.windows.desktop_session import native
+
+    class PluginScript(ScriptEntry):
+        class RunFields(ConfigGroup):
+            ProxyTimesLimit: int = 0
+            if declared:
+                ExecutionSession: Literal["main", "desktop"] = "main"
+
+        Run: RunFields = Field(default_factory=RunFields)
+
+    sid, task_id = uuid4(), uuid4()
+    entry = PluginScript.build(
+        payload={"Run": {"ExecutionSession": "desktop"} if declared else {}}
+    )
+    await entry.activate()
+    monkeypatch.setattr(Config, "ScriptConfig", {str(sid): entry})
+    monkeypatch.setattr(Plugin, "desktop_session_reason", lambda *_: None)
+    service = lifecycle._DesktopSessionLifecycle()
+    monkeypatch.setattr(lifecycle, "DesktopSessionLifecycle", service)
+    service.scope_state = (7, False)
+    monkeypatch.setattr(native, "child_session", lambda: 7)
+    monkeypatch.setattr(native, "session_state", lambda _: 0)
+    seen = []
+
+    async def start(mode, tasks):
+        seen.append(session.desktop_process_target.get())
+        return task_id
+
+    monkeypatch.setattr(TaskManager, "start", start)
+    result = await add_task(
+        TaskCreateIn.model_validate(
+            {
+                "mode": "AutoProxy",
+                "tasks": {
+                    0: {
+                        "uid": "-",
+                        "children": {
+                            0: {"uid": str(sid), "children": {0: {"uid": str(uuid4())}}}
+                        },
+                    }
+                },
+                "requireDesktopSession": declared,
+            }
+        )
+    )
+    assert result.taskId == str(task_id)
+    assert [target.session_id if target else None for target in seen] == [
+        7 if declared else None
+    ]
+    assert service.task_ids == ({task_id} if declared else set())
+    assert session.desktop_process_target.get() is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
+@pytest.mark.asyncio
 async def test_desktop_close_separates_external_processes_and_blocks_new_tasks(
     monkeypatch,
 ):
@@ -870,4 +915,4 @@ async def test_script_session_support_reads_resources_off_the_event_loop(
     monkeypatch.setattr(resource_loader, "load_maaend_controller_protocol", load)
     config = MaaEndConfig.build(payload={"Info": {"Path": str(tmp_path)}})
     await config.activate()
-    assert await lifecycle.query_task_support(config)
+    assert await lifecycle.query_task_reason(config) is None

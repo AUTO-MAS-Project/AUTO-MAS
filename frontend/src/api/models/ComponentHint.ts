@@ -21,10 +21,13 @@ export type ComponentHint = {
     path_must_exist?: boolean;
     min?: (number | null);
     max?: (number | null);
+    precision?: number;
+    step?: number;
     options?: (Array<OptionHint> | null);
     multiple?: boolean;
     ordered?: boolean;
     endpoint?: (string | null);
+    plan_type?: string;
     deps?: (Array<string> | null);
     widget?: (string | null);
 };

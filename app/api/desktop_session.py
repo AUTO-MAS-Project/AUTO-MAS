@@ -14,6 +14,7 @@ from app.core.desktop_session.lifecycle import (
     DesktopSessionLifecycle,
     authenticated,
 )
+from app.plugin.base.script import DesktopSessionReason
 
 
 class QueueSelection(BaseModel):
@@ -32,6 +33,7 @@ class QueueResult(BaseModel):
     taskId: str
     targetKind: Literal["queue", "script", "unknown"]
     code: str
+    reason: DesktopSessionReason | None = None
     label: str
 
 

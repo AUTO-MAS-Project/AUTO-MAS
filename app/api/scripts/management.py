@@ -43,21 +43,17 @@ from app.models.schema import (
     ConfigSnapshotOut,
     OutBase,
     ScriptDeleteIn,
+    UnavailableConfigItem,
     UserInBase,
 )
 from app.models.script_access import script_users
+from app.plugin.base.script import DesktopSessionReason
 from app.utils import get_logger
 
 BAAHConfig = ConfigPayload[_config_models.BAAHConfig]
 
 
 BAAHConfigInput = ConfigInput[_config_models.BAAHConfig]
-
-
-BetterGIConfig = ConfigPayload[_config_models.BetterGIConfig]
-
-
-BetterGIConfigInput = ConfigInput[_config_models.BetterGIConfig]
 
 
 GeneralConfig = ConfigPayload[_config_models.GeneralConfig]
@@ -72,28 +68,10 @@ HSRConfig = ConfigPayload[_config_models.HSRConfig]
 HSRConfigInput = ConfigInput[_config_models.HSRConfig]
 
 
-M9AConfig = ConfigPayload[_config_models.M9AConfig]
-
-
-M9AConfigInput = ConfigInput[_config_models.M9AConfig]
-
-
-MSSConfig = ConfigPayload[_config_models.MSSConfig]
-
-
-MSSConfigInput = ConfigInput[_config_models.MSSConfig]
-
-
 MaaEndConfig = ConfigPayload[_config_models.MaaEndConfig]
 
 
 MaaEndConfigInput = ConfigInput[_config_models.MaaEndConfig]
-
-
-MaaFWConfig = ConfigPayload[_config_models.MaaFWConfig]
-
-
-MaaFWConfigInput = ConfigInput[_config_models.MaaFWConfig]
 
 
 OkNteConfig = ConfigPayload[_config_models.OkNteConfig]
@@ -117,12 +95,8 @@ class ScriptIndexItem(BaseModel):
                 "OkwwConfig",
                 "OkNteConfig",
                 "MaaEndConfig",
-                "M9AConfig",
-                "MaaFWConfig",
                 "HSRConfig",
-                "BetterGIConfig",
                 "BAAHConfig",
-                "MSSConfig",
             ]
         },
         default=...,
@@ -132,7 +106,12 @@ class ScriptIndexItem(BaseModel):
     activityGame: str | None = Field(
         default=None, description="对应的游戏活动标识，无游戏归属时为空"
     )
+    pluginAvailable: bool = Field(
+        default=True,
+        description="所属插件当前是否可用；插件托管的插件不在已启用状态时为 false",
+    )
 
+    desktopSessionReason: DesktopSessionReason | None = None
     desktopSessionSupported: bool | None = Field(
         default=None, description="查询单个托管时返回当前配置是否支持桌面分身"
     )
@@ -146,16 +125,13 @@ class ScriptCreateIn(BaseModel):
                 "Okww",
                 "OkNte",
                 "MaaEnd",
-                "M9A",
-                "MaaFW",
                 "HSR",
-                "BetterGI",
+                "ZzzOd",
                 "BAAH",
-                "MSS",
             ]
         },
         default=...,
-        description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
+        description="托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该托管ID复制创建, 仅在复制创建时使用"
@@ -170,12 +146,8 @@ class ScriptCreateOut(OutBase):
         OkwwConfig,
         OkNteConfig,
         MaaEndConfig,
-        M9AConfig,
-        MaaFWConfig,
         HSRConfig,
-        BetterGIConfig,
         BAAHConfig,
-        MSSConfig,
     ] = Field(..., description="托管配置数据")
 
 
@@ -195,14 +167,14 @@ class ScriptGetOut(ConfigSnapshotOut):
             OkwwConfig,
             OkNteConfig,
             MaaEndConfig,
-            M9AConfig,
-            MaaFWConfig,
             HSRConfig,
-            BetterGIConfig,
             BAAHConfig,
-            MSSConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
+    unavailable: List[UnavailableConfigItem] = Field(
+        default_factory=list,
+        description="所属插件不可用的托管，只在获取全部托管时给出；只能删除",
+    )
 
 
 class ScriptLockIn(UserInBase):
@@ -221,12 +193,8 @@ class ScriptUpdateIn(BaseModel):
         OkwwConfigInput,
         OkNteConfigInput,
         MaaEndConfigInput,
-        M9AConfigInput,
-        MaaFWConfigInput,
         HSRConfigInput,
-        BetterGIConfigInput,
         BAAHConfigInput,
-        MSSConfigInput,
     ] = Field(..., description="托管更新数据")
 
     @model_validator(mode="before")
@@ -269,6 +237,25 @@ async def get_script_types() -> ScriptTypesOut:
 
 
 logger = get_logger("托管管理 API")
+
+
+def _plugin_available(config: object) -> bool:
+    """插件托管：有处于已启用状态、类型命中的声明才算可用（同运行时的分派判法）。"""
+    from app.core.plugin import Plugin
+    from app.models.config import ScriptEntry
+    from app.plugin.types import PluginState
+
+    if not isinstance(config, ScriptEntry):
+        return True
+    for record in Plugin.list_plugins():
+        decl = Plugin.script_types.get(record.uid)
+        if (
+            decl is not None
+            and record.info.state == PluginState.ENABLED
+            and isinstance(config, decl.script_type)
+        ):
+            return True
+    return False
 
 
 @router.post(
@@ -320,17 +307,21 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 for decl in Plugin.script_types.values()
             }
         )
+        reason = None
         desktop_session_supported = None
         if script.scriptId and index:
-            from app.core.desktop_session.lifecycle import query_task_support
+            from app.core.desktop_session.lifecycle import query_task_reason
 
-            desktop_session_supported = await query_task_support(
-                Config.ScriptConfig[script.scriptId]
-            )
+            reason = await query_task_reason(Config.ScriptConfig[script.scriptId])
+            desktop_session_supported = reason is None
         index = [
             ScriptIndexItem(
                 **item,
                 activityGame=activity_games.get(item["type"]),
+                desktopSessionReason=reason,
+                pluginAvailable=_plugin_available(
+                    Config.ScriptConfig[uuid.UUID(item["uid"])]
+                ),
                 desktopSessionSupported=desktop_session_supported,
             )
             for item in index
@@ -339,6 +330,11 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             uid: ConfigPayload[type(Config.ScriptConfig[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
         }
+        unavailable = (
+            [UnavailableConfigItem(**item) for item in Config.unavailable_scripts()]
+            if script.scriptId is None
+            else []
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"get_script失败: {type(e).__name__}: {e}")
         return ScriptGetOut(
@@ -352,6 +348,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
     return ScriptGetOut(
         index=index,
         data=data,  # pyright: ignore[reportArgumentType]
+        unavailable=unavailable,
         uiSources=[
             uuid.UUID(script.scriptId) if script.scriptId else Config.ScriptConfig.uid
         ],

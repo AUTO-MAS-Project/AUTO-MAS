@@ -1,21 +1,22 @@
 <template>
   <SectionCard
-    variant="plain"
+    variant="card"
     :title="title"
     :density="compact ? 'compact' : 'default'"
-    class="maafw-form-section"
-    :class="{ 'maafw-form-section--compact': compact }"
+    :icon="icon"
   >
     <slot />
   </SectionCard>
 </template>
 
 <script setup lang="ts">
+import type { Component } from 'vue'
 import { SectionCard } from '@/components/ui'
 
 withDefaults(
   defineProps<{
     title: string
+    icon: Component
     compact?: boolean
   }>(),
   {
@@ -23,13 +24,3 @@ withDefaults(
   }
 )
 </script>
-
-<style scoped>
-.maafw-form-section {
-  margin-bottom: 32px;
-}
-
-.maafw-form-section--compact {
-  margin-bottom: 20px;
-}
-</style>

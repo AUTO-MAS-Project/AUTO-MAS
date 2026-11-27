@@ -20,6 +20,7 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializationInfo,
+    ValidationError,
     model_serializer,
     model_validator,
 )
@@ -44,6 +45,7 @@ from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
     ComponentHint,
     OptionHint,
+    OptionValue,
     TriggerUiState,
     UiTablesList,
     hint_for_field,
@@ -474,9 +476,14 @@ class ConfigEntry(ConfigNode):
             self._build_workspace()
             group = getattr(self.effective, op.group)
             old = group.__dict__.get(op.field)
-            group.__pydantic_validator__.validate_assignment(
-                group, op.field, op.value, context={"entry": self}
-            )
+            try:
+                group.__pydantic_validator__.validate_assignment(
+                    group, op.field, op.value, context={"entry": self}
+                )
+            except ValidationError as exc:
+                raise ConfigAggregateError(
+                    [exc], field_path=(op.group, op.field)
+                ) from exc
             new = group.__dict__.get(op.field)
             changed = old != new
             if changed:
@@ -517,10 +524,17 @@ class ConfigEntry(ConfigNode):
             return stored.plaintext()
         return stored
 
-    def write_trigger(self, group: str, field: str, value: bool | None) -> UUID | None:
+    def write_trigger(
+        self,
+        group: str,
+        field: str,
+        value: bool | None,
+        *,
+        option: OptionValue | None = None,
+    ) -> UUID | None:
         """写入配置触发器命令，返回受影响的任务 UUID。"""
         return config_manager.submit_trigger(
-            self, group=group, field=field, value=value
+            self, group=group, field=field, value=value, option=option
         )
 
     def _apply_trigger_field(self, group: str, field: str, value: bool | None) -> None:
@@ -611,8 +625,13 @@ class ConfigEntry(ConfigNode):
             if col.activation_state != NodeState.INACTIVE:
                 continue
             nested = payload.get(cname)
-            if isinstance(nested, dict):
-                col._pending_payload = cast(dict[str, Any], nested)
+            if nested is not None and not isinstance(nested, dict):
+                errors.append(
+                    TypeError(f"{cname} 须为 dict，收到 {type(nested).__name__}")
+                )
+                continue
+            if nested is not None:
+                col._pending_payload = nested
             try:
                 await col.activate(regenerate_uuids=regenerate_uuids)
             except Exception as exc:  # noqa: BLE001
@@ -676,8 +695,15 @@ class ConfigEntry(ConfigNode):
         for gname in self._cfg_group_fields:
             group = cast(ConfigGroup, self.__dict__[gname])
             group_values = payload.get(gname)
-            if not isinstance(group_values, dict):
-                group_values = {}
+            if group_values is not None and not isinstance(group_values, dict):
+                error = TypeError(
+                    f"{gname} 须为 dict，收到 {type(group_values).__name__}"
+                )
+                if fail_fast:
+                    raise error
+                errors.append(error)
+                continue
+            group_values = group_values or {}
             for field_name, fld in type(group).model_fields.items():
                 if is_reactive_model_field(fld):
                     continue

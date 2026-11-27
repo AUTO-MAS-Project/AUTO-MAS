@@ -255,12 +255,25 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
+def _check_dev_port_available(port: int) -> bool:
+    """独立开发模式下快速探测端口是否已被占用，避免启动后才抛出冗长 OSError。"""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
 @logger.catch(reraise=True)
 def main():
     """准备后端权限、运行目录和应用依赖，装配 FastAPI 服务并启动事件循环。"""
-    from app.utils.common.asyncio_compat import install_windows_connection_cleanup
+    from app.utils.common.asyncio_compat import (
+        install_websockets_connection_cleanup,
+        install_windows_connection_cleanup,
+    )
 
     install_windows_connection_cleanup()
+    install_websockets_connection_cleanup()
 
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
@@ -299,7 +312,7 @@ def main():
         from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
         from app.task.MaaEnd.api_service import MaaEndConfigService
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )
@@ -537,33 +550,6 @@ def main():
                     "maaend-resource-preload", max_running=1, max_retained=1
                 ).spawn(preload_maaend_resources, retain_result=False)
 
-                async def _maafw_startup_maintenance() -> None:
-                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
-                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
-                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
-                    try:
-                        with startup_stage("后端/MFW 后台维护/旧副本迁移"):
-                            await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
-                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
-                            await Config.maafw_maintenance.clean_agent_venvs()
-                        with startup_stage("后端/MFW 后台维护/副本清理"):
-                            await Config.maafw_maintenance.clean_embedded_copies()
-                        with startup_stage("后端/MFW 后台维护/Runtime 文件清理"):
-                            await Config.maafw_maintenance.clean_runtime_blobs()
-                        with startup_stage("后端/MFW 后台维护/更新缓存清理"):
-                            await Config.maafw_maintenance.clean_update_cache()
-                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        with startup_stage("后端/MFW 后台维护/Runtime 池清理"):
-                            await Config.maafw_maintenance.clean_runtime_pool()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("MFW 启动期维护失败，下次启动再试")
-
-                app.state.maafw_startup_maintenance = asyncio.create_task(
-                    _maafw_startup_maintenance()
-                )
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
@@ -650,7 +636,9 @@ def main():
             Startup.close()
             config_manager.seal_triggers()
             Downloads.seal()
-            Plugin.seal()
+            # 这里只封插件的外部入口；插件之间的服务调用要留给停任务时的收尾（停 worker、
+            # 关游戏、恢复分辨率），由后面的 Plugin.shutdown() 在停完任务后再封。
+            Plugin.seal_entries()
             await Plugin.stop_watching()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
@@ -661,14 +649,6 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
-            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
-            # 被打断的切换有 journal，下次启动收尾。
-            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
-            if maintenance is not None and not maintenance.done():
-                maintenance.cancel()
-                with suppress(asyncio.CancelledError):
-                    await maintenance
-
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()
@@ -810,6 +790,27 @@ def main():
                 )
             return await call_next(request)
 
+        from fastapi.exception_handlers import http_exception_handler
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        @app.exception_handler(StarletteHTTPException)
+        async def explain_missing_maafw_plugin(request: Request, exc):
+            """/api/scripts/maafw/* 由 MFW 插件挂载；插件没装或没启用时 404 说清楚该装什么。"""
+            if exc.status_code == 404 and request.url.path.startswith(
+                "/api/scripts/maafw/"
+            ):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "code": 404,
+                        "status": "error",
+                        "message": "这个接口由 MFW 插件提供，插件还没装上或没启用："
+                        "请在插件中心安装并启用 auto-mas-maafw-adapter（依赖的积木会一并装上）；"
+                        "M9A、MSS 托管另需 auto-mas-m9a-adapter、auto-mas-mss-adapter",
+                    },
+                )
+            return await http_exception_handler(request, exc)
+
         app.include_router(core_router)
         app.include_router(info_router)
         app.include_router(mystery_router)
@@ -843,6 +844,17 @@ def main():
 
     async def run_server():
         http_port = resolve_http_port(development_environment)
+        if (
+            development_environment
+            and not supervised
+            and not _check_dev_port_available(http_port)
+        ):
+            logger.error(
+                f"开发后端端口 {http_port} 已被占用，取消启动。"
+                "可运行 `uv run --no-sync python scripts/dev_doctor.py` 查看占用情况，"
+                "加 `--kill-dev` 清理当前仓库残留后端，或通过 AUTO_MAS_HTTP_PORT 指定其他端口。"
+            )
+            sys.exit(1)
         logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(

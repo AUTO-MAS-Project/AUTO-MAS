@@ -53,7 +53,7 @@ import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import {
   PLAN_CONFIG_TYPES,
-  PLAN_TYPE_DESCRIPTORS,
+  getAvailablePlanTypes,
   type PlanConfigType,
 } from '@/utils/planTypeRegistry'
 import { ConfirmActionButton } from '@/components/ui'
@@ -62,12 +62,7 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 const capabilities = useScriptCapabilities(ref(true))
-const availablePlanTypes = computed(() =>
-  PLAN_TYPE_DESCRIPTORS.filter(
-    descriptor =>
-      descriptor.configType !== PLAN_CONFIG_TYPES.MAA || capabilities.types.value.includes('MAA')
-  )
-)
+const availablePlanTypes = computed(() => getAvailablePlanTypes(capabilities.types.value))
 
 interface Plan {
   id: string

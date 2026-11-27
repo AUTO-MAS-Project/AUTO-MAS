@@ -7,6 +7,7 @@ import type { MSSConfig_Embedded } from './MSSConfig_Embedded';
 import type { MSSConfig_Game } from './MSSConfig_Game';
 import type { MSSConfig_Info } from './MSSConfig_Info';
 import type { MSSConfig_plugin_game } from './MSSConfig_plugin_game';
+import type { MSSConfig_plugin_info } from './MSSConfig_plugin_info';
 import type { MSSConfig_Run } from './MSSConfig_Run';
 import type { MSSConfig_Selection } from './MSSConfig_Selection';
 import type { MSSConfig_Task } from './MSSConfig_Task';
@@ -16,6 +17,7 @@ export type MSSConfig = {
      * 游戏与设备
      */
     game?: (MSSConfig_plugin_game | null);
+    info?: (MSSConfig_plugin_info | null);
     Device?: (MSSConfig_Device | null);
     Embedded?: (MSSConfig_Embedded | null);
     Game?: (MSSConfig_Game | null);

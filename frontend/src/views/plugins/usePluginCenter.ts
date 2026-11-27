@@ -1,6 +1,7 @@
 import { computed, inject, provide, ref, watch, type InjectionKey, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { useQueryClient } from '@tanstack/vue-query'
 import { useActiveTriggers } from '@/composables/useActiveTriggers'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
@@ -32,9 +33,13 @@ export interface PluginCenterContext {
   marketFilter: Ref<MarketFilter>
   /**
    * 提交启用、停用、重载或卸载命令：占用全局插件操作锁，按界面提示判断可否执行，
-   * 完成后提示并回读列表与用量。确认与拦截弹层由调用方先处理（见 lifecycleDecision）。
+   * 完成后刷新配置列表与用量。调用方负责确认卸载时的配置清理选择。
    */
-  runLifecycle(view: InstalledPluginView, action: LifecycleAction): Promise<boolean>
+  runLifecycle(
+    view: InstalledPluginView,
+    action: LifecycleAction,
+    purgeConfig?: boolean
+  ): Promise<boolean>
 }
 
 const pluginActions = new Set<string>(['install', 'enable', 'disable', 'reload', 'uninstall'])
@@ -46,6 +51,7 @@ const PLUGIN_CENTER_KEY: InjectionKey<PluginCenterContext> = Symbol('plugin-cent
 export function providePluginCenter(): PluginCenterContext {
   const { t } = useI18n()
   const api = usePluginApi()
+  const queryClient = useQueryClient()
   const data = usePluginCenterData()
   const { data: activeTriggers } = useActiveTriggers()
   const activePluginTriggers = computed(() =>
@@ -69,17 +75,32 @@ export function providePluginCenter(): PluginCenterContext {
     latest: uid => data.market.value.find(entry => entry.uid === uid)?.document,
   })
 
-  const runLifecycle = async (view: InstalledPluginView, action: LifecycleAction) => {
+  const runLifecycle = async (
+    view: InstalledPluginView,
+    action: LifecycleAction,
+    purgeConfig = false
+  ) => {
     if (!actionEditable(view, action) || !lock.acquire({ uid: view.uid, action })) return false
     try {
-      const result = await api.runCommand(action, {
-        configUid: view.uid,
-        group: 'info',
-        field: action,
-        value: true,
-      })
+      const result =
+        action === 'uninstall'
+          ? await api.uninstallPlugin(view.uid, purgeConfig)
+          : await api.runCommand(action, {
+              configUid: view.uid,
+              group: 'info',
+              field: action,
+              value: true,
+            })
       message.success(result.message || t('core.plugins.actionComplete'))
-      await data.reload()
+      await Promise.all([
+        data.reload(),
+        ...[
+          ['config', 'script-list'],
+          ['config', 'plans'],
+          ['config', 'scheduler-targets'],
+          ['scripts', 'capabilities'],
+        ].map(queryKey => queryClient.invalidateQueries({ queryKey })),
+      ])
       return true
     } catch (error) {
       message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))

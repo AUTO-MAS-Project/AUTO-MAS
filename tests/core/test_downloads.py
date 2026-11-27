@@ -84,6 +84,7 @@ async def test_default_transfer_uses_host_download_and_prefetched_copy(
         result = await manager.wait(request)
         assert result.state == "succeeded", result
         assert result.downloaded == result.total == 18
+        assert manager.transfer_method(request) == "httpx"
         destination = tmp_path / "script/package"
         token = prefetch_paths.set({request.cache_key: result.path})
         try:

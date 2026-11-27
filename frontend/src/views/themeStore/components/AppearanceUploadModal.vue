@@ -5,6 +5,7 @@ import { message } from 'ant-design-vue'
 import { PictureOutlined } from '@ant-design/icons-vue'
 import type { SelectValue } from 'ant-design-vue/es/select'
 import { useI18n } from 'vue-i18n'
+import AppModal from '@/components/ui/AppModal.vue'
 
 import {
   useShareApi,
@@ -263,10 +264,7 @@ const usePackageCover = (): void => {
   coverMode.value = 'package'
 }
 
-const close = (): void => {
-  if (submitting.value) return
-  emit('update:open', false)
-}
+const close = () => emit('update:open', false)
 
 const failureMessage = (result: { message: string; reason?: string }): string => {
   if (result.reason === 'categoryMismatch') return t('core.themeStore.upload.categoryMismatch')
@@ -355,14 +353,14 @@ watch(authorized, isAuthorized => {
 </script>
 
 <template>
-  <a-modal
+  <AppModal
     :open="open"
     :width="640"
     :z-index="90"
     :title="t('core.themeStore.upload.title')"
-    :closable="!submitting"
-    :keyboard="!submitting"
-    :mask-closable="!submitting"
+    :submitting="submitting"
+    footer="custom"
+    scroll="none"
     :after-close="reset"
     @cancel="close"
   >
@@ -521,7 +519,7 @@ watch(authorized, isAuthorized => {
         {{ t('core.themeStore.upload.submit') }}
       </a-button>
     </template>
-  </a-modal>
+  </AppModal>
 </template>
 
 <style scoped>

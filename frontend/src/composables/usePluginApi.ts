@@ -41,6 +41,12 @@ class OperationResultError extends Error {
   }
 }
 
+/** 安装记录已失败且带着原因时取出原因，否则为空（界面回落到「操作失败」）。 */
+const failureReason = (installation: PluginInstallation | null | undefined) =>
+  installation?.state === PluginInstallation.state.FAILED
+    ? installation.message || undefined
+    : undefined
+
 export function usePluginApi() {
   // 统一插件配置读取、保存和独立命令提交；每个用户操作只记录一次真实完成结果。
   let disposed = false
@@ -98,7 +104,7 @@ export function usePluginApi() {
     const installation = prepared ?? (await get()).data
     if (!installation || installation.state === PluginInstallation.state.SUCCEEDED) return
     if (installation.state === PluginInstallation.state.FAILED)
-      throw new OperationResultError('failure')
+      throw new OperationResultError('failure', installation.message ?? undefined)
     if (!managesBackendProcess() || !window.electronAPI?.backendRestart) {
       throw new OperationResultError('unknown', installation.message ?? undefined)
     }
@@ -127,6 +133,8 @@ export function usePluginApi() {
       if (!result.success) {
         // 失败进程可能已退出；读不到 HTTP 状态也须执行这次交接唯一允许的恢复重启。
         const progress = await get().catch(() => null)
+        // 后端记下的失败原因交给界面；恢复后读到的更新，以它为准。
+        let reason = failureReason(progress?.data)
         if (
           progress === null ||
           progress.data?.state === PluginInstallation.state.FAILED ||
@@ -135,14 +143,17 @@ export function usePluginApi() {
           // 启动未确认成功时，新进程按既有交接记录恢复旧环境；最多恢复一次。
           if (!disposed) onProgress?.('recovering')
           const restored = await window.electronAPI.backendRestart('recovery')
-          if (restored.success) await reconnectNow('插件环境恢复')
+          if (restored.success) {
+            await reconnectNow('插件环境恢复')
+            reason = failureReason((await get().catch(() => null))?.data) ?? reason
+          }
         }
-        throw new OperationResultError('failure')
+        throw new OperationResultError('failure', reason)
       }
       await reconnectNow('插件环境更新完成')
       const progress = (await get()).data
       if (progress?.state === PluginInstallation.state.FAILED)
-        throw new OperationResultError('failure')
+        throw new OperationResultError('failure', progress.message ?? undefined)
       if (progress?.state !== PluginInstallation.state.SUCCEEDED)
         throw new OperationResultError('unknown')
     } finally {
@@ -157,7 +168,7 @@ export function usePluginApi() {
     }
   }
   const runCommand = (
-    action: Action,
+    action: Exclude<Action, 'uninstall'>,
     body: TriggerWriteIn,
     onProgress?: (stage: InstallationStage) => void
   ) =>
@@ -185,6 +196,7 @@ export function usePluginApi() {
       while (true) {
         if (disposed) throw new OperationResultError('unknown')
         let state: TriggerTaskResult['state']
+        let reason: string | undefined
         try {
           const response = await requestApi(
             () => Service.getConfigTriggerResultApiConfigTriggersResultPost({ taskId }),
@@ -192,6 +204,8 @@ export function usePluginApi() {
           )
           if (!response.data) throw new OperationResultError('unknown')
           state = response.data.state
+          // 后端给了能展示的失败原因（插件错误）就原样显示
+          reason = response.data.message || undefined
           misses = 0
         } catch {
           if (++misses >= 3) throw new OperationResultError('unknown')
@@ -199,7 +213,8 @@ export function usePluginApi() {
           continue
         }
         if (state === 'succeeded') break
-        if (state === 'failed' || state === 'timed_out') throw new OperationResultError('failure')
+        if (state === 'failed' || state === 'timed_out')
+          throw new OperationResultError('failure', reason)
         if (state === 'cancelled') throw new OperationResultError('cancelled')
         await pause()
       }
@@ -219,6 +234,14 @@ export function usePluginApi() {
         t('core.plugins.marketLoadFailed')
       ),
     refreshCatalog,
+    uninstallPlugin: (recordId: string, purgeConfig = false) =>
+      perform('uninstall', () =>
+        requestApi(
+          () =>
+            Service.uninstallPluginApiPluginUninstallPost({ recordId, purge_config: purgeConfig }),
+          t('core.plugins.actionFailed')
+        )
+      ),
     getConfig: (recordId: string) =>
       /* 读取插件自有配置及其独立配置 UID。 */ requestApi(
         () => Service.getPluginConfigApiPluginConfigGetPost({ recordId }, locale()),

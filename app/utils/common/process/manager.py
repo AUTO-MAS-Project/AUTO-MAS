@@ -25,7 +25,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import psutil
 
@@ -38,6 +38,7 @@ from app.utils import (
     window,
 )
 
+from .operations import iter_process_info
 from .runner import create_subprocess
 from .scope import current_process_scope
 from .session import desktop_process_target, process_in_scope
@@ -75,15 +76,16 @@ class ProcessInfo:
     cmdline: list[str] | None = None
 
 
-def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
+def match_process(
+    proc: psutil.Process, target: ProcessInfo, *, info: dict[str, Any]
+) -> bool:
     """检查进程是否与目标进程信息匹配
 
-    ``proc.info`` 里预取的字段直接比对; ``exe`` 与 ``cmdline`` 只在目标要求时
+    本轮扫描预取的字段直接比对; ``exe`` 与 ``cmdline`` 只在目标要求时
     读取, 因为命令行在受保护进程上要等读超时, 不能整表预取。读不到的字段按
     不匹配处理。
     """
 
-    info = proc.info
     if target.pid is not None and proc.pid != target.pid:
         return False
     if target.name is not None and info["name"] != target.name:
@@ -110,12 +112,13 @@ def _read_field(proc: psutil.Process, field: str) -> object:
         return None
 
 
-def is_process_running(process_name: str) -> bool:
+def is_process_running(process_name: str, *, exe: str | None = None) -> bool:
     """在调用者所在桌面查找指定进程的可见窗口。"""
 
-    for proc in psutil.process_iter(["name"]):
+    target = ProcessInfo(name=process_name, exe=exe)
+    for proc, info in iter_process_info(["name", "exe"] if exe else ["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
+            if match_process(proc, target, info=info):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
@@ -123,16 +126,16 @@ def is_process_running(process_name: str) -> bool:
     return False
 
 
-async def has_process_window(process_name: str) -> bool:
+async def has_process_window(process_name: str, *, exe: str | None = None) -> bool:
     """在任务所在桌面查找指定进程的可见窗口。"""
     desktop = desktop_process_target.get()
     if desktop is None:
-        return is_process_running(process_name)
+        return is_process_running(process_name, exe=exe)
 
     from app.utils.windows.desktop_session.process_runner import run_desktop_action
 
     code, _, _ = await run_desktop_action(
-        desktop, "has_process_window", {"name": process_name}
+        desktop, "has_process_window", {"name": process_name, "exe": exe}
     )
     return code == 0
 
@@ -162,9 +165,9 @@ def _find_ready_window(target: ProcessInfo) -> int | None:
         hwnd = get_main_window_handle(target.pid)
         return hwnd if hwnd is not None and _is_client_ready(hwnd) else None
 
-    for proc in psutil.process_iter(["pid", "name"]):
+    for proc, info in iter_process_info(["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            if not match_process(proc, target):
+            if not match_process(proc, target, info=info):
                 continue
             hwnd = get_main_window_handle(proc.pid)
             if hwnd is not None and _is_client_ready(hwnd):
@@ -262,10 +265,9 @@ def is_process_alive(process_name: str) -> bool:
     用本函数按进程名判断存活。
     """
 
-    for proc in psutil.process_iter(["name"]):
-        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
-                return True
+    for proc, info in iter_process_info(["name"]):
+        if info["name"] == process_name and process_in_scope(proc.pid):
+            return True
     return False
 
 
@@ -588,13 +590,13 @@ class ProcessManager:
         def _scan() -> tuple[psutil.Process, float | None] | None:
             # cmdline 对受保护进程每次都要等读超时，整表预取会把一次扫描拖到
             # 数秒，发现游戏太晚；只预取轻量字段，cmdline 等筛选命中后再读。
-            attrs = ["pid", "name", "create_time"]
+            attrs = ["name", "create_time"]
             if target_process.exe is not None:
                 attrs.append("exe")
-            for proc in psutil.process_iter(attrs):
-                if not match_process(proc, target_process):
+            for proc, info in iter_process_info(attrs):
+                if not match_process(proc, target_process, info=info):
                     continue
-                create_time = proc.info["create_time"]
+                create_time = info["create_time"]
                 if min_create_time is not None and (
                     create_time is None or create_time < min_create_time - 2
                 ):
