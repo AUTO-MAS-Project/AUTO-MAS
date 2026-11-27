@@ -24,6 +24,8 @@ export type { BAAHConfig_ScriptInput } from './models/BAAHConfig_ScriptInput';
 export type { BAAHConfig_Update } from './models/BAAHConfig_Update';
 export type { BAAHConfig_UpdateInput } from './models/BAAHConfig_UpdateInput';
 export type { BAAHConfigInput } from './models/BAAHConfigInput';
+export type { BAAHRecommendedConfigIn } from './models/BAAHRecommendedConfigIn';
+export type { BAAHRecommendedConfigOut } from './models/BAAHRecommendedConfigOut';
 export type { BAAHUserConfig } from './models/BAAHUserConfig';
 export type { BAAHUserConfig_Data } from './models/BAAHUserConfig_Data';
 export type { BAAHUserConfig_DataInput } from './models/BAAHUserConfig_DataInput';

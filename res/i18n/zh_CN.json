@@ -5062,5 +5062,11 @@
   "core.update.startupBackup.source_not_ready": "上一版本未完成启动，已保留原有回退备份。",
   "core.update.startupBackup.title": "更新前备份提示",
   "core.update.startupBackup.unknown_version": "无法确认升级前的版本，本次未生成备份，已有备份仍保留。",
-  "core.edit.baahCalendarReminder": "活动日历提醒"
+  "core.edit.baahCalendarReminder": "活动日历提醒",
+  "core.edit.baahGenerateRecommended": "生成推荐配置",
+  "core.edit.baahRecommendedHint": "新建独立配置并选用；端口和模拟器路径未配置，可在 BAAH 中继续调整。",
+  "core.edit.baahConfigNamesFailed": "无法读取 BAAH 配置列表",
+  "core.edit.baahRecommendedFailed": "生成推荐配置失败",
+  "core.edit.baahRecommendedCreated": "已生成并选用 {name}",
+  "core.edit.baahRecommendedNotSelected": "已生成 {name}，但未能选用，请从下拉列表重新选择。"
 }

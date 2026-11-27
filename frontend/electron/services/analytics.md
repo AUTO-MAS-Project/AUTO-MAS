@@ -66,7 +66,7 @@ Electron 主进程按 Aptabase 单事件协议向 `https://telemetry.auto-mas.to
 | `queue_time_set_changed` | 时间集合管理 | `action`、`count_bucket` |
 | `plan_manage_finished` | 计划创建、重命名、删除与排序 | `action`、`plan_type`、`count_bucket` |
 | `plan_edit_finished` | 简单/复杂视图与轮换计划编辑 | `plan_type`、`view_kind`、`operation_kind` |
-| `adapter_setup_finished` | 专项配置引导与独有操作（如保存、刷新、预览） | `script_type`、`operation_kind`、`engine_kind` |
+| `adapter_setup_finished` | 专项配置引导与独有操作（如保存、刷新、预览、BAAH 推荐配置生成） | `script_type`、`operation_kind`、`engine_kind` |
 | `plugin_action_finished` | 插件安装、启停、配置保存与市场手动刷新 | `action`、`outcome` / 耗时桶 |
 | `mcp_retry_requested` | MCP 手动重新加载请求受理结果 | `outcome` / 耗时桶 |
 
