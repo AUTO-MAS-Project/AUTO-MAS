@@ -127,13 +127,16 @@ const scriptOptions = sharedScriptOptions
 const withSchedule = (items: any[]) =>
   items.map(item => ({ ...item, schedule: { Days: [], ...(item.schedule || {}) } }))
 const queueItems = ref(withSchedule(props.queueItems))
-watch(
-  () => props.queueItems,
-  items => {
-    if (!isDraggingQueueItem.value) queueItems.value = withSchedule(items)
-  },
-  { deep: true }
-)
+// 就地保存在途的条数。保存成功后父层会把新值回写到 props，触发下面的整表替换；
+// 这时如果另一条编辑的请求还没返回，它在本地的新值会被 props 里的旧值顶掉。
+// 所以在途时先不替换，全部返回后再整表同步一次（在途期间跳过的刷新也在这时补上）。
+const inPlaceSaves = ref(0)
+const syncFromProps = () => {
+  if (isDraggingQueueItem.value || inPlaceSaves.value > 0) return
+  queueItems.value = withSchedule(props.queueItems)
+}
+watch(() => props.queueItems, syncFromProps, { deep: true })
+watch(inPlaceSaves, syncFromProps)
 
 // 保存队列项的执行星期。这里不 emit refresh：本地 record 已是最新值，
 // 整表刷新反而会把用户正在编辑的输入顶掉。返回是否保存成功，供调用方
@@ -141,6 +144,7 @@ watch(
 const saveSchedule = async (record: any, data: Record<string, any>): Promise<boolean> => {
   if (readOnly.value) return false
   const queueId = props.queueId
+  inPlaceSaves.value++
   try {
     const response = await queueApi.updateSchedule(queueId, record.id, data)
 
@@ -161,6 +165,9 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
     message.error(t('core.queue.toast.scheduleUpdateFailed', { error: errorMsg }))
     emit('refresh')
     return false
+  } finally {
+    // 与上面的 emit 在同一段同步代码里递减：最后一条返回时，随后才执行的监听器看到的已是 0
+    inPlaceSaves.value--
   }
 }
 
