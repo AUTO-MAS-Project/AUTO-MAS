@@ -76,10 +76,11 @@ class DiscoveryResult:
     candidate: UpdateCandidate | None = None
     #: 下载受阻原因（CDK 失效、源不给地址等），不因本地已是最新版而丢弃。
     blocked_reason: str | None = None
+    download_authorization_pending: bool = False
 
     @property
     def installable(self) -> bool:
-        return self.candidate is not None
+        return self.candidate is not None or self.download_authorization_pending
 
 
 def is_newer(remote: str, current: str | None) -> bool:
@@ -104,6 +105,7 @@ async def discover(
     cdk: str = "",
     proxy: httpx.Proxy | None = None,
     seven_zip_available: bool = False,
+    for_download: bool = False,
 ) -> DiscoveryResult:
     """查出该引擎是否有新版，以及能不能从用户选的源装上。"""
 
@@ -112,7 +114,7 @@ async def discover(
         current_version=current_version,
         source=source,
         channel=channel,
-        cdk=cdk,
+        cdk="",
         proxy=proxy,
     )
 
@@ -140,7 +142,25 @@ async def discover(
     )
 
     if source == "MirrorChyan":
-        if not latest.download_url:
+        cdk = cdk.strip()
+        if cdk and not for_download:
+            # 检查页只确认存在新版；能否授权留到实际下载时判断。
+            return DiscoveryResult(**base, download_authorization_pending=True)
+        if cdk:
+            authorized = await _query_latest(
+                spec,
+                current_version=current_version,
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=proxy,
+            )
+            if authorized.blocked_reason:
+                return DiscoveryResult(**base, blocked_reason=authorized.blocked_reason)
+            if authorized.version != latest.version:
+                raise HSRUpdateError("Mirror 酱最新版本已变化，请重新检查更新")
+            latest = authorized
+        if not cdk or not latest.download_url:
             return DiscoveryResult(
                 **base,
                 blocked_reason=(

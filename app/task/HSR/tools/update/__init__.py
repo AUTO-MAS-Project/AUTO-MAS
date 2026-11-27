@@ -106,8 +106,9 @@ async def check_engine_update(
     channel: str = "stable",
     cdk: str = "",
     proxy: httpx.Proxy | None = None,
+    for_download: bool = False,
 ) -> DiscoveryResult:
-    """只查版本，不下载、不改动目录。供 API 的「检查更新」按钮使用。"""
+    """默认只查版本；即将下载时才允许获取 Mirror 酱授权地址。"""
 
     spec = get_spec(engine)
     current = await asyncio.to_thread(read_installed_version, spec, install_root)
@@ -119,6 +120,7 @@ async def check_engine_update(
         cdk=cdk,
         proxy=proxy,
         seven_zip_available=find_seven_zip(install_root) is not None,
+        for_download=for_download,
     )
 
 
@@ -180,6 +182,7 @@ async def update_engine_if_needed(
                 channel=channel,
                 cdk=cdk,
                 proxy=proxy,
+                for_download=True,
             )
     except HSRUpdateError as exc:
         log(f"{label}更新检查失败，按现有版本继续：{exc}")
@@ -211,7 +214,7 @@ async def update_engine_if_needed(
         return UpdateOutcome(**base, updated=False)
 
     candidate = result.candidate
-    assert candidate is not None  # installable 为真时必然存在
+    assert candidate is not None  # 进入实际下载时必须已有授权候选
 
     # ── 前置门：任一不过就跳过本轮，目录一动不动 ──
     # 进程扫描要遍历整张进程表（实测 ~250ms），API 手动更新走的是事件循环，
@@ -359,7 +362,13 @@ async def prepare_engine_update(
 ) -> PreparedUpdate | None:
     """仅发现与下载；不停止运行中的程序，不写安装目录。"""
     result = await check_engine_update(
-        engine, install_root, source=source, channel=channel, cdk=cdk, proxy=proxy
+        engine,
+        install_root,
+        source=source,
+        channel=channel,
+        cdk=cdk,
+        proxy=proxy,
+        for_download=True,
     )
     if not result.update_available or result.blocked_reason or result.candidate is None:
         return None

@@ -128,11 +128,16 @@ class MaaEndManager(ScriptManagerBase):
         candidate = await script_update.check_update(config.Info.Path, config)
         if isinstance(candidate, str):
             return []
+        # 一次性 Mirror 酱链接只由专项真正下载前签发，不能在调度复查时提前取得。
+        if not candidate.recover_native and (
+            config.Update.MirrorChyanCDK.strip()
+            or Config.setting.Update.MirrorChyanCDK.strip()
+        ):
+            return []
         return [
             DownloadRequest(
                 url=candidate.url,
                 content_hash=candidate.digest or None,
-                downloader="builtin" if candidate.source == "MirrorChyan" else None,
             )
         ]
 
