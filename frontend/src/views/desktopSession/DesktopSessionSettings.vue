@@ -206,7 +206,13 @@ onMounted(async () => {
                 >
                   {{ text('start') }}
                 </a-button>
-                <a-button type="link" size="small" danger @click="removeTarget(item.id)">
+                <a-button
+                  type="link"
+                  size="small"
+                  danger
+                  :disabled="adding"
+                  @click="removeTarget(item.id)"
+                >
                   {{ text('removeTarget') }}
                 </a-button>
               </template>

@@ -176,8 +176,7 @@ export function useDesktopSessionTargets(options: {
     { immediate: true }
   )
 
-  /** 一笔保存：
-ext 里给出的清单一起生效，失败时都回到设置里的值。 */
+  /** 一笔保存：传入的清单一起生效，失败时都回到设置里的值。 */
   async function saveLists(next: Partial<Record<ListKey, string[]>>): Promise<boolean> {
     const keys = Object.keys(next) as ListKey[]
     if (!keys.length) return true
@@ -211,37 +210,47 @@ ext 里给出的清单一起生效，失败时都回到设置里的值。 */
     return capability.supported
   }
 
-  /** 加入清单：队列只进一并启动；托管先单查分身能力，不支持就不加入，支持则两者都进。 */
-  async function add(value: unknown): Promise<boolean> {
-    if (typeof value !== 'string' || atLimit.value) return false
-    const id = value.toLowerCase()
-    const target = findTarget(id)
-    if (!target || ids.value.includes(id) || hasPowerAction(target.afterAccomplish)) return false
-    if (target.kind === 'queue') return saveLists({ StartOnOpen: [...startOnOpen.value, id] })
+  /**
+   * 同一时间只做一个清单操作，直到它的保存落定：后一个操作要在确定的值上计算，
+   * 否则前一笔失败时，它的改动会被后一笔带进后端。进行中时卡片上的增、删、切换都禁用。
+   */
+  async function exclusive(run: () => Promise<boolean>): Promise<boolean> {
+    if (adding.value) return false
     adding.value = true
     try {
-      // 加入时总是重查：能力随配置变化，查到的可能已经过期。
-      if (!(await ensureSupported(target, true)) || ids.value.includes(id)) return false
+      return await run()
     } finally {
       adding.value = false
     }
-    return saveLists({
-      StartOnOpen: [...startOnOpen.value, id],
-      Targets: [...standalone.value, id],
+  }
+
+  /** 加入清单：队列只进一并启动；托管先单查分身能力，不支持就不加入，支持则两者都进。 */
+  function add(value: unknown): Promise<boolean> {
+    return exclusive(async () => {
+      if (typeof value !== 'string' || atLimit.value) return false
+      const id = value.toLowerCase()
+      const target = findTarget(id)
+      if (!target || ids.value.includes(id) || hasPowerAction(target.afterAccomplish)) return false
+      if (target.kind === 'queue') return saveLists({ StartOnOpen: [...startOnOpen.value, id] })
+      // 加入时总是重查：能力随配置变化，查到的可能已经过期。
+      if (!(await ensureSupported(target, true))) return false
+      return saveLists({
+        StartOnOpen: [...startOnOpen.value, id],
+        Targets: [...standalone.value, id],
+      })
     })
   }
 
   /**
    * 切换托管行的启动方式。两份清单的改动作为一笔保存：成功就一起生效，失败就保留原来的选择。
    */
-  async function setMode(id: string, mode: DesktopSessionLaunchMode): Promise<boolean> {
-    const target = findTarget(id)
-    if (target?.kind !== 'script' || adding.value) return false
-    const wantStandalone = mode !== 'startOnOpen'
-    const wantStartOnOpen = mode !== 'standalone'
-    const without = (list: string[]) => list.filter(item => item !== id)
-    adding.value = true
-    try {
+  function setMode(id: string, mode: DesktopSessionLaunchMode): Promise<boolean> {
+    return exclusive(async () => {
+      const target = findTarget(id)
+      if (target?.kind !== 'script') return false
+      const wantStandalone = mode !== 'startOnOpen'
+      const wantStartOnOpen = mode !== 'standalone'
+      const without = (list: string[]) => list.filter(item => item !== id)
       const inStandalone = standalone.value.includes(id)
       const inStartOnOpen = startOnOpen.value.includes(id)
       if (wantStandalone && !inStandalone && !(await ensureSupported(target, false))) return false
@@ -251,17 +260,17 @@ ext 里给出的清单一起生效，失败时都回到设置里的值。 */
       if (wantStartOnOpen !== inStartOnOpen)
         next.StartOnOpen = wantStartOnOpen ? [...startOnOpen.value, id] : without(startOnOpen.value)
       return saveLists(next)
-    } finally {
-      adding.value = false
-    }
+    })
   }
 
-  async function remove(id: string): Promise<boolean> {
-    const next: Partial<Record<ListKey, string[]>> = {}
-    if (standalone.value.includes(id)) next.Targets = standalone.value.filter(item => item !== id)
-    if (startOnOpen.value.includes(id))
-      next.StartOnOpen = startOnOpen.value.filter(item => item !== id)
-    return saveLists(next)
+  function remove(id: string): Promise<boolean> {
+    return exclusive(() => {
+      const next: Partial<Record<ListKey, string[]>> = {}
+      if (standalone.value.includes(id)) next.Targets = standalone.value.filter(item => item !== id)
+      if (startOnOpen.value.includes(id))
+        next.StartOnOpen = startOnOpen.value.filter(item => item !== id)
+      return saveLists(next)
+    })
   }
 
   // 旧版「打开分身时一并启动」的选择在卡片首次显示时并入 StartOnOpen，永不写 Targets；

@@ -298,4 +298,22 @@ describe('桌面分身清单', () => {
     expect(card.standalone.value).toEqual(expected.Targets)
     expect(card.startOnOpen.value).toEqual(expected.StartOnOpen)
   })
+
+  it('上一笔保存没落定时不接受下一个操作：失败的改动不会被后一笔带进后端', async () => {
+    const { card, save, settings } = setup({
+      startOnOpen: [QUEUE, SCRIPT],
+      save: () => false,
+    })
+    await card.load()
+    await settle()
+
+    const switching = card.setMode(SCRIPT, 'standalone')
+    expect(card.adding.value).toBe(true)
+    await expect(card.remove(QUEUE)).resolves.toBe(false)
+    await expect(switching).resolves.toBe(false)
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(card.adding.value).toBe(false)
+    expect(settings.DesktopSession).toEqual({ Targets: [], StartOnOpen: [QUEUE, SCRIPT] })
+  })
 })
