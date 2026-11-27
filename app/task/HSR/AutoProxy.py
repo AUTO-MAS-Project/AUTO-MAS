@@ -380,7 +380,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         point(self, "stop_game")
         try:
-            await self._game_process_manager.kill()
+            try:
+                await self._game_process_manager.kill()
+            except RuntimeError as e:
+                self._append_log(
+                    f"{reason}关闭游戏暂未成功：{e}，"
+                    f"等待 {HSR_GAME_READY_DELAY_SECONDS}s 后再尝试关闭一次"
+                )
+                await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
+                # 通过绑定适配器再次确认退出，保留对无窗口进程的检查。
+                await self._game_process_manager.kill()
             await self._game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
@@ -398,13 +407,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         except Exception as e:  # noqa: BLE001
             point(self, "stop_game", state="failed")
             logger.warning(f"{reason}关闭 HSR 游戏失败：{e}")
-            self._append_log(f"{reason}关闭游戏失败，将继续尝试启动流程：{e}")
-
-        try:
-            await self._account_switcher.ensure_game_started_by_mas()
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"{reason}重启 HSR 游戏失败：{e}")
-            raise RuntimeError(f"{reason}重启游戏失败：{e}") from e
+            raise RuntimeError(f"{reason}关闭游戏失败：{e}") from e
+        else:
+            try:
+                await self._account_switcher.ensure_game_started_by_mas()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"{reason}重启 HSR 游戏失败：{e}")
+                raise RuntimeError(f"{reason}重启游戏失败：{e}") from e
         finally:
             self.runtime.game_transitioning = False
 
