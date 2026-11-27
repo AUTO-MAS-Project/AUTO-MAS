@@ -109,17 +109,21 @@ class EmulatorDeviceEntry(GameDeviceEntry):
 
     @trigger_field("action.delete_instance", finish_on_cancel=True)
     async def on_delete_instance(self) -> None:
-        """以用户触发器身份请求模拟器控制器删除当前实例，成功后移除设备条目。
+        """以用户触发器身份请求模拟器控制器删除当前实例，成功后条目留作墓碑。
 
-        适配插件删除后只把条目标成墓碑；条目、指向它的绑定和按设备存的基准由宿主
-        统一清掉。删除失败直接上抛，条目保持原样。
+        墓碑永久保留并占住槽位，同一原生编号新建的实例拿到新 uid，不会接走旧绑定。
+        已加载的绑定立即改为「设备已删除」；旁挂或正在运行的托管在恢复或下次启动时
+        补做。删除失败直接上抛，条目保持原样。
         """
         from app.core.game_manager import GameManager
 
-        game = self.parent.parent if self.parent is not None else None
         await self._control.delete_instance(self.uid, ticket=TRIGGER_TICKET)
-        if isinstance(game, GameEntry):
-            await GameManager.remove_deleted_devices(game, [self.uid])
+        if getattr(self.info, "tombstone", None) is False:
+            # 适配插件没写墓碑时宿主补写；必须与删除成功同步，否则下次 refresh
+            # 会把复用的原生编号认成这条旧条目
+            setattr(self.info, "tombstone", True)
+            await self.commit()
+        await GameManager.repair_dangling_bindings()
 
     @ui_visibility("action.install_app")
     def _vis_install_app(self) -> UiVisibility:

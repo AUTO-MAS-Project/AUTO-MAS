@@ -96,7 +96,11 @@ class EmulatorControl(GameControl[TEmulator, TEmulatorDevice]):
 
     @abstractmethod
     async def delete_instance(self, device_uid: UUID, *, ticket: LockTicket) -> None:
-        """厂商侧删除多开并对齐 devices。"""
+        """厂商侧删除多开并对齐 devices。
+
+        成功后把该设备 ``info.tombstone`` 置真，条目留在 devices 里（宿主永久保留
+        墓碑，不移除）；新建实例不得复用墓碑的 uid。
+        """
 
     @abstractmethod
     async def install_app(

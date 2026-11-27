@@ -72,7 +72,7 @@ describe('gamePresentation', () => {
     ).toBeUndefined()
   })
 
-  it('删除实例后尚未移除的墓碑设备不列入目标的设备', () => {
+  it('已删除实例的墓碑不列入目标的设备', () => {
     const target = makeRow('game-a', '目标 A')
     const devices = target.document.devices!
     devices.order!.push({ uid: 'game-a-dev-1', type: 'MuMuDevice' })

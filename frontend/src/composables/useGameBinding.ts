@@ -73,7 +73,7 @@ export function useGameBinding(options: {
       }
     })
   )
-  // 同一目标下别的实例正被占用时，后端推迟移除已删除的设备，这段时间绑定仍指向它
+  // 删除实例时托管正旁挂或正在运行，恢复或下次启动规整之前绑定仍指向墓碑
   const deviceMissing = computed(
     () =>
       binding.value.device_id !== '-' &&

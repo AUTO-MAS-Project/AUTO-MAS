@@ -13,7 +13,7 @@ from app.config import CollectionOrderItem, ComponentHint, ConfigError, UiVisibi
 from app.config.fields.hints import TriggerUiState
 from app.config.wire import config_contract
 from app.core import Config, GameManager, Plugin
-from app.models.config.game import GameEntry
+from app.models.config.game import GameEntry, is_deleted_device
 from app.models.config.plugin_emulator import EmulatorDeviceEntry
 from app.models.emulator import SettingsConflictError
 from app.models.schema import ConfigSnapshotOut, OutBase
@@ -288,7 +288,9 @@ async def get_games(body: GameGetIn = Body(default_factory=GameGetIn)) -> GameGe
                 if (usage := control.device_usage(d.uid)) is not None
             },
             recoveryPending=[
-                d.uid for d in entry.devices.values() if control.recovery_pending(d.uid)
+                d.uid
+                for d in entry.devices.values()
+                if not is_deleted_device(d) and control.recovery_pending(d.uid)
             ],
             maintenance=control.maintenance_snapshot,
         )

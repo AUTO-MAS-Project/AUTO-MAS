@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import os
 from collections import deque
 from collections.abc import Iterable
@@ -120,10 +119,6 @@ class _SerialGate:
 class _GameManager:
     """对外提供订阅、搜索；add 挂载由 Config 对 GameConfig 实例级 connect 本类方法。"""
 
-    # 占用解除后补做设备移除的等待间隔（秒）。首次稍等，让刚退订的托管走完自己的
-    # 收尾；之后仍写不进去（绑定的托管还在运行）就退避重试，用完留给刷新或重启。
-    REMOVAL_SWEEP_DELAYS: tuple[float, ...] = (1.0, 10.0, 60.0, 300.0)
-
     def __init__(self) -> None:
         """初始化发现结果、设备订阅、释放锁及串行准入记录。"""
         self._found: dict[UUID, Any] = {}
@@ -131,12 +126,6 @@ class _GameManager:
         self._release_locks: dict[LockTicket, asyncio.Lock] = {}
         self._gate = _SerialGate()
         self._gate_tokens: set[UUID] = set()
-        # 删除实例后因占用推迟移除的设备 uid（适配插件不一定写过墓碑）。
-        self._deferred_removals: dict[UUID, set[UUID]] = {}
-        # 每个目标至多一个排队中的补做清理。
-        self._removal_sweeps: dict[UUID, asyncio.Task[None]] = {}
-        # 上次推迟或失败的原因：同一原因只记一次，避免每次刷新刷屏。
-        self._removal_notes: dict[UUID, str] = {}
 
     async def get_emulator_instance(self, uid: UUID | str) -> BoundEmulator | None:
         """[兼容旧专项] 借用 L2 当前设备，资源归属及账号覆盖由会话统一决定。"""
@@ -240,168 +229,8 @@ class _GameManager:
                 await entry._control.startup()
             except Exception as error:
                 logger.warning(f"设备维护恢复失败，保留材料供下次尝试：{error}")
-            # 旧版本与升级迁移留下的已删除设备在启动时一次收走；
-            # 单个目标出意外不能挡住后面目标的维护恢复。
-            try:
-                await self.remove_deleted_devices(entry)
-            except Exception as error:
-                logger.warning(
-                    f"移除游戏目标「{entry.info.name}」已删除的设备失败，"
-                    f"留待下次刷新：{error}"
-                )
         # 删除实例 / 目标时没被改到的盘上绑定（当时托管旁挂着）在这里补做。
         await self.repair_dangling_bindings()
-
-    def _note_removal(self, entry: GameEntry, reason: str, message: str) -> None:
-        """推迟或失败的原因同一目标同一原因只按 ``info`` / ``warning`` 记一次，其余记 debug。"""
-        if self._removal_notes.get(entry.uid) == reason:
-            logger.debug(message)
-            return
-        self._removal_notes[entry.uid] = reason
-        if reason == "in_use":
-            logger.info(message)
-        else:
-            logger.warning(message)
-
-    def _pending_removals(self, entry: GameEntry) -> list[GameDeviceEntry]:
-        """墓碑设备与删除实例后被推迟移除的设备。"""
-        deferred = self._deferred_removals.get(entry.uid, set())
-        return [
-            device
-            for device in entry.devices.values()
-            if is_deleted_device(device) or device.uid in deferred
-        ]
-
-    def _defer_removal(self, entry: GameEntry, uids: Iterable[UUID]) -> None:
-        self._deferred_removals.setdefault(entry.uid, set()).update(uids)
-
-    def schedule_removal_sweep(self, entry: GameEntry) -> None:
-        """占用解除后在任务上下文之外补做一次已删除设备的移除。
-
-        调用方可能是持有托管 X 锁的任务（会话退订）：在那里直接改绑定，
-        当前上下文的 X 锁 token 会让写入绕过「托管正在运行」的保护。这里只
-        登记一个空上下文的后台任务，不等待、不抛给调用方。
-        """
-        try:
-            if entry.deleted or not self._pending_removals(entry):
-                return
-            running = self._removal_sweeps.get(entry.uid)
-            if running is not None and not running.done():
-                return
-            task = asyncio.get_running_loop().create_task(
-                self._sweep_deleted_devices(entry), context=contextvars.Context()
-            )
-            self._removal_sweeps[entry.uid] = task
-            task.add_done_callback(
-                lambda done, uid=entry.uid: (
-                    self._removal_sweeps.pop(uid, None)
-                    if self._removal_sweeps.get(uid) is done
-                    else None
-                )
-            )
-        except Exception as error:
-            logger.warning(f"安排移除已删除的设备失败，留待下次刷新：{error}")
-
-    async def _sweep_deleted_devices(self, entry: GameEntry) -> None:
-        try:
-            for delay in self.REMOVAL_SWEEP_DELAYS:
-                await asyncio.sleep(delay)
-                if entry.deleted or not self._pending_removals(entry):
-                    return
-                # 仍被会话占用时 remove_deleted_devices 自己会推迟，不会误动。
-                await self.remove_deleted_devices(entry)
-        except asyncio.CancelledError:
-            raise
-        except Exception as error:
-            logger.warning(
-                f"移除游戏目标「{entry.info.name}」已删除的设备失败，"
-                f"留待下次刷新：{error}"
-            )
-
-    async def remove_deleted_devices(
-        self, entry: GameEntry, uids: Iterable[UUID] | None = None
-    ) -> list[UUID]:
-        """移除已删除的设备条目，返回实际移除的 uid。
-
-        ``uids`` 为空时清理全部墓碑；给出时（删除实例成功后）只移除这几台，
-        不要求适配插件写过墓碑。移除走 ``device_removed``，指向它的绑定改为
-        「设备已删除」；同一事务内删掉游戏级配置守卫基准，使将来拿到相同 uid
-        的新实例不继承旧设置。
-
-        目标正被会话订阅或修改（主配置有锁）、设备被占用或还有操作在执行时不动，
-        留给占用解除后的补做（``schedule_removal_sweep``）、下次刷新或启动；
-        任一绑定写不进去（托管正在运行）则整笔回滚。
-        可重复调用，没有可移除的设备时什么都不做。
-        """
-        from app.config import config_manager
-
-        if entry.deleted:
-            return []
-        if uids is None:
-            candidates = self._pending_removals(entry)
-        else:
-            candidates = [
-                device for uid in uids if (device := entry.devices.get(uid)) is not None
-            ]
-        if not candidates:
-            if uids is None:
-                self._deferred_removals.pop(entry.uid, None)
-                self._removal_notes.pop(entry.uid, None)
-            return []
-        if entry.is_locked:
-            self._defer_removal(entry, (device.uid for device in candidates))
-            self._note_removal(
-                entry,
-                "in_use",
-                f"游戏目标「{entry.info.name}」正在使用，已删除的设备稍后移除",
-            )
-            return []
-        control = entry._game_control
-        targets = [
-            device.uid
-            for device in candidates
-            if not device.is_locked
-            and (control is None or control.device_usage(device.uid) is None)
-            and (uids is not None or not device.action._trigger_uids)
-        ]
-        if len(targets) < len(candidates):
-            self._defer_removal(
-                entry,
-                (device.uid for device in candidates if device.uid not in targets),
-            )
-        if not targets:
-            return []
-        try:
-            async with config_manager.transaction(new_boundary=True):
-                for uid in targets:
-                    entry.devices.remove(uid)
-                await entry.devices.commit()
-                baselines = getattr(entry.info, "baselines", None)
-                stale = {str(uid) for uid in targets}
-                if isinstance(baselines, dict) and stale & baselines.keys():
-                    setattr(
-                        entry.info,
-                        "baselines",
-                        {k: v for k, v in baselines.items() if k not in stale},
-                    )
-                    await entry.commit()
-        except Exception as error:
-            self._defer_removal(entry, targets)
-            self._note_removal(
-                entry,
-                f"failed:{type(error).__name__}:{error}",
-                f"移除游戏目标「{entry.info.name}」已删除的设备失败，留待下次刷新："
-                f"{type(error).__name__}: {error}",
-            )
-            return []
-        deferred = self._deferred_removals.get(entry.uid)
-        if deferred is not None:
-            deferred.difference_update(targets)
-            if not deferred:
-                del self._deferred_removals[entry.uid]
-        self._removal_notes.pop(entry.uid, None)
-        logger.info(f"已移除游戏目标「{entry.info.name}」中已删除的设备：{targets}")
-        return targets
 
     async def close_devices(self, *, kind: str | None = None) -> None:
         from app.core import Config
@@ -576,7 +405,8 @@ class _GameManager:
     async def on_device_removed(sender, *, uid: UUID):
         """设备条目移除后清空指向它的托管 / 账号设备，并写明原因。
 
-        保留所选游戏目标，用户在绑定卡片上看到原因后只需另选设备；
+        宿主自己不移除设备条目（删除实例只留墓碑），只有插件或外部直接移除条目时
+        才走到这里。保留所选游戏目标，用户在绑定卡片上看到原因后只需另选设备；
         原因在重新选择设备、目标或清空绑定时消失。
         """
         from app.core import Config
@@ -603,7 +433,11 @@ class _GameManager:
 
     @staticmethod
     def _dangling_binding_patch(owner: GameBindingOwner) -> dict[str, str] | None:
-        """盘上绑定指向已不存在的设备 / 目标时，给出与删除时处理一致的规整结果。"""
+        """盘上绑定指向已不存在的设备 / 目标时，给出与删除时处理一致的规整结果。
+
+        设备条目不存在或只剩墓碑，都算「设备已删除」：墓碑永久保留，不会再有
+        别的时机把指向它的绑定改掉。
+        """
         from app.core import Config
 
         binding = owner.game
@@ -619,8 +453,8 @@ class _GameManager:
             if Config.GameConfig.is_unresolved(binding.game_id):
                 return None
             return cleared
-        if binding.device_id in game.devices:
-            # 墓碑设备由 remove_deleted_devices 移除时一并处理。
+        device = game.devices.get(binding.device_id)
+        if device is not None and not is_deleted_device(device):
             return None
         return {"device_id": "-", "unavailable_reason": DEVICE_DELETED_REASON}
 
@@ -630,8 +464,9 @@ class _GameManager:
         """把加载时放行的悬空绑定规整成「设备已删除」或未绑定。
 
         删除实例 / 目标时只改得到已加载的托管；旁挂期间（专项插件没加载）或其它
-        途径留在盘上的绑定，在启动维护与插件恢复转正后由这里补做。托管正在运行
-        （被锁）或写不进去时不动，留到下次；已规整的不再改动，可重复调用。
+        途径留在盘上的绑定，在启动维护与插件恢复转正后由这里补做；删除实例后由
+        ``on_delete_instance`` 立即调一次。托管正在运行（被锁）或写不进去时不动，
+        留到下次；已规整的不再改动，可重复调用。
         """
         from app.config import config_manager
         from app.core import Config
@@ -799,8 +634,6 @@ class _GameManager:
                 if ticket.token in self._gate_tokens:
                     self._gate_tokens.discard(ticket.token)
                     self._gate.release()
-                # 占用期间推迟的设备移除在这里只登记，到任务上下文之外补做。
-                self.schedule_removal_sweep(entry)
 
     async def search(self) -> dict[str, dict[str, Any]]:
         """逐一调用已启用插件声明的 search，暂存未激活实例并返回目录。"""

@@ -67,7 +67,7 @@ async function render(binding: GameBindingValue) {
           order: [{ uid: LIVE_DEVICE }, { uid: DELETED_DEVICE }],
           data: {
             [LIVE_DEVICE]: { info: { name: '实例一' } },
-            // 同目标下别的实例正被占用时，后端推迟移除已删除的实例
+            // 已删除实例的墓碑：删除时托管正旁挂或正在运行，绑定还没规整
             [DELETED_DEVICE]: { info: { name: '旧实例', tombstone: true } },
           },
         },
@@ -115,7 +115,7 @@ describe('MFW 控制配置里的游戏目标', () => {
     expect(html).not.toContain(CLIENT)
   })
 
-  it('所绑实例已删除但条目还没移除时给出提示，实例下拉不露 uid', async () => {
+  it('所绑实例已删除（墓碑）时给出提示，实例下拉不露 uid', async () => {
     const html = await render({ game_id: EMULATOR, device_id: DELETED_DEVICE })
     expect(html).toContain('core.games.deviceDeleted')
     expect(html).toContain('旧实例 (core.games.deleted)')

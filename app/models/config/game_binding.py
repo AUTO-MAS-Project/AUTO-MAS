@@ -65,8 +65,8 @@ class GameBinding(ConfigGroup):
             or entry.activation_state == NodeState.INACTIVE
         ):
             return value
-        # 盘上已有的绑定加载时放行：目标已删除（ref 回落为「-」）、设备已移除
-        # （托管旁挂期间删掉的实例）或只剩墓碑，都由宿主随后规整；在这里拒绝
+        # 盘上已有的绑定加载时放行：目标已删除（ref 回落为「-」）、设备已不存在
+        # 或是墓碑（托管旁挂期间删掉的实例），都由宿主随后规整；在这里拒绝
         # 会让整条托管读不进来。用户保存时照旧拒绝。
         loading = entry.activation_state == NodeState.INITIALIZING
         game_id = info.data.get("game_id")

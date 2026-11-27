@@ -1,9 +1,9 @@
-"""删除模拟器实例后宿主移除设备条目，指向它的绑定与配置守卫基准一并处理。"""
+"""删除模拟器实例后条目留作墓碑并占住槽位，指向它的绑定改为「设备已删除」。"""
 
 import asyncio
 from contextlib import contextmanager
 from dataclasses import dataclass
-from uuid import uuid4
+from uuid import uuid4, uuid5
 
 import pytest
 import pytest_asyncio
@@ -39,6 +39,16 @@ class VendorBoundary:
             raise RuntimeError("ldconsole remove failed")
         self.deleted.append(index)
         self.instances.pop(index, None)
+
+    async def create_instance(self, name):
+        """与厂商控制台一样取最小的空闲原生编号。"""
+        index = next(
+            str(i)
+            for i in range(len(self.instances) + 1)
+            if str(i) not in self.instances
+        )
+        self.instances[index] = name or "new"
+        return index
 
     async def getInfo(self, index):
         return {
@@ -93,6 +103,21 @@ def device_removed_connected():
     finally:
         if connected:
             device_removed.disconnect(GameManager.on_device_removed)
+
+
+async def discovered_game(monkeypatch, tmp_path, vendor):
+    """由适配插件刷新发现设备：设备 uid 按插件自己的槽位算法分配。"""
+    games, _ = install_collections(monkeypatch)
+    await games.activate()
+    executable = tmp_path / "ldconsole.exe"
+    executable.touch()
+    game_uid = games.add(LDPlayerGame, payload={"info": {"path": str(executable)}})
+    await games.commit()
+    game = games[game_uid]
+    game.bind_runtime_signals()
+    _GameManager.create_control(config=game, control_class=adapter_for(vendor))
+    await game._control.refresh()
+    return game
 
 
 @pytest_asyncio.fixture
@@ -166,15 +191,21 @@ def assert_cleared(owner, game):
 
 
 @pytest.mark.asyncio
-async def test_deleting_instance_removes_device_bindings_and_baseline(world):
+async def test_deleting_instance_keeps_tombstone_and_clears_bindings(world):
+    from app.api.plugin import PluginGameDevicesIn, plugin_device_options
+
     game, removed_uid = world.game, world.removed.uid
 
     result = await run_trigger(world.removed, "delete_instance")
 
     assert result is not None and result.state == "succeeded", result
     assert world.vendor.deleted == ["1"]
-    assert list(game.devices.keys()) == [world.kept.uid]
-    assert set(game.info.baselines) == {str(world.kept.uid)}
+    # 条目留作墓碑占住槽位，但不再列出
+    assert set(game.devices.keys()) == {world.kept.uid, removed_uid}
+    assert game.devices[removed_uid].info.tombstone
+    options = await plugin_device_options(PluginGameDevicesIn(gameId=game.uid))
+    assert [item.value for item in options.data] == [str(world.kept.uid)]
+    assert str(world.kept.uid) in game.info.baselines
     # 托管级与账号级绑定保留所选目标，只清空设备并写明原因
     assert_cleared(world.script, game)
     assert_cleared(world.user, game)
@@ -211,7 +242,63 @@ async def test_failed_vendor_delete_keeps_device_and_bindings(world):
 
 
 @pytest.mark.asyncio
-async def test_existing_tombstone_is_hidden_then_removed_once_idle(world):
+async def test_host_marks_tombstone_when_adapter_does_not(world):
+    """适配插件删除成功却没写墓碑：宿主补写，同一原生编号新建的实例拿到新 uid。"""
+    from app.api.plugin import PluginGameDevicesIn, plugin_device_options
+
+    class NoTombstoneAdapter(adapter_for(world.vendor)):
+        async def delete_instance(self, device_uid, *, ticket):
+            self.check_subscription(device_uid, ticket)
+            backend = await self.backend()
+            await backend.delete_instance(self.device(device_uid).info.index)
+
+    game, removed_uid = world.game, world.removed.uid
+    await game._control.teardown()
+    _GameManager.create_control(config=game, control_class=NoTombstoneAdapter)
+
+    result = await run_trigger(world.removed, "delete_instance")
+
+    assert result is not None and result.state == "succeeded", result
+    assert world.vendor.deleted == ["1"]
+    assert game.devices[removed_uid].info.tombstone
+    assert_cleared(world.script, game)
+    assert_cleared(world.user, game)
+
+    result = await run_trigger(game, "create_instance")
+    assert result is not None and result.state == "succeeded", result
+    (new_uid,) = (
+        device.uid
+        for device in game.devices.values()
+        if device.info.index == "1" and not device.info.tombstone
+    )
+    assert new_uid != removed_uid
+    options = await plugin_device_options(PluginGameDevicesIn(gameId=game.uid))
+    assert sorted(item.value for item in options.data) == sorted(
+        [str(world.kept.uid), str(new_uid)]
+    )
+
+
+@pytest.mark.asyncio
+async def test_tombstone_with_leftover_backup_is_not_recovery_pending(world):
+    """墓碑带着恢复失败留下的备份时不报「待恢复」：列表里没有这一行可恢复。"""
+    from app.api.games import GameGetIn, get_games
+
+    game = world.game
+    world.removed.session.backup = {"cpu": 4}
+    world.removed.info.tombstone = True
+    await world.removed.commit()
+    world.kept.session.backup = {"cpu": 2}
+    await world.kept.commit()
+
+    out = await get_games(GameGetIn(gameId=game.uid))
+
+    pending = out.runtime[str(game.uid)].recoveryPending
+    assert world.removed.uid not in pending
+    assert world.kept.uid in pending
+
+
+@pytest.mark.asyncio
+async def test_existing_tombstone_stays_hidden(world):
     from app.api.plugin import PluginGameDevicesIn, plugin_device_options
 
     game = world.game
@@ -224,7 +311,6 @@ async def test_existing_tombstone_is_hidden_then_removed_once_idle(world):
     _, ticket = await manager.subscribe(game.uid)
     try:
         # 目标正被会话订阅：不在运行中途改设备与绑定，只是不再当作可用设备
-        assert await GameManager.remove_deleted_devices(game) == []
         assert world.removed.uid in game.devices
         assert world.script.game.device_id == world.removed.uid
         options = await plugin_device_options(PluginGameDevicesIn(gameId=game.uid))
@@ -240,21 +326,20 @@ async def test_existing_tombstone_is_hidden_then_removed_once_idle(world):
 
     await GameManager.startup_maintenance()
 
-    assert list(game.devices.keys()) == [world.kept.uid]
-    assert set(game.info.baselines) == {str(world.kept.uid)}
+    assert game.devices[world.removed.uid].info.tombstone
     assert_cleared(world.script, game)
     assert_cleared(world.user, game)
-    # 再次启动或刷新不再改动任何东西
-    assert await GameManager.remove_deleted_devices(game) == []
+    # 再次刷新不再改动任何东西，墓碑仍在
     result = await run_trigger(game, "refresh")
     assert result is not None and result.state == "succeeded", result
-    assert list(game.devices.keys()) == [world.kept.uid]
+    assert game.devices[world.removed.uid].info.tombstone
+    assert len(game.devices) == 2
     assert_cleared(world.user, game)
 
 
 @pytest.mark.asyncio
-async def test_tombstone_bound_by_running_script_waits_for_next_refresh(world):
-    """托管正在运行时它的绑定写不进去，整笔回滚，留待下次刷新。"""
+async def test_tombstone_bound_by_running_script_waits_for_next_startup(world):
+    """托管正在运行时它的绑定写不进去，留待下次启动维护。"""
     game = world.game
     world.vendor.instances.pop("1")
     world.removed.info.tombstone = True
@@ -272,71 +357,43 @@ async def test_tombstone_bound_by_running_script_waits_for_next_refresh(world):
     runner = asyncio.create_task(running_script())
     try:
         await asyncio.wait_for(locked.wait(), timeout=2)
-        assert await GameManager.remove_deleted_devices(game) == []
+        await GameManager.startup_maintenance()
         assert world.removed.uid in game.devices
-        assert str(world.removed.uid) in game.info.baselines
         assert world.user.game.device_id == world.removed.uid
         assert world.user.game.unavailable_reason == ""
     finally:
         finish.set()
         await asyncio.wait_for(runner, timeout=2)
 
-    result = await run_trigger(game, "refresh")
-    assert result is not None and result.state == "succeeded", result
-    assert list(game.devices.keys()) == [world.kept.uid]
+    await GameManager.startup_maintenance()
+    assert game.devices[world.removed.uid].info.tombstone
     assert_cleared(world.script, game)
     assert_cleared(world.user, game)
 
 
-async def finish_sweep(game):
-    """等宿主在占用解除后自行安排的补做清理跑完（测试不替它调用清理）。"""
-    task = GameManager._removal_sweeps.get(game.uid)
-    if task is not None:
-        await asyncio.wait_for(task, timeout=5)
-
-
 @pytest.mark.asyncio
-async def test_removal_deferred_while_subscribed_runs_after_release(world, monkeypatch):
-    """同一安装下别的实例在跑时删除实例只留墓碑；会话退订后无需手动刷新即被收走。
-
-    退订发生在持有托管 X 锁的任务里；补做必须在那个上下文之外，
-    托管仍持锁期间不能借它的锁改写它的绑定。
-    """
-    monkeypatch.setattr(GameManager, "REMOVAL_SWEEP_DELAYS", (0.0, 0.3, 0.3, 0.3))
+async def test_delete_while_target_subscribed_marks_tombstone_and_clears_idle_bindings(
+    world,
+):
+    """同一安装下别的实例在跑时删除实例：留下墓碑，空闲托管的绑定立即改为「设备已删除」。"""
     game = world.game
     _, ticket = await GameManager.subscribe(game.uid)
+    try:
+        result = await run_trigger(world.removed, "delete_instance")
 
-    result = await run_trigger(world.removed, "delete_instance")
-
-    assert result is not None and result.state == "succeeded", result
-    assert world.vendor.deleted == ["1"]
-    assert world.removed.uid in game.devices
-    assert world.script.game.device_id == world.removed.uid
-
-    async def releasing_script():
-        script_ticket = await world.script.lock_x(cascade=False)
-        try:
-            await GameManager.unsubscribe(ticket)
-            # 补做已有机会执行，但托管仍持锁：绑定不得被改写
-            await asyncio.sleep(0.1)
-            assert world.removed.uid in game.devices
-            assert world.script.game.device_id == world.removed.uid
-        finally:
-            await world.script.unlock(script_ticket)
-
-    await asyncio.wait_for(releasing_script(), timeout=5)
-    await finish_sweep(game)
-
-    assert list(game.devices.keys()) == [world.kept.uid]
-    assert set(game.info.baselines) == {str(world.kept.uid)}
-    assert_cleared(world.script, game)
-    assert_cleared(world.user, game)
+        assert result is not None and result.state == "succeeded", result
+        assert world.vendor.deleted == ["1"]
+        assert game.devices[world.removed.uid].info.tombstone
+        assert_cleared(world.script, game)
+        assert_cleared(world.user, game)
+    finally:
+        await GameManager.unsubscribe(ticket)
+    assert game.devices[world.removed.uid].info.tombstone
 
 
 @pytest.mark.asyncio
-async def test_run_refuses_deleted_device_before_and_after_removal(world, monkeypatch):
-    """运行前检查：墓碑设备与已移除设备都报「设备实例已删除」，继承托管的账号同样如此。"""
-    monkeypatch.setattr(GameManager, "REMOVAL_SWEEP_DELAYS", (0.0,))
+async def test_run_refuses_deleted_device(world):
+    """运行前检查：墓碑设备报「设备实例已删除」，规整后继承托管的账号同样如此。"""
     script, game = world.script, world.game
     await script.update(GeneralConfig.model_validate({"Game": {"Enabled": True}}))
     inherited_id = script.UserData.add(GeneralUserConfig)
@@ -352,9 +409,9 @@ async def test_run_refuses_deleted_device_before_and_after_removal(world, monkey
             await session.select()
     finally:
         await session.release()
-    await finish_sweep(game)
+    await GameManager.startup_maintenance()
 
-    assert list(game.devices.keys()) == [world.kept.uid]
+    assert game.devices[world.removed.uid].info.tombstone
     assert_cleared(script, game)
     assert inherited.game.game_id == "-"
     for owner in (inherited, world.user):
@@ -427,8 +484,8 @@ async def test_upgraded_tombstone_binding_becomes_device_deleted_on_startup(
     with device_removed_connected():
         await GameManager.startup_maintenance()
 
-    assert deleted not in game.devices
-    assert len(game.devices) == 1
+    assert game.devices[deleted].info.tombstone
+    assert len(game.devices) == 2
     assert_cleared(script, game)
     assert script.UserData[user_id].game.game_id == "-"
 
@@ -493,32 +550,9 @@ async def assert_run_refused(script, owner, reason):
         await session.release()
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("path_kind", ["restore", "startup"])
-async def test_binding_to_removed_device_still_loads_as_device_deleted(
-    world, tmp_path, monkeypatch, path_kind
-):
-    """托管旁挂期间删掉它绑定的实例（或盘上绑定本就指向不存在的设备）：
-    插件恢复或下次启动时托管照常读进来，绑定改为「设备已删除」。"""
-    game, removed_uid = world.game, world.removed.uid
-    path = tmp_path / f"dangling-{path_kind}.yaml"
-    script_id, own_id, inherited_id = write_scripts(
-        path, {"game_id": str(game.uid), "device_id": str(removed_uid)}
-    )
-
-    async def delete_instance():
-        result = await run_trigger(world.removed, "delete_instance")
-        assert result is not None and result.state == "succeeded", result
-        assert removed_uid not in game.devices
-
-    if path_kind == "restore":
-        scripts = await load_sidelined_then_restore(
-            monkeypatch, path, before_restore=delete_instance
-        )
-    else:
-        await delete_instance()
-        scripts = await load_on_startup(monkeypatch, path)
-
+async def assert_loaded_as_device_deleted(scripts, path, ids, game):
+    """托管照常读进来，绑定在内存与盘上都是「设备已删除」，运行被拒；再跑一遍不改动。"""
+    script_id, own_id, inherited_id = ids
     assert scripts.unresolved() == ()
     script = scripts[script_id]
     own, inherited = script.UserData[own_id], script.UserData[inherited_id]
@@ -538,6 +572,126 @@ async def test_binding_to_removed_device_still_loads_as_device_deleted(
     await config_manager.flush()
     assert path.read_bytes() == before
     assert_cleared(own, game)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["restore", "startup"])
+async def test_binding_to_removed_device_still_loads_as_device_deleted(
+    world, tmp_path, monkeypatch, path_kind
+):
+    """托管旁挂期间删掉它绑定的实例：插件恢复或下次启动时托管照常读进来，
+    绑定改为「设备已删除」，墓碑仍在。"""
+    game, removed_uid = world.game, world.removed.uid
+    path = tmp_path / f"dangling-{path_kind}.yaml"
+    ids = write_scripts(path, {"game_id": str(game.uid), "device_id": str(removed_uid)})
+
+    async def delete_instance():
+        result = await run_trigger(world.removed, "delete_instance")
+        assert result is not None and result.state == "succeeded", result
+        assert game.devices[removed_uid].info.tombstone
+
+    if path_kind == "restore":
+        scripts = await load_sidelined_then_restore(
+            monkeypatch, path, before_restore=delete_instance
+        )
+    else:
+        await delete_instance()
+        scripts = await load_on_startup(monkeypatch, path)
+
+    await assert_loaded_as_device_deleted(scripts, path, ids, game)
+    assert game.devices[removed_uid].info.tombstone
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["restore", "startup"])
+async def test_binding_to_unknown_device_still_loads_as_device_deleted(
+    world, tmp_path, monkeypatch, path_kind
+):
+    """盘上绑定指向目标里根本不存在的设备：同样照常读进来，改为「设备已删除」。"""
+    game = world.game
+    path = tmp_path / f"unknown-{path_kind}.yaml"
+    ids = write_scripts(path, {"game_id": str(game.uid), "device_id": str(uuid4())})
+
+    if path_kind == "restore":
+        scripts = await load_sidelined_then_restore(monkeypatch, path)
+    else:
+        scripts = await load_on_startup(monkeypatch, path)
+
+    await assert_loaded_as_device_deleted(scripts, path, ids, game)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path_kind", ["restore", "startup"])
+async def test_recreated_instance_never_inherits_sidelined_binding(
+    isolated_app_paths, tmp_path, monkeypatch, path_kind
+):
+    """专项插件不可用期间删掉最后一台实例、再以相同原生编号新建：
+    旧托管恢复（或下次启动）后绑定改为「设备已删除」，不会指向新实例。"""
+    from app.api.plugin import PluginGameDevicesIn, plugin_device_options
+
+    vendor = VendorBoundary()
+    vendor.instances = {"0": "kept", "1": "old"}
+    game = await discovered_game(monkeypatch, tmp_path, vendor)
+    by_index = {device.info.index: device.uid for device in game.devices.values()}
+    kept_uid, old_uid = by_index["0"], by_index["1"]
+    # 删的正好是槽位最大的一台：去掉它的条目后 max(slot)+1 会回退到它的槽位
+    assert old_uid == uuid5(game.uid, "1:1")
+    path = tmp_path / f"recreate-{path_kind}.yaml"
+    script_id, own_id, inherited_id = write_scripts(
+        path, {"game_id": str(game.uid), "device_id": str(old_uid)}
+    )
+    created: dict[str, object] = {}
+
+    async def delete_then_recreate():
+        result = await run_trigger(game.devices[old_uid], "delete_instance")
+        assert result is not None and result.state == "succeeded", result
+        result = await run_trigger(game, "create_instance")
+        assert result is not None and result.state == "succeeded", result
+        created["uid"] = next(
+            device.uid
+            for device in game.devices.values()
+            if device.info.index == "1" and not device.info.tombstone
+        )
+
+    with device_removed_connected():
+        if path_kind == "restore":
+            scripts = await load_sidelined_then_restore(
+                monkeypatch, path, before_restore=delete_then_recreate
+            )
+        else:
+            await delete_then_recreate()
+            scripts = await load_on_startup(monkeypatch, path)
+
+        new_uid = created["uid"]
+        assert new_uid != old_uid
+        assert new_uid == uuid5(game.uid, "1:2")
+        assert game.devices[new_uid].info.slot == 2
+        # 墓碑保留并占住槽位，但不列出；新实例照常可见可选
+        assert game.devices[old_uid].info.tombstone
+        options = await plugin_device_options(PluginGameDevicesIn(gameId=game.uid))
+        assert sorted(item.value for item in options.data) == sorted(
+            [str(kept_uid), str(new_uid)]
+        )
+
+        assert scripts.unresolved() == ()
+        script = scripts[script_id]
+        own, inherited = script.UserData[own_id], script.UserData[inherited_id]
+        for owner in (script, own):
+            assert_cleared(owner, game)
+            assert owner.game.device_id != new_uid
+        assert inherited.game.game_id == "-"
+        await config_manager.flush()
+        saved = io.read_dict_file(path)["data"][script_id]
+        assert saved["game"]["device_id"] == "-"
+        assert saved["game"]["unavailable_reason"] == DEVICE_DELETED_REASON
+        for owner in (None, own, inherited):
+            await assert_run_refused(script, owner, DEVICE_DELETED_REASON)
+
+        before = path.read_bytes()
+        await GameManager.startup_maintenance()
+        await config_manager.flush()
+        assert path.read_bytes() == before
+        assert game.devices[old_uid].info.tombstone
 
 
 @pytest.mark.asyncio

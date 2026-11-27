@@ -24,7 +24,7 @@ export type GameBindingValue = {
   unavailable_reason?: string | null
 }
 
-/** 目标下的可用设备；适配插件删除实例后、宿主移除条目前留下的墓碑不列出。 */
+/** 目标下的可用设备；已删除实例的墓碑（宿主永久保留以占住身份）不列出。 */
 export function gameDevices(game: GameRow): GameDeviceRow[] {
   const devices = game.document.devices
   return (devices?.order ?? []).flatMap(item => {
@@ -35,7 +35,7 @@ export function gameDevices(game: GameRow): GameDeviceRow[] {
 
 /**
  * 设备下拉的选项：可用设备，外加当前绑定但已不在其中的那台（已删除，禁用），免得下拉框里
- * 露出设备 uid。已删除的条目还在时带上原名，条目已移除时 document 为 null。
+ * 露出设备 uid。所绑设备是墓碑时带上原名；绑定指向不存在的设备时 document 为 null。
  */
 export function visibleDevices(
   game: GameRow | undefined,
