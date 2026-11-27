@@ -6,7 +6,7 @@ import {
   type TaskTargetSnapshot,
 } from '@/composables/useTaskOptions'
 import { getConfig, saveConfig } from '@/utils/config'
-import type { SettingChangeHandler } from '@/views/setting/settingTypes'
+import type { SettingGroupChangeHandler } from '@/views/setting/settingTypes'
 import { mergeLegacyDesktopSessionTargets } from './desktopSessionTargets'
 import { MAX_DESKTOP_SESSION_TARGETS } from '../../../electron/services/desktopSessionProtocol'
 
@@ -43,14 +43,15 @@ const hasPowerAction = (afterAccomplish?: PowerSignal) =>
   Boolean(afterAccomplish && afterAccomplish !== PowerSignal.NO_ACTION)
 
 /**
- * 桌面分身的两份清单，都存在后端 GlobalConfig.DesktopSession，写入走设置页的保存链路：
+ * 桌面分身的两份清单，都存在后端 GlobalConfig.DesktopSession，写入走设置页的保存链路，
+ * 一次操作涉及两份时作为一笔更新（要么都生效，要么都保留原值）：
  * Targets 是单独启动时进分身的托管，StartOnOpen 是「打开分身并启动任务」一并派发的队列和托管。
  * 卡片显示时读取一次队列和托管，逐个单查两份清单里托管的分身能力，
  * 并把旧版卡片勾选一次性并入 StartOnOpen（旧的执行会话由后端并入 Targets）。
  */
 export function useDesktopSessionTargets(options: {
   settings: () => GlobalConfig
-  save: SettingChangeHandler
+  save: SettingGroupChangeHandler
   onAddRejected: (issue: DesktopSessionTargetIssue) => void
   onLoadFailed: () => void
 }) {
@@ -175,15 +176,21 @@ export function useDesktopSessionTargets(options: {
     { immediate: true }
   )
 
-  async function saveList(key: ListKey, next: string[]): Promise<boolean> {
-    drafts[key].value = next
+  /** 一笔保存：
+ext 里给出的清单一起生效，失败时都回到设置里的值。 */
+  async function saveLists(next: Partial<Record<ListKey, string[]>>): Promise<boolean> {
+    const keys = Object.keys(next) as ListKey[]
+    if (!keys.length) return true
+    keys.forEach(key => (drafts[key].value = next[key]!))
     let saved = false
     try {
-      saved = await options.save('DesktopSession', key, next)
+      saved = await options.save('DesktopSession', next)
     } catch {
       // 保存失败由设置页统一提示。
     }
-    if (drafts[key].value === next) drafts[key].value = null
+    keys.forEach(key => {
+      if (drafts[key].value === next[key]) drafts[key].value = null
+    })
     return saved
   }
 
@@ -210,7 +217,7 @@ export function useDesktopSessionTargets(options: {
     const id = value.toLowerCase()
     const target = findTarget(id)
     if (!target || ids.value.includes(id) || hasPowerAction(target.afterAccomplish)) return false
-    if (target.kind === 'queue') return saveList('StartOnOpen', [...startOnOpen.value, id])
+    if (target.kind === 'queue') return saveLists({ StartOnOpen: [...startOnOpen.value, id] })
     adding.value = true
     try {
       // 加入时总是重查：能力随配置变化，查到的可能已经过期。
@@ -218,14 +225,14 @@ export function useDesktopSessionTargets(options: {
     } finally {
       adding.value = false
     }
-    // 先存一并启动再存单独启动：后一次失败时停在单独启动不进分身的一边。
-    if (!(await saveList('StartOnOpen', [...startOnOpen.value, id]))) return false
-    return saveList('Targets', [...standalone.value, id])
+    return saveLists({
+      StartOnOpen: [...startOnOpen.value, id],
+      Targets: [...standalone.value, id],
+    })
   }
 
   /**
-   * 切换托管行的启动方式。两份清单各存一次，先加后撤，任一步失败就停：
-   * 半途停下时这一行仍在卡片上，每份清单要么是原值，要么是所选的值。
+   * 切换托管行的启动方式。两份清单的改动作为一笔保存：成功就一起生效，失败就保留原来的选择。
    */
   async function setMode(id: string, mode: DesktopSessionLaunchMode): Promise<boolean> {
     const target = findTarget(id)
@@ -235,36 +242,26 @@ export function useDesktopSessionTargets(options: {
     const without = (list: string[]) => list.filter(item => item !== id)
     adding.value = true
     try {
-      if (wantStandalone && !standalone.value.includes(id)) {
-        if (!(await ensureSupported(target, false))) return false
-        if (!(await saveList('Targets', [...standalone.value, id]))) return false
-      }
-      if (wantStartOnOpen && !startOnOpen.value.includes(id))
-        if (!(await saveList('StartOnOpen', [...startOnOpen.value, id]))) return false
-      if (!wantStandalone && standalone.value.includes(id))
-        if (!(await saveList('Targets', without(standalone.value)))) return false
-      if (!wantStartOnOpen && startOnOpen.value.includes(id))
-        return saveList('StartOnOpen', without(startOnOpen.value))
-      return true
+      const inStandalone = standalone.value.includes(id)
+      const inStartOnOpen = startOnOpen.value.includes(id)
+      if (wantStandalone && !inStandalone && !(await ensureSupported(target, false))) return false
+      const next: Partial<Record<ListKey, string[]>> = {}
+      if (wantStandalone !== inStandalone)
+        next.Targets = wantStandalone ? [...standalone.value, id] : without(standalone.value)
+      if (wantStartOnOpen !== inStartOnOpen)
+        next.StartOnOpen = wantStartOnOpen ? [...startOnOpen.value, id] : without(startOnOpen.value)
+      return saveLists(next)
     } finally {
       adding.value = false
     }
   }
 
   async function remove(id: string): Promise<boolean> {
-    if (
-      standalone.value.includes(id) &&
-      !(await saveList(
-        'Targets',
-        standalone.value.filter(item => item !== id)
-      ))
-    )
-      return false
-    if (!startOnOpen.value.includes(id)) return true
-    return saveList(
-      'StartOnOpen',
-      startOnOpen.value.filter(item => item !== id)
-    )
+    const next: Partial<Record<ListKey, string[]>> = {}
+    if (standalone.value.includes(id)) next.Targets = standalone.value.filter(item => item !== id)
+    if (startOnOpen.value.includes(id))
+      next.StartOnOpen = startOnOpen.value.filter(item => item !== id)
+    return saveLists(next)
   }
 
   // 旧版「打开分身时一并启动」的选择在卡片首次显示时并入 StartOnOpen，永不写 Targets；
@@ -289,7 +286,7 @@ export function useDesktopSessionTargets(options: {
     )
     const current = startOnOpen.value
     const merged = mergeLegacyDesktopSessionTargets(current, config.desktopSessionQueueIds, known)
-    if (merged.length !== current.length && !(await saveList('StartOnOpen', merged))) return
+    if (merged.length !== current.length && !(await saveLists({ StartOnOpen: merged }))) return
     try {
       await saveConfig({ desktopSessionStartOnOpenMigrated: true })
     } catch {

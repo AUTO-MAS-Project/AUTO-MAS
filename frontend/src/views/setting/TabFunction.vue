@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { ControlOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
-import type { SettingChangeHandler } from './settingTypes'
+import type { SettingChangeHandler, SettingGroupChangeHandler } from './settingTypes'
 import { navigateTo } from '@/router'
 import AppModal from '@/components/ui/AppModal.vue'
 import SectionCard from '@/components/ui/SectionCard.vue'
@@ -14,9 +14,10 @@ import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue
 const { t } = useI18n()
 const telemetryDetailOpen = ref(false)
 
-const { settings, handleSettingChange } = defineProps<{
+const { settings, handleSettingChange, handleSettingGroupChange } = defineProps<{
   settings: GlobalConfig
   handleSettingChange: SettingChangeHandler
+  handleSettingGroupChange: SettingGroupChangeHandler
 }>()
 
 type HistoryRetentionTime = NonNullable<
@@ -138,7 +139,10 @@ const handleHistoryRetentionChange = (value: unknown) => {
     </SectionCard>
 
     <!-- 双列时卡片按序号轮流放左右列：分身排第二张独占右列（清单会变长），功能与语音提示在左列 -->
-    <DesktopSessionSettings :settings="settings" :handle-setting-change="handleSettingChange" />
+    <DesktopSessionSettings
+      :settings="settings"
+      :handle-setting-group-change="handleSettingGroupChange"
+    />
 
     <VoiceSettings :settings="settings.Voice" :handle-setting-change="handleSettingChange" />
 

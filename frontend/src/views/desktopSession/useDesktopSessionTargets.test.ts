@@ -66,21 +66,23 @@ afterEach(() => {
 })
 
 type ListKey = 'Targets' | 'StartOnOpen'
+type Lists = Partial<Record<ListKey, string[]>>
 
 function setup(
   options: {
     targets?: string[]
     startOnOpen?: string[]
     config?: Partial<FrontendConfig>
-    save?: (key: ListKey, next: string[]) => boolean
+    save?: (changes: Lists) => boolean
   } = {}
 ) {
   const settings = reactive<GlobalConfig>({
     DesktopSession: { Targets: options.targets ?? [], StartOnOpen: options.startOnOpen ?? [] },
   })
-  const save = vi.fn(async (_category: string, key: ListKey, next: string[]) => {
-    const ok = options.save?.(key, next) ?? true
-    if (ok) settings.DesktopSession![key] = next
+  // 与设置页的一笔保存一致：成功才把这次改动的清单一起写回，失败时都不动。
+  const save = vi.fn(async (_category: string, changes: Lists) => {
+    const ok = options.save?.(changes) ?? true
+    if (ok) Object.assign(settings.DesktopSession!, changes)
     return ok
   })
   const rejected = vi.fn()
@@ -112,7 +114,9 @@ const settle = async () => {
   }
 }
 
-const savedKeys = (save: ReturnType<typeof setup>['save']) => save.mock.calls.map(call => call[1])
+const saved = (save: ReturnType<typeof setup>['save']) => save.mock.calls.map(call => call[1])
+const savedKeys = (save: ReturnType<typeof setup>['save']) =>
+  saved(save).flatMap(changes => Object.keys(changes))
 
 describe('桌面分身清单', () => {
   // 旧版两个选择各自独立：执行会话由后端并入 Targets，卡片勾选由这里并入 StartOnOpen。
@@ -148,7 +152,7 @@ describe('桌面分身清单', () => {
       )
       if (legacyCard) {
         expect(save).toHaveBeenCalledTimes(1)
-        expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [SCRIPT])
+        expect(save).toHaveBeenCalledWith('DesktopSession', { StartOnOpen: [SCRIPT] })
       } else {
         expect(save).not.toHaveBeenCalled()
       }
@@ -177,7 +181,7 @@ describe('桌面分身清单', () => {
     await settle()
 
     expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [QUEUE, DETACHED])
+    expect(save).toHaveBeenCalledWith('DesktopSession', { StartOnOpen: [QUEUE, DETACHED] })
     expect(card.standalone.value).toEqual([SCRIPT])
     expect(mocks.saveConfig).toHaveBeenCalledWith({ desktopSessionStartOnOpenMigrated: true })
   })
@@ -190,7 +194,7 @@ describe('桌面分身清单', () => {
     await card.load()
     await settle()
 
-    expect(save).toHaveBeenCalledWith('DesktopSession', 'StartOnOpen', [QUEUE])
+    expect(save).toHaveBeenCalledWith('DesktopSession', { StartOnOpen: [QUEUE] })
     expect(mocks.saveConfig).not.toHaveBeenCalled()
     expect(card.startOnOpen.value).toEqual([])
   })
@@ -206,19 +210,15 @@ describe('桌面分身清单', () => {
 
     await expect(card.add(SCRIPT.toUpperCase())).resolves.toBe(true)
     await expect(card.add(QUEUE)).resolves.toBe(true)
-    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
-      ['StartOnOpen', [SCRIPT]],
-      ['Targets', [SCRIPT]],
-      ['StartOnOpen', [SCRIPT, QUEUE]],
+    expect(saved(save)).toEqual([
+      { StartOnOpen: [SCRIPT], Targets: [SCRIPT] },
+      { StartOnOpen: [SCRIPT, QUEUE] },
     ])
     expect(card.candidates.value.map(item => item.target.value)).toEqual([POWER_QUEUE, UNSUPPORTED])
 
     save.mockClear()
     await card.remove(SCRIPT)
-    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
-      ['Targets', []],
-      ['StartOnOpen', [QUEUE]],
-    ])
+    expect(saved(save)).toEqual([{ Targets: [], StartOnOpen: [QUEUE] }])
   })
 
   it('逐行标出问题；全部启动交给后端预检，只排除认不出的条目', async () => {
@@ -249,24 +249,20 @@ describe('桌面分身清单', () => {
     ])
   })
 
-  it('切换启动方式：两份清单各存一次，先加后撤', async () => {
+  it('切换启动方式：一次切换一笔保存', async () => {
     const { card, save, rejected } = setup({
       targets: [SCRIPT],
       startOnOpen: [SCRIPT, UNSUPPORTED],
     })
     await card.load()
     await settle()
-    const calls = () => save.mock.calls.map(call => call.slice(1))
 
     await expect(card.setMode(SCRIPT, 'standalone')).resolves.toBe(true)
-    expect(calls()).toEqual([['StartOnOpen', [UNSUPPORTED]]])
+    expect(saved(save)).toEqual([{ StartOnOpen: [UNSUPPORTED] }])
 
     save.mockClear()
     await expect(card.setMode(SCRIPT, 'startOnOpen')).resolves.toBe(true)
-    expect(calls()).toEqual([
-      ['StartOnOpen', [UNSUPPORTED, SCRIPT]],
-      ['Targets', []],
-    ])
+    expect(saved(save)).toEqual([{ Targets: [], StartOnOpen: [UNSUPPORTED, SCRIPT] }])
 
     save.mockClear()
     await expect(card.setMode(UNSUPPORTED, 'both')).resolves.toBe(false)
@@ -274,21 +270,32 @@ describe('桌面分身清单', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('切换到一半保存失败时停下：这一行仍在卡片上，显示设置里的真实值', async () => {
+  // 「仅随分身启动」与「仅单独启动」互换要同时改两份清单：成功一起生效，失败保留原来的选择。
+  it.each([
+    ['standalone', true],
+    ['standalone', false],
+    ['startOnOpen', true],
+    ['startOnOpen', false],
+  ] as const)('切到「%s」时保存成功与否（%s）都不会停在两者都启用', async (mode, ok) => {
+    const toStandalone = mode === 'standalone'
+    const before = toStandalone
+      ? { Targets: [], StartOnOpen: [QUEUE, SCRIPT] }
+      : { Targets: [SCRIPT], StartOnOpen: [QUEUE] }
+    const after = toStandalone
+      ? { Targets: [SCRIPT], StartOnOpen: [QUEUE] }
+      : { Targets: [], StartOnOpen: [QUEUE, SCRIPT] }
     const { card, save } = setup({
-      startOnOpen: [QUEUE, SCRIPT],
-      save: key => key !== 'StartOnOpen',
+      targets: before.Targets,
+      startOnOpen: before.StartOnOpen,
+      save: () => ok,
     })
     await card.load()
     await settle()
 
-    await expect(card.setMode(SCRIPT, 'standalone')).resolves.toBe(false)
-    expect(save.mock.calls.map(call => call.slice(1))).toEqual([
-      ['Targets', [SCRIPT]],
-      ['StartOnOpen', [QUEUE]],
-    ])
-    expect(card.startOnOpen.value).toEqual([QUEUE, SCRIPT])
-    expect(card.standalone.value).toEqual([SCRIPT])
-    expect(card.rows.value.map(row => row.id)).toEqual([QUEUE, SCRIPT])
+    await expect(card.setMode(SCRIPT, mode)).resolves.toBe(ok)
+    expect(saved(save)).toEqual([after])
+    const expected = ok ? after : before
+    expect(card.standalone.value).toEqual(expected.Targets)
+    expect(card.startOnOpen.value).toEqual(expected.StartOnOpen)
   })
 })

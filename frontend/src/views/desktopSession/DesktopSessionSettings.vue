@@ -7,7 +7,7 @@ import type { GlobalConfig } from '@/api'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import { getConfig, saveConfig } from '@/utils/config'
-import type { SettingChangeHandler } from '@/views/setting/settingTypes'
+import type { SettingGroupChangeHandler } from '@/views/setting/settingTypes'
 import { useDesktopSessionTargets, type DesktopSessionLaunchMode } from './useDesktopSessionTargets'
 import type { DesktopSessionRequest } from '../../../electron/services/desktopSessionProtocol'
 
@@ -20,7 +20,7 @@ import type { DesktopSessionRequest } from '../../../electron/services/desktopSe
  */
 const props = defineProps<{
   settings: GlobalConfig
-  handleSettingChange: SettingChangeHandler
+  handleSettingGroupChange: SettingGroupChangeHandler
 }>()
 
 const { t } = useI18n()
@@ -44,7 +44,7 @@ const {
   remove: removeTarget,
 } = useDesktopSessionTargets({
   settings: () => props.settings,
-  save: props.handleSettingChange,
+  save: props.handleSettingGroupChange,
   onAddRejected: issue => message.warning(text(issue)),
   onLoadFailed: () => message.error(text('loadTasksFailed')),
 })

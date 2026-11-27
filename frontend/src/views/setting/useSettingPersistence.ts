@@ -9,7 +9,11 @@ import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { updateInfo } from '@/composables/useVersionService'
-import type { DynamicSettingChangeHandler, SettingChangeHandler } from './settingTypes'
+import type {
+  DynamicSettingChangeHandler,
+  SettingChangeHandler,
+  SettingGroupChangeHandler,
+} from './settingTypes'
 
 const logger = window.electronAPI.getLogger('设置')
 
@@ -173,5 +177,20 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
 
   const handleSettingChange: SettingChangeHandler = handleDynamicSettingChange
 
-  return { loading, refreshSettings, handleSettingChange, handleDynamicSettingChange }
+  // 同一分类的多个字段一笔发出：成功才一起应用到本地，失败时都保留原值
+  const handleSettingGroupChange: SettingGroupChangeHandler = (category, changes) =>
+    saveQueue.enqueue(async () => {
+      if (!(await saveSettings(category, changes))) return false
+      for (const [key, value] of Object.entries(changes))
+        await applyLocalSettingChange(category, key, value)
+      return true
+    })
+
+  return {
+    loading,
+    refreshSettings,
+    handleSettingChange,
+    handleDynamicSettingChange,
+    handleSettingGroupChange,
+  }
 }
