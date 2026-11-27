@@ -799,12 +799,19 @@ class _PluginManager:
             self.http.invalidate_schema()
 
             # 根语义落启用稳态；内嵌 reload 只记意图，由父操作收尾
+            if isinstance(plugin, ScriptAdapterPlugin):
+                record.info.config_types = {
+                    "script": plugin.script_type.__name__,
+                    **({"plan": plugin.plan_type.__name__} if plugin.plan_type else {}),
+                }
             record.info.enabled = True
             record.info.last_error = ""
             if ctx in {LifecycleContext.NORMAL, LifecycleContext.RELOAD_CASCADE}:
                 record.info.state = PluginState.ENABLED
                 record.info.lifecycle_context = LifecycleContext.IDLE
             await record.commit()
+            if isinstance(plugin, ScriptAdapterPlugin):
+                await Config.restore_unavailable_managed()
             capabilities_changed.send(self, name=name, enabled=True)
             await Publisher.send(
                 id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
@@ -868,7 +875,6 @@ class _PluginManager:
                         and record._plugin_cls is not None
                     ):
                         tree = self._teardown_tree(record, enabled_only=True)
-                        self._precheck_cascade_data(tree)
                         await self._precheck_teardown(tree)
 
                 # 先在不关调用门时问一次：有运行在途就直接拒，在跑的托管不受打扰；
@@ -995,17 +1001,16 @@ class _PluginManager:
         dep_path: list[str] | None = None,
         ctx: LifecycleContext = LifecycleContext.NORMAL,
         remove_record: bool = True,
+        purge_config: bool = False,
     ) -> dict[str, Any]:
         """DFS 释放插件运行时；卸包入口可保留注册项，待发行包与配置删除成功后再移除。"""
         if not held:
             async with self._hold():
                 # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
                 tree = self._teardown_tree(record, enabled_only=False)
-                self._precheck_cascade_data(tree)
                 await self._precheck_teardown(tree)
                 async with self._pause_activity(record):
                     tree = self._teardown_tree(record, enabled_only=False)
-                    self._precheck_cascade_data(tree)
                     await self._precheck_teardown(tree)
                     return await self.unload(
                         record,
@@ -1013,6 +1018,7 @@ class _PluginManager:
                         dep_path=dep_path,
                         ctx=ctx,
                         remove_record=remove_record,
+                        purge_config=purge_config,
                     )
 
         path_list = list(dep_path or [])
@@ -1055,6 +1061,9 @@ class _PluginManager:
             if was_enabled:
                 record.info.state = PluginState.ENABLED
                 await record.commit()
+            if purge_config:
+                await self._purge_managed_config(record)
+            if was_enabled:
                 # 本项禁用不属于下游 DFS，路径不能再次包含本项 uid。
                 await self.disable(record, held=True, dep_path=path_list, ctx=ctx)
                 record.info.state = PluginState.UNLOADING
@@ -1473,7 +1482,47 @@ class _PluginManager:
                 finish_installation(held_back=self._held_back)
                 return result
 
-    async def uninstall(self, record: PluginRecord) -> dict[str, Any]:
+    async def _purge_managed_config(self, record: PluginRecord) -> None:
+        """用户只授权清理本项；下游释放时仍走旁挂。"""
+        from app.core.config import Config
+        from app.core.config.plugin_upgrade import adapter_package
+
+        cls = record._plugin_cls
+        decl = (
+            cls.decl
+            if cls is not None and issubclass(cls, ScriptAdapterPlugin)
+            else None
+        )
+        plugin = record._plugin
+        hook = (
+            plugin.on_script_removed
+            if isinstance(plugin, ScriptAdapterPlugin)
+            else None
+        )
+        for key, collection, entry_cls in (
+            ("script", Config.ScriptConfig, decl.script_type if decl else None),
+            ("plan", Config.PlanConfig, decl.plan_type if decl else None),
+        ):
+            type_names = {record.info.config_types.get(key)}
+            if entry_cls is not None:
+                type_names.add(entry_cls.__name__)
+            ids = [uid for uid, entry in collection.items() if type(entry) is entry_cls]
+            ids.extend(
+                item.uid
+                for item in collection.unresolved()
+                if item.type_name in type_names
+                or adapter_package(item.type_name) == record.info.package_name
+            )
+            for uid in ids:
+                if key == "script":
+                    # 调用门已暂停，宿主在原实例释放前直接完成删除钩子。
+                    await Config.del_script(str(uid), on_removed=hook)
+                else:
+                    await Config.del_plan(str(uid))
+
+    async def uninstall(
+        self, record: PluginRecord, *, purge_config: bool = False
+    ) -> dict[str, Any]:
         """取得互斥并等待完整下游后卸包；外部删除失败时保留登记和故障状态供重试。"""
         from app.plugin.uv.environment import ensure_writable
 
@@ -1481,26 +1530,37 @@ class _PluginManager:
         async with self._hold():
             # 先在不关调用门时预检，暂停之后再预检一次（同停用）。
             tree = self._teardown_tree(record, enabled_only=False)
-            self._precheck_cascade_data(tree)
             await self._precheck_teardown(tree)
             async with self._pause_activity(record):
                 name = record.info.plugin_name
                 package = record.info.package_name or name
                 tree = self._teardown_tree(record, enabled_only=False)
-                self._precheck_cascade_data(tree)
                 await self._precheck_teardown(tree)
                 await LogFlowSession.retry_unconfirmed_workers()
                 with LogFlowSession.block_new_shared_environment_readers():
                     if LogFlowSession.has_shared_environment_readers():
                         raise PluginBusyError("仍有独立进程使用插件环境，请稍后重试")
-                    deps = await self.unload(record, held=True, remove_record=False)
                     from app.core.config import Config
 
+                    removed = {item.info.plugin_name for item in tree}
+                    deps = await self.unload(
+                        record,
+                        held=True,
+                        remove_record=False,
+                        purge_config=purge_config,
+                    )
+                    # 卸包成功后注册项会消失，先落盘，重启才能分清主动卸载与首次迁移。
+                    Config.setting.plugin.uninstalled = sorted(
+                        set(Config.setting.plugin.uninstalled) | removed
+                    )
+                    await Config.setting.commit()
+                    await config_manager.flush()
                     try:
                         await uv_tool.uninstall(package)
-                        (Config.config_path / "plugins" / f"{name}.yaml").unlink(
-                            missing_ok=True
-                        )
+                        if purge_config:
+                            (Config.config_path / "plugins" / f"{name}.yaml").unlink(
+                                missing_ok=True
+                            )
                     except Exception as exc:
                         record.info.state = PluginState.FAULT_LOAD
                         record.info.last_error = str(exc)
@@ -1806,7 +1866,11 @@ class _PluginManager:
         # 须在 unregister 前写盘，否则防抖/flush 可能已扫不到该根
         path = config_manager.get_file(instance)
         # 激活出过错的根只加载了一部分，整根写回会抹掉没加载上的内容。
-        if path is not None and instance.persist_blocked is None:
+        if (
+            path is not None
+            and instance.persist_blocked is None
+            and not config_manager.is_persisted(instance)
+        ):
             write_file(path, await instance.to_dict())
         config_manager.unregister_root(instance)
         record._config = None
@@ -1967,6 +2031,9 @@ class _PluginManager:
                     plugin.precheck_locks()
                 except PluginPrecheckError as exc:
                     blockers.append({"plugin": name, "reason": exc.message})
+            tasks = plugin._background_tasks
+            if tasks is not None and not await tasks.drain(timeout=0):
+                blockers.append({"plugin": name, "reason": "插件仍有后台任务在运行"})
             # 插件自己的在途工作（运行、更新作业、准备环境）不对应托管锁，由它说明能否拆。
             try:
                 reasons = await plugin.teardown_blockers()
@@ -1980,54 +2047,6 @@ class _PluginManager:
             raise PluginPrecheckError(
                 "；".join(f"插件 `{b['plugin']}`：{b['reason']}" for b in blockers),
                 payload={"blockers": blockers},
-            )
-
-    def _precheck_cascade_data(self, records: Sequence[PluginRecord]) -> None:
-        """连带停用 / 卸载的专项名下还有托管或计划表时拒绝，与直接停用专项时界面拦住同一口径。
-
-        ``records`` 是 ``_teardown_tree`` 的结果，第一项是用户操作的插件本身，不在此列。
-        停用专项会按类型删掉名下全部托管和计划表，只经确认框不够：经接口直接写触发器也要拦住。
-        只有用户发起的停用与卸载走这里；重载、安装与升级不删数据，不经过此检查。
-        """
-        from app.core import Config
-
-        in_use: list[dict[str, Any]] = []
-        for record in records[1:]:
-            plugin = record._plugin
-            # 未启用的专项没有登记类型，名下托管与计划表已在它停用时删除。
-            if not isinstance(plugin, ScriptAdapterPlugin):
-                continue
-            scripts = sum(
-                1
-                for entry in Config.ScriptConfig.values()
-                if isinstance(entry, plugin.script_type)
-            )
-            plans = (
-                sum(
-                    1
-                    for entry in Config.PlanConfig.values()
-                    if isinstance(entry, plugin.plan_type)
-                )
-                if plugin.plan_type is not None
-                else 0
-            )
-            if scripts or plans:
-                in_use.append(
-                    {
-                        "plugin": record.info.plugin_name,
-                        "scripts": scripts,
-                        "plans": plans,
-                    }
-                )
-        if in_use:
-            listing = "、".join(
-                f"`{item['plugin']}`（{item['scripts']} 个托管、{item['plans']} 张计划表）"
-                for item in in_use
-            )
-            raise PluginPrecheckError(
-                f"会一并停用的专项名下还有托管或计划表：{listing}。"
-                "删掉这些托管和计划表后才能停用或卸载",
-                payload={"inUse": in_use},
             )
 
     def dependency_view(self, record: PluginRecord) -> dict[str, list[str]]:
@@ -2064,7 +2083,7 @@ class _PluginManager:
     def disable_impact(
         self, record: PluginRecord
     ) -> list[Literal["scripts", "games", "plans"]]:
-        """汇总停用本插件及级联下游时会删除的配置领域，供前端确认。"""
+        """汇总停用本插件及级联下游时暂不可用的配置领域，供前端确认。"""
         impact: set[Literal["scripts", "games", "plans"]] = set()
         visited: set[UUID] = set()
         pending = [record]
@@ -2077,7 +2096,7 @@ class _PluginManager:
             if cls is not None:
                 if issubclass(cls, ScriptAdapterPlugin):
                     impact.add("scripts")
-                    # 声明了计划类型的专项停用时，计划类型连同全部计划表一起删除。
+                    # 声明了计划类型的专项停用时，其计划表也暂时不可用。
                     decl = getattr(cls, "decl", None)
                     if getattr(decl, "plan_type", None) is not None:
                         impact.add("plans")

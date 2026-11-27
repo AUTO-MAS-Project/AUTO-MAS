@@ -1,191 +1,120 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <ScriptEditHeader
-        script-type="SRC"
-        :title="t('core.edit.editScript')"
-        @cancel="handleCancel"
+  <ScriptEditLayout
+    :script-id="scriptId"
+    :loading="pageLoading"
+    :header="{ scriptType: 'SRC', title: t('core.edit.editScript') }"
+    :form="{ model: formData, rules }"
+    :form-label="t('core.edit.srcScriptConfiguration')"
+    @cancel="handleCancel"
+  >
+    <template #basic>
+      <ScriptBasicInfoCard
+        v-model:name="formData.name"
+        :name-hint="t('core.edit.giveScriptNameYou')"
+        @save-name="handleChange('Info', 'Name', $event)"
+      >
+        <template #path>
+          <a-form-item name="path" :rules="rules.path">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.srcPath')"
+                :hint="t('core.edit.pickFolderHoldingSrc2')"
+                variant="form"
+              />
+            </template>
+            <PathPickerField
+              v-model="formData.path"
+              mode="folder"
+              :placeholder="t('core.edit.pickFolderHoldingSrc')"
+              :pick-label="t('core.edit.pickFolder')"
+              @pick="selectSRCPath"
+            />
+          </a-form-item>
+        </template>
+      </ScriptBasicInfoCard>
+    </template>
+
+    <template #game-update>
+      <ScriptGameUpdateCard
+        v-model:check-update="srcConfig.Run.IfCheckGameUpdate"
+        v-model:auto-install-apk="srcConfig.Run.IfAutoInstallGameApk"
+        v-model:time-limit="srcConfig.Run.GameUpdateTimeLimit"
+        :check-description="t('core.edit.checkGameUpdateBeforeLogin')"
+        @save="(key, value) => handleChange('Run', key, value)"
       />
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content" game-binding="none">
-      <a-spin :spinning="pageLoading">
-        <a-form
-          ref="formRef"
-          :aria-label="t('core.edit.srcScriptConfiguration')"
-          :model="formData"
-          :rules="rules"
-          layout="vertical"
-          class="config-form"
+    <template #run>
+      <SectionCard
+        variant="card"
+        :title="t('core.edit.runConfiguration')"
+        :icon="ThunderboltOutlined"
+      >
+        <ScriptRunLimitsSection
+          v-model:hard-time-limit="srcConfig.Run.HardTimeLimit"
+          v-model:daily-limit="srcConfig.Run.ProxyTimesLimit"
+          v-model:retry-limit="srcConfig.Run.RunTimesLimit"
+          v-model:timeout="srcConfig.Run.RunTimeLimit"
+          hide-execution-session
+          :daily-label="t('core.edit.runsPerDayThis')"
+          :daily-hint="t('core.edit.skipRunOnceThis')"
+          :retry-label="t('core.edit.retryLimit')"
+          :retry-hint="t('core.edit.ifRunStillUnfinished')"
+          :timeout-label="t('core.edit.runTimeoutMinutes2')"
+          :timeout-hint="t('core.edit.treatRunAsTimed2')"
+          enhanced
+          @save="key => handleChange('Run', key, srcConfig.Run[key])"
         >
-          <!-- 基本信息 -->
-          <SectionCard variant="card" :title="t('core.edit.basicInfo')" :icon="AppstoreOutlined">
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item name="name">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.scriptName')"
-                      :hint="t('core.edit.giveScriptNameYou')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    v-model:value="formData.name"
-                    :placeholder="t('core.edit.enterScriptName')"
-                    class="modern-input"
-                    @blur="handleChange('Info', 'Name', formData.name)"
+          <template #before-limits>
+            <a-col :xs="24" :md="12">
+              <a-form-item>
+                <template #label>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.accountSwitchingMethod')"
+                    :hint="t('core.edit.whatDoWhenSwitching')"
+                    variant="form"
                   />
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item name="path" :rules="rules.path">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.srcPath')"
-                      :hint="t('core.edit.pickFolderHoldingSrc2')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="formData.path"
-                    mode="folder"
-                    :placeholder="t('core.edit.pickFolderHoldingSrc')"
-                    :pick-label="t('core.edit.pickFolder')"
-                    @pick="selectSRCPath"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <SwitchTile
-            v-model:checked="srcConfig.Update.TakeoverEnabled"
-            variant="card"
-            :icon="CloudDownloadOutlined"
-            :title="t('core.edit.updateTakeoverSwitch')"
-            :description="t('core.edit.srcProgramUpdateHint')"
-            :disabled="isInitializing"
-            @change="handleChange('Update', 'TakeoverEnabled', $event)"
-          />
-
-          <!-- 模拟器 / 游戏客户端 -->
-          <GameBindingSection :script-id="scriptId" variant="card" />
-
-          <!-- 运行配置 -->
-          <SectionCard
-            variant="card"
-            :title="t('core.edit.runConfiguration')"
-            :icon="ThunderboltOutlined"
-          >
-            <ScriptRunLimitsSection
-              v-model:hard-time-limit="srcConfig.Run.HardTimeLimit"
-              v-model:daily-limit="srcConfig.Run.ProxyTimesLimit"
-              v-model:retry-limit="srcConfig.Run.RunTimesLimit"
-              v-model:timeout="srcConfig.Run.RunTimeLimit"
-              hide-execution-session
-              :daily-label="t('core.edit.runsPerDayThis')"
-              :daily-hint="t('core.edit.skipRunOnceThis')"
-              :retry-label="t('core.edit.retryLimit')"
-              :retry-hint="t('core.edit.ifRunStillUnfinished')"
-              :timeout-label="t('core.edit.runTimeoutMinutes2')"
-              :timeout-hint="t('core.edit.treatRunAsTimed2')"
-              enhanced
-              @save="key => handleChange('Run', key, srcConfig.Run[key])"
-            >
-              <template #before-limits>
-                <a-col :xs="24" :md="12">
-                  <a-form-item>
-                    <template #label>
-                      <FieldLabelWithHint
-                        :text="t('core.edit.accountSwitchingMethod')"
-                        :hint="t('core.edit.whatDoWhenSwitching')"
-                        variant="form"
-                      />
-                    </template>
-                    <a-segmented
-                      :value="srcConfig.Run.TaskTransitionMethod"
-                      :options="transitionOptions"
-                      block
-                      @change="handleTransitionChange"
-                    />
-                  </a-form-item>
-                </a-col>
-              </template>
-            </ScriptRunLimitsSection>
-          </SectionCard>
-
-          <!-- 游戏更新 -->
-          <SectionCard variant="card" :title="t('core.edit.gameUpdate')" :icon="CloudSyncOutlined">
-            <a-row :gutter="16" style="row-gap: 12px; margin-bottom: 16px">
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="srcConfig.Run.IfCheckGameUpdate"
-                  :title="t('core.edit.checkGameUpdateBefore')"
-                  :description="t('core.edit.checkGameUpdateBeforeLogin')"
-                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                </template>
+                <a-segmented
+                  :value="srcConfig.Run.TaskTransitionMethod"
+                  :options="transitionOptions"
+                  block
+                  @change="handleTransitionChange"
                 />
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <SwitchTile
-                  v-model:checked="srcConfig.Run.IfAutoInstallGameApk"
-                  :title="t('core.edit.installGamePackageAutomatically')"
-                  :description="t('core.edit.whenClientDetectedAs')"
-                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
-                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
-                />
-              </a-col>
-            </a-row>
-            <a-row :gutter="24">
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.gameUpdateTimeoutMinutes')"
-                      :hint="t('core.edit.timeoutDownloadingInstallingGame')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input-number
-                    v-model:value="srcConfig.Run.GameUpdateTimeLimit"
-                    :min="1"
-                    :max="9999"
-                    class="modern-number-input"
-                    style="width: 100%"
-                    :disabled="!srcConfig.Run.IfCheckGameUpdate"
-                    @blur="
-                      handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
-                    "
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-        </a-form>
-      </a-spin>
-    </ConfigLockPanel>
-  </ConfigEditShell>
+              </a-form-item>
+            </a-col>
+          </template>
+        </ScriptRunLimitsSection>
+      </SectionCard>
+    </template>
+
+    <template #program-update>
+      <SwitchTile
+        v-model:checked="srcConfig.Update.TakeoverEnabled"
+        variant="card"
+        :icon="CloudDownloadOutlined"
+        :title="t('core.edit.updateTakeoverSwitch')"
+        :description="t('core.edit.srcProgramUpdateHint')"
+        :disabled="isInitializing"
+        @change="handleChange('Update', 'TakeoverEnabled', $event)"
+      />
+    </template>
+  </ScriptEditLayout>
 </template>
 
 <script setup lang="ts">
-import {
-  AppstoreOutlined,
-  CloudDownloadOutlined,
-  CloudSyncOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons-vue'
+import { CloudDownloadOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 import ScriptRunLimitsSection from '@/views/EditView/Script/components/ScriptRunLimitsSection.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { createSrcScriptDraft } from './srcScriptDraft'
-import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import GameBindingSection from '@/components/GameBindingSection.vue'
-import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
-import { ConfigEditShell, SectionCard, SwitchTile } from '@/components/ui'
+import ScriptBasicInfoCard from '@/components/ScriptBasicInfoCard.vue'
+import ScriptEditLayout from '@/components/ScriptEditLayout.vue'
+import ScriptGameUpdateCard from '@/views/EditView/Script/components/ScriptGameUpdateCard.vue'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -197,14 +126,13 @@ const logger = window.electronAPI.getLogger('SRC脚本编辑')
 
 const route = useRoute()
 const router = useRouter()
-const { getScript, updateScript, error: scriptApiError } = useScriptApi()
+const { getScript, error: scriptApiError } = useScriptApi()
 
-const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue, saveField: handleChange } = useScriptSaveMutation({
+const { saveField: handleChange } = useScriptSaveMutation({
   scriptId,
   isInitializing,
   logger,
@@ -341,7 +269,3 @@ const selectSRCPath = async () => {
   }
 }
 </script>
-
-<style scoped src="@/styles/scriptEditForm.css"></style>
-
-<style scoped src="@/styles/scriptEdit.css"></style>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
+import { SectionCard } from '@/components/ui'
 import { PowerSignal } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { fetchTaskTargets, type TaskTarget } from '@/composables/useTaskOptions'
@@ -84,14 +85,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <a-card :title="t('bootstrap.desktopSession.title')" class="settings-card">
+  <SectionCard :title="t('bootstrap.desktopSession.title')">
     <a-flex vertical gap="middle">
       <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
-      <a-alert
-        v-if="supported === false"
-        type="info"
-        :message="t('bootstrap.desktopSession.unsupported')"
-      />
+      <a-alert v-if="supported === false" :message="t('bootstrap.desktopSession.unsupported')" />
       <template v-else-if="supported">
         <a-select
           :value="selected"
@@ -141,5 +138,5 @@ onMounted(async () => {
         </a-flex>
       </template>
     </a-flex>
-  </a-card>
+  </SectionCard>
 </template>

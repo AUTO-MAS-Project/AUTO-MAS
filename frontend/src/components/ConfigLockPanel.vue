@@ -8,7 +8,6 @@
         show-icon
         :message="t('core.edit.configLocked')"
       />
-      <GameBindingSection v-if="showTopGameBinding" :script-id="scriptId" />
       <slot />
       <GameBindingSection v-if="showBottomGameBinding" :script-id="scriptId" />
     </ConfigProvider>
@@ -41,9 +40,6 @@ const isExcludedSubPage = computed(
     route.meta.scriptPage === 'userAdd' ||
     route.path.includes('/users/add/') ||
     route.path.includes('/cultivation')
-)
-const showTopGameBinding = computed(
-  () => props.gameBinding !== 'none' && !isExcludedSubPage.value && !isAccountPage.value
 )
 const showBottomGameBinding = computed(
   () => props.gameBinding !== 'none' && !isExcludedSubPage.value && isAccountPage.value

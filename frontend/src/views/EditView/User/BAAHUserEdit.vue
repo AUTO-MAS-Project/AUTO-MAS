@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <UserEditHeader
         :script-id="scriptId"
@@ -12,33 +12,33 @@
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
-        <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
-          <!-- 基本信息 -->
-          <UserAccountHeading
-            :user-name="formData.userName"
-            :options="{ isEdit, logoSrc: accountIcon }"
+      <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
+        <!-- 基本信息 -->
+        <UserAccountHeading
+          :user-name="formData.userName"
+          :options="{ isEdit, logoSrc: accountIcon }"
+        />
+        <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+          <template #actions>
+            <a-button size="small" @click="restoreOpen = true">
+              <template #icon><HistoryOutlined /></template>
+              {{ t('core.edit.configRestoreTitle') }}
+            </a-button>
+          </template>
+          <UserBasicInfoFields
+            v-model:user-name="formData.userName"
+            v-model:status="formData.Info.Status"
+            v-model:remained-day="formData.Info.RemainedDay"
+            v-model:notes="formData.Info.Notes"
+            :disabled="loading"
+            @save-name="handleFieldSave('userName', formData.userName)"
+            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
           />
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
-            <template #actions>
-              <a-button size="small" @click="restoreOpen = true">
-                <template #icon><HistoryOutlined /></template>
-                {{ t('core.edit.configRestoreTitle') }}
-              </a-button>
-            </template>
-            <UserBasicInfoFields
-              v-model:user-name="formData.userName"
-              v-model:status="formData.Info.Status"
-              v-model:remained-day="formData.Info.RemainedDay"
-              v-model:notes="formData.Info.Notes"
-              :disabled="loading"
-              @save-name="handleFieldSave('userName', formData.userName)"
-              @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
-              @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-              @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
-            />
-          </SectionCard>
+        </SectionCard>
 
+        <SectionCard variant="plain">
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item name="configName">
@@ -177,52 +177,45 @@
             </a-col>
           </a-row>
 
+          <a-alert type="info" show-icon :message="t('core.edit.baahConfigSourceHint')" />
+        </SectionCard>
+
+        <!-- 数据统计（只读，由本软件自动写入） -->
+        <SectionCard variant="plain" :title="t('core.edit.statistics')">
           <a-row :gutter="24">
-            <a-col :span="24">
-              <a-alert type="info" show-icon :message="t('core.edit.baahConfigSourceHint')" />
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahLastProxyDate')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
+                </template>
+                <a-input
+                  :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
+                  readonly
+                  size="large"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahProxyTimes')"
+                    :hint="t('core.edit.baahDataReadOnlyHint')"
+                    variant="form"
+                  />
+                </template>
+                <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
+              </a-form-item>
             </a-col>
           </a-row>
+        </SectionCard>
 
-          <!-- 数据统计（只读，由本软件自动写入） -->
-          <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.statistics') }}</h3>
-            </div>
-            <a-row :gutter="24">
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.baahLastProxyDate')"
-                      :hint="t('core.edit.baahDataReadOnlyHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input
-                    :value="formatConfigDate(formData.Data.LastProxyDate, 4 * 60)"
-                    readonly
-                    size="large"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.baahProxyTimes')"
-                      :hint="t('core.edit.baahDataReadOnlyHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </div>
-
-          <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
-        </a-form>
-      </a-card>
+        <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
+      </a-form>
     </ConfigLockPanel>
 
     <template #overlay>
@@ -632,17 +625,7 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped src="@/styles/userEditForm.css"></style>
-
 <style scoped>
-div.form-section {
-  margin-bottom: 12px;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
 /* ══ 配置恢复预览（分区标题 + 表格 + 详情分组）══ */
 .baah-preview-title {
   margin: 16px 0 8px;

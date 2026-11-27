@@ -7,7 +7,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, cast
 
-from app.config import ConfigCollection, ConfigEntry, ConfigNode
+from app.config import (
+    ConfigCollection,
+    ConfigEntry,
+    ConfigNode,
+    NodeState,
+    config_manager,
+)
 from app.models.config import GameDeviceEntry, GameEntry
 from app.plugin.types import LifecycleContext, PluginState
 
@@ -15,6 +21,24 @@ if TYPE_CHECKING:
     from app.models.config import PluginRecord
     from app.plugin.base.game import GameAdapterPlugin
     from app.plugin.base.script import ScriptAdapterPlugin
+
+
+def _locked_subtree(node: ConfigNode) -> bool:
+    return node.is_locked or any(
+        _locked_subtree(child) for child in node.iter_children()
+    )
+
+
+async def _detach_type[T: ConfigNode](
+    collection: ConfigCollection[T], entry_cls: type[T]
+) -> None:
+    if collection.entry_types.get(entry_cls.__name__) is not entry_cls:
+        return
+    if collection.activation_state == NodeState.INACTIVE:
+        collection.remove_initial_type(entry_cls)
+    else:
+        collection.detach_type(entry_cls)
+        await collection.commit()
 
 
 class _AdapterRuntime:
@@ -80,17 +104,17 @@ class GameAdapterRuntime(_AdapterRuntime):
         )
 
     def precheck_locks(self) -> None:
-        """用本类创建的游戏配置若已锁定，则无法 remove_type / reload_type。"""
+        """用本类创建的游戏配置若已锁定，则无法停用或重载。"""
         from app.core import Config
         from app.plugin.errors import PluginPrecheckError
 
         game_class = self.game_class
         for entry in Config.GameConfig.values():
-            if not isinstance(entry, game_class) or not entry.is_locked:
+            if not isinstance(entry, game_class) or not _locked_subtree(entry):
                 continue
             raise PluginPrecheckError(
                 f"用 {game_class.__name__} 创建的游戏配置 {entry.uid} 已锁定，"
-                f"无法 remove_type",
+                f"无法禁用/重载/卸载",
                 payload={
                     "plugin": self.plugin_name,
                     "game_uid": str(entry.uid),
@@ -137,7 +161,6 @@ class GameAdapterRuntime(_AdapterRuntime):
         顺序：快照 → 类型表 → ``Plugin.game_types``。
         成功后保留 ``_system_rollback``，供同一次 enable 在 system_enable 之后失败时回滚。
         """
-        from app.config import NodeState
         from app.core import Config
         from app.core.game_manager import GameManager
         from app.core.plugin import Plugin
@@ -192,10 +215,11 @@ class GameAdapterRuntime(_AdapterRuntime):
 
         assert self.decl is not None
         Plugin.game_types[self.record.uid] = self.decl
+        if Config.GameConfig.activation_state == NodeState.ACTIVE:
+            await Config.GameConfig.materialize_unresolved(game_class.__name__)
 
     async def system_disable(self) -> None:
         """普通禁用：类型表 → 目录 → 清快照。重载语境三步都不做。"""
-        from app.config import NodeState
         from app.core import Config
         from app.core.plugin import Plugin
 
@@ -206,12 +230,7 @@ class GameAdapterRuntime(_AdapterRuntime):
             return
 
         # ── 1. 类型表 ──
-        game_class = self.game_class
-        if Config.GameConfig.activation_state != NodeState.ACTIVE:
-            Config.GameConfig.remove_initial_type(game_class.__name__)
-        else:
-            Config.GameConfig.remove_type(game_class)
-            await Config.GameConfig.commit()
+        await _detach_type(Config.GameConfig, self.game_class)
         # ── 2. 搜索/展示目录（仅本适配写入，也仅此处与 rollback 摘掉）──
         Plugin.game_types.pop(self.record.uid, None)
         # ── 3. 清快照 ──
@@ -225,7 +244,6 @@ class GameAdapterRuntime(_AdapterRuntime):
     ) -> None:
         """按 ``_system_rollback`` 对称回退；终态顺序与 disable 一致：类型表 → 目录 → 清快照。"""
         _ = exc
-        from app.config import NodeState
         from app.core import Config
         from app.core.plugin import Plugin
 
@@ -265,27 +283,13 @@ class GameAdapterRuntime(_AdapterRuntime):
 
             # ── normal / unload：若曾加类型则卸类型表，再摘目录、清快照 ──
             if rb is not None and rb.game_type_added:
-                try:
-                    if Config.GameConfig.activation_state != NodeState.ACTIVE:
-                        Config.GameConfig.remove_initial_type(game_class.__name__)
-                    else:
-                        Config.GameConfig.remove_type(game_class)
-                        await Config.GameConfig.commit()
-                except Exception:
-                    pass
+                await _detach_type(Config.GameConfig, game_class)
             Plugin.game_types.pop(self.record.uid, None)
             self._system_rollback = None
             return
 
-        if during == PluginState.DISABLING:
-            if lifecycle_context in {
-                LifecycleContext.RELOAD,
-                LifecycleContext.RELOAD_CASCADE,
-            }:
-                return
-            # 禁用失败：不补做 remove_type（可能尚未执行）；只确保目录与快照不脏
-            Plugin.game_types.pop(self.record.uid, None)
-            self._system_rollback = None
+        if during in {PluginState.DISABLING, PluginState.UNLOADING}:
+            await self.system_disable()
 
 
 class ScriptAdapterRuntime(_AdapterRuntime):
@@ -308,20 +312,22 @@ class ScriptAdapterRuntime(_AdapterRuntime):
         )
 
     def precheck_locks(self) -> None:
-        """系统预检：该类型脚本实例任一锁定则拒绝（设计 §7.2）。"""
+        """托管、账号或计划仍被任务占用时，整次拆卸在预检阶段拒绝。"""
         from app.core import Config
         from app.plugin.errors import PluginPrecheckError
 
-        script_type = self.script_type
-        for entry in Config.ScriptConfig.values():
-            if type(entry) is script_type and entry.is_locked:
-                raise PluginPrecheckError(
-                    f"脚本配置 {entry.uid} 已锁定，无法禁用/重载/卸载",
-                    payload={
-                        "plugin": self.plugin_name,
-                        "script_uid": str(entry.uid),
-                    },
-                )
+        for collection, cls, label, key in (
+            (Config.ScriptConfig, self.script_type, "脚本", "script_uid"),
+            (Config.PlanConfig, self.plan_type, "计划表", "plan_uid"),
+        ):
+            if cls is None:
+                continue
+            for entry in collection.values():
+                if type(entry) is cls and _locked_subtree(entry):
+                    raise PluginPrecheckError(
+                        f"{label}配置 {entry.uid} 已锁定，无法禁用/重载/卸载",
+                        payload={"plugin": self.plugin_name, key: str(entry.uid)},
+                    )
 
     async def _record_system_rollback(self) -> ScriptRegistrationSnapshot:
         """类型表写入前统一记录回退信息。"""
@@ -351,7 +357,6 @@ class ScriptAdapterRuntime(_AdapterRuntime):
         故此处既不补挂 add_type 也不另立索引。
         成功后保留 ``_system_rollback``，供同一次 enable 在本方法之后失败时回滚。
         """
-        from app.config import NodeState
         from app.core import Config
         from app.core.plugin import Plugin
 
@@ -403,7 +408,6 @@ class ScriptAdapterRuntime(_AdapterRuntime):
 
     async def system_disable(self) -> None:
         """普通禁用：类型表 → 目录 → 清快照。重载语境三步都不做。"""
-        from app.config import NodeState
         from app.core import Config
         from app.core.plugin import Plugin
 
@@ -418,18 +422,10 @@ class ScriptAdapterRuntime(_AdapterRuntime):
         # [兼容旧专项] 根集合仍以旧专项联合类型公开；这里仅操作动态类型表。
         scripts = cast(ConfigCollection[ConfigEntry], Config.ScriptConfig)
         plans = cast(ConfigCollection[ConfigEntry], Config.PlanConfig)
-        # ── 1. 类型表（remove_type 级联删该类实例，用户配置随嵌套集合一并清掉）──
-        if scripts.activation_state != NodeState.ACTIVE:
-            scripts.remove_initial_type(script_type.__name__)
-        else:
-            scripts.remove_type(script_type)
-            await scripts.commit()
-        if self.plan_type is not None:
-            if plans.activation_state != NodeState.ACTIVE:
-                plans.remove_initial_type(self.plan_type.__name__)
-            else:
-                plans.remove_type(self.plan_type)
-                await plans.commit()
+        async with config_manager.transaction():
+            await _detach_type(scripts, script_type)
+            if self.plan_type is not None:
+                await _detach_type(plans, self.plan_type)
         # ── 2. 类型目录 ──
         Plugin.script_types.pop(self.record.uid, None)
         # ── 3. 清快照 ──
@@ -443,7 +439,6 @@ class ScriptAdapterRuntime(_AdapterRuntime):
     ) -> None:
         """按 ``_system_rollback`` 对称回退（设计 §7.4）；终态顺序与 disable 一致。"""
         _ = exc
-        from app.config import NodeState
         from app.core import Config
         from app.core.plugin import Plugin
 
@@ -475,35 +470,16 @@ class ScriptAdapterRuntime(_AdapterRuntime):
                 return
 
             # ── normal / unload：幂等撤净；类型表只回退本次真加过的 ──
-            if rb is not None and rb.script_type_added:
-                try:
-                    if scripts.activation_state != NodeState.ACTIVE:
-                        scripts.remove_initial_type(script_type.__name__)
-                    else:
-                        scripts.remove_type(script_type)
-                        await scripts.commit()
-                except Exception:
-                    pass
-            if rb is not None and rb.plan_type_added:
-                assert self.plan_type is not None
-                try:
-                    if plans.activation_state != NodeState.ACTIVE:
-                        plans.remove_initial_type(self.plan_type.__name__)
-                    else:
-                        plans.remove_type(self.plan_type)
-                        await plans.commit()
-                except Exception:
-                    pass
+            if rb is not None:
+                async with config_manager.transaction():
+                    if rb.script_type_added:
+                        await _detach_type(scripts, script_type)
+                    if rb.plan_type_added:
+                        assert self.plan_type is not None
+                        await _detach_type(plans, self.plan_type)
             Plugin.script_types.pop(self.record.uid, None)
             self._system_rollback = None
             return
 
-        if during == PluginState.DISABLING:
-            if lifecycle_context in {
-                LifecycleContext.RELOAD,
-                LifecycleContext.RELOAD_CASCADE,
-            }:
-                return
-            # 禁用失败：不补做 remove_type（可能尚未执行）；只确保目录不脏
-            Plugin.script_types.pop(self.record.uid, None)
-            self._system_rollback = None
+        if during in {PluginState.DISABLING, PluginState.UNLOADING}:
+            await self.system_disable()

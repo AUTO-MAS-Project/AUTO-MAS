@@ -24,7 +24,7 @@ from app.plugin.types import PluginState
 
 
 def test_disable_confirmation_includes_only_enabled_cascading_adapters(monkeypatch):
-    """停用服务提供者时也须警告下游适配配置删除，已停用下游不重复计入。"""
+    """停用服务提供者时也须列出受影响的下游适配配置，已停用下游不重复计入。"""
 
     class Provider(BasePlugin):
         provides_services = {"test.service": "service"}
@@ -249,7 +249,7 @@ async def test_config_save_failure_keeps_owned_root_registered(
 
             monkeypatch.setattr(ops, "ensure", lambda: "uv")
             monkeypatch.setattr(ops.ProcessRunner, "run_process", execute)
-            await manager.uninstall(record)
+            await manager.uninstall(record, purge_config=True)
             await config_manager.flush()
             assert uid not in registry
             assert config_manager.get_file(root) is None
@@ -521,6 +521,6 @@ async def test_uninstall_retains_failed_package_for_retry(
     assert settings.read_text(encoding="utf-8") == "saved: value\n"
     await record.on_uninstall()
     assert uid not in registry
-    assert not settings.exists()
+    assert settings.read_text(encoding="utf-8") == "saved: value\n"
     assert len(attempts) == 2
     assert all("uninstall-example" in args for args in attempts)

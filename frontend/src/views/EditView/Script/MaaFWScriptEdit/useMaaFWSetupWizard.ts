@@ -65,8 +65,8 @@ export function useMaaFWSetupWizard({
   const stepItems = computed(() => [
     { title: t('core.edit.basicInfo') },
     { title: t('core.edit.controlConfiguration') },
-    { title: t('core.edit.projectUpdate') },
     { title: t('core.edit.runConfiguration') },
+    { title: t('core.edit.projectUpdate') },
   ])
   // 第一步没读到 interface 就往下走，后面几步全是空的，先拦住。
   // 运行环境同理：没装完就往下配，配完了也跑不起来——首次要下载 MaaFramework，

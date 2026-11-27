@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { DeleteOutlined } from '@ant-design/icons-vue'
-import { Modal } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
+import { useConfirm } from '@/composables/useConfirm'
 
 /** 所属插件不可用的托管或计划表：只读，只能删除。 */
 export interface UnavailableConfigCard {
@@ -22,6 +22,7 @@ const props = defineProps<{
 const emit = defineEmits<{ delete: [uid: string] }>()
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const reasonText = (item: UnavailableConfigCard) => {
   const plugin = item.plugin || t('core.unavailableConfig.unknownPlugin')
@@ -31,17 +32,16 @@ const reasonText = (item: UnavailableConfigCard) => {
 }
 
 const confirmDelete = (item: UnavailableConfigCard) => {
-  Modal.confirm({
+  void confirm({
+    tone: 'danger',
     title: t(
       props.kind === 'plan'
         ? 'core.unavailableConfig.deletePlanTitle'
         : 'core.unavailableConfig.deleteScriptTitle',
       { name: item.name || item.uid }
     ),
-    content: t('core.unavailableConfig.deleteContent'),
+    description: t('core.unavailableConfig.deleteContent'),
     okText: t('core.unavailableConfig.delete'),
-    okType: 'danger',
-    cancelText: t('core.common.cancel'),
     onOk: () => emit('delete', item.uid),
   })
 }

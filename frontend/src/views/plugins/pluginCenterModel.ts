@@ -544,7 +544,7 @@ export function detailFieldKeys(view: PluginView): DetailFieldKey[] {
   return (Object.keys(present) as DetailFieldKey[]).filter(key => present[key])
 }
 
-// ---------- 用量与停用拦截 ----------
+// ---------- 插件用量 ----------
 
 export interface UsageScript {
   uid: string
@@ -563,7 +563,7 @@ export interface PluginUsageSource {
 
 /**
  * 用量来源状态。current 表示本次进入插件中心后已成功取到过托管列表；
- * 跨页缓存里的旧数据不算，一律按加载中处理，不能据此放行停用与卸载。
+ * 跨页缓存里的旧数量在本次读取成功后再展示。
  */
 export function usageSourceState(input: {
   failed: boolean
@@ -637,105 +637,20 @@ export function usageSegments(usage: PluginUsage): UsageSegment[] {
   return segments.flatMap(([key, count]) => (count ? [{ key, count }] : []))
 }
 
-/** 连带范围里的一个专项及其用量。 */
-export interface CascadeUsage {
-  view: { pluginId: string; name: string }
-  usage: PluginUsage
-}
-
-/** 会被一并停用、名下还有托管或计划表的专项。 */
-export interface CascadeInUse {
-  pluginId: string
-  name: string
-  scripts: number
-  plans: number
-}
-
-export type LifecycleDecision =
-  /** 有托管在用，前端拦住，列出在用托管。 */
-  | { kind: 'blockedInUse'; scripts: UsageScript[] }
-  /** 会连带停用的专项名下还有托管或计划表，前端拦住，列出这些专项（后端同样拒绝）。 */
-  | { kind: 'blockedCascade'; plugins: CascadeInUse[] }
-  /** 用量还不知道，先拦住并提示重试，不当成没有托管。 */
-  | { kind: 'blockedUnknown'; reason: 'loading' | 'failed' }
-  /** 照现有流程确认后执行；scopes 为后端给的影响范围（可能为空）。 */
-  | { kind: 'confirm'; scopes: DisableScope[] }
+type LifecycleDecision =
   | { kind: 'direct' }
+  | { kind: 'confirm'; scopes: DisableScope[]; cascade: string[] }
 
-/**
- * 停用与卸载的拦截判断；按钮能否点仍由界面提示决定，见 actionHint。
- * cascade 为连带范围里各专项的用量（见 lifecycleCascadeUsage），用量不明同样先拦住。
- */
+/** 卸载始终确认；停用有配置影响或会连带停用下游时才确认。可执行性由后端界面提示决定。 */
 export function lifecycleDecision(
   action: 'disable' | 'uninstall',
-  view: Pick<InstalledPluginView, 'disableImpact'>,
-  usage: PluginUsage,
-  cascade: readonly CascadeUsage[] = []
+  view: Pick<InstalledPluginView, 'disableImpact' | 'document'>
 ): LifecycleDecision {
-  if (usage.kind === 'pending') return { kind: 'blockedUnknown', reason: 'loading' }
-  if (usage.kind === 'failed') return { kind: 'blockedUnknown', reason: 'failed' }
-  if (usage.kind === 'counted' && usage.scriptCount > 0)
-    return { kind: 'blockedInUse', scripts: usage.scripts }
-  if (cascade.some(item => item.usage.kind === 'pending'))
-    return { kind: 'blockedUnknown', reason: 'loading' }
-  if (cascade.some(item => item.usage.kind === 'failed'))
-    return { kind: 'blockedUnknown', reason: 'failed' }
-  const plugins = cascade.flatMap(({ view: item, usage: used }) => {
-    if (used.kind !== 'counted') return []
-    const plans = used.planCount ?? 0
-    return used.scriptCount > 0 || plans > 0
-      ? [{ pluginId: item.pluginId, name: item.name, scripts: used.scriptCount, plans }]
-      : []
-  })
-  if (plugins.length) return { kind: 'blockedCascade', plugins }
-  if (action === 'uninstall') return { kind: 'confirm', scopes: [...view.disableImpact] }
-  return view.disableImpact.length
-    ? { kind: 'confirm', scopes: [...view.disableImpact] }
+  const cascade =
+    (action === 'disable' ? view.document.disableCascade : view.document.uninstallCascade) ?? []
+  return action === 'uninstall' || view.disableImpact.length || cascade.length
+    ? { kind: 'confirm', scopes: view.disableImpact, cascade }
     : { kind: 'direct' }
-}
-
-/** 停用或卸载时后端会一并拆掉的下游插件（disableCascade / uninstallCascade）。 */
-export function lifecycleCascade(
-  action: 'disable' | 'uninstall',
-  view: Pick<InstalledPluginView, 'document'>
-): string[] {
-  const names = action === 'disable' ? view.document.disableCascade : view.document.uninstallCascade
-  return [...(names ?? [])]
-}
-
-/** 连带范围里能对上托管类型的专项及其用量，交给 lifecycleDecision 判断要不要拦。 */
-export function lifecycleCascadeUsage(
-  action: 'disable' | 'uninstall',
-  view: Pick<InstalledPluginView, 'document'>,
-  installed: readonly InstalledPluginView[],
-  usageOf: (view: InstalledPluginView) => PluginUsage
-): CascadeUsage[] {
-  const names = new Set(lifecycleCascade(action, view))
-  return installed.flatMap(item =>
-    item.binding && item.pluginId !== null && names.has(item.pluginId)
-      ? [{ view: { pluginId: item.pluginId, name: item.name }, usage: usageOf(item) }]
-      : []
-  )
-}
-
-/** 停用或卸载会一并删除的托管（名称）与计划表（张数）：本插件及连带范围里各专项名下的。 */
-export function lifecycleAffected(
-  action: 'disable' | 'uninstall',
-  view: Pick<InstalledPluginView, 'pluginId' | 'document'>,
-  installed: readonly InstalledPluginView[],
-  usageOf: (view: InstalledPluginView) => PluginUsage
-): { scripts: string[]; plans: number } {
-  const names = new Set([view.pluginId, ...lifecycleCascade(action, view)])
-  const scripts: string[] = []
-  let plans = 0
-  for (const item of installed) {
-    if (!item.binding || !names.has(item.pluginId)) continue
-    const usage = usageOf(item)
-    if (usage.kind !== 'counted') continue
-    scripts.push(...usage.scripts.map(script => script.name))
-    plans += usage.planCount ?? 0
-  }
-  return { scripts, plans }
 }
 
 // ---------- 操作可见性（只读后端界面提示） ----------

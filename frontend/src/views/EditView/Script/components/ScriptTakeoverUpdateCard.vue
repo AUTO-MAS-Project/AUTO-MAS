@@ -1,34 +1,35 @@
 <script setup lang="ts">
 import { CloudDownloadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import type { BetterGIConfig_Update } from '@/api'
+import type { BAAHConfig_Update, BetterGIConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { SectionCard, SwitchTile } from '@/components/ui'
 
-defineProps<{ ready: boolean }>()
-const update = defineModel<BetterGIConfig_Update>('update', { required: true })
+defineProps<{
+  ready: boolean
+  title: string
+  takeoverHint: string
+}>()
+const update = defineModel<BAAHConfig_Update | BetterGIConfig_Update>('update', { required: true })
 const emit = defineEmits<{ save: [key: string, value: boolean | string] }>()
 const { t } = useI18n()
-const handleChannel = (channel: 'stable' | 'beta') => {
+
+function handleChannel(channel: 'stable' | 'beta') {
   update.value = { ...update.value, Channel: channel }
   emit('save', 'Channel', channel)
 }
 </script>
 
 <template>
-  <SectionCard
-    variant="card"
-    :title="t('core.edit.bettergiProgramUpdate')"
-    :icon="CloudDownloadOutlined"
-  >
+  <SectionCard variant="card" :title="title" :icon="CloudDownloadOutlined">
     <a-row :gutter="24" style="margin-bottom: 16px">
       <a-col :xs="24" :md="12">
         <SwitchTile
           :checked="update.TakeoverEnabled ?? false"
           :title="t('core.edit.updateTakeoverSwitch')"
-          :description="t('core.edit.bettergiProgramUpdateHint')"
+          :description="takeoverHint"
           :disabled="!ready"
-          @update:checked="update.TakeoverEnabled = $event"
+          @update:checked="update = { ...update, TakeoverEnabled: $event }"
           @change="emit('save', 'TakeoverEnabled', $event)"
         />
       </a-col>
@@ -57,10 +58,11 @@ const handleChannel = (channel: 'stable' | 'beta') => {
             />
           </template>
           <a-input-password
-            v-model:value="update.MirrorChyanCDK"
+            :value="update.MirrorChyanCDK ?? ''"
             :disabled="!ready || !update.TakeoverEnabled"
             autocomplete="off"
             :placeholder="t('core.edit.updateTakeoverCdkPlaceholder')"
+            @update:value="update = { ...update, MirrorChyanCDK: $event }"
             @blur="emit('save', 'MirrorChyanCDK', update.MirrorChyanCDK ?? '')"
           />
         </a-form-item>
@@ -68,5 +70,3 @@ const handleChannel = (channel: 'stable' | 'beta') => {
     </a-row>
   </SectionCard>
 </template>
-<style scoped src="@/styles/scriptEditForm.css"></style>
-<style scoped src="@/styles/scriptEdit.css"></style>

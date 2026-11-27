@@ -20,7 +20,7 @@ function handleLowPerformanceChange(value: boolean) {
 </script>
 
 <template>
-  <SectionCard variant="card" :title="t('core.edit.runLimits')" :icon="ThunderboltOutlined">
+  <SectionCard variant="card" :title="t('core.edit.runConfiguration')" :icon="ThunderboltOutlined">
     <ScriptExecutionSessionField />
     <a-row :gutter="24">
       <a-col :xs="24" :md="12">

@@ -192,13 +192,10 @@
       @delete-queue-template="name => emit('deleteQueueTemplate', name)"
     />
 
-    <a-modal
+    <AppModal
       v-model:open="renameOpen"
+      size="sm"
       :title="t('core.edit.queueTaskRenameTitle')"
-      width="480px"
-      :ok-text="t('core.edit.ok')"
-      :cancel-text="t('core.edit.cancel')"
-      destroy-on-close
       @ok="confirmRename"
     >
       <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
@@ -209,16 +206,17 @@
         autofocus
         @press-enter="confirmRename"
       />
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import { PlusOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
+import { useConfirm } from '@/composables/useConfirm'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
 import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
@@ -242,6 +240,7 @@ import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type { MaaFWUserTaskQueueSectionEmits, MaaFWUserTaskQueueSectionProps } from './sectionProps'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 /** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
 const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
@@ -371,11 +370,9 @@ const handleContextMenuClick = ({ key }: { key: string | number }) => {
   if (key === 'delete') {
     // 菜单项里挂不了气泡确认，改用确认弹窗，文案与删除按钮的气泡相同
     const taskId = item.id
-    Modal.confirm({
+    void confirm({
+      tone: 'danger',
       title: t('core.edit.deleteThisTask2'),
-      okText: t('core.edit.ok'),
-      okButtonProps: { danger: true },
-      cancelText: t('core.edit.cancel'),
       onOk: () => emit('deleteTask', taskId),
     })
   }

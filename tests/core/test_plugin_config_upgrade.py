@@ -136,6 +136,8 @@ def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
         ("none", True, False),
         ("none", False, True),
         ("install", False, True),
+        ("disabled", False, True),
+        ("uninstalled", False, True),
     ],
 )
 def test_startup_installs_before_loading_and_commits_upgrade(
@@ -184,7 +186,10 @@ if fresh:
     native = Path.cwd().with_name(Path.cwd().name + "-maa") / "config"
     native.mkdir(parents=True)
     io.write_file(native / "gui.new.json", {"Update": {"VersionType": "Beta"}})
-    io.write_file(Config.config_path / "setting.yaml", {"Update": {"MirrorChyanCDK": "test-cdk"}})
+    setting = {"Update": {"MirrorChyanCDK": "test-cdk"}}
+    if failure == "uninstalled":
+        setting["plugin"] = {"uninstalled": ["maa_adapter"]}
+    io.write_file(Config.config_path / "setting.yaml", setting)
     io.write_file(Config.config_path / "scripts.yaml", {
         "order": [{"uid": sid, "type": "MaaConfig" if current else "MaaPluginConfig"}],
         "data": {sid: {
@@ -210,14 +215,14 @@ if fresh:
                 document[sid]["SubConfigsInfo"] = {"UserData": {"instances": user["order"], **user["data"]}}
             io.write_file(Config.config_path / old, document)
             (Config.config_path / new).unlink()
-    if failure == "install" or current:
+    if failure == "install" or (current and failure != "uninstalled"):
         # 已升级用户曾使用随附源码，来源移除后也应保留配置并改用发行包。
         rid = "95a9f348-8d8e-4d09-9eb8-d954bfdb4cc3"
         io.write_file(Config.config_path / "plugin_registry.yaml", {
             "order": [{"uid": rid, "type": "PluginRecord"}],
             "data": {rid: {"info": {
                 "plugin_name": "maa_adapter", "package_name": "auto-mas-maa-adapter",
-                "import_name": "maa_adapter", "source": "local" if current else "installed", "enabled": current,
+                "import_name": "maa_adapter", "source": "local" if current else "installed", "enabled": current and failure != "disabled",
             }}},
         })
     with sqlite3.connect(Config.database_path) as db:
@@ -270,11 +275,18 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
-            if failure == "install" and current:
+            if current and failure in {"install", "disabled", "uninstalled"}:
                 # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
                 await Config.check_data(prepare_plugins=prepare)
                 assert Config.ScriptConfig.is_unresolved(sid)
                 assert Config.PlanConfig.is_unresolved(pid)
+                if failure != "install":
+                    assert not installs
+                    record = Config.plugin_registry.by_name("maa_adapter")
+                    if failure == "uninstalled":
+                        assert record is None
+                    else:
+                        assert record is not None and not record.info.enabled
                 assert not Config.managed_configs_loaded()
                 assert io.read_dict_file(script_file) == original_document
                 with sqlite3.connect(Config.database_path) as db:
@@ -320,7 +332,10 @@ async def run():
 
 asyncio.run(run())
 """
-    for attempt in ["none", "none"] if failure == "none" else [failure, "none", "none"]:
+    attempts = ["none", "none"] if failure == "none" else [failure, "none", "none"]
+    if failure in {"disabled", "uninstalled"}:
+        attempts = [failure, failure]
+    for attempt in attempts:
         result = subprocess.run(
             [
                 sys.executable,

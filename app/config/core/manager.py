@@ -82,6 +82,7 @@ class TransactionContext:
         self.scope_id = uuid4()
         self.active = True
         self.staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = {}
+        self.persist_roots: dict[UUID, tuple[ConfigNode, bool]] = {}
         self.ui_nodes: set[UUID] = set()
         self.triggers: list[tuple[ConfigEntry, str, str, bool]] = []
         self.committed = False
@@ -118,6 +119,7 @@ class RootRecord:
     path: Path
     revision: int = 0
     persisted_revision: int = -1
+    loaded_revision: int = -1
 
 
 @dataclass(frozen=True)
@@ -282,14 +284,21 @@ class ConfigManager:
         if self._ui_listener is not None:
             self._publish_ui_commit(self._ui_sources(nodes))
 
-    def mark_persist_changed(self, node: ConfigNode) -> None:
-        """登记不经工作区提交的盘上内容变化（如删掉旁挂成员），让下一轮整轮保存写这个根。
-
-        整轮保存跳过修订号没变的根，只有提交了工作区的事务才推进修订号。
-        """
-        record = self._roots.get(node.root.uid)
-        if record is not None and record.node is node.root:
-            record.revision += 1
+    def is_persisted(self, node: ConfigNode) -> bool:
+        """当前工作区、已提交内存与根文件是否同步。"""
+        record = self._roots.get(node.uid)
+        if record is None or record.node is not node:
+            return False
+        ctx = self.current
+        while ctx is not None:
+            pending = ctx.persist_roots.get(node.uid)
+            if pending is not None:
+                return pending[1] and record.path.is_file()
+            ctx = ctx.parent
+        return (
+            record.revision in (record.persisted_revision, record.loaded_revision)
+            and record.path.is_file()
+        )
 
     def mark_ui_changed(self, node: ConfigNode) -> None:
         """记录工作区变化，随所属根事务提交或丢弃。"""
@@ -780,6 +789,7 @@ class ConfigManager:
                 node._discard_stage_scope(ctx.scope_id)
         ctx.staged_nodes.clear()
         ctx.registered.clear()
+        ctx.persist_roots.clear()
 
     def _finish_root_transaction(
         self, ctx: TransactionContext, need_save: bool
@@ -860,27 +870,30 @@ class ConfigManager:
 
     def COMMIT(self, ctx: TransactionContext) -> bool:
         self._check_staged(ctx)
-        roots: dict[UUID, RootRecord] = {}
         for unit in ctx.registered:
             if isinstance(unit, type):
                 unit._COMMIT_signal(ctx)
             else:
-                if ctx.parent is None:
-                    record = self._roots.get(unit.root.uid)
-                    if record is not None and record.node is unit.root:
-                        roots[unit.root.uid] = record
                 unit._COMMIT(ctx)
             if ctx.parent is not None and not any(
                 item is unit for item in ctx.parent.registered
             ):
                 ctx.parent.registered.append(unit)
-        for record in roots.values():
-            record.revision += 1
+        need_save = False
         if ctx.parent is not None:
+            ctx.parent.persist_roots.update(ctx.persist_roots)
             ctx.parent.triggers.extend(ctx.triggers)
             ctx.parent.ui_nodes.update(ctx.ui_nodes)
+        else:
+            for uid, (root, from_file) in ctx.persist_roots.items():
+                record = self._roots.get(uid)
+                if record is not None and record.node is root:
+                    record.revision += 1
+                    if from_file:
+                        record.loaded_revision = record.revision
+                    need_save = True
         ctx.committed = True
-        return bool(roots)
+        return need_save
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:
         for unit in ctx.registered:
@@ -1085,6 +1098,9 @@ class ConfigManager:
             if record is None or record.node is not root:
                 continue
             failure = self._save_failures.get(root.uid)
+            if failure is None and record.persisted_revision == record.revision:
+                if not force or record.path.is_file():
+                    continue
             if not force:
                 if failure is not None:
                     if isinstance(failure.error.cause, OSError):
@@ -1095,7 +1111,7 @@ class ConfigManager:
                             continue
                     elif failure.revision == record.revision:
                         continue
-                elif not full or record.persisted_revision == record.revision:
+                elif not full:
                     continue
             # 构造先登记、激活在后；未激活根没有可保存状态。
             if root.activation_state != NodeState.ACTIVE:
@@ -1115,7 +1131,13 @@ class ConfigManager:
                 if self._roots.get(root.uid) is not record:
                     continue
                 phase = "write"
-                _utils_io.write_file(record.path, payload)
+                # 激活、还原也会推进修订号，内容相同就保留原文件。
+                if (
+                    not record.path.is_file()
+                    or _utils_io.read_dict_file(record.path, allow_empty=True)
+                    != payload
+                ):
+                    _utils_io.write_file(record.path, payload)
             except Exception as exc:
                 if self._roots.get(root.uid) is not record:
                     continue

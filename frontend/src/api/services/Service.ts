@@ -168,6 +168,7 @@ import type { PluginPlanOptionsIn } from '../models/PluginPlanOptionsIn';
 import type { PluginRegistryGetIn } from '../models/PluginRegistryGetIn';
 import type { PluginRegistryGetOut } from '../models/PluginRegistryGetOut';
 import type { PluginRuntimeListOut } from '../models/PluginRuntimeListOut';
+import type { PluginUninstallIn } from '../models/PluginUninstallIn';
 import type { PowerCountdownSnapshot } from '../models/PowerCountdownSnapshot';
 import type { PowerIn } from '../models/PowerIn';
 import type { PowerOut } from '../models/PowerOut';
@@ -4832,6 +4833,30 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_config/update',
+            query: {
+                'locale': locale,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 卸载插件
+     * @param requestBody
+     * @param locale
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static uninstallPluginApiPluginUninstallPost(
+        requestBody: PluginUninstallIn,
+        locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/plugin/uninstall',
             query: {
                 'locale': locale,
             },

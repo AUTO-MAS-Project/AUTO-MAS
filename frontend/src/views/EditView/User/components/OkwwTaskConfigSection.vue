@@ -1,71 +1,66 @@
 <template>
-  <SectionCard variant="card" class="config-card">
-    <a-form :model="task" :disabled="disabled" layout="vertical" class="config-form">
-      <div class="form-section">
-        <a-tabs :tab-position="screens.md ? 'left' : 'top'" default-active-key="daily">
-          <a-tab-pane key="daily" :tab="t('core.edit.okwwDailyTab')">
-            <OkwwNativeTaskConfig
+  <a-form :model="task" :disabled="disabled" layout="vertical">
+    <a-tabs :tab-position="screens.md ? 'left' : 'top'" default-active-key="daily">
+      <a-tab-pane key="daily" :tab="t('core.edit.okwwDailyTab')">
+        <OkwwNativeTaskConfig
+          :script-id="scriptId"
+          :user-id="userId"
+          kind="daily"
+          :custom-arguments="task.IfCustomArguments"
+          :context-key="contextKey"
+          :snapshot="task.DailyConfig"
+          @busy="setBusy('daily', $event)"
+          :disabled="disabled"
+          :overlay-enabled="overlayEnabled"
+          @saved="emit('refresh')"
+        />
+      </a-tab-pane>
+      <a-tab-pane key="echo" :tab="t('core.edit.okwwEchoConfigTitle')">
+        <OkwwNativeTaskConfig
+          :script-id="scriptId"
+          :user-id="userId"
+          kind="echo"
+          :context-key="contextKey"
+          :snapshot="task.FarmEchoConfig"
+          @busy="setBusy('echo', $event)"
+          :disabled="disabled"
+          :overlay-enabled="overlayEnabled"
+          @saved="emit('refresh')"
+        />
+      </a-tab-pane>
+      <a-tab-pane v-for="panel in advancedPanels" :key="panel.kind" :tab="t(panel.label)">
+        <OkwwNativeTaskConfig
+          :script-id="scriptId"
+          :user-id="userId"
+          :kind="panel.kind"
+          :context-key="contextKey"
+          :snapshot="task.NativeConfigs[panel.filename] ?? emptyConfig"
+          :disabled="disabled"
+          :overlay-enabled="overlayEnabled"
+          @saved="emit('refresh')"
+          @busy="setBusy(panel.kind, $event)"
+        />
+      </a-tab-pane>
+      <a-tab-pane key="arguments" :tab="t('core.edit.okwwArgumentsTab')" force-render>
+        <a-row :gutter="24">
+          <a-col :span="24">
+            <OkwwArgumentsConfig
               :script-id="scriptId"
-              :user-id="userId"
-              kind="daily"
-              :custom-arguments="task.IfCustomArguments"
-              :context-key="contextKey"
-              :snapshot="task.DailyConfig"
-              @busy="setBusy('daily', $event)"
-              :disabled="disabled"
-              :overlay-enabled="overlayEnabled"
-              @saved="emit('refresh')"
+              :save="saveTask"
+              v-model="task"
+              @save="emit('save')"
             />
-          </a-tab-pane>
-          <a-tab-pane key="echo" :tab="t('core.edit.okwwEchoConfigTitle')">
-            <OkwwNativeTaskConfig
-              :script-id="scriptId"
-              :user-id="userId"
-              kind="echo"
-              :context-key="contextKey"
-              :snapshot="task.FarmEchoConfig"
-              @busy="setBusy('echo', $event)"
-              :disabled="disabled"
-              :overlay-enabled="overlayEnabled"
-              @saved="emit('refresh')"
-            />
-          </a-tab-pane>
-          <a-tab-pane v-for="panel in advancedPanels" :key="panel.kind" :tab="t(panel.label)">
-            <OkwwNativeTaskConfig
-              :script-id="scriptId"
-              :user-id="userId"
-              :kind="panel.kind"
-              :context-key="contextKey"
-              :snapshot="task.NativeConfigs[panel.filename] ?? emptyConfig"
-              :disabled="disabled"
-              :overlay-enabled="overlayEnabled"
-              @saved="emit('refresh')"
-              @busy="setBusy(panel.kind, $event)"
-            />
-          </a-tab-pane>
-          <a-tab-pane key="arguments" :tab="t('core.edit.okwwArgumentsTab')" force-render>
-            <a-row :gutter="24">
-              <a-col :span="24">
-                <OkwwArgumentsConfig
-                  :script-id="scriptId"
-                  :save="saveTask"
-                  v-model="task"
-                  @save="emit('save')"
-                />
-              </a-col>
-            </a-row>
-          </a-tab-pane>
-        </a-tabs>
-      </div>
-    </a-form>
-  </SectionCard>
+          </a-col>
+        </a-row>
+      </a-tab-pane>
+    </a-tabs>
+  </a-form>
 </template>
 
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { Grid } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { SectionCard } from '@/components/ui'
 import OkwwNativeTaskConfig from './OkwwNativeTaskConfig.vue'
 import OkwwArgumentsConfig from './OkwwArgumentsConfig.vue'
 import type { OkwwPanelKind } from '@/types/nativeConfig'
@@ -96,10 +91,3 @@ function setBusy(kind: OkwwPanelKind, value: boolean) {
   emit('busy', Object.values(busy).some(Boolean))
 }
 </script>
-
-<style scoped>
-.config-card {
-  margin-bottom: 0;
-  padding-block: var(--section-card-padding);
-}
-</style>
