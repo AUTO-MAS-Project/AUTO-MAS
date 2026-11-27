@@ -425,7 +425,11 @@ describe('资源商店全量待更新扫描与批量更新边界', () => {
           if (query.keyword === 'miku' && query.page === 2) {
             return {
               success: true,
-              items: [makeItem({ fileKey: 'miku-2', hasCover: false })],
+              // 模拟翻页期间列表头新增资源，末页带回一条旧项去重后 items.length < total，但 hasNext 已为 false
+              items: [
+                makeItem({ fileKey: 'miku-1', hasCover: false }),
+                makeItem({ fileKey: 'miku-2', hasCover: false }),
+              ],
               pagination: { page: 2, pageSize: 48, total: 60, hasNext: false },
             }
           }
@@ -473,6 +477,12 @@ describe('资源商店全量待更新扫描与批量更新边界', () => {
         'theme'
       )
       expect(store.items.value.map(item => item.fileKey)).toEqual(['miku-1', 'miku-2'])
+      // 末页去重后条数（2）仍小于 total（60），但服务端 hasNext=false 时应关闭加载更多，不再发第 3 页请求
+      expect(store.items.value.length).toBeLessThan(store.total.value)
+      expect(store.hasMore.value).toBe(false)
+      const callsAfterLastPage = electronAPI.listOnlineAppearances.mock.calls.length
+      await store.loadMore()
+      expect(electronAPI.listOnlineAppearances).toHaveBeenCalledTimes(callsAfterLastPage)
     } finally {
       vi.useRealTimers()
     }

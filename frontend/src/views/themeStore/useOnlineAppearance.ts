@@ -121,12 +121,11 @@ export function useOnlineAppearance(options: {
   const listError = ref<string | null>(null)
   const page = ref(1)
   const total = ref(0)
+  const hasNextPage = ref(false)
   const keyword = ref('')
   /** 当前列表结果对应的已生效搜索词；输入框改词后、新词第 1 页回来前不允许沿旧列表追加。 */
   const loadedKeyword = ref('')
-  const hasMore = computed(
-    () => items.value.length < total.value && keyword.value.trim() === loadedKeyword.value
-  )
+  const hasMore = computed(() => hasNextPage.value && keyword.value.trim() === loadedKeyword.value)
   let listRevision = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -307,6 +306,7 @@ export function useOnlineAppearance(options: {
         } else {
           items.value = []
           total.value = 0
+          hasNextPage.value = false
           listError.value = errorText
         }
         return
@@ -323,8 +323,13 @@ export function useOnlineAppearance(options: {
         loadedKeyword.value = query
         items.value = fetched
       }
-      page.value = result.pagination?.page ?? targetPage
-      total.value = result.pagination?.total ?? items.value.length
+      const nextPage = result.pagination?.page ?? targetPage
+      const nextTotal = result.pagination?.total ?? items.value.length
+      page.value = nextPage
+      total.value = nextTotal
+      hasNextPage.value =
+        result.pagination?.hasNext ??
+        (fetched.length > 0 && nextPage * ONLINE_APPEARANCE_PAGE_SIZE < nextTotal)
       loadCovers(items.value)
     } catch (error) {
       if (revision !== listRevision) return
@@ -336,6 +341,7 @@ export function useOnlineAppearance(options: {
       } else {
         items.value = []
         total.value = 0
+        hasNextPage.value = false
         listError.value = t('core.themeStore.listFailed')
       }
     } finally {
@@ -687,6 +693,7 @@ export function useOnlineAppearance(options: {
     listError.value = null
     page.value = 1
     total.value = 0
+    hasNextPage.value = false
     keyword.value = ''
     loadedKeyword.value = ''
     installing.value = false
