@@ -1,5 +1,6 @@
 import uuid
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -51,6 +52,7 @@ async def test_hsr_daily_count_and_account_status_after_retries(
         user_config=script_config.UserData,
         user_item=user,
         runtime=manager._runtime,
+        prepare_m7a_config=AsyncMock(),
     )
 
     def scripted_module(*, phase, key, outcomes):
