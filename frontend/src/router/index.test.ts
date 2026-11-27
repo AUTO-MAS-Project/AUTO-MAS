@@ -16,6 +16,12 @@ describe('应用路由', () => {
       params: { pluginId: 'demo' },
     })
     expect(router.resolve('/games').name).toBe('Games')
+    expect(router.resolve('/signflow').name).toBe('SignFlow')
+    expect(router.resolve('/gamesign').matched[0]?.redirect).toBe('/signflow')
+    expect(router.resolve('/gamesign/activity').matched[0]?.redirect).toEqual({
+      path: '/signflow',
+      query: { tab: 'activity' },
+    })
     expect(router.resolve('/emulators').matched).toHaveLength(0)
     expect(router.resolve('/plugins/demo/legacy').matched).toHaveLength(0)
   }, 15000)

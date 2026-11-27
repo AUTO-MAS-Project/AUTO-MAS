@@ -103,7 +103,7 @@ const handleViewChange = (key: string | number) => {
     : 'sign'
   if (view === 'activity' && !activityEnabled.value) return
   void router.replace({
-    path: '/gamesign',
+    path: '/signflow',
     query: view === 'sign' ? {} : { tab: view },
   })
 }
@@ -236,7 +236,7 @@ watch(activeView, view => {
 
 watch(activityEnabled, enabled => {
   if (!enabled && route.query.tab === 'activity' && isMounted) {
-    void router.replace({ path: '/gamesign', query: {} })
+    void router.replace({ path: '/signflow', query: {} })
   }
 })
 

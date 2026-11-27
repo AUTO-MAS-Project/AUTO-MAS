@@ -174,25 +174,39 @@ const routes = [
     meta: { title: '任务台' },
   },
   {
-    path: '/gamesign',
-    name: 'GameSign',
+    path: '/signflow',
+    name: 'SignFlow',
     component: () => import('../views/gamesign/index.vue'),
     meta: { title: '游戏社区' },
   },
   {
-    path: '/gamesign/sign',
+    path: '/signflow/sign',
     name: 'CommunityToolSign',
-    redirect: '/gamesign',
+    redirect: '/signflow',
     meta: { title: '游戏社区' },
   },
   {
-    path: '/gamesign/activity',
+    path: '/signflow/activity',
     name: 'CommunityToolActivity',
     redirect: {
-      path: '/gamesign',
+      path: '/signflow',
       query: { tab: 'activity' },
     },
     meta: { title: '游戏社区' },
+  },
+  // 旧路径兼容：应用内跳转已更新，但用户书签、历史记录与外部链接仍可能指向 /gamesign，
+  // 这里保留一版重定向，后续版本移除。
+  {
+    path: '/gamesign',
+    redirect: '/signflow',
+  },
+  {
+    path: '/gamesign/sign',
+    redirect: '/signflow',
+  },
+  {
+    path: '/gamesign/activity',
+    redirect: { path: '/signflow', query: { tab: 'activity' } },
   },
   {
     path: '/theme-store',

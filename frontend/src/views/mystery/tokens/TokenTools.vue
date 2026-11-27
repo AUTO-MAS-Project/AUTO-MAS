@@ -195,7 +195,7 @@ onBeforeUnmount(() => {
         v-else-if="!accountsLoading && !accounts.length"
         :description="t('core.mystery.tokens.noAccounts')"
       >
-        <a-button @click="navigateTo('/gamesign')">{{
+        <a-button @click="navigateTo('/signflow')">{{
           t('core.mystery.tokens.manageAccounts')
         }}</a-button>
       </NoData>

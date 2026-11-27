@@ -23,7 +23,8 @@ const screens: Record<string, AnalyticsScreen> = {
   Queue: 'queue',
   Scheduler: 'scheduler',
   History: 'history',
-  GameSign: 'gamesign',
+  // 页签名随路由名同步为 SignFlow；上报值沿用 gamesign，避免历史遥测口径断裂。
+  SignFlow: 'gamesign',
   CommunityToolSign: 'community_sign',
   CommunityToolActivity: 'community_activity',
   ThemeStore: 'theme_store',
