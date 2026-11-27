@@ -5064,9 +5064,8 @@
   "core.update.startupBackup.unknown_version": "无法确认升级前的版本，本次未生成备份，已有备份仍保留。",
   "core.edit.baahCalendarReminder": "活动日历提醒",
   "core.edit.baahGenerateRecommended": "生成推荐配置",
-  "core.edit.baahRecommendedHint": "新建独立配置并选用；端口和模拟器路径未配置，可在 BAAH 中继续调整。",
+  "core.edit.baahRecommendedHint": "模板区服：CN。仅生成文件，不改变当前配置；请先在 BAAH 确认区服并配置设备，再从列表手动选用。",
   "core.edit.baahConfigNamesFailed": "无法读取 BAAH 配置列表",
   "core.edit.baahRecommendedFailed": "生成推荐配置失败",
-  "core.edit.baahRecommendedCreated": "已生成并选用 {name}",
-  "core.edit.baahRecommendedNotSelected": "已生成 {name}，但未能选用，请从下拉列表重新选择。"
+  "core.edit.baahRecommendedCreated": "已生成 {name}，当前配置未改变"
 }

@@ -5064,9 +5064,8 @@
   "core.update.startupBackup.unknown_version": "The previous version could not be identified. Existing backups were kept.",
   "core.edit.baahCalendarReminder": "Activity calendar reminders",
   "core.edit.baahGenerateRecommended": "Generate recommended config",
-  "core.edit.baahRecommendedHint": "Create and select a separate config with no device port or emulator path. You can adjust it in BAAH.",
+  "core.edit.baahRecommendedHint": "Template: CN. Current config stays selected. Check server and device in BAAH before selecting this file.",
   "core.edit.baahConfigNamesFailed": "Could not load BAAH configs",
   "core.edit.baahRecommendedFailed": "Could not generate the recommended config",
-  "core.edit.baahRecommendedCreated": "Created and selected {name}",
-  "core.edit.baahRecommendedNotSelected": "Created {name}, but could not select it. Select it from the list."
+  "core.edit.baahRecommendedCreated": "Created {name}. Your current config is unchanged."
 }

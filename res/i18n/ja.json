@@ -5064,9 +5064,8 @@
   "core.update.startupBackup.unknown_version": "更新前のバージョンを確認できませんでした。既存のバックアップは保持しました。",
   "core.edit.baahCalendarReminder": "イベントカレンダー通知",
   "core.edit.baahGenerateRecommended": "推奨設定を生成",
-  "core.edit.baahRecommendedHint": "接続ポートとエミュレーターのパスを未設定にした別の設定を作成して選択します。BAAH で調整できます。",
+  "core.edit.baahRecommendedHint": "テンプレートのサーバー：CN。生成しても現在の設定は変更しません。BAAH でサーバーと接続先を確認してから、一覧で手動選択してください。",
   "core.edit.baahConfigNamesFailed": "BAAH の設定一覧を読み込めませんでした",
   "core.edit.baahRecommendedFailed": "推奨設定を生成できませんでした",
-  "core.edit.baahRecommendedCreated": "{name} を作成して選択しました",
-  "core.edit.baahRecommendedNotSelected": "{name} を作成しましたが選択できませんでした。一覧から選択してください。"
+  "core.edit.baahRecommendedCreated": "{name} を作成しました。現在の設定は変更していません。"
 }

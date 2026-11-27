@@ -106,11 +106,8 @@ async function generate() {
     namesLoading.value = false
     const name = response.configName
     options.value = [...options.value, { label: name, value: name }]
-    if (await selectConfig(name)) {
-      message.success(t('core.edit.baahRecommendedCreated', { name }))
-    } else {
-      message.warning(t('core.edit.baahRecommendedNotSelected', { name }))
-    }
+    // 模板带有自身的区服设置且未配置设备，生成不能改变账号下次运行所用的配置。
+    message.success(t('core.edit.baahRecommendedCreated', { name }))
   } catch (error) {
     if (active && scriptId === props.scriptId) {
       message.error(getApiErrorMessage(error, t('core.edit.baahRecommendedFailed')))
