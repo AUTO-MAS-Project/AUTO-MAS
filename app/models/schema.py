@@ -34,7 +34,7 @@ from pydantic import (
 )
 
 from app.config.errors import ConfigAggregateError
-from app.config.fields.hints import UiHintsMap, UiTablesList
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import config_contract
 from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
@@ -401,13 +401,23 @@ class ConfigUpdateOut(OutBase):
         )
 
 
+class BackupTargetHint(BaseModel):
+    key: str
+    kind: Literal["user", "script"]
+
+
 class DeclarativeConfigUi(BaseModel):
     """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
 
     configUid: str
     hints: UiHintsMap
     tables: UiTablesList
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
     i18nNamespace: str | None = None
+    pluginName: str | None = None
+    backupTargets: list[BackupTargetHint] = Field(default_factory=list)
+    nativeSession: Literal["view", "config"] | None = None
 
 
 class ConfigSnapshotOut(OutBase):
@@ -466,7 +476,7 @@ class ConfigBackupRestoreIn(BaseModel):
     """把指定备份恢复到目标位置（target 取值由专项池定义）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     time: str = Field(..., description="备份时间戳")
     target: str = Field(
         ...,
@@ -486,7 +496,7 @@ class ConfigBackupEnsureIn(BaseModel):
     """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     target: str = Field(..., description="归档目标（取值由专项池定义）")
 
 
@@ -2011,6 +2021,7 @@ __all__ = [
     "OutBase",
     "ConfigUpdateOut",
     "DeclarativeConfigGetOut",
+    "BackupTargetHint",
     "DeclarativeConfigUi",
     "TagItem",
     "ComboBoxItem",

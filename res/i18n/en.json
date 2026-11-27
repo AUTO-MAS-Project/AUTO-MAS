@@ -3790,6 +3790,8 @@
   "core.plugins.maskedPlaceholder": "Configured (leave blank to keep)",
   "core.plugins.moreActions": "More actions",
   "core.plugins.noConfigFields": "This item has no configurable fields.",
+  "core.plugins.optionUnavailable": "This selection is no longer available. Choose another option.",
+  "core.plugins.restoreDiscardDraft": "Restoring this backup will replace your unsaved changes.",
   "core.plugins.noMatch": "No plugins match",
   "core.plugins.noPages": "No pages available",
   "core.plugins.noSettings": "This plugin has no configurable settings.",

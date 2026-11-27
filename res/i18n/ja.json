@@ -3790,6 +3790,8 @@
   "core.plugins.maskedPlaceholder": "設定済み（空欄で現在の値を保持）",
   "core.plugins.moreActions": "その他の操作",
   "core.plugins.noConfigFields": "この項目には設定できるフィールドがありません。",
+  "core.plugins.optionUnavailable": "現在の選択肢は利用できません。選び直してください。",
+  "core.plugins.restoreDiscardDraft": "復元に成功すると、未保存の変更は上書きされます。",
   "core.plugins.noMatch": "条件に一致するプラグインはありません",
   "core.plugins.noPages": "利用可能なページはありません",
   "core.plugins.noSettings": "このプラグインには変更可能な設定がありません。",

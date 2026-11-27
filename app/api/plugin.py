@@ -42,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
-from app.config.fields.hints import UiHintsMap, UiTablesList
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.i18n import AppLocale
@@ -58,6 +58,7 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
+from app.plugin.base.script import FirstAccountMode
 from app.plugin.errors import PluginBusyError, PluginPrecheckError
 from app.plugin.http import PLUGIN_GATEWAY_PATH
 from app.plugin.types import (
@@ -107,6 +108,8 @@ class PluginUninstallIn(BaseModel):
 class PluginConfigUi(BaseModel):
     hints: UiHintsMap = Field(default_factory=dict)
     tables: UiTablesList = Field(default_factory=list)
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
 
 
 class PluginProvidedScriptType(BaseModel):
@@ -122,6 +125,7 @@ class PluginProvidedScriptType(BaseModel):
     )
     hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
     hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
+    firstAccountMode: FirstAccountMode = "direct"
 
 
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
@@ -250,6 +254,7 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
     info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
     return PluginProvidedScriptType(
         scriptKey=script_key,
+        firstAccountMode=decl.first_account_mode,
         scriptConfigType=decl.script_type.__name__,
         userConfigType=decl.user_type.__name__,
         planConfigType=decl.plan_type.__name__ if decl.plan_type else None,

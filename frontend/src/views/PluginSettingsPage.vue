@@ -5,7 +5,7 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
+import { DeclarativeForm } from '@/components/declarative'
 import {
   declarativeGroups,
   declarativeTables,
@@ -15,7 +15,7 @@ import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
 import { AppPage, PageHeader, StateView } from '@/components/ui'
-import type { PluginRegistryGetOut, TableHint } from '@/api'
+import type { PluginConfigUi, PluginRegistryGetOut } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
 import { joinSegments, toInstalledViews, toMarketViews } from '@/views/plugins/pluginCenterModel'
@@ -32,9 +32,11 @@ const modelContext = usePluginModelContext()
 const draft = usePluginSettingsDraft()
 const saving = ref(false)
 const configUid = ref('')
+const optionsInvalid = ref(false)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
-const tables = ref<TableHint[]>([])
-const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
+const configUi = shallowRef<PluginConfigUi>()
+const groups = computed(() => declarativeGroups(configUi.value))
+const tables = computed(() => declarativeTables(configUi.value))
 
 // 路由切换插件时复用页面实例。
 const pluginId = computed(() => String(route.params.pluginId || ''))
@@ -96,7 +98,11 @@ const {
 const { runningKey, activeFields, runAction } = useDeclarativeActions(
   configUid,
   saving,
-  fetchSettings
+  fetchSettings,
+  draft
+)
+const writeBusy = computed(
+  () => loading.value || saving.value || !!runningKey.value || !!activeFields.value.length
 )
 
 watch(
@@ -104,8 +110,7 @@ watch(
   () => {
     configUid.value = ''
     registry.value = null
-    groups.value = []
-    tables.value = []
+    configUi.value = undefined
     draft.reset({}, { keepDraft: false })
     return fetchSettings()
   },
@@ -120,17 +125,17 @@ watch(
       return
     registry.value = result.registry
     const data = result.config ?? {}
+    const keepDraft = data.uid === configUid.value
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
-    groups.value = declarativeGroups(data.ui)
-    tables.value = declarativeTables(data.ui)
-    draft.reset(declarativeValues(groups.value, data), { keepDraft: true })
+    configUi.value = data.ui
+    draft.reset(declarativeValues(groups.value, data), { keepDraft })
   },
   { immediate: true }
 )
 
 const save = async (options: { reload: boolean } = { reload: true }) => {
   // 在无在途保存或动作时提交当前配置值，成功后按需重新读取后端规范化结果。
-  if (saving.value || runningKey.value || activeFields.value.length) return false
+  if (writeBusy.value || optionsInvalid.value) return false
   saving.value = true
   try {
     const submitted = draft.snapshot()
@@ -203,6 +208,11 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           v-if="groups.length"
           :groups="groups"
           :tables="tables"
+          :steps="configUi?.steps"
+          :sections="configUi?.sections"
+          :plugin-name="view?.pluginId"
+          :submit-disabled="writeBusy || !draft.dirtyCount.value"
+          :submitting="saving"
           :errors="draft.errors.value"
           :uid="configUid"
           :namespace="`plugins.${view?.pluginId ?? ''}.config`"
@@ -211,22 +221,30 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           :running-key="runningKey"
           :active-fields="activeFields"
           @update:value="draft.update"
+          @update:options-invalid="optionsInvalid = $event"
           @action="runAction"
-        />
+          @finish="save()"
+        >
+          <template #footer="{ wizard }">
+            <SettingsDirtyBar
+              v-if="draft.dirtyCount.value"
+              :count="draft.dirtyCount.value"
+              :saving="saving"
+              :disabled="writeBusy"
+              :save-disabled="optionsInvalid"
+              :wizard="wizard"
+              @discard="draft.discard"
+              @save="save()"
+            />
+          </template>
+        </DeclarativeForm>
       </StateView>
-      <SettingsDirtyBar
-        v-if="draft.dirtyCount.value"
-        :count="draft.dirtyCount.value"
-        :saving="saving"
-        :disabled="loading || runningKey !== null || activeFields.length > 0"
-        @discard="draft.discard"
-        @save="save()"
-      />
     </div>
     <SettingsLeaveModal
       :open="leaveOpen"
       :count="draft.dirtyCount.value"
       :saving="saving"
+      :save-disabled="writeBusy || optionsInvalid"
       @stay="finishLeave(false)"
       @discard="discardAndLeave"
       @save="saveAndLeave"

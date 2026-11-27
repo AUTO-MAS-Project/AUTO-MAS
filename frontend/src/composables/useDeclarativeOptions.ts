@@ -1,166 +1,174 @@
 import { computed, type ComputedRef } from 'vue'
 import { useQueries } from '@tanstack/vue-query'
 import { useI18n } from 'vue-i18n'
-import { Service, PlanComboxIn, type ComponentHint } from '@/api'
-import { requestApi, apiErrorMessage } from '@/utils/apiResult'
+import {
+  OpenAPI,
+  PlanComboxIn,
+  Service,
+  type ComboBoxItem,
+  type ComponentHint,
+  type OptionHint,
+  type OutBase,
+} from '@/api'
+import { request } from '@/api/core/request'
+import { apiErrorMessage, requestApi } from '@/utils/apiResult'
 
-export type DeclarativeOption = { value: string | number | boolean; label?: string }
-export type DeclarativeHint = Omit<ComponentHint, 'options'> & {
-  options?: DeclarativeOption[] | null
-  precision?: number
-  step?: number
-  plan_type?: string
+export type DeclarativeOption = OptionHint
+export type DeclarativeHint = ComponentHint
+
+interface OptionsTarget {
+  uid: string
+  pluginName?: string | null
+  ui: { hints?: Record<string, DeclarativeHint[]> }
+  [key: string]: unknown
 }
 
-/** 声明式选项复用 QueryClient；目标和依赖变化时切换查询身份。 */
-export function useDeclarativeOptions(
-  target: ComputedRef<{
-    uid: string
-    ui: { hints?: Record<string, DeclarativeHint[]> }
-    [key: string]: unknown
-  }>
-) {
-  // 从配置 UI 声明建立依赖感知的选项查询，统一提供控件选项、加载错误与重试入口。
-  const { t } = useI18n()
-  const declarations = computed(() =>
-    /* 根据当前配置和 UI 提示生成需要动态加载选项的字段声明。 */ Object.entries(
-      target.value.ui.hints ?? {}
-    ).flatMap(([section, hints]) =>
-      /* 收集当前分组中带选项接口的字段，并读取其依赖值。 */ hints
-        .filter(
-          hint => /* 只保留同时声明字段名称和动态选项接口的控件提示。 */ hint.field && hint.endpoint
+function dependency(target: OptionsTarget, path: string) {
+  const [group, field] = path.split('.')
+  const hint = target.ui.hints?.[group]?.find(item => item.field === field)
+  if (!hint || hint.secret || hint.masked) return undefined
+  return (target[group] as Record<string, unknown> | undefined)?.[field]
+}
+const missing = (value: unknown) => value == null || value === ''
+
+/** 查询按配置、来源和草稿依赖隔离，旧请求只能更新自己的缓存。 */
+export function useDeclarativeOptions(target: ComputedRef<OptionsTarget>) {
+  const { t, locale } = useI18n()
+  function hostOptions(hint: DeclarativeHint, gameId: unknown) {
+    switch (hint.endpoint) {
+      case '/api/plugin/options/games':
+        return Service.pluginGameOptionsApiPluginOptionsGamesPost()
+      case '/api/plugin/options/devices':
+        return Service.pluginDeviceOptionsApiPluginOptionsDevicesPost({ gameId: String(gameId) })
+      case '/api/plugin/options/plans':
+        return Service.pluginPlanOptionsApiPluginOptionsPlansPost(
+          undefined,
+          hint.plan_type ? { type: hint.plan_type } : undefined
         )
-        .map(hint => /* 将控件提示转换为字段键、接口地址与当前依赖值，供查询缓存使用。 */ ({
-          key: `${section}.${hint.field}`,
-          endpoint: hint.endpoint!,
-          planType: hint.plan_type,
-          dependencies: (hint.deps ?? []).map(path =>
-            /* 按声明的点分路径读取一个依赖值，供级联下拉框更新查询条件。 */ path
-              .split('.')
-              .reduce<unknown>(
-                (value, part) =>
-                  /* 逐层读取依赖路径，遇到不存在的对象时返回空值。 */ value &&
-                  typeof value === 'object'
-                    ? (value as Record<string, unknown>)[part]
-                    : undefined,
-                target.value
-              )
-          ),
-        }))
+      case '/api/info/combox/plan':
+        return Service.getPlanComboxApiInfoComboxPlanPost({
+          consumer: PlanComboxIn.consumer.UNIVERSAL,
+        })
+      default:
+        throw new Error(t('core.scripts.unsupportedOptionsEndpoint', { endpoint: hint.endpoint }))
+    }
+  }
+
+  function declaration(group: string, hint: DeclarativeHint) {
+    const { uid, pluginName } = target.value
+    const source = hint.option_source
+    const params = Object.fromEntries(
+      Object.entries(hint.depends_on ?? {}).map(([name, path]) => [
+        name,
+        dependency(target.value, path),
+      ])
+    )
+    const deps = (hint.deps ?? []).map(path => dependency(target.value, path))
+    const language = locale.value
+    const ready = source
+      ? !!pluginName && !Object.values(params).some(missing)
+      : !deps.some(missing) &&
+        (hint.endpoint !== '/api/plugin/options/devices' || (!missing(deps[0]) && deps[0] !== '-'))
+    const queryKey = [
+      'plugins',
+      'field-options',
+      uid,
+      ...(source
+        ? [pluginName, source, params, language]
+        : [hint.endpoint, deps, ...(hint.plan_type ? [hint.plan_type] : [])]),
+    ]
+    async function load(): Promise<Required<DeclarativeOption>[]> {
+      // 插件网关不在 OpenAPI 中，沿用生成客户端的地址、鉴权和查询参数编码。
+      const response = await requestApi<OutBase & { data?: Array<OptionHint | ComboBoxItem> }>(
+        () =>
+          source
+            ? request(OpenAPI, {
+                method: 'GET',
+                url: `/api/plugin/${encodeURIComponent(pluginName!)}/options/${encodeURIComponent(source)}`,
+                query: { ...params, locale: language },
+              })
+            : hostOptions(hint, deps[0]),
+        t('core.scripts.optionsLoadFailed')
+      )
+      return (response.data ?? []).flatMap(({ value, label }) =>
+        value == null || (!source && value === '-')
+          ? []
+          : [{ value, label: label ?? String(value) }]
+      )
+    }
+    return { group, hint, key: `${group}.${hint.field}`, queryKey, ready, load }
+  }
+  const declarations = computed(() =>
+    Object.entries(target.value.ui.hints ?? {}).flatMap(([group, hints]) =>
+      hints
+        .filter(hint => hint.field && (hint.option_source || hint.endpoint))
+        .map(hint => declaration(group, hint))
     )
   )
   const queries = useQueries({
     queries: computed(() =>
-      /* 按当前字段及依赖生成 Vue Query 配置，使关联字段变化时重新查询选项。 */ declarations.value.map(
-        field => /* 为一个字段设置包含配置身份和依赖的缓存键，并绑定选项加载函数。 */ ({
-          queryKey: [
-            'plugins',
-            'field-options',
-            target.value.uid,
-            field.endpoint,
-            field.dependencies,
-            ...(field.planType === undefined ? [] : [field.planType]),
-          ],
-          queryFn: async (): Promise<Required<DeclarativeOption>[]> => {
-            // 按声明的宿主接口加载游戏、设备、模拟器或计划选项，规范化返回值并过滤无效关联项。
-            const fallback = t('core.scripts.optionsLoadFailed')
-            let response
-            switch (field.endpoint) {
-              case '/api/plugin/options/games':
-                response = await requestApi(
-                  () =>
-                    /* 调用生成的插件游戏选项接口，复用统一请求错误处理。 */ Service.pluginGameOptionsApiPluginOptionsGamesPost(),
-                  fallback
-                )
-                break
-              case '/api/plugin/options/devices': {
-                const gameId = field.dependencies[0]
-                if (!gameId || gameId === '-') return []
-                response = await requestApi(
-                  () =>
-                    /* 使用当前关联游戏标识查询其设备选项。 */ Service.pluginDeviceOptionsApiPluginOptionsDevicesPost(
-                      {
-                        gameId: String(gameId),
-                      }
-                    ),
-                  fallback
-                )
-                break
-              }
-              case '/api/plugin/options/plans':
-                response = await requestApi(
-                  () =>
-                    Service.pluginPlanOptionsApiPluginOptionsPlansPost(
-                      undefined,
-                      field.planType === undefined ? undefined : { type: field.planType }
-                    ),
-                  fallback
-                )
-                break
-              case '/api/info/combox/plan':
-                response = await requestApi(
-                  () =>
-                    /* 以通用计划消费者身份读取宿主计划选项。 */ Service.getPlanComboxApiInfoComboxPlanPost(
-                      {
-                        consumer: PlanComboxIn.consumer.UNIVERSAL,
-                      }
-                    ),
-                  fallback
-                )
-                break
-              default:
-                throw new Error(
-                  t('core.scripts.unsupportedOptionsEndpoint', { endpoint: field.endpoint })
-                )
-            }
-            return (response.data ?? [])
-              .filter(
-                item =>
-                  /* 移除空标识及接口占位项，避免与前端统一的无关联选项重复。 */ item.value !=
-                    null && item.value !== '-'
-              )
-              .map(
-                item => /* 将返回的选项标识规范化为字符串，并为缺少名称的条目使用标识作标签。 */ ({
-                  value: String(item.value),
-                  label: item.label ?? String(item.value),
-                })
-              )
-          },
-        })
-      )
+      declarations.value.map(({ ready, queryKey, load }) => ({
+        queryKey,
+        queryFn: load,
+        ...(!ready && { enabled: false }),
+      }))
     ),
   })
-  const queryFor = (section: string, hint: DeclarativeHint) => {
-    // 按配置分组和字段定位其当前选项查询状态。
-    const index = declarations.value.findIndex(
-      field => /* 在动态字段声明中匹配当前分组与字段键。 */ field.key === `${section}.${hint.field}`
+  function queryFor(group: string, hint: DeclarativeHint) {
+    const index = declarations.value.findIndex(field => field.key === `${group}.${hint.field}`)
+    return declarations.value[index]?.ready ? queries.value[index] : undefined
+  }
+  function stateFor(group: string, hint: DeclarativeHint) {
+    const query = queryFor(group, hint)
+    return (
+      query && {
+        error: {
+          value: query.error
+            ? apiErrorMessage(query.error, t('core.scripts.optionsLoadFailed'))
+            : null,
+        },
+        loading: { value: query.isFetching },
+        execute: () => query.refetch(),
+      }
     )
-    return queries.value[index]
   }
-  const stateFor = (section: string, hint: DeclarativeHint) => {
-    // 将字段查询状态转换为配置控件使用的加载、错误及重试能力。
-    const query = queryFor(section, hint)
-    return query
-      ? {
-          error: {
-            value: query.error
-              ? apiErrorMessage(query.error, t('core.scripts.optionsLoadFailed'))
-              : null,
-          },
-          loading: { value: query.isFetching },
-          execute: () => /* 重新请求当前字段的动态选项。 */ query.refetch(),
-        }
-      : undefined
+  function optionsFor(group: string, hint: DeclarativeHint): Required<DeclarativeOption>[] {
+    if (hint.option_source) return queryFor(group, hint)?.data ?? []
+    if (hint.endpoint)
+      return [
+        { value: '-', label: t('core.scripts.noAssociation') },
+        ...(queryFor(group, hint)?.data ?? []),
+      ]
+    return (hint.options ?? []).map(item => ({
+      value: item.value,
+      label: item.label ?? String(item.value),
+    }))
   }
-  const optionsFor = (section: string, hint: DeclarativeHint): Required<DeclarativeOption>[] =>
-    /* 返回动态或静态控件选项，动态选项统一添加无关联占位。 */ hint.endpoint
-      ? [
-          { value: '-', label: t('core.scripts.noAssociation') },
-          ...(queryFor(section, hint)?.data ?? []),
-        ]
-      : (hint.options ?? []).map(option => /* 保留静态选项的原始值，缺少标签时用值的文本展示。 */ ({
-          value: option.value,
-          label: option.label ?? String(option.value),
-        }))
-  return { stateFor, optionsFor }
+  const validation = computed(() => {
+    const errors: Record<string, string> = {}
+    let pending = false
+    declarations.value.forEach(({ group, hint, key, ready }, index) => {
+      if (!ready || hint.editable === false) return
+      const value = (target.value[group] as Record<string, unknown> | undefined)?.[hint.field!]
+      const selected = (Array.isArray(value) ? value : [value]).filter(item => !missing(item))
+      if (!selected.length) return
+      const query = queries.value[index]
+      if (!query?.data) {
+        // 上游选择已变，需等新列表确认旧值仍可用；请求失败时保留选择供重试。
+        pending ||= !!hint.option_source && !!Object.keys(hint.depends_on ?? {}).length
+        return
+      }
+      const options = optionsFor(group, hint)
+      if (selected.some(item => !options.some(option => option.value === item))) {
+        errors[key] = t('core.plugins.optionUnavailable')
+      }
+    })
+    return { errors, invalid: pending || Object.keys(errors).length > 0 }
+  })
+  return {
+    stateFor,
+    optionsFor,
+    validationErrors: computed(() => validation.value.errors),
+    optionsInvalid: computed(() => validation.value.invalid),
+  }
 }

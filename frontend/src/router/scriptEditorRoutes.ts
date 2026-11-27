@@ -1,5 +1,6 @@
 import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
 import { maafwRouteName } from './maafwRoutes'
+import { isMaaFWFamily } from '@/plugins/maafwFamily'
 import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
@@ -70,6 +71,13 @@ const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
 export const genericEditorRoutes: RouteRecordRaw[] = [
   {
+    path: '/scripts/:scriptId/setup/plugin/:scriptType',
+    name: 'GenericScriptSetup',
+    component: genericEditor,
+    props: { mode: 'script', setup: true },
+    meta: { title: 'core.comp.editScript', scriptPage: 'script' },
+  },
+  {
     path: '/scripts/:scriptId/edit/plugin/:scriptType',
     name: 'GenericScriptEdit',
     component: genericEditor,
@@ -94,6 +102,13 @@ export function useScriptEditorNavigation() {
     params: ScriptEditorParams[K],
     state?: HistoryState
   ) => {
+    if (kind === 'setup' && !isMaaFWFamily(type) && 'id' in params) {
+      void router.push({
+        name: 'GenericScriptSetup',
+        params: { scriptId: params.id, scriptType: type },
+      })
+      return true
+    }
     const custom = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
     const generic =
       kind === 'script'

@@ -142,8 +142,12 @@ class UserGetOut(DeclarativeConfigGetOut):
     ] = Field(..., description="账号数据字典, key来自于index列表的uid")
 
 
+class UserCreateIn(UserInBase):
+    firstOnly: bool = False
+
+
 class UserCreateOut(OutBase):
-    userId: str = Field(..., description="新创建的账号ID")
+    userId: str = Field(..., description="账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
         GeneralUserConfig,
@@ -248,10 +252,12 @@ async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDi
     response_model=UserCreateOut,
     status_code=200,
 )
-async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
+async def add_user(user: UserCreateIn = Body(...)) -> UserCreateOut:
 
     try:
-        uid, config = await Config.add_user(user.scriptId, native_defaults=True)
+        uid, config = await Config.add_user(
+            user.scriptId, native_defaults=True, first_only=user.firstOnly
+        )
         data = ConfigPayload[type(config)](
             **config.model_dump(context={"audience": "api"})
         )
