@@ -257,8 +257,8 @@ class _MainTimer:
         self.calendar_timer = asyncio.create_task(self.calendar_task())
 
         if (
-            Config.ToolsConfig.GameSign.Enabled
-            and Config.ToolsConfig.GameSign.RunOnStartup
+            Config.ToolsConfig.SignFlow.Enabled
+            and Config.ToolsConfig.SignFlow.RunOnStartup
         ):
             self.schedule_community_for_startup()
 
@@ -556,8 +556,8 @@ class _MainTimer:
         """Schedule one background community sign-in after application startup."""
 
         if not (
-            Config.ToolsConfig.GameSign.Enabled
-            and Config.ToolsConfig.GameSign.RunOnStartup
+            Config.ToolsConfig.SignFlow.Enabled
+            and Config.ToolsConfig.SignFlow.RunOnStartup
         ):
             return
 
@@ -666,11 +666,11 @@ class _MainTimer:
                 if not results:
                     logger.info("所有用户今日已签到，跳过")
                     if Community.all_community_accounts_signed(
-                        Config.ToolsConfig.GameSign_Accounts, today
+                        Config.ToolsConfig.SignFlow_Accounts, today
                     ):
                         await Config.ToolsConfig.update(
                             type(Config.ToolsConfig).model_validate(
-                                {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                                {"SignFlow": {"LastSignDate": datetime.now(tz=UTC8)}}
                             ),
                             check_visibility=False,
                         )
@@ -682,11 +682,11 @@ class _MainTimer:
 
                 # 检查是否所有用户都已签到，更新全局 LastSignDate
                 if Community.all_community_accounts_signed(
-                    Config.ToolsConfig.GameSign_Accounts, today
+                    Config.ToolsConfig.SignFlow_Accounts, today
                 ):
                     await Config.ToolsConfig.update(
                         type(Config.ToolsConfig).model_validate(
-                            {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                            {"SignFlow": {"LastSignDate": datetime.now(tz=UTC8)}}
                         ),
                         check_visibility=False,
                     )
@@ -738,8 +738,8 @@ class _MainTimer:
         """共享后台派发和直接执行的触发条件，未启用或今日已完成时立即跳过。"""
 
         if not Community.should_run_community_for_source(
-            enabled=Config.ToolsConfig.GameSign.Enabled,
-            run_on_startup=Config.ToolsConfig.GameSign.RunOnStartup,
+            enabled=Config.ToolsConfig.SignFlow.Enabled,
+            run_on_startup=Config.ToolsConfig.SignFlow.RunOnStartup,
             source=source,
         ):
             return False
@@ -747,7 +747,7 @@ class _MainTimer:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         return not Community.all_community_accounts_signed(
-            Config.ToolsConfig.GameSign_Accounts, today
+            Config.ToolsConfig.SignFlow_Accounts, today
         )
 
 

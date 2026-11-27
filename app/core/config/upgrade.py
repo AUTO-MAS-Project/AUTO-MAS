@@ -28,7 +28,18 @@ CONFIG_FILES = (
     ("ScriptConfig.json", "scripts.yaml", "ScriptConfig"),
     ("QueueConfig.json", "queues.yaml", "QueueConfig"),
     ("ToolsConfig.json", "tools.yaml", "ToolsConfig"),
-    ("GameSignAccounts.json", "game_sign_accounts.yaml", "GameSignAccounts"),
+    ("GameSignAccounts.json", "sign_flow_accounts.yaml", "SignFlowAccounts"),
+)
+
+#: 改名前的集合成员类型名。旧 JSON 是一次性升级的输入，里面的类型标签仍是
+#: 改名前的类名；运行期文档不会出现旧名，所以只在转换入口查一次。
+LEGACY_ENTRY_TYPE_NAMES = {"GameSignAccountGroup": "SignFlowAccountGroup"}
+
+#: 改名前的活跃文档名。v2.2 用户手里直接是 YAML，不经过 JSON 迁移管道，
+#: 只能按「旧文件在、新文件不在」判断是否需要搬。
+LEGACY_SIGN_FLOW_DOCUMENTS = (
+    ("game_sign_accounts.yaml", "sign_flow_accounts.yaml"),
+    ("GameSignResult.json", "SignFlowResult.json"),
 )
 
 # 专项只解释当前条目的旧载荷；递归、校验和持久化仍由升级管道负责。
@@ -60,12 +71,13 @@ def convert_legacy(
         data = {}
         for item in instances:
             uid = str(UUID(item["uid"]))
-            entry_type = node._entry_types.get(item["type"])
+            type_name = LEGACY_ENTRY_TYPE_NAMES.get(item["type"], item["type"])
+            entry_type = node._entry_types.get(type_name)
             if entry_type is None:
                 raise ValueError(f"尚未迁移的配置类型：{item['type']}")
             if uid in data or not isinstance(document.get(uid), dict):
                 raise ValueError("旧集合成员缺失或身份重复")
-            order.append({"uid": uid, "type": item["type"]})
+            order.append({"uid": uid, "type": type_name})
             data[uid] = convert_legacy(
                 document[uid], entry_type.build(), entry_migrations=entry_migrations
             )
@@ -238,6 +250,46 @@ def is_blank_file(path: Path) -> bool:
     return not path.read_bytes().strip(_BLANK_MARKS)
 
 
+def migrate_sign_flow_documents(config_path: Path) -> None:
+    """把改名前的活跃文档搬到新名下，供已升级到 v2.2 的用户直接启动。
+
+    改名只影响文档名与集合成员类型标签两类内容：旧 YAML 的 ``order[].type``
+    仍是 ``GameSignAccountGroup``，不搬会被当成不认识的成员类型而整根激活
+    失败（账号 YAML 没开 ``keep_unknown_types``）。成员内层键
+    ``GameSignAccount`` 由 ``SignFlowAccountGroup.normalize_payload`` 负责，
+    这里不动，避免同一份改名规则写两处。
+
+    幂等：只在新名不存在时搬，新名已在用说明这一轮已经搬过（或用户手建），
+    旧名留着不影响加载，不再覆盖。
+    """
+
+    for old_name, new_name in LEGACY_SIGN_FLOW_DOCUMENTS:
+        source = config_path / old_name
+        target = config_path / new_name
+        if not source.is_file() or target.exists():
+            continue
+        if old_name.endswith(".yaml"):
+            document = _utils_io.read_dict_file(source, allow_empty=True)
+            order = document.get("order")
+            if isinstance(order, list):
+                for item in order:
+                    if not isinstance(item, dict):
+                        continue
+                    type_name = item.get("type")
+                    if isinstance(type_name, str):
+                        item["type"] = LEGACY_ENTRY_TYPE_NAMES.get(type_name, type_name)
+            _utils_io.write_file(target, document, format=".yaml")
+        else:
+            shutil.copy2(source, target)
+        backup_dir = config_path / "legacy-json"
+        backup_dir.mkdir(exist_ok=True)
+        archived = backup_dir / old_name
+        if archived.exists():
+            source.unlink()
+        else:
+            source.replace(archived)
+
+
 def preserve_pre_upgrade(
     config_path: Path, *, database_path: Path | None = None
 ) -> None:
@@ -326,7 +378,12 @@ def upgrade_json_configs(
             if is_blank_file(tools_source)
             else _utils_io.read_dict_file(tools_source)
         )
-        embedded_accounts = tools.get("SubConfigsInfo", {}).get("GameSign_Accounts", {})
+        # 旧 ToolsConfig.json 的内嵌账号键也随改名换了写法；先读新键，
+        # 回落到旧键，避免已经手工改过键名的用户丢掉账号。
+        sub_configs = tools.get("SubConfigsInfo", {})
+        embedded_accounts = sub_configs.get("SignFlow_Accounts") or sub_configs.get(
+            "GameSign_Accounts", {}
+        )
 
     for old_name, new_name, key in CONFIG_FILES:
         source = config_path / old_name
@@ -379,7 +436,7 @@ def upgrade_json_configs(
                 node,
                 entry_migrations=entry_migrations,
             )
-        elif key == "GameSignAccounts" and embedded_accounts:
+        elif key == "SignFlowAccounts" and embedded_accounts:
             # 空白的账号文件没有可迁数据，优先沿用 ToolsConfig 内嵌账号。
             payload = convert_legacy(
                 embedded_accounts, node, entry_migrations=entry_migrations

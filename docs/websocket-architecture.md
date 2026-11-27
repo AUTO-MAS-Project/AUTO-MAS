@@ -44,7 +44,7 @@
 | `TaskManager` | `task.created` | — |
 | `Main` | `backend.shutdown.ready` / `frontend.close.requested` / `frontend.restart.requested` / `power.countdown.updated` / `power.countdown.cancelled` / `power.sign.updated` | — |
 | `Update` | `update.progress` / `update.completed` / `update.failed` / `update.cancelled` | — |
-| `GameSign` | `gamesign.result.updated` | — |
+| `SignFlow` | `signflow.result.updated` | — |
 | `EmulatorManager` | `emulator.notice` | — |
 
 完整常量定义：`app/core/ws/protocol.py`。

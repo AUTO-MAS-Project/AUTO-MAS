@@ -173,9 +173,9 @@ class CommunitySignOperations:
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
 
         providers = _tool_community_sign_provider.get_community_sign_providers()
-        for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
-            account_name = account.GameSignAccount.Name or "默认账号"
-            account_enabled = account.GameSignAccount.Enabled
+        for uid, account in Config.ToolsConfig.SignFlow_Accounts.items():
+            account_name = account.SignFlowAccount.Name or "默认账号"
+            account_enabled = account.SignFlowAccount.Enabled
             account_uid = str(uid)
 
             # 跳过已禁用的账号。
@@ -184,7 +184,7 @@ class CommunitySignOperations:
 
             # 非强制模式：跳过今日已签到的账号。
             if not force:
-                user_last_sign = account.GameSignAccount.LastSignDate.strftime(
+                user_last_sign = account.SignFlowAccount.LastSignDate.strftime(
                     "%Y-%m-%d"
                 )
                 if user_last_sign == today:
@@ -238,7 +238,7 @@ class CommunitySignOperations:
                         # 更新凭据不重置 LastSignDate；提交失败时事务回滚，可直接重试。
                         await account.update(
                             type(account).model_validate(
-                                {"GameSignAccount": {field: updated_token}}
+                                {"SignFlowAccount": {field: updated_token}}
                             ),
                             check_visibility=False,
                         )
@@ -345,7 +345,7 @@ class CommunitySignOperations:
                     # 避免把新一天的签到记成旧日期导致次日误判。
                     await account.update(
                         type(account).model_validate(
-                            {"GameSignAccount": {"LastSignDate": datetime.now(tz=UTC8)}}
+                            {"SignFlowAccount": {"LastSignDate": datetime.now(tz=UTC8)}}
                         ),
                         check_visibility=False,
                     )

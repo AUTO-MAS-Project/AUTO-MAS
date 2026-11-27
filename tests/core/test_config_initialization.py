@@ -88,7 +88,7 @@ async def run():
         assert (Config.config_path / 'setting.yaml').is_file()
         assert (Config.config_path / 'tools.yaml').is_file()
         assert not Config.ScriptConfig
-        assert not Config.ToolsConfig.GameSign_Accounts
+        assert not Config.ToolsConfig.SignFlow_Accounts
         assert 'app.core.maa_manager' not in sys.modules
 
 asyncio.run(run())

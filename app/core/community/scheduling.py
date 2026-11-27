@@ -61,12 +61,12 @@ class CommunityScheduleOperations:
     ) -> bool:
         """判断账号是否启用、配置凭据且尚未完成今日社区签到。"""
 
-        if not account.GameSignAccount.Enabled:  # type: ignore[attr-defined]
+        if not account.SignFlowAccount.Enabled:  # type: ignore[attr-defined]
             return False
         checker = has_credentials or _default_credential_checker
         if not checker(account):
             return False
-        return account.GameSignAccount.LastSignDate.strftime("%Y-%m-%d") != today  # type: ignore[attr-defined]
+        return account.SignFlowAccount.LastSignDate.strftime("%Y-%m-%d") != today  # type: ignore[attr-defined]
 
     def all_community_accounts_signed(
         self,

@@ -91,7 +91,7 @@ class NotificationManager:
                 dispatch=self.dispatch,
                 prepare_targets=lambda: (self.global_target(include_system=True),),
                 render=_community_content.build_community_notification_payload,
-                enabled=lambda: Config.ToolsConfig.GameSign.NotifyEnabled,
+                enabled=lambda: Config.ToolsConfig.SignFlow.NotifyEnabled,
                 report_failure=self.report_community_failure,
                 background_group=lambda: self.tasks.community_group,
                 fast_path_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
@@ -221,7 +221,7 @@ class NotificationManager:
         """报告入口固定一次策略，迟到补发作为下一次通知重新读取。"""
         return TaskReportPolicy(
             result_time=Config.setting.Notify.SendTaskResultTime,
-            community_enabled=Config.ToolsConfig.GameSign.NotifyEnabled,
+            community_enabled=Config.ToolsConfig.SignFlow.NotifyEnabled,
             wait_seconds=NOTIFICATION_FAST_PATH_WAIT_SECONDS,
         )
 
