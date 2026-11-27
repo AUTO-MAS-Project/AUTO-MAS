@@ -10,8 +10,8 @@ import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
+import type { UserCreateIn } from '../models/UserCreateIn';
 import type { UserCreateOut } from '../models/UserCreateOut';
-import type { UserInBase } from '../models/UserInBase';
 import type { WebhookCreateOut_Webhook_ } from '../models/WebhookCreateOut_Webhook_';
 import type { WebhookInBase } from '../models/WebhookInBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -44,7 +44,7 @@ export class AddService {
      * @throws ApiError
      */
     public static addUserApiScriptsUserAddPost(
-        requestBody: UserInBase,
+        requestBody: UserCreateIn,
     ): CancelablePromise<UserCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',

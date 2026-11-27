@@ -24,6 +24,7 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from app.utils import get_logger
@@ -34,12 +35,15 @@ from ..fields import (
     RefDeleteAction,
     RefField,
     UiHintsMap,
+    UiSection,
+    UiStep,
     UiVisibility,
     UiVisibilitySpec,
     Virtual,
     is_reactive_model_field,
     is_trigger_model_field,
     is_virtual_model_field,
+    parse_field_path,
 )
 from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
@@ -131,6 +135,8 @@ class ConfigEntry(ConfigNode):
     """L2 配置条目；文档形状 = 各 Group 字段顶层嵌套。"""
 
     # 类级规格（每子类独立）
+    ui_steps: ClassVar[tuple[UiStep, ...]] = ()
+    ui_sections: ClassVar[dict[str, UiSection]] = {}
     _cfg_group_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_collection_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_virtual_specs: ClassVar[dict[tuple[str, str], str]] = {}
@@ -147,10 +153,12 @@ class ConfigEntry(ConfigNode):
         return omit_masked_placeholders(cls, migrate_legacy_fields(cls, value))
 
     class Ui(ConfigGroup):
-        """前端组件提示虚拟组：``ui.hints`` / ``ui.tables``。"""
+        """前端组件与布局提示。"""
 
         hints: Virtual[UiHintsMap] = None
         tables: Virtual[UiTablesList] = None
+        steps: Virtual[list[UiStep]] = None
+        sections: Virtual[dict[str, UiSection]] = None
 
     ui: Ui = Field(default_factory=Ui)
 
@@ -335,6 +343,53 @@ class ConfigEntry(ConfigNode):
             }
             for col_cls, columns in tables_by_cls.items()
         ]
+        cls._validate_ui_flow()
+
+    @classmethod
+    def _validate_ui_flow(cls) -> None:
+        steps = {step.key for step in cls.ui_steps}
+        if len(steps) != len(cls.ui_steps):
+            raise ValueError(f"{cls.__name__}: ui_steps 的 key 重复")
+        for key, section in cls.ui_sections.items():
+            prefix, _, name = key.partition(":")
+            if prefix not in ("group", "table") or not name.strip() or ":" in name:
+                raise ValueError(
+                    f"{cls.__name__}: 分区须为 group:<Name> 或 table:<Name>，收到 {key!r}"
+                )
+            if section.step is not None and section.step not in steps:
+                raise ValueError(
+                    f"{cls.__name__}: 分区 {key!r} 引用了未知步骤 {section.step!r}"
+                )
+
+        def declared_field(path: str) -> FieldInfo:
+            group, name = parse_field_path(path)
+            if group in cls._cfg_ui_hints:
+                fields = cast(
+                    type[ConfigGroup], cls.model_fields[group].annotation
+                ).model_fields
+                if name in fields:
+                    return fields[name]
+            raise ValueError(f"{cls.__name__}: 未声明的字段路径 {path!r}")
+
+        for hints in cls._cfg_ui_hints.values():
+            for hint in hints:
+                for path in hint.get("depends_on", {}).values():
+                    declared_field(path)
+                action = hint.get("action_ref")
+                if action is not None and not is_trigger_model_field(
+                    declared_field(action)
+                ):
+                    raise ValueError(
+                        f"{cls.__name__}: action_ref {action!r} 须指向 Trigger 字段"
+                    )
+
+    @virtual_field("ui.steps")
+    def _get_ui_steps(self) -> list[UiStep]:
+        return list(self.ui_steps)
+
+    @virtual_field("ui.sections")
+    def _get_ui_sections(self) -> dict[str, UiSection]:
+        return dict(self.ui_sections)
 
     def _ui_visibility(self, group: str, field: str | None = None) -> UiVisibility:
         """同步求显隐；组级隐藏、禁用作用于子项，掩码仅用于具体字段。"""

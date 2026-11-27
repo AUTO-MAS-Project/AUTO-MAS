@@ -2,7 +2,7 @@
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import date
 from pathlib import Path
 from typing import (
@@ -14,6 +14,7 @@ from typing import (
     Literal,
     NamedTuple,
     Optional,
+    Self,
     TypeVar,
     Union,
 )
@@ -25,11 +26,15 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    ValidationError,
     ValidationInfo,
     WithJsonSchema,
     field_validator,
+    model_serializer,
 )
 
+from app.config.errors import ConfigAggregateError
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import config_contract
 from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
@@ -356,10 +361,82 @@ class OutBase(BaseModel):
     message: str = Field(default="操作成功", description="操作消息")
 
 
+def _config_update_issues(
+    error: Exception, field_path: tuple[str, str] | None = None
+) -> Iterator[tuple[tuple[str | int, ...], str]]:
+    """冷态校验给出完整路径，热态赋值使用提交时的字段坐标。"""
+    if isinstance(error, ConfigAggregateError):
+        for cause in error.errors:
+            yield from _config_update_issues(cause, error.field_path or field_path)
+    elif isinstance(error, ValidationError):
+        for issue in error.errors(
+            include_input=False, include_context=False, include_url=False
+        ):
+            yield field_path or issue["loc"], issue["msg"]
+    else:
+        yield (), str(error)
+
+
+class ConfigUpdateOut(OutBase):
+    fieldErrors: dict[str, str] = Field(
+        default_factory=dict, description="按 group.field 定位的校验错误"
+    )
+
+    @classmethod
+    def from_validation_error(
+        cls, error: ValidationError | ConfigAggregateError, *, code: int
+    ) -> Self:
+        messages: list[str] = []
+        fields: dict[str, list[str]] = {}
+        for path, message in _config_update_issues(error):
+            label = ".".join(map(str, path))
+            messages.append(f"{label}: {message}" if label else message)
+            if len(path) >= 2:
+                fields.setdefault(f"{path[0]}.{path[1]}", []).append(message)
+        return cls(
+            code=code,
+            status="error",
+            message="\n".join(messages) or str(error),
+            fieldErrors={key: "\n".join(items) for key, items in fields.items()},
+        )
+
+
+class BackupTargetHint(BaseModel):
+    key: str
+    kind: Literal["user", "script"]
+
+
+class DeclarativeConfigUi(BaseModel):
+    """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
+
+    configUid: str
+    hints: UiHintsMap
+    tables: UiTablesList
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
+    i18nNamespace: str | None = None
+    pluginName: str | None = None
+    backupTargets: list[BackupTargetHint] = Field(default_factory=list)
+    nativeSession: Literal["view", "config"] | None = None
+
+
 class ConfigSnapshotOut(OutBase):
     """配置快照及其 Entry / Collection 订阅来源。"""
 
     uiSources: list[UUID] = Field(default_factory=list)
+
+
+class DeclarativeConfigGetOut(ConfigSnapshotOut):
+    """仅详情包含表单声明，列表保留原有 JSON 结构。"""
+
+    ui: DeclarativeConfigUi | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        document = handler(self)
+        if self.ui is None:
+            document.pop("ui", None)
+        return document
 
 
 class UnavailableConfigItem(BaseModel):
@@ -399,7 +476,7 @@ class ConfigBackupRestoreIn(BaseModel):
     """把指定备份恢复到目标位置（target 取值由专项池定义）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     time: str = Field(..., description="备份时间戳")
     target: str = Field(
         ...,
@@ -419,7 +496,7 @@ class ConfigBackupEnsureIn(BaseModel):
     """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     target: str = Field(..., description="归档目标（取值由专项池定义）")
 
 
@@ -1942,6 +2019,10 @@ __all__ = [
     "HistoryCleanupReport",
     "HistoryBackupSnapshot",
     "OutBase",
+    "ConfigUpdateOut",
+    "DeclarativeConfigGetOut",
+    "BackupTargetHint",
+    "DeclarativeConfigUi",
     "TagItem",
     "ComboBoxItem",
     "ComboBoxOut",

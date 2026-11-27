@@ -2,7 +2,8 @@ import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { isMaaFWFamily, type MaaFWFamilyType } from '@/plugins/maafwFamily'
 import type { ScriptType } from '@/types/script'
-import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+import type { PluginScriptTypes } from '@/utils/pluginScriptTypes'
+import { isBuiltinScriptType, SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
 export type ConfigMode = 'template' | 'custom'
 /** MFW 家族新建时项目从哪来：进引导页选目录导入，还是直接复用已有脚本的副本 */
@@ -14,10 +15,10 @@ export type MfwFamilyType = MaaFWFamilyType
 export const isMfwFamily = (type: ScriptType): type is MfwFamilyType => isMaaFWFamily(type)
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
-interface ScriptTypeOption {
+export interface ScriptTypeOption {
   value: ScriptType
-  titleKey: string
-  descriptionKey: string
+  title: string
+  description: string
   /** 搜索别名。刻意保留中文：译成英文中文用户就搜不到了，英文用户用 latin 别名一样能命中 */
   keywords: string[]
   group: Exclude<ScriptTypeGroup, 'all'>
@@ -43,18 +44,49 @@ interface CreateRequestState {
 }
 
 export type ScriptCreateRequest =
-  | { kind: 'new'; type: Exclude<ScriptType, 'General'> }
+  | { kind: 'new'; type: ScriptType }
   /** 同一个 MFW 项目再建一个脚本：建好后从 sourceScriptId 的副本克隆，不再选目录 */
   | { kind: 'mfw-reuse'; type: MfwFamilyType; sourceScriptId: string }
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: ShareTemplateItem }
 
 // 全部类型（含 MaaFW 家族）按各自 metadata.createOrder 排
-export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = (
-  Object.keys(SCRIPT_METADATA) as ScriptType[]
+const builtinOptions = Object.entries(SCRIPT_METADATA).sort(
+  ([, left], [, right]) => left.createOrder - right.createOrder
 )
-  .sort((left, right) => SCRIPT_METADATA[left].createOrder - SCRIPT_METADATA[right].createOrder)
-  .map(type => ({ value: type, ...SCRIPT_METADATA[type].create, icon: SCRIPT_METADATA[type].logo }))
+
+export function getScriptTypeOptions(
+  enabled: readonly string[],
+  plugins: PluginScriptTypes,
+  t: (key: string) => string
+): ScriptTypeOption[] {
+  const options = builtinOptions.flatMap(([value, { create, logo }]) =>
+    enabled.includes(value)
+      ? [
+          {
+            value,
+            title: t(create.titleKey),
+            description: t(create.descriptionKey),
+            keywords: create.keywords,
+            group: create.group,
+            icon: logo,
+          },
+        ]
+      : []
+  )
+  for (const { scriptKey, displayName, description } of plugins.byScriptKey.values()) {
+    if (isBuiltinScriptType(scriptKey) || !enabled.includes(scriptKey)) continue
+    options.push({
+      value: scriptKey,
+      title: displayName,
+      description,
+      keywords: [scriptKey],
+      group: 'specialized',
+      icon: SCRIPT_METADATA.General.logo,
+    })
+  }
+  return options
+}
 
 /** 第二步列表里的一行「已导入的项目」：同一项目开了几个脚本只列一行，克隆源取其中一个 */
 export interface MfwReuseChoice {
@@ -118,25 +150,11 @@ export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): Cr
   return steps
 }
 
-type TypeSearchFields = Pick<ScriptTypeOption, 'titleKey' | 'descriptionKey' | 'keywords'>
-
-/** translate 缺省时按 key 原样参与匹配，别名（keywords）永远参与匹配 */
-export const filterScriptTypeOptions = <T extends TypeSearchFields>(
-  options: T[],
-  keyword: string,
-  translate: (key: string) => string = key => key
-): T[] => {
-  const normalizedKeyword = keyword.trim().toLowerCase()
-  return options.filter(option => {
-    const searchableText = [
-      translate(option.titleKey),
-      translate(option.descriptionKey),
-      ...option.keywords,
-    ]
-      .join(' ')
-      .toLowerCase()
-    return !normalizedKeyword || searchableText.includes(normalizedKeyword)
-  })
+export const filterScriptTypeOptions = (options: ScriptTypeOption[], keyword: string) => {
+  const search = keyword.trim().toLowerCase()
+  return options.filter(option =>
+    [option.title, option.description, ...option.keywords].join(' ').toLowerCase().includes(search)
+  )
 }
 
 export const splitScriptTypeOptions = <T extends Pick<ScriptTypeOption, 'group'>>(

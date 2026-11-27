@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import appIcon from '@/assets/AUTO-MAS.ico'
 import { usePluginApi } from '@/composables/usePluginApi'
+import { usePluginRegistry } from '@/composables/usePluginScriptTypes'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
@@ -72,11 +74,7 @@ export function usePluginCenterData() {
   const { getScriptUsers } = useScriptList()
   const { getPlans } = usePlanApi()
 
-  const registry = usePluginQuery(
-    () => ['plugins', 'registry', locale.value],
-    () => api.getRegistry(),
-    () => t('core.plugins.loadFailed')
-  )
+  const registry = usePluginRegistry()
   const catalog = usePluginQuery(
     () => pluginCatalogQueryKey(locale.value),
     () => api.getCatalog(),
@@ -181,11 +179,11 @@ export function usePluginCenterData() {
     Promise.all([reloadUsage(), settings.refetch()])
   const reload = async () => {
     const [registryResult, catalogResult] = await Promise.all([
-      registry.execute(),
+      registry.refetch({ cancelRefetch: false }),
       catalog.execute(),
     ])
     await reloadDetails()
-    return registryResult !== null && catalogResult !== null
+    return !registryResult.isError && catalogResult !== null
   }
 
   const catalogRefreshing = ref(false)
@@ -236,8 +234,12 @@ export function usePluginCenterData() {
     usageOf,
     settingsVisibility,
     registry: {
-      loading: registry.loading,
-      error: registry.error,
+      loading: registry.isFetching,
+      error: computed(
+        () =>
+          registry.error.value &&
+          getApiErrorMessage(registry.error.value, t('core.plugins.loadFailed'))
+      ),
       loaded: computed(() => registry.data.value !== undefined),
     },
     catalog: {

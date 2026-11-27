@@ -12,11 +12,13 @@ const props = withDefaults(
     table: DeclarativeTableHint
     namespace: string
     title: string
+    collapsible?: boolean
     columnTypes?: Record<string, string>
   }>(),
   { columnTypes: () => ({}) }
 )
 const emit = defineEmits<{ 'update:value': [group: string, field: string, value: unknown] }>()
+const collapsed = defineModel<boolean>('collapsed', { default: false })
 const { t, te } = useI18n()
 
 function label(key: string, groupAxis: boolean) {
@@ -54,7 +56,12 @@ const records = computed(() =>
 </script>
 
 <template>
-  <SectionCard variant="card" :title="title">
+  <SectionCard
+    v-model:collapsed="collapsed"
+    variant="card"
+    :title="title"
+    :collapsible="collapsible"
+  >
     <a-table
       :columns="columns"
       :data-source="records"

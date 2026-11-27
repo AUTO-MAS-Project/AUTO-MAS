@@ -20,6 +20,7 @@ import {
   Service,
 } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
+import { fetchPluginScriptTypes } from './usePluginScriptTypes'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { maafwScriptTypeByConfigType } from '@/plugins/maafwFamily'
 import {
@@ -41,6 +42,7 @@ let scriptListRequest: ScriptListRequest | null = null
 
 type HSRStageEngine = 'M7A' | 'SRA'
 const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
+  GeneralConfig: 'General',
   MaaConfig: 'MAA',
   SrcConfig: 'SRC',
   OkwwConfig: 'Okww',
@@ -55,8 +57,31 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   ...maafwScriptTypeByConfigType(),
 }
 
-const resolveScriptType = (configType: string): ScriptType => {
-  return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
+const builtinScriptKey = (configType: string) =>
+  Object.prototype.hasOwnProperty.call(SCRIPT_TYPE_BY_CONFIG_TYPE, configType)
+    ? SCRIPT_TYPE_BY_CONFIG_TYPE[configType]
+    : undefined
+
+async function projectScriptDetails(response: ScriptGetOut): Promise<ScriptDetail[]> {
+  const plugins = response.index.some(item => !builtinScriptKey(item.type))
+    ? await fetchPluginScriptTypes()
+    : undefined
+  return response.index.map(item => {
+    const type =
+      builtinScriptKey(item.type) ??
+      plugins?.byScriptConfigType.get(item.type)?.scriptKey ??
+      item.type
+    const config = response.data[item.uid]
+    rememberAnalyticsScriptType(item.uid, type)
+    return {
+      uid: item.uid,
+      type,
+      scriptConfigType: item.type,
+      activityGame: item.activityGame,
+      name: config?.Info?.Name || `${item.type}脚本`,
+      config,
+    }
+  })
 }
 
 export function useScriptApi() {
@@ -118,7 +143,10 @@ export function useScriptApi() {
   // 获取脚本列表（可选择是否管理 loading 状态，避免嵌套调用时提前结束 loading）
   const getScripts = async (
     manageLoading: boolean = true,
-    options: { showError?: boolean; read?: (snapshot: ConfigSnapshot) => void } = {}
+    options: {
+      showError?: boolean
+      read?: (snapshot: ConfigSnapshot) => void
+    } = {}
   ): Promise<ScriptDetail[]> => {
     if (manageLoading) {
       loading.value = true
@@ -149,19 +177,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
-      for (const item of response.index)
-        rememberAnalyticsScriptType(
-          item.uid,
-          item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
-        )
-      // 将API响应转换为ScriptDetail数组
-      return response.index.map(indexItem => ({
-        uid: indexItem.uid,
-        type: resolveScriptType(indexItem.type),
-        activityGame: indexItem.activityGame,
-        name: response.data[indexItem.uid]?.Info?.Name || `${indexItem.type}脚本`,
-        config: response.data[indexItem.uid],
-      }))
+      return await projectScriptDetails(response)
     } catch (err) {
       const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptListFailed'))
       error.value = errorMsg
@@ -196,21 +212,8 @@ export function useScriptApi() {
         throw new Error(t('core.edit.scriptDoesNotExist'))
       }
 
-      const item = response.index[0]
-      const config = response.data[item.uid]
-      const scriptType = resolveScriptType(item.type)
-      rememberAnalyticsScriptType(
-        item.uid,
-        item.type === 'GeneralConfig' ? 'General' : SCRIPT_TYPE_BY_CONFIG_TYPE[item.type]
-      )
-
-      return {
-        uid: item.uid,
-        type: scriptType,
-        activityGame: item.activityGame,
-        name: config?.Info?.Name || `${item.type}脚本`,
-        config,
-      }
+      const [script] = await projectScriptDetails(response)
+      return script
     } catch (err) {
       const errorMsg = getApiErrorMessage(err, t('core.apiErrors.scriptLoadFailed'))
       error.value = errorMsg
