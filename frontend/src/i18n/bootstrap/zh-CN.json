@@ -221,6 +221,7 @@
     "recover": "返回初始化"
   },
   "apiErrors": {
-    "settingsLoadFailed": "获取设置失败"
+    "settingsLoadFailed": "获取设置失败",
+    "pluginPanelFallback": "插件界面不可用，已切换到内置编辑器。"
   }
 }

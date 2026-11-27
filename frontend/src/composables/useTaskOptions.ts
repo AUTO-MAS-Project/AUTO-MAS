@@ -16,6 +16,8 @@ export interface TaskTarget {
 export interface TaskTargetSnapshot extends ConfigSnapshot {
   targets: TaskTarget[]
   unavailableScriptIds: string[]
+  /** 插件暂不可用的托管名称，供只读展示；名称取不到时为 uid。 */
+  unavailableScripts?: { uid: string; name: string }[]
 }
 
 /** 可选目标和暂不可用的托管来自同一次读取，队列展开时可据此区分停用与失效的引用。 */
@@ -48,6 +50,10 @@ export function fetchTaskTargetSnapshot(): Promise<TaskTargetSnapshot> {
       return {
         targets,
         unavailableScriptIds: (scripts.unavailable ?? []).map(item => item.uid),
+        unavailableScripts: (scripts.unavailable ?? []).map(item => ({
+          uid: item.uid,
+          name: item.name || item.uid,
+        })),
         uiSources: [...(queues.uiSources ?? []), ...(scripts.uiSources ?? [])],
       }
     },

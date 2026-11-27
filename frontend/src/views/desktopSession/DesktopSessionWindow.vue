@@ -293,7 +293,6 @@ onBeforeUnmount(() => {
         gap="middle"
         class="empty"
       >
-        <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
         <template v-if="snapshot?.closing">
           <a-spin />
         </template>

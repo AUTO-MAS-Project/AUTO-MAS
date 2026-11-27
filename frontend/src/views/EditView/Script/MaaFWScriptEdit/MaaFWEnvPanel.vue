@@ -2,40 +2,36 @@
   <div class="env-panel">
     <div class="env-panel-header">
       <span class="env-panel-title">{{ t('core.edit.envPanelTitle') }}</span>
-      <div class="env-panel-actions">
-        <a-button v-if="hasLog" type="link" size="small" @click="logOpen = !logOpen">
-          {{ logOpen ? t('core.edit.envLogHide') : t('core.edit.envLogShow') }}
-        </a-button>
-        <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
-             重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
-        <a-button size="small" :loading="loading" :disabled="disabled" @click="emit('prepare')">
-          <template #icon>
-            <ToolOutlined />
-          </template>
-          {{ envTone === 'failed' ? t('core.edit.envRetry') : t('core.edit.prepareRuntimeEnv') }}
-        </a-button>
-      </div>
+      <!-- interface 是选完目录自动读的、项目不更新就不会变，手动入口只留「准备运行环境」：
+           重读 interface 并重新准备（不沿用指纹缓存）；失败时它就是「重试」 -->
+      <a-button size="small" :loading="loading" :disabled="disabled" @click="emit('prepare')">
+        <template #icon>
+          <ToolOutlined />
+        </template>
+        {{ envTone === 'failed' ? t('core.edit.envRetry') : t('core.edit.prepareRuntimeEnv') }}
+      </a-button>
     </div>
-    <div v-if="logOpen && hasLog" ref="logBoxRef" class="env-log-box maafw-log-box">
+    <!-- 任何状态都是「标题行 + 日志框」同一个布局，与「项目更新」的过程面板一致：
+         日志常驻，结论（状态词 + 阶段 / 版本 / 失败原因）是框里最后一行，整行一个颜色 -->
+    <div ref="logBoxRef" class="env-log-box maafw-log-box">
       <div v-for="(line, index) in envLogs" :key="index" class="maafw-log-line">
         {{ line }}
       </div>
       <div v-if="agentsLine" class="maafw-log-line">{{ agentsLine }}</div>
-    </div>
-    <!-- 结论一行：状态词 + MaaFramework 版本（准备中是阶段，失败时是原因），整行一个颜色 -->
-    <div
-      v-if="envTone !== 'idle'"
-      class="env-status maafw-log-status"
-      :class="`maafw-log-status--${envTone}`"
-    >
-      <LoadingOutlined v-if="envTone === 'running'" spin />
-      <CheckCircleOutlined v-else-if="envTone === 'success'" />
-      <CloseCircleOutlined v-else />
-      <span>{{ envStatusText }}</span>
-    </div>
-    <!-- 引导形态下「项目更新」是后面的步骤、这时走不到，只指向全局设置里的代理 -->
-    <div v-if="envTone === 'failed'" class="env-status-hint">
-      {{ isWizard ? t('core.edit.envFailedHintWizard') : t('core.edit.envFailedHint') }}
+      <div
+        v-if="envTone !== 'idle'"
+        class="maafw-log-status"
+        :class="`maafw-log-status--${envTone}`"
+      >
+        <LoadingOutlined v-if="envTone === 'running'" spin />
+        <CheckCircleOutlined v-else-if="envTone === 'success'" />
+        <CloseCircleOutlined v-else />
+        <span>{{ envStatusText }}</span>
+        <!-- 引导形态下「项目更新」是后面的步骤、这时走不到，只指向全局设置里的代理 -->
+        <div v-if="envTone === 'failed'" class="env-status-hint">
+          {{ isWizard ? t('core.edit.envFailedHintWizard') : t('core.edit.envFailedHint') }}
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -52,8 +48,8 @@ import {
 import type { MaaFWEnvOutcome } from './sectionProps'
 
 /**
- * 脚本页基础信息里的「运行环境」面板：平时只有一行结论和「准备运行环境」按钮，日志收着、可点开；
- * 准备中和失败时自动展开日志，成功后再收起。
+ * 脚本页基础信息里的「运行环境」面板：标题行（右侧「准备运行环境」按钮）+ 常驻的定高日志框，
+ * 结论写在日志框最后一行。
  */
 const props = defineProps<{
   envPreparing: boolean
@@ -132,22 +128,10 @@ const agentsLine = computed(() => {
   return `${t('core.edit.envReadyAgents')}: ${agents}`
 })
 
-const hasLog = computed(() => props.envLogs.length > 0 || Boolean(agentsLine.value))
-
-// 准备中、失败时自动展开，成功或回到空闲时收起；其间用户可以自己开合
-const logOpen = ref(false)
-watch(
-  envTone,
-  tone => {
-    logOpen.value = tone === 'running' || tone === 'failed'
-  },
-  { immediate: true }
-)
-
-// 新日志进来就贴到底部；用户手动往上翻时不打断
+// 新日志或结论进来就贴到底部；用户手动往上翻时不打断
 const logBoxRef = ref<HTMLElement | null>(null)
 watch(
-  () => [props.envLogs.length, logOpen.value],
+  () => [props.envLogs.length, agentsLine.value, envStatusText.value],
   async () => {
     const box = logBoxRef.value
     const nearBottom = !box || box.scrollHeight - box.scrollTop - box.clientHeight < 40
@@ -161,7 +145,7 @@ watch(
 <style scoped src="./maafwSection.css"></style>
 
 <style scoped>
-/* 面板本身不画框：标题行 + 结论一行，日志框只在展开时出现 */
+/* 面板本身不画框：标题行 + 日志框 */
 .env-panel {
   display: flex;
   flex-direction: column;
@@ -185,25 +169,14 @@ watch(
   color: var(--ant-color-text);
 }
 
-.env-panel-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* 定高、内部滚动：日志再多也不把页面撑长 */
+/* 定高、内部滚动：日志再多也不把页面撑长；与「项目更新」过程面板的日志框同高 */
 .env-log-box {
-  max-height: 160px;
+  height: 170px;
 }
 
-.env-status {
-  margin-top: 0;
-  font-size: 13px;
-}
-
+/* 失败时的指路跟在结论后面另起一行 */
 .env-status-hint {
+  flex-basis: 100%;
   color: var(--ant-color-text-secondary);
-  font-size: 12px;
-  line-height: 1.6;
 }
 </style>

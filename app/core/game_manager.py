@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections import deque
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
 from uuid import UUID
@@ -12,7 +13,12 @@ from uuid import UUID
 from app.config.core.node import LockTicket
 from app.config.signals import CollectionChangeEvent
 from app.config.wire import config_contract
-from app.models.config.game import GameDeviceEntry, GameEntry
+from app.models.config.game import (
+    DEVICE_DELETED_REASON,
+    GameDeviceEntry,
+    GameEntry,
+    is_deleted_device,
+)
 from app.models.config.game_binding import GameBindingCapabilities, GameBindingOwner
 from app.models.config.plugin_emulator import EmulatorEntry
 from app.models.emulator import DeviceUpdateOptions
@@ -223,6 +229,8 @@ class _GameManager:
                 await entry._control.startup()
             except Exception as error:
                 logger.warning(f"设备维护恢复失败，保留材料供下次尝试：{error}")
+        # 删除实例 / 目标时没被改到的盘上绑定（当时托管旁挂着）在这里补做。
+        await self.repair_dangling_bindings()
 
     async def close_devices(self, *, kind: str | None = None) -> None:
         from app.core import Config
@@ -250,7 +258,13 @@ class _GameManager:
         owner=None,
         script=None,
         capabilities: GameBindingCapabilities | None = None,
+        hints: list[str] | None = None,
     ) -> str | None:
+        """返回拒绝绑定的原因；``hints`` 收集不拒绝、只提示的问题。
+
+        目标类型与专项当前控制方式不一致只作提示：控制方式的推断可能不准，
+        用户仍可按自己的判断绑定和运行。
+        """
         from app.core import Config
 
         if script is None:
@@ -276,8 +290,12 @@ class _GameManager:
         game = Config.GameConfig.get(UUID(str(uid)))
         if game is None:
             return "所选游戏目标不存在"
-        if capabilities.kinds and game.info.type not in capabilities.kinds:
-            return "所选游戏目标类型与当前专项控制方式不兼容"
+        if (
+            hints is not None
+            and capabilities.kinds
+            and game.info.type not in capabilities.kinds
+        ):
+            hints.append("游戏目标类型与当前专项控制方式不一致，可能无法运行")
         if (
             isinstance(game._control, EmulatorControl)
             and game._control.kind == "avd"
@@ -385,7 +403,12 @@ class _GameManager:
 
     @staticmethod
     async def on_device_removed(sender, *, uid: UUID):
-        """实际删除设备后清除共同绑定，墓碑条目仍保留原身份供用户辨认。"""
+        """设备条目移除后清空指向它的托管 / 账号设备，并写明原因。
+
+        宿主自己不移除设备条目（删除实例只留墓碑），只有插件或外部直接移除条目时
+        才走到这里。保留所选游戏目标，用户在绑定卡片上看到原因后只需另选设备；
+        原因在重新选择设备、目标或清空绑定时消失。
+        """
         from app.core import Config
         from app.models.script_access import script_users
 
@@ -397,8 +420,89 @@ class _GameManager:
                     and owner.game.device_id == uid
                 ):
                     await owner.update(
-                        type(owner).model_validate({"game": {"device_id": "-"}})
+                        type(owner).model_validate(
+                            {
+                                "game": {
+                                    "device_id": "-",
+                                    "unavailable_reason": DEVICE_DELETED_REASON,
+                                }
+                            }
+                        ),
+                        check_visibility=False,
                     )
+
+    @staticmethod
+    def _dangling_binding_patch(owner: GameBindingOwner) -> dict[str, str] | None:
+        """盘上绑定指向已不存在的设备 / 目标时，给出与删除时处理一致的规整结果。
+
+        设备条目不存在或只剩墓碑，都算「设备已删除」：墓碑永久保留，不会再有
+        别的时机把指向它的绑定改掉。
+        """
+        from app.core import Config
+
+        binding = owner.game
+        if binding.device_id == "-":
+            return None
+        cleared = {"game_id": "-", "device_id": "-", "unavailable_reason": ""}
+        if binding.game_id == "-":
+            # 目标已删除（ref 回落为「-」）：照删除整个目标时的口径清空。
+            return cleared
+        game = Config.GameConfig.get(binding.game_id)
+        if game is None:
+            # 目标所属插件不可用、原样旁挂着：等插件恢复，不动。
+            if Config.GameConfig.is_unresolved(binding.game_id):
+                return None
+            return cleared
+        device = game.devices.get(binding.device_id)
+        if device is not None and not is_deleted_device(device):
+            return None
+        return {"device_id": "-", "unavailable_reason": DEVICE_DELETED_REASON}
+
+    async def repair_dangling_bindings(
+        self, scripts: Iterable[Any] | None = None
+    ) -> None:
+        """把加载时放行的悬空绑定规整成「设备已删除」或未绑定。
+
+        删除实例 / 目标时只改得到已加载的托管；旁挂期间（专项插件没加载）或其它
+        途径留在盘上的绑定，在启动维护与插件恢复转正后由这里补做；删除实例后由
+        ``on_delete_instance`` 立即调一次。托管正在运行（被锁）或写不进去时不动，
+        留到下次；已规整的不再改动，可重复调用。
+        """
+        from app.config import config_manager
+        from app.core import Config
+        from app.models.script_access import script_users
+
+        for script in list(
+            Config.ScriptConfig.values() if scripts is None else scripts
+        ):
+            try:
+                patches = [
+                    (owner, patch)
+                    for owner in (script, *script_users(script).values())
+                    if isinstance(owner, GameBindingOwner)
+                    and (patch := self._dangling_binding_patch(owner)) is not None
+                ]
+                if not patches:
+                    continue
+                if script.is_locked:
+                    logger.info(
+                        f"托管 {script.uid} 正在使用，悬空的游戏绑定留到下次规整"
+                    )
+                    continue
+                async with config_manager.transaction(new_boundary=True):
+                    for owner, patch in patches:
+                        await owner.update(
+                            type(owner).model_validate({"game": patch}),
+                            check_visibility=False,
+                        )
+                logger.info(
+                    f"托管 {script.uid} 的游戏绑定指向已不存在的设备或目标，已规整"
+                )
+            except Exception as error:
+                logger.warning(
+                    f"规整托管 {getattr(script, 'uid', script)} 悬空的游戏绑定失败，"
+                    f"留到下次：{type(error).__name__}: {error}"
+                )
 
     @staticmethod
     def create_control(

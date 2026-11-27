@@ -5,6 +5,7 @@ import {
   PluginInstallation,
   type TriggerTaskResult,
   type TriggerWriteIn,
+  type TriggerWriteOut,
   type PluginConfigUpdateIn,
   type OutBase,
 } from '@/api'
@@ -17,13 +18,14 @@ import {
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { reconnectNow } from '@/services/websocket/connection'
+import { pluginUiPost, type PluginUiActivation } from '@/utils/pluginUiRequests'
 
 type Action = 'enable' | 'disable' | 'reload' | 'uninstall' | 'install' | 'refresh' | 'config'
 export type InstallationStage = 'waiting' | 'restarting' | 'recovering'
 
 let catalogRefreshRequest: Promise<OutBase> | undefined
 
-class OperationResultError extends Error {
+export class OperationResultError extends Error {
   constructor(
     readonly outcome: 'failure' | 'cancelled' | 'unknown',
     reason?: string
@@ -171,7 +173,8 @@ export function usePluginApi() {
   const runCommand = (
     action: Exclude<Action, 'uninstall'>,
     body: TriggerWriteIn,
-    onProgress?: (stage: InstallationStage) => void
+    onProgress?: (stage: InstallationStage) => void,
+    activation?: PluginUiActivation
   ) =>
     perform(action, async () => {
       if (action === 'install') {
@@ -188,7 +191,10 @@ export function usePluginApi() {
       }
       // 命令入口直接返回身份，配置 update 不再承担命令跟踪契约。
       const accepted = await requestApi(
-        () => Service.writeConfigTriggerApiConfigTriggersWritePost(body),
+        () =>
+          activation
+            ? pluginUiPost<TriggerWriteOut>('/api/config/triggers/write', body, activation)
+            : Service.writeConfigTriggerApiConfigTriggersWritePost(body),
         t('core.plugins.actionFailed')
       )
       const taskId = accepted.data

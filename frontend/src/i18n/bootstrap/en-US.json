@@ -221,6 +221,7 @@
     "recover": "Back to initialization"
   },
   "apiErrors": {
-    "settingsLoadFailed": "Failed to load settings"
+    "settingsLoadFailed": "Failed to load settings",
+    "pluginPanelFallback": "The plugin panel is unavailable. Using the built-in editor."
   }
 }

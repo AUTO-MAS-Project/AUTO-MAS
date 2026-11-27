@@ -49,7 +49,7 @@ async function requestFirstLogin(): Promise<DesktopSessionConnectResult> {
   pendingDesktopLogin.value = { result: waiting, finish }
   try {
     const { default: router, navigateTo } = await import('@/router')
-    await navigateTo('/settings', { query: { tab: 'desktop-session' } })
+    await navigateTo('/settings', { query: { tab: 'function' } })
     if (router.currentRoute.value.path !== '/settings') finishDesktopLogin('cancelled')
   } catch (error) {
     finishDesktopLogin('failed')

@@ -1,13 +1,10 @@
 <template>
-  <!-- 加载状态 -->
   <div>
     <div v-if="loading" class="loading-container">
       <a-spin size="large" :tip="t('core.plan.loading')" />
     </div>
 
-    <!-- 主要内容 -->
     <div v-else class="plans-main">
-      <!-- 页面头部 -->
       <PlanHeader
         :plan-list="planList"
         :active-plan-id="activePlanId"
@@ -20,47 +17,29 @@
 
       <PlanEmptyState v-if="!planList.length || !currentPlanData" />
 
-      <!-- 计划内容 -->
-      <div v-else class="plans-content">
-        <!-- 计划选择器 -->
-        <PlanSelector
-          :plan-list="planList"
-          :active-plan-id="activePlanId"
-          @plan-change="onPlanChange"
-          @reorder="handlePlanReorder"
-          @rename="renamePlan"
-        />
-
-        <!-- 计划配置 -->
-        <PlanConfig
-          v-if="currentPlanDescriptor?.tableComponent"
-          :current-plan-name="currentPlanName"
-          :current-mode="currentMode"
-          :rotate-days="currentRotateDays"
-          :view-mode="viewMode"
-          :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
-          :is-editing-plan-name="isEditingPlanName"
-          :disabled="planOperationPending"
-          @update:current-plan-name="currentPlanName = $event"
-          @update:current-mode="onModeChange"
-          @update:rotate-days="handleRotateDaysChange"
-          @update:view-mode="viewMode = $event"
-          @start-edit-plan-name="startEditPlanName"
-          @finish-edit-plan-name="finishEditPlanName"
-        >
-          <!-- 动态渲染不同类型的表格 -->
-          <component
-            :is="currentPlanDescriptor.tableComponent"
-            ref="planTable"
-            :table-data="tableData"
-            :current-mode="currentMode"
-            :view-mode="viewMode"
-            :plan-id="activePlanId"
-            :handle-plan-change="handlePlanChange"
-          />
-        </PlanConfig>
-        <ConfigEditor v-else ref="planTable" mode="plan" :plan-id="activePlanId" />
-      </div>
+      <PlanEditorBody
+        v-else
+        ref="editorBody"
+        v-model:name="currentPlanName"
+        v-model:view-mode="viewMode"
+        v-model:editing-name="isEditingPlanName"
+        :plan-list="planList"
+        :plan="currentPlan"
+        :plan-id="activePlanId"
+        :descriptor="currentPlanDescriptor"
+        :has-panel="currentPlanHasPanel"
+        :supports-schedule="currentPlanSupportsSchedule"
+        :table-data="tableData"
+        :mode="currentMode"
+        :rotate-days="currentRotateDays"
+        :pending="planOperationPending"
+        :rename="renamePlan"
+        :change-field="handlePlanChange"
+        @select="onPlanChange"
+        @reorder="handlePlanReorder"
+        @mode="onModeChange"
+        @rotate-days="handleRotateDaysChange"
+      />
     </div>
   </div>
 </template>
@@ -72,14 +51,13 @@ import { useI18n } from 'vue-i18n'
 import { computed, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { fetchPluginScriptTypes } from '@/composables/usePluginScriptTypes'
+import { fetchPluginScriptTypes, usePluginRegistry } from '@/composables/usePluginScriptTypes'
+import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { usePlanApi } from '@/composables/usePlanApi'
-import ConfigEditor from '@/views/plugins/ConfigEditor.vue'
 import { nameField, projectPlanList, projectUnavailablePlans, type PlanListItem } from './planList'
 import { generateUniquePlanName, validatePlanName } from '@/utils/planNameUtils'
 import {
   getPlanTypeDescriptor,
-  PLAN_CONFIG_TYPES,
   type PlanChangeOptions,
   type PlanConfigData,
   type PlanTypeOption,
@@ -89,8 +67,7 @@ import PlanHeader from './components/PlanHeader.vue'
 import PlanEmptyState from './components/PlanEmptyState.vue'
 import UnavailablePlanCards from './components/UnavailablePlanCards.vue'
 import type { UnavailableConfigCard } from '@/components/UnavailableConfigCards.vue'
-import PlanSelector from './components/PlanSelector.vue'
-import PlanConfig from './components/PlanConfig.vue'
+import PlanEditorBody from './components/PlanEditorBody.vue'
 
 const { t } = useI18n()
 
@@ -116,11 +93,11 @@ const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
 
 const tableData = ref<Record<string, any>>({})
-const planTable = ref<{ beforeLeave?: () => boolean | Promise<boolean> } | null>(null)
+const editorBody = ref<InstanceType<typeof PlanEditorBody> | null>(null)
 const planOperationPending = ref(false)
 // 所属插件不可用的计划表：只读卡片，只能删除
 const unavailablePlans = ref<UnavailableConfigCard[]>([])
-const canLeaveTable = () => planTable.value?.beforeLeave?.() ?? true
+const canLeaveTable = () => editorBody.value?.beforeLeave() ?? true
 
 // 离开确认可能挂起，放行前再检查是否已有计划操作开始。
 const canChangePlan = async () =>
@@ -135,7 +112,15 @@ const currentPlan = computed(
 const currentPlanData = computed<PlanConfigData | null>(
   () => planDataMap.value[activePlanId.value] ?? null
 )
+const registry = usePluginRegistry()
+const planClaims = computed(
+  () => indexPluginScriptTypes(registry.data.value?.data).frontendByPlanConfigType
+)
 const currentPlanDescriptor = computed(() => getPlanTypeDescriptor(currentPlan.value?.type))
+const currentPlanHasPanel = computed(() => planClaims.value.has(currentPlan.value?.type ?? ''))
+const currentPlanSupportsSchedule = computed(
+  () => !!currentPlanDescriptor.value || currentPlanData.value?.Info?.Mode != null
+)
 
 const isActivePlan = (planId: string) => activePlanId.value === planId
 
@@ -383,40 +368,6 @@ const renamePlan = async (planId: string, newName: string): Promise<boolean> => 
   return true
 }
 
-const startEditPlanName = () => {
-  isEditingPlanName.value = true
-  setTimeout(() => {
-    const input = document.querySelector('.plan-title-input input') as HTMLInputElement
-    if (input) {
-      input.focus()
-      input.select()
-    }
-  }, 100)
-}
-
-const finishEditPlanName = async () => {
-  isEditingPlanName.value = false
-
-  const planId = activePlanId.value
-  const currentPlan = planList.value.find(plan => plan.id === planId)
-  if (!currentPlan) {
-    return
-  }
-
-  const newName = currentPlanName.value?.trim() || ''
-  if (newName === currentPlan.name) {
-    // 只差首尾空格：把标题回写成规范名称，别把多余空格留在界面上
-    currentPlanName.value = newName
-    return
-  }
-
-  const renamed = await renamePlan(planId, newName)
-  if (!renamed) {
-    // 校验或保存失败：标题退回原名
-    currentPlanName.value = currentPlan.name
-  }
-}
-
 const onModeChange = async (mode: PlanMode) => {
   if (mode === currentMode.value || !(await canChangePlan())) return
   const previous = currentMode.value
@@ -518,9 +469,6 @@ const initPlans = useConfigLoader(['config', 'plans'], async read => {
   }
 })
 
-// 注意：currentPlanName 和 currentMode 的变更保存由各自的 finish/change 事件处理
-// 直接调用 handlePlanChange 只发送修改的字段
-
 watch(
   () => route.query.planId,
   async newPlanId => {
@@ -548,12 +496,5 @@ onMounted(() => {
 
 .plans-main {
   margin: 0 auto;
-}
-
-/* 空状态样式 */
-.plans-content {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-page-content-gap);
 }
 </style>

@@ -11,6 +11,11 @@ export async function editorView(path: string, client: QueryClient) {
     history: createMemoryHistory(),
     routes: [
       ...genericEditorRoutes,
+      {
+        path: '/plan',
+        component: () => import('@/views/plugins/ConfigEditor.vue'),
+        props: { mode: 'plan', planId: 'p' },
+      },
       { path: '/scripts', name: 'Scripts', component: { render: () => null } },
     ],
   })

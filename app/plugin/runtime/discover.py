@@ -349,17 +349,15 @@ async def refresh(
             record = registry.by_name(name)
             assert record is not None
             record._project_dir = project_dir
-        from app.core.i18n import I18n
+        from app.core.i18n import PluginResources
 
-        I18n.set_plugin_sources(
+        PluginResources.set_package_roots(
             {
-                record.info.plugin_name: record._project_dir
-                / record.info.import_name
-                / "i18n"
+                record.info.plugin_name: record._project_dir / record.info.import_name
                 for record in registry.values()
                 if record._project_dir is not None
                 and record.info.import_name
                 and record.info.code_drift != PluginCodeDrift.PACKAGE_REMOVED
             }
         )
-        await I18n.get_locales()
+        await PluginResources.get_locales()

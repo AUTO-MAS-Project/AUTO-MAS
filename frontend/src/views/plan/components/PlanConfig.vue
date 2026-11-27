@@ -27,29 +27,31 @@
     </template>
     <template #actions>
       <a-space :wrap="compact">
-        <span class="mode-label">{{ t('core.plan.modeLabel') }}</span>
-        <a-segmented
-          :value="currentMode"
-          :disabled="disabled"
-          :options="[
-            { label: t('core.plan.modeAll'), value: 'ALL' },
-            { label: t('core.plan.modeWeekly'), value: 'Weekly' },
-            { label: t('core.plan.modeRotate'), value: 'Rotate' },
-          ]"
-          @change="handleModeChange"
-        />
-        <!-- 只有多天轮换用得上这个天数，别的模式下摆出来会让人以为周计划也按它排 -->
-        <template v-if="currentMode === 'Rotate'">
-          <span class="mode-label">{{ t('core.plan.rotateDaysLabel') }}</span>
-          <a-input-number
-            :value="rotateDays"
+        <template v-if="supportsSchedule">
+          <span class="mode-label">{{ t('core.plan.modeLabel') }}</span>
+          <a-segmented
+            :value="currentMode"
             :disabled="disabled"
-            :min="PLAN_ROTATE_DAYS_MIN"
-            :max="PLAN_ROTATE_DAYS_MAX"
-            size="small"
-            class="rotate-days-input"
-            @update:value="handleRotateDaysChange"
+            :options="[
+              { label: t('core.plan.modeAll'), value: 'ALL' },
+              { label: t('core.plan.modeWeekly'), value: 'Weekly' },
+              { label: t('core.plan.modeRotate'), value: 'Rotate' },
+            ]"
+            @change="handleModeChange"
           />
+          <!-- 只有多天轮换用得上这个天数，别的模式下摆出来会让人以为周计划也按它排 -->
+          <template v-if="currentMode === 'Rotate'">
+            <span class="mode-label">{{ t('core.plan.rotateDaysLabel') }}</span>
+            <a-input-number
+              :value="rotateDays"
+              :disabled="disabled"
+              :min="PLAN_ROTATE_DAYS_MIN"
+              :max="PLAN_ROTATE_DAYS_MAX"
+              size="small"
+              class="rotate-days-input"
+              @update:value="handleRotateDaysChange"
+            />
+          </template>
         </template>
         <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
         <template v-if="supportsSimpleView">
@@ -92,6 +94,7 @@ interface Props {
   /** 多天轮换的天数，只影响 Rotate 模式的列数 */
   rotateDays: number
   viewMode: 'config' | 'simple'
+  supportsSchedule: boolean
   /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
   supportsSimpleView: boolean
   isEditingPlanName: boolean

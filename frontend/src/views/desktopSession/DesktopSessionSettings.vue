@@ -1,48 +1,99 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { SectionCard } from '@/components/ui'
 import DesktopSessionPasswordDialog from './components/DesktopSessionPasswordDialog.vue'
 import { finishDesktopLogin, pendingDesktopLogin } from '@/composables/useDesktopSessionLogin'
-import { PowerSignal } from '@/api'
+import { BlockOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import { fetchTaskTargets, type TaskTarget } from '@/composables/useTaskOptions'
+import type { GlobalConfig } from '@/api'
+import SectionCard from '@/components/ui/SectionCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { getConfig, saveConfig } from '@/utils/config'
-import {
-  MAX_DESKTOP_SESSION_TARGETS,
-  type DesktopSessionRequest,
-} from '../../../electron/services/desktopSessionProtocol'
+import type { SettingGroupChangeHandler } from '@/views/setting/settingTypes'
+import { useDesktopSessionTargets, type DesktopSessionLaunchMode } from './useDesktopSessionTargets'
+import type { DesktopSessionRequest } from '../../../electron/services/desktopSessionProtocol'
 
-const props = defineProps<{ active: boolean }>()
+/**
+ * 设置 → 功能里的桌面分身卡片：集中管理在分身里跑的队列和托管。
+ * 两份清单存在后端 GlobalConfig.DesktopSession，读写走设置页的保存链路：
+ * Targets 是单独启动时进分身的托管，StartOnOpen 是「打开分身并启动任务」一并派发的队列和托管；
+ * 托管行用下拉选其一或两者，队列只在 StartOnOpen 里。
+ * 分辨率与最小化方式只有 Electron 用，存在 frontend_config。
+ */
+const props = defineProps<{
+  active: boolean
+  settings: GlobalConfig
+  handleSettingGroupChange: SettingGroupChangeHandler
+}>()
+
 const { t } = useI18n()
-const selected = ref<string[]>([])
-const targets = ref<TaskTarget[]>([])
-const options = computed(() => {
-  const atLimit = selected.value.length >= MAX_DESKTOP_SESSION_TARGETS
-  const selection = new Set(selected.value)
-  return targets.value.map(target => {
-    const hasPowerAction = Boolean(
-      target.afterAccomplish && target.afterAccomplish !== PowerSignal.NO_ACTION
-    )
+const text = (key: string) => t(`bootstrap.desktopSession.${key}`)
+
+const supported = ref<boolean>()
+const starting = ref<string | null>(null)
+const mode = ref<DesktopSessionRequest['mode']>('proxy')
+const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
+
+const {
+  loading: loadingTargets,
+  adding,
+  atLimit,
+  candidates,
+  rows: targetRows,
+  launchIds,
+  load: loadTargets,
+  add: addTarget,
+  setMode,
+  remove: removeTarget,
+} = useDesktopSessionTargets({
+  settings: () => props.settings,
+  save: props.handleSettingGroupChange,
+  onAddRejected: issue => message.warning(text(issue)),
+  onLoadFailed: () => message.error(text('loadTasksFailed')),
+})
+
+const addOptions = computed(() =>
+  candidates.value.map(({ target, powerAction }) => {
     const label = `${t(`core.scheduler.scope.${target.kind}`)} · ${target.name}`
     return {
       value: target.value,
-      disabled: (hasPowerAction || atLimit) && !selection.has(target.value),
-      label: hasPowerAction ? `${label} · ${t('bootstrap.desktopSession.powerAction')}` : label,
+      disabled: powerAction,
+      label: powerAction ? `${label} · ${text('powerAction')}` : label,
     }
   })
-})
-const loading = ref(false)
-const starting = ref(false)
-const mode = ref<DesktopSessionRequest['mode']>('proxy')
-const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
-const supported = ref<boolean>()
+)
+
+const launchModeOptions = computed(() =>
+  (['startOnOpen', 'standalone', 'both'] as const).map(value => ({
+    value,
+    label: text(
+      { startOnOpen: 'runStartOnOpen', standalone: 'runStandalone', both: 'runBoth' }[value]
+    ),
+  }))
+)
+
+const rows = computed(() =>
+  targetRows.value.map(row => ({
+    ...row,
+    launchMode: (row.standalone && row.startOnOpen
+      ? 'both'
+      : row.standalone
+        ? 'standalone'
+        : 'startOnOpen') as DesktopSessionLaunchMode,
+    kindLabel: row.kind ? text(row.kind === 'queue' ? 'queueLabel' : 'scriptLabel') : undefined,
+    // 标签里是短语，不带句末标点（词表里这几句同时用在完整的提示句里）
+    issueText: row.issue ? text(row.issue).replace(/[。.]$/, '') : undefined,
+  }))
+)
+
 const loginDialog = ref(false)
 const loginError = ref('')
+const pendingOpenIds = ref<string[]>()
 
 function closeLogin() {
   loginDialog.value = false
   loginError.value = ''
+  pendingOpenIds.value = undefined
   finishDesktopLogin('cancelled')
 }
 
@@ -63,15 +114,15 @@ onBeforeUnmount(closeLogin)
 
 async function submitLogin(password: string) {
   if (starting.value) return
-  const waiter = pendingDesktopLogin.value
-  starting.value = true
+  const openIds = pendingOpenIds.value
+  starting.value = 'login'
   loginError.value = ''
   try {
     const result = await window.electronAPI.desktopSessionConnectForTask?.({
       password,
       mode: mode.value,
       resolution: resolution.value,
-      forTask: !!waiter,
+      forTask: openIds === undefined,
     })
     if (!loginDialog.value) return
     if (result !== 'connected') {
@@ -90,9 +141,10 @@ async function submitLogin(password: string) {
     }
     loginDialog.value = false
     finishDesktopLogin('connected')
-    if (!waiter && selected.value.length) {
+    pendingOpenIds.value = undefined
+    if (openIds?.length) {
       await window.electronAPI.desktopSessionOpen?.({
-        queueIds: [...selected.value],
+        queueIds: openIds,
         mode: mode.value,
         resolution: resolution.value,
       })
@@ -101,128 +153,198 @@ async function submitLogin(password: string) {
     if (loginDialog.value) loginError.value = t('bootstrap.desktopSession.startFailed')
     else message.error(t('bootstrap.desktopSession.openFailed'))
   } finally {
-    starting.value = false
+    starting.value = null
   }
 }
 
-async function loadQueues() {
-  loading.value = true
-  try {
-    targets.value = await fetchTaskTargets()
-    selected.value = selected.value.filter(id => options.value.some(item => item.value === id))
-  } catch {
-    message.error(t('bootstrap.desktopSession.loadTasksFailed'))
-  } finally {
-    loading.value = false
-  }
-}
-
-function saveSelection(ids: string[]) {
-  selected.value = ids
-  // saveConfig 内部已按提交顺序串行落盘，这里不必再排一次队。
-  void saveConfig({ desktopSessionQueueIds: ids }).catch(() => {
-    message.error(t('bootstrap.desktopSession.saveFailed'))
-  })
-}
-
-async function open() {
+async function open(queueIds: string[], key: string) {
   const launch = window.electronAPI?.desktopSessionOpen
-  if (!launch) return
-  starting.value = true
+  if (!launch || supported.value !== true) return
+  starting.value = key
   try {
     const result = await launch({
-      queueIds: [...selected.value],
+      queueIds: [...queueIds],
       mode: mode.value,
       resolution: resolution.value,
     })
-    if (result === 'setup_required') {
+    if (result === 'setup_required' && props.active) {
+      pendingOpenIds.value = [...queueIds]
       loginError.value = ''
       loginDialog.value = true
     }
   } catch {
-    message.error(t('bootstrap.desktopSession.openFailed'))
+    message.error(text('openFailed'))
   } finally {
-    starting.value = false
+    starting.value = null
   }
 }
 
+function saveConnection(patch: {
+  desktopSessionMode?: DesktopSessionRequest['mode']
+  desktopSessionResolution?: DesktopSessionRequest['resolution']
+}) {
+  // saveConfig 内部已按提交顺序串行落盘；失败时本次打开仍用界面上的值。
+  void saveConfig(patch).catch(() => undefined)
+}
+
+function changeMode(value: unknown) {
+  if (value !== 'proxy' && value !== 'native') return
+  mode.value = value
+  saveConnection({ desktopSessionMode: value })
+}
+
+function changeResolution(value: unknown) {
+  if (value !== '1080p' && value !== 'primary') return
+  resolution.value = value
+  saveConnection({ desktopSessionResolution: value })
+}
+
 onMounted(async () => {
+  void loadTargets()
+  try {
+    const config = await getConfig()
+    if (config.desktopSessionMode === 'native') mode.value = 'native'
+    if (config.desktopSessionResolution === 'primary') resolution.value = 'primary'
+  } catch {
+    // 读不到偏好时用默认参数。
+  }
   try {
     supported.value = (await window.electronAPI?.desktopSessionSupported?.()) === true
   } catch {
-    message.error(t('bootstrap.desktopSession.loadTasksFailed'))
     supported.value = false
-    return
+    message.error(text('loadTasksFailed'))
   }
-  if (!supported.value) return
-  try {
-    const saved = (await getConfig()).desktopSessionQueueIds
-    if (Array.isArray(saved)) selected.value = saved.filter(id => typeof id === 'string')
-  } catch {
-    message.warning(t('bootstrap.desktopSession.loadSelectionFailed'))
-  }
-  await loadQueues()
 })
 </script>
 
 <template>
-  <SectionCard :title="t('bootstrap.desktopSession.title')">
-    <a-flex vertical gap="middle">
-      <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.experimental')" />
-      <a-alert v-if="supported === false" :message="t('bootstrap.desktopSession.unsupported')" />
-      <template v-else-if="supported">
+  <SectionCard :title="text('title')" :icon="BlockOutlined">
+    <a-alert type="warning" show-icon class="card-alert" :message="text('experimental')" />
+    <a-alert
+      v-if="supported === false"
+      type="info"
+      show-icon
+      class="card-alert"
+      :message="text('unsupported')"
+    />
+
+    <SettingRow :label="text('resolution')">
+      <a-select
+        :value="resolution"
+        class="row-select"
+        :aria-label="text('resolution')"
+        :options="[
+          { value: '1080p', label: '1920 × 1080' },
+          { value: 'primary', label: text('primaryResolution') },
+        ]"
+        @change="changeResolution"
+      />
+    </SettingRow>
+
+    <SettingRow :label="text('minimizeMode')">
+      <a-select
+        :value="mode"
+        class="row-select"
+        :aria-label="text('minimizeMode')"
+        :options="[
+          { value: 'proxy', label: text('proxy') },
+          { value: 'native', label: text('native') },
+        ]"
+        @change="changeMode"
+      />
+    </SettingRow>
+
+    <SettingRow stacked>
+      <div class="targets">
         <a-select
-          :value="selected"
-          :options="options"
-          :loading="loading"
-          :disabled="starting"
-          mode="multiple"
+          :value="null"
+          show-search
+          class="add-select"
           option-filter-prop="label"
-          :placeholder="t('bootstrap.desktopSession.selectTasks')"
-          @dropdown-visible-change="(visible: boolean) => visible && !loading && loadQueues()"
-          @change="saveSelection"
+          :options="addOptions"
+          :loading="loadingTargets || adding"
+          :disabled="atLimit || adding"
+          :placeholder="text('selectTasks')"
+          :aria-label="text('selectTasks')"
+          @dropdown-visible-change="
+            (visible: boolean) => visible && !loadingTargets && loadTargets()
+          "
+          @select="addTarget"
         />
-        <a-space wrap>
-          <a-select
-            v-model:value="resolution"
-            :aria-label="t('bootstrap.desktopSession.resolution')"
-            :options="[
-              { value: '1080p', label: '1920 × 1080' },
-              { value: 'primary', label: t('bootstrap.desktopSession.primaryResolution') },
-            ]"
-          />
-          <a-select
-            v-model:value="mode"
-            :aria-label="t('bootstrap.desktopSession.minimizeMode')"
-            :options="[
-              { value: 'proxy', label: t('bootstrap.desktopSession.proxy') },
-              { value: 'native', label: t('bootstrap.desktopSession.native') },
-            ]"
-          />
-        </a-space>
-        <a-flex justify="space-between" align="center" gap="middle">
-          <a-typography-text type="secondary">{{
-            t('bootstrap.desktopSession.emptySelection')
-          }}</a-typography-text>
-          <a-button
-            type="primary"
-            :loading="starting"
-            :disabled="loading || selected.length > MAX_DESKTOP_SESSION_TARGETS"
-            @click="open"
-          >
-            {{
-              selected.length
-                ? t('bootstrap.desktopSession.openWithTasks')
-                : t('bootstrap.desktopSession.open')
-            }}
-          </a-button>
-        </a-flex>
-      </template>
-    </a-flex>
+        <a-list v-if="rows.length" size="small" bordered :data-source="rows" class="target-list">
+          <template #renderItem="{ item }">
+            <a-list-item>
+              <template #actions>
+                <a-select
+                  v-if="item.kind === 'script'"
+                  size="small"
+                  class="mode-select"
+                  :value="item.launchMode"
+                  :options="launchModeOptions"
+                  :disabled="!item.known || adding"
+                  :aria-label="text('launchMode')"
+                  @change="(value: DesktopSessionLaunchMode) => setMode(item.id, value)"
+                />
+                <a-button
+                  type="link"
+                  size="small"
+                  :disabled="supported !== true || !item.launchable"
+                  :loading="starting === item.id"
+                  @click="open([item.id], item.id)"
+                >
+                  {{ text('start') }}
+                </a-button>
+                <a-button
+                  type="link"
+                  size="small"
+                  danger
+                  :disabled="adding"
+                  @click="removeTarget(item.id)"
+                >
+                  {{ text('removeTarget') }}
+                </a-button>
+              </template>
+              <div class="target-main">
+                <span class="target-name">
+                  <a-tag v-if="item.kindLabel" class="target-kind">{{ item.kindLabel }}</a-tag>
+                  <!-- 查不到名字时（已删除，或名单还没读回）不把 uid 当名字显示 -->
+                  <span v-if="item.name !== item.id" class="target-label" :title="item.name">{{
+                    item.name
+                  }}</span>
+                </span>
+                <a-tag v-if="item.issueText" color="warning" class="target-issue">
+                  {{ item.issueText }}
+                </a-tag>
+              </div>
+            </a-list-item>
+          </template>
+        </a-list>
+      </div>
+    </SettingRow>
+
+    <template #footer>
+      <div class="footer-actions">
+        <a-button
+          :disabled="supported !== true || starting !== null"
+          :loading="starting === 'open'"
+          @click="open([], 'open')"
+        >
+          {{ text('open') }}
+        </a-button>
+        <a-button
+          type="primary"
+          :disabled="supported !== true || starting !== null || !launchIds.length"
+          :loading="starting === 'all'"
+          @click="open(launchIds, 'all')"
+        >
+          {{ text('openWithTasks') }}
+        </a-button>
+      </div>
+    </template>
     <DesktopSessionPasswordDialog
       v-model:open="loginDialog"
       first-login
-      :submitting="starting"
+      :submitting="starting === 'login'"
       @submit="submitLogin"
       @cancel="closeLogin"
     >
@@ -231,3 +353,76 @@ onMounted(async () => {
     </DesktopSessionPasswordDialog>
   </SectionCard>
 </template>
+
+<style scoped>
+.card-alert {
+  margin-bottom: 8px;
+}
+
+.row-select,
+.add-select,
+.targets {
+  width: 100%;
+}
+
+.targets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.target-list :deep(.ant-list-item) {
+  gap: 8px;
+}
+
+.target-list :deep(.ant-list-item-action) {
+  flex: 0 0 auto;
+  margin-inline-start: 0;
+}
+
+.mode-select {
+  width: 112px;
+}
+
+.target-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.target-name {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.target-kind {
+  flex: 0 0 auto;
+}
+
+.target-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-issue {
+  max-width: 100%;
+  margin-inline-end: 0;
+  white-space: normal;
+}
+
+.footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+</style>

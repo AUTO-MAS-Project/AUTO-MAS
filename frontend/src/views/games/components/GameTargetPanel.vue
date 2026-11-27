@@ -61,10 +61,7 @@
         </template>
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === 'name'">
-            <span
-              class="device-name"
-              :class="{ 'device-name--deleted': isDeletedDevice(record.document) }"
-            >
+            <span class="device-name">
               {{ record.document.info?.name || t('core.emulator.unnamed') }}
             </span>
             <span
@@ -86,9 +83,6 @@
               </StatusChip>
               <StatusChip v-if="isRecoveryPending(record.uid)" tone="warning" :dot="false">
                 {{ t('core.games.recoveryShort') }}
-              </StatusChip>
-              <StatusChip v-if="isDeletedDevice(record.document)" tone="neutral" :dot="false">
-                {{ t('core.games.deleted') }}
               </StatusChip>
             </a-space>
           </template>
@@ -141,7 +135,7 @@ import { useI18n } from 'vue-i18n'
 import { NoData, StatusChip } from '@/components/ui'
 import type { ActiveTriggerField, DeviceStatus } from '@/api'
 import type { GameDevice, GameDeviceRow, GameRow } from '@/types/games'
-import { gameDevices, isDeletedDevice } from '@/types/games'
+import { gameDevices } from '@/types/games'
 import { deviceStatusTone, hasModAvdMaintenance } from '../gamePresentation'
 import CreateInstance from './CreateInstance.vue'
 import DeviceActions from './DeviceActions.vue'
@@ -274,11 +268,6 @@ function isRecoveryPending(uid: string): boolean {
 .device-name {
   font-weight: 500;
   color: var(--ant-color-text);
-}
-
-.device-name--deleted {
-  text-decoration: line-through;
-  color: var(--ant-color-text-tertiary);
 }
 
 .native-index {

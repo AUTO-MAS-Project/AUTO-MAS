@@ -177,6 +177,29 @@ describe('settings persistence contract', () => {
     expect(persistence.loading.value).toBe(false)
   })
 
+  it('saves several fields of one group in a single request and applies none of them on failure', async () => {
+    const settings = reactive<GlobalConfig>({
+      DesktopSession: { Targets: [], StartOnOpen: ['a'] },
+    })
+    const rejected: OutBase = { code: 500, status: 'error', message: 'setting rejected' }
+    const write = vi
+      .spyOn(UpdateService, 'updateScriptApiSettingUpdatePost')
+      .mockImplementationOnce(() => reply(rejected))
+      .mockImplementationOnce(() => reply(success))
+    const persistence = createPersistence(settings)
+    const swap = { Targets: ['a'], StartOnOpen: [] }
+
+    await expect(persistence.handleSettingGroupChange('DesktopSession', swap)).resolves.toBe(false)
+    expect(settings.DesktopSession).toEqual({ Targets: [], StartOnOpen: ['a'] })
+
+    await expect(persistence.handleSettingGroupChange('DesktopSession', swap)).resolves.toBe(true)
+    expect(settings.DesktopSession).toEqual(swap)
+    expect(write.mock.calls.map(([request]) => request.data)).toEqual([
+      { DesktopSession: swap },
+      { DesktopSession: swap },
+    ])
+  })
+
   it('serializes rapid setting updates and coalesces pending writes for the same field', async () => {
     const settings = reactive<GlobalConfig>({
       Function: { IfSilence: false, IfAllowSleep: false },

@@ -34,12 +34,13 @@ import inspect
 from typing import Any, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.api._config_editors import FrontendWriteGuard, require_frontend_activation
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
@@ -48,19 +49,22 @@ from app.core import Config
 from app.core.i18n import AppLocale
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
+from app.models.config.game import is_deleted_device
 from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
     ConfigSnapshotOut,
     ConfigUpdateOut,
     OutBase,
+    PanelArtifactInfo,
+    PanelBinding,
     PluginInstallation,
 )
 from app.models.task import TaskMode
 from app.mystery.gate import is_unlocked
 from app.plugin.base.script import FirstAccountMode
 from app.plugin.errors import PluginBusyError, PluginPrecheckError
-from app.plugin.http import PLUGIN_GATEWAY_PATH
+from app.plugin.http import PLUGIN_GATEWAY_PATH, PLUGIN_UI_PATH
 from app.plugin.types import (
     RESTRICTED_PLUGIN_NAMES,
     PluginState,
@@ -128,12 +132,22 @@ class PluginProvidedScriptType(BaseModel):
     firstAccountMode: FirstAccountMode = "direct"
 
 
+class PluginFrontendInfo(BaseModel):
+    manifestVersion: Literal[1] = 1
+    revision: str
+    activationId: str
+    pages: dict[str, dict[str, PanelArtifactInfo]]
+    bindings: list[PanelBinding]
+    diagnostics: list[str]
+
+
 class PluginRegistryDocument(ConfigPayload[PluginRecord]):
     """沿用配置字段投影，并显式保留命令目标身份及运行时 UI 属性。"""
 
     uid: UUID
     ui: PluginConfigUi
     providedScript: PluginProvidedScriptType | None = None
+    frontend: PluginFrontendInfo | None = None
     disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
         default_factory=list,
         description="停用本插件及其级联下游时暂不可用的配置领域",
@@ -268,6 +282,19 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
     )
 
 
+def _plugin_frontend(record: PluginRecord) -> PluginFrontendInfo | None:
+    frontend = Plugin.mounted_frontend(record)
+    if frontend is None:
+        return None
+    return PluginFrontendInfo(
+        revision=frontend.revision,
+        activationId=frontend.activation_id,
+        pages=frontend.pages,
+        bindings=frontend.bindings,
+        diagnostics=frontend.diagnostics,
+    )
+
+
 # 前端客户端由 /api/plugin_registry/get 生成，两个入口共用一个 OpenAPI 操作。
 @_runtime.post(
     "/registry/get", response_model=PluginRegistryGetOut, include_in_schema=False
@@ -296,6 +323,7 @@ async def get_plugin_registry(
                     {
                         "uid": uid,
                         "providedScript": _provided_script(col[uid]),
+                        "frontend": _plugin_frontend(col[uid]),
                         "disableImpact": Plugin.disable_impact(col[uid]),
                         **Plugin.dependency_view(col[uid]),
                         **col[uid].model_dump(mode="json", context={"audience": "api"}),
@@ -454,6 +482,9 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
 )
 async def update_plugin_config(
     body: PluginConfigUpdateIn = Body(...),
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
 ) -> PluginConfigUpdateOut:
     """按插件实际配置类型校验并保存局部补丁，返回配置更新结果。"""
     try:
@@ -463,8 +494,12 @@ async def update_plugin_config(
             return PluginConfigUpdateOut(
                 code=400, status="error", message="插件未启用或无自有配置"
             )
+        if guard is not None:
+            guard(cfg)
         patch = type(cfg).model_validate(body.data)
         await cfg.update(patch)
+    except HTTPException:
+        raise
     except KeyError:
         return PluginConfigUpdateOut(
             code=404, status="error", message="未找到对应插件配置"
@@ -547,7 +582,7 @@ async def plugin_game_options() -> ComboBoxOut:
 
 @_runtime.post("/options/devices", response_model=ComboBoxOut)
 async def plugin_device_options(body: PluginGameDevicesIn) -> ComboBoxOut:
-    """按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表。"""
+    """按游戏标识读取设备列表并转换为选项，游戏不存在时返回空列表；已删除的设备不列出。"""
     game = Config.GameConfig.get(body.gameId)
     return ComboBoxOut(
         data=[]
@@ -555,6 +590,7 @@ async def plugin_device_options(body: PluginGameDevicesIn) -> ComboBoxOut:
         else [
             ComboBoxItem(label=entry.info.name, value=str(uid))
             for uid, entry in game.devices.items()
+            if not is_deleted_device(entry)
         ]
     )
 
@@ -585,10 +621,20 @@ async def plugin_plan_options(
 
 # ==================== 声明式 HTTP 网关 ====================
 
+_GATEWAY_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+
+
+@_gateway.api_route(PLUGIN_UI_PATH, methods=_GATEWAY_METHODS, include_in_schema=False)
+async def dispatch_plugin_ui(plugin_name: str, path: str, request: Request) -> Response:
+    """固定前缀先于插件类型化路由匹配，避免动态路由拦截静态资源。"""
+    return await dispatch_plugin_http(
+        plugin_name=plugin_name, path=f"ui/{path}", request=request
+    )
+
 
 @_gateway.api_route(
     PLUGIN_GATEWAY_PATH,
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    methods=_GATEWAY_METHODS,
     include_in_schema=False,
 )
 async def dispatch_plugin_http(
@@ -615,21 +661,30 @@ async def dispatch_plugin_http(
     if rel != "/":
         rel = rel.rstrip("/") or "/"
     method = request.method.upper()
-    handler = None
-    for decl in mount.routes:
-        decl_path = decl.path if decl.path.startswith("/") else f"/{decl.path}"
-        decl_path = decl_path.rstrip("/") or "/"
-        if decl_path == rel and method in decl.methods:
-            handler = decl.handler
-            break
-    if handler is None:
-        return JSONResponse(
-            status_code=404,
-            content=OutBase(
-                code=404, status="error", message="插件接口不存在"
-            ).model_dump(mode="json"),
-        )
     try:
+        if path == "ui" or path.startswith("ui/"):
+            frontend = Plugin.mounted_frontend(plugin_name)
+            if method != "GET" or frontend is None:
+                return Response(status_code=404)
+            revision, _, asset = path.removeprefix("ui/").partition("/")
+            with frontend.gate.active_call():
+                return frontend.asset_response(
+                    revision=revision, asset=asset, prefix=mount.prefix, request=request
+                )
+        handler = None
+        for decl in mount.routes:
+            decl_path = decl.path if decl.path.startswith("/") else f"/{decl.path}"
+            decl_path = decl_path.rstrip("/") or "/"
+            if decl_path == rel and method in decl.methods:
+                handler = decl.handler
+                break
+        if handler is None:
+            return JSONResponse(
+                status_code=404,
+                content=OutBase(
+                    code=404, status="error", message="插件接口不存在"
+                ).model_dump(mode="json"),
+            )
         # 参数约定在进入业务前绑定，异常处理不包含任何二次试调用。
         signature = inspect.signature(handler)
         args = () if not signature.parameters else (request,)

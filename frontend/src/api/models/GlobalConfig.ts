@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GlobalConfig_DesktopSession } from './GlobalConfig_DesktopSession';
 import type { GlobalConfig_Display } from './GlobalConfig_Display';
 import type { GlobalConfig_download } from './GlobalConfig_download';
 import type { GlobalConfig_Function } from './GlobalConfig_Function';
@@ -22,6 +23,10 @@ export type GlobalConfig = {
      */
     download?: (GlobalConfig_download | null);
     Display?: (GlobalConfig_Display | null);
+    /**
+     * 桌面分身
+     */
+    DesktopSession?: (GlobalConfig_DesktopSession | null);
     Function?: (GlobalConfig_Function | null);
     Notify?: (GlobalConfig_Notify | null);
     Replay?: (GlobalConfig_Replay | null);

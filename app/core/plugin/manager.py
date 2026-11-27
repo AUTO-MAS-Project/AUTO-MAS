@@ -79,6 +79,8 @@ if TYPE_CHECKING:
     from app.config import ConfigEntry, ConfigNode
     from app.models.config import PluginMeta, PluginRecord
     from app.models.config.game import GameEntry
+    from app.models.schema import FrontendSurfaceMount
+    from app.plugin.frontend import MountedFrontend
 
 logger = get_logger("插件管理")
 
@@ -791,11 +793,23 @@ class _PluginManager:
                 replace(route, handler=gate.wrap(route.handler))
                 for route in collect_route_decls(plugin)
             ]
-            if routes or plugin.api_router is not None:
-                self.http.mount(name, routes, router=plugin.api_router, gate=gate)
-
             if isinstance(plugin, (ScriptAdapterPlugin, GameAdapterPlugin)):
                 await plugin.system_enable()
+            from app.core.i18n import PluginResources
+
+            decl = self.script_types.get(record.uid)
+            frontend = PluginResources.load_frontend(
+                name,
+                script_key=plugin.script_type_key
+                if isinstance(plugin, ScriptAdapterPlugin) and decl
+                else None,
+                plan_type=decl.plan_type.__name__ if decl and decl.plan_type else None,
+                gate=gate,
+            )
+            if routes or plugin.api_router is not None or frontend is not None:
+                self.http.mount(
+                    name, routes, router=plugin.api_router, gate=gate, frontend=frontend
+                )
             self.http.invalidate_schema()
 
             # 根语义落启用稳态；内嵌 reload 只记意图，由父操作收尾
@@ -812,10 +826,11 @@ class _PluginManager:
             await record.commit()
             if isinstance(plugin, ScriptAdapterPlugin):
                 await Config.restore_unavailable_managed()
-            capabilities_changed.send(self, name=name, enabled=True)
-            await Publisher.send(
-                id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
-            )
+            if ctx != LifecycleContext.RELOAD:
+                capabilities_changed.send(self, name=name, enabled=True)
+                await Publisher.send(
+                    id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
+                )
             return deps
         except asyncio.CancelledError as exc:
             await self._fail_branch(
@@ -1090,8 +1105,11 @@ class _PluginManager:
             from app.core.config import Config
 
             if remove_record:
+                from app.core.i18n import PluginResources
+
                 Config.plugin_registry.remove(record.uid)
                 await Config.plugin_registry.commit()
+                await PluginResources.remove_package(name)
             return deps
         except Exception as exc:
             await self._fail_branch(
@@ -1240,6 +1258,13 @@ class _PluginManager:
             record.info.last_error = ""
             record.info.code_drift = PluginCodeDrift.NORMAL
             await record.commit()
+            if want_enabled:
+                capabilities_changed.send(
+                    self, name=record.info.plugin_name, enabled=True
+                )
+                await Publisher.send(
+                    id=ID_PLUGIN, type=PLUGIN_CAPABILITIES_UPDATED, data={}
+                )
             return deps
         except Exception as exc:
             await self._fail_branch(
@@ -1557,8 +1582,11 @@ class _PluginManager:
                     record.info.last_error = str(exc)
                     await record.commit()
                     raise
+                from app.core.i18n import PluginResources
+
                 Config.plugin_registry.remove(record.uid)
                 await Config.plugin_registry.commit()
+                await PluginResources.remove_package(name)
                 return deps
 
     async def refresh_market(self) -> None:
@@ -1573,6 +1601,97 @@ class _PluginManager:
             (s for s in Config.plugin_registry.values() if s._plugin_cls is not None),
             key=lambda s: s.info.plugin_name,
         )
+
+    def mounted_frontend(
+        self, record_or_name: PluginRecord | str
+    ) -> MountedFrontend | None:
+        """启用完成后公布界面，暂停接收调用时立即撤销。"""
+        from app.core.config import Config
+
+        record = (
+            Config.plugin_registry.by_name(record_or_name)
+            if isinstance(record_or_name, str)
+            else record_or_name
+        )
+        if record is None or record.info.state != PluginState.ENABLED:
+            return None
+        mount = self.http.get(record.info.plugin_name)
+        if mount and mount.frontend and mount.frontend.gate.accepting:
+            return mount.frontend
+        return None
+
+    def frontend_bindings(self, entry: ConfigEntry):
+        """按实际配置及其所属托管解析面板，详情投影与写入鉴权使用同一结果。"""
+        from app.core.config import Config
+
+        owner = self.trigger_owner(entry)
+        if owner is None:
+            return
+        record = Config.plugin_registry.get(owner)
+        if record is None or (frontend := self.mounted_frontend(record)) is None:
+            return
+        decl = self.script_types.get(owner)
+        parent = entry.parent
+        if entry is record._config:
+            surfaces = ("settings", "notification")
+        elif decl is None:
+            return
+        elif parent is Config.PlanConfig and type(entry) is decl.plan_type:
+            surfaces = ("plan",)
+        elif parent is Config.ScriptConfig and type(entry) is decl.script_type:
+            surfaces = ("script", "setup")
+        elif type(entry) is decl.user_type and parent is not None:
+            script = parent.parent
+            if (
+                type(script) is not decl.script_type
+                or script.parent is not Config.ScriptConfig
+                or script.users is not parent
+            ):
+                return
+            surfaces = ("user",)
+        else:
+            return
+
+        for binding in frontend.bindings:
+            extra = binding.surface == "extra" and (
+                binding.planType is not None
+                and "plan" in surfaces
+                or binding.scriptType is not None
+                and surfaces[0] in ("script", "user")
+            )
+            if binding.surface in surfaces or extra:
+                yield record.info.plugin_name, frontend, binding
+
+    def resolve_frontend_surfaces(
+        self, entry: ConfigEntry
+    ) -> dict[str, FrontendSurfaceMount]:
+        """编辑器按入口提供该页的全部客户端产物。"""
+        from app.models.schema import FrontendSurfaceMount
+
+        return {
+            binding.surface: FrontendSurfaceMount(
+                pluginName=name,
+                pageId=binding.page,
+                revision=frontend.revision,
+                activationId=frontend.activation_id,
+                artifacts=frontend.pages[binding.page],
+            )
+            for name, frontend, binding in self.frontend_bindings(entry)
+            if binding.surface != "extra"
+        }
+
+    def validate_frontend_activation(
+        self, plugin_name: str, activation_id: str
+    ) -> MountedFrontend | None:
+        """仅在界面仍属当前启用实例且可接收调用时返回快照。"""
+        frontend = self.mounted_frontend(plugin_name)
+        if (
+            self.http.accepting
+            and frontend is not None
+            and frontend.activation_id == activation_id
+        ):
+            return frontend
+        return None
 
     def script_decl(self, config):
         """从当前插件类型目录查找配置的专项声明，不向宿主暴露具体插件模块。"""

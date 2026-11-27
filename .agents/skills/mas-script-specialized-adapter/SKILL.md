@@ -31,7 +31,7 @@ description: >-
 3. 必读 [adapter-code-norms.md](references/adapter-code-norms.md)，再按需只读对应参考：
    - 案例：[SRC](references/examples-src.md) · [MaaEnd](references/examples-maaend.md) · [M9A（MFW 特调）](references/examples-m9a.md) · [Okww](references/examples-okww.md) · [OkNte](references/examples-oknte.md) · [HSR](references/examples-hsr.md) · [ZzzOd](references/examples-zzzod.md) · [BAAH](references/examples-baah.md) · [BetterGI](references/examples-bettergi.md) · [Whimbox](references/examples-whimbox.md)
    - 子能力：日志管线 [logbox-api.md](references/logbox-api.md) · OCR [ocr-tools.md](references/ocr-tools.md) · 归档 [config-archive.md](references/config-archive.md) · 恢复 [config-restore.md](references/config-restore.md) · 问题包 [issue-report.md](references/issue-report.md)
-   - 桌面分身：新增或迁移插件专项、保存执行会话、处理子会话进程时读 [desktop-session.md](references/desktop-session.md)。
+   - 桌面分身：新增或迁移插件专项、加入桌面分身清单、处理子会话进程时读 [desktop-session.md](references/desktop-session.md)。
 4. 联动 Skill：调度/会话/锁加 `mas-task-scheduler`；前端/UI 加 `mas-frontend-standards` + `mas-frontend-ui`；配置加 `mas-data-model`。
 
 ## 关键架构约定

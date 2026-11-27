@@ -96,7 +96,11 @@ class EmulatorControl(GameControl[TEmulator, TEmulatorDevice]):
 
     @abstractmethod
     async def delete_instance(self, device_uid: UUID, *, ticket: LockTicket) -> None:
-        """厂商侧删除多开并对齐 devices。"""
+        """厂商侧删除多开并对齐 devices。
+
+        成功后把该设备 ``info.tombstone`` 置真，条目留在 devices 里（宿主永久保留
+        墓碑，不移除）；新建实例不得复用墓碑的 uid。
+        """
 
     @abstractmethod
     async def install_app(
@@ -154,7 +158,11 @@ class EmulatorControl(GameControl[TEmulator, TEmulatorDevice]):
     async def capture_baseline(
         self, uid: UUID, *, ticket: LockTicket
     ) -> dict[str, int]:
-        """由插件读取并保存其支持的配置守卫基准。"""
+        """由插件读取并保存其支持的配置守卫基准。
+
+        覆盖本方法即表示提供配置守卫，宿主据此显示守卫开关和记录基准入口；
+        不提供守卫就不要覆盖。
+        """
         raise NotImplementedError("此设备不提供配置守卫")
 
     async def maafw_adb_extra(self, uid: UUID) -> dict[str, object]:

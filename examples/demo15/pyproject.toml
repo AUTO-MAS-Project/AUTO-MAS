@@ -13,3 +13,6 @@ keywords = ["auto-mas-plugin", "auto-mas-id:demo15"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+demo15 = ["ui/*"]

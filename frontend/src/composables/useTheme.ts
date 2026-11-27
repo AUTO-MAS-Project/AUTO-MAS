@@ -6,6 +6,7 @@ import { getConfig, saveConfig, type FrontendConfig } from '@/utils/config'
 import { createAppearanceCursorApplier, normalizeCursorSize } from '@/components/appearanceCursor'
 import { createAppearanceBackgroundApplier } from './appearanceBackground'
 import { createAppearanceSurfaceColor, getAppearanceSurfaceOpacity } from './appearanceSurfaces'
+import { pluginPanelTheme } from './pluginPanelTheme'
 import type { InstalledAppearance, OnlineAppearanceInstallResult } from '@/types/appearance'
 import {
   clampCustomSurfaceOpacity,
@@ -85,6 +86,36 @@ const displayedCustomSurfaceOpacity = computed(
   () => customSurfaceOpacityPreview.value ?? customSurfaceOpacity.value
 )
 const isDark = ref(false)
+
+watch(
+  [isDark, resolvedAntTokens],
+  ([dark, tokens]) => {
+    const mode = dark ? 'dark' : 'light'
+    pluginPanelTheme.value = {
+      mode,
+      tokens: tokens
+        ? {
+            '--mas-bg-base': tokens.colorBgContainer,
+            '--mas-bg-elevated': tokens.colorBgElevated,
+            '--mas-text-primary': tokens.colorText,
+            '--mas-text-secondary': tokens.colorTextSecondary,
+            '--mas-border': tokens.colorBorder,
+            '--mas-radius': `${tokens.borderRadius}px`,
+            '--mas-primary': tokens.colorPrimary,
+            '--mas-text-on-primary': tokens.colorTextLightSolid,
+            '--mas-danger': tokens.colorError,
+            '--mas-warning': tokens.colorWarning,
+            '--mas-success': tokens.colorSuccess,
+            '--mas-font-family': tokens.fontFamily,
+            '--mas-font-size': `${tokens.fontSize}px`,
+            '--mas-disabled-bg': tokens.colorBgContainerDisabled,
+          }
+        : {},
+    }
+  },
+  { immediate: true }
+)
+
 const logger = window.electronAPI.getLogger('主题')
 const applyAppearanceBackground = createAppearanceBackgroundApplier({ logger })
 let appearanceListenerInitialized = false

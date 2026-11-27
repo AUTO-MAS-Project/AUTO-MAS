@@ -281,12 +281,12 @@ class _DesktopSessionLifecycle:
                     queue is not None and queue.Info.ExecutionSession == "desktop"
                 )
             elif len(node.children) == 1:
-                script = Config.ScriptConfig.get(node.children[0].uid)
-                # 插件可自行声明 Run.ExecutionSession，无需继承宿主的运行设置类。
-                run = getattr(script, "Run", None)
-                use_desktop = getattr(run, "ExecutionSession", "main") == "desktop"
-                if use_desktop:
-                    require_task_support(script)
+                uid = str(node.children[0].uid).lower()
+                if uid in Config.setting.DesktopSession.Targets:
+                    script = Config.ScriptConfig.get(uid)
+                    if script is not None:
+                        require_task_support(script)
+                        use_desktop = True
             if use_desktop:
                 target = self._connected_target()
                 self.prune_and_list_tasks()

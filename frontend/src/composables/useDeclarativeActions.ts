@@ -3,9 +3,10 @@ import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
 import type { DeclarativeHint } from './useDeclarativeOptions'
 import { useActiveTriggers } from './useActiveTriggers'
-import { usePluginApi } from './usePluginApi'
+import { OperationResultError, usePluginApi } from './usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
 import { useConfirm } from './useConfirm'
+import type { PluginUiActivation } from '@/utils/pluginUiRequests'
 import type {
   SettingsChange,
   usePluginSettingsDraft,
@@ -32,7 +33,8 @@ export function useDeclarativeActions(
     group: string,
     hint: DeclarativeHint,
     value: unknown,
-    owner?: SettingsChange
+    owner?: SettingsChange,
+    wheel?: { activation: PluginUiActivation; canRun: () => boolean }
   ) => {
     // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
     const field = hint.field
@@ -44,14 +46,14 @@ export function useDeclarativeActions(
       saving.value ||
       activeFields.value.includes(`${group}.${field}`)
     )
-      return
+      return 'error'
     const dropdown = hint.component === 'dropdown-button'
     if (
       (!dropdown && value !== true) ||
       (typeof value !== 'boolean' && typeof value !== 'string' && typeof value !== 'number')
     ) {
       message.error(t('core.plugins.actionFailed'))
-      return
+      return 'error'
     }
     const uid = configUid.value
     runningKey.value = `${group}.${field}`
@@ -70,22 +72,25 @@ export function useDeclarativeActions(
           tone: 'warning',
         }))
       )
-        return
-      if (uid !== configUid.value) return
-      const result = await runCommand('config', {
-        configUid: uid,
-        group,
-        field,
-        value: true,
-        ...(dropdown ? { option: value } : {}),
-      })
+        return 'cancelled'
+      if (uid !== configUid.value || (wheel && !wheel.canRun())) return 'cancelled'
+      const result = await runCommand(
+        'config',
+        { configUid: uid, group, field, value: true, ...(dropdown ? { option: value } : {}) },
+        undefined,
+        wheel?.activation
+      )
       message.success(result.message || t('core.plugins.actionComplete'))
       if (configUid.value === uid) {
         if (dirty) draft!.discardField(owner.group, owner.field)
         await refresh()
       }
+      return 'success'
     } catch (error) {
       message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
+      return error instanceof OperationResultError && error.outcome === 'cancelled'
+        ? 'cancelled'
+        : 'error'
     } finally {
       runningKey.value = null
     }

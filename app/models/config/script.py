@@ -508,10 +508,14 @@ class MaaEndUserConfig(DomainEntry):
 
 
 class DesktopSessionRunFields(ConfigGroup):
-    """支持桌面分身的托管运行设置。"""
+    """支持桌面分身的托管运行设置。
+
+    已弃用：宿主改读全局设置的桌面分身清单，字段只为降级和已发布插件保留。
+    """
 
     ExecutionSession: Literal["main", "desktop"] = Field(
-        default="main", description="单独启动托管时使用的 Windows 会话"
+        default="main",
+        description="已弃用：宿主不再读取，仅在升级时迁入桌面分身清单",
     )
 
 

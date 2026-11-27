@@ -50,7 +50,6 @@
           v-model:daily-limit="srcConfig.Run.ProxyTimesLimit"
           v-model:retry-limit="srcConfig.Run.RunTimesLimit"
           v-model:timeout="srcConfig.Run.RunTimeLimit"
-          hide-execution-session
           :daily-label="t('core.edit.runsPerDayThis')"
           :daily-hint="t('core.edit.skipRunOnceThis')"
           :retry-label="t('core.edit.retryLimit')"

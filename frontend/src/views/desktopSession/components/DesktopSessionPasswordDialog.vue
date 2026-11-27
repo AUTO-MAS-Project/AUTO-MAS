@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { LockOutlined } from '@ant-design/icons-vue'
 import { AppModal } from '@/components/ui'
 
 const props = defineProps<{ firstLogin?: boolean; submitting?: boolean }>()
@@ -27,6 +28,7 @@ function submit() {
   <AppModal
     v-model:open="open"
     size="sm"
+    :icon="LockOutlined"
     :title="t('bootstrap.desktopSession.passwordTitle')"
     :ok-text="t('bootstrap.desktopSession.connect')"
     :cancel-text="t('bootstrap.desktopSession.cancel')"
