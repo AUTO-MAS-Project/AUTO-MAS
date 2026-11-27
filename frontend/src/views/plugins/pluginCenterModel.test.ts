@@ -7,8 +7,6 @@ import {
   detailFieldKeys,
   groupInstalled,
   joinSegments,
-  lifecycleAffected,
-  lifecycleCascadeUsage,
   lifecycleDecision,
   marketAction,
   marketColumnCount,
@@ -188,7 +186,7 @@ describe('插件中心缺声明回落', () => {
   })
 })
 
-describe('插件中心用量与拦截', () => {
+describe('插件中心用量与操作确认', () => {
   const source = (state: PluginUsageSource['state']): PluginUsageSource => ({
     state,
     scripts: [
@@ -199,180 +197,65 @@ describe('插件中心用量与拦截', () => {
   })
   const maa = installedOne({ plugin_name: 'maa_adapter' }, { disableImpact: ['scripts'] })
 
-  it('托管列表已加载才计数并据此拦截停用与卸载', () => {
+  it('有托管、账号和计划表时仍可确认停用或卸载', () => {
     const usage = pluginUsage(maa, source('ready'))
     expect(usage).toMatchObject({ kind: 'counted', scriptCount: 1, accountCount: 3, planCount: 1 })
-    expect(lifecycleDecision('disable', maa, usage)).toMatchObject({ kind: 'blockedInUse' })
-    expect(lifecycleDecision('uninstall', maa, usage)).toMatchObject({ kind: 'blockedInUse' })
+    for (const action of ['disable', 'uninstall'] as const)
+      expect(lifecycleDecision(action, maa)).toMatchObject({ kind: 'confirm', scopes: ['scripts'] })
   })
 
-  it('托管列表未加载或失败时一律先拦住，不当成没有托管', () => {
-    for (const [state, reason] of [
-      ['loading', 'loading'],
-      ['error', 'failed'],
-    ] as const) {
-      const usage = pluginUsage(maa, source(state))
-      expect(usageSegments(usage)).toEqual([])
-      expect(lifecycleDecision('disable', maa, usage)).toEqual({ kind: 'blockedUnknown', reason })
-      expect(lifecycleDecision('uninstall', maa, usage)).toEqual({ kind: 'blockedUnknown', reason })
-    }
-  })
-
-  it('缓存里有旧托管列表但本次进入后还没取到时，停用和卸载被拦住', () => {
+  it('用量未知时隐藏数量，操作仍按后端给的影响范围确认', () => {
     expect(usageSourceState({ failed: false, current: false })).toBe('loading')
     expect(usageSourceState({ failed: false, current: true })).toBe('ready')
     expect(usageSourceState({ failed: true, current: true })).toBe('error')
-    const stale = {
-      ...source('ready'),
-      scripts: [],
-      state: usageSourceState({ failed: false, current: false }),
-    }
-    const usage = pluginUsage(maa, stale)
-    expect(lifecycleDecision('disable', maa, usage)).toEqual({
-      kind: 'blockedUnknown',
-      reason: 'loading',
-    })
-    expect(lifecycleDecision('uninstall', maa, usage)).toEqual({
-      kind: 'blockedUnknown',
-      reason: 'loading',
-    })
-  })
-
-  it('没有托管在用时照现有流程确认后执行', () => {
-    const empty = { ...source('ready'), scripts: [] }
-    const usage = pluginUsage(maa, empty)
-    expect(lifecycleDecision('disable', maa, usage)).toEqual({
-      kind: 'confirm',
-      scopes: ['scripts'],
-    })
-    const plain = installedOne({ plugin_name: 'fast_download' })
-    const none = pluginUsage(plain, source('loading'))
-    expect(none).toEqual({ kind: 'none' })
-    expect(lifecycleDecision('disable', plain, none)).toEqual({ kind: 'direct' })
-    expect(lifecycleDecision('uninstall', plain, none)).toEqual({ kind: 'confirm', scopes: [] })
-  })
-
-  it('对不上托管类型但后端给了影响范围时，不计数，退回影响范围确认', () => {
     const thirdParty = installedOne({ plugin_name: 'ld_adapter' }, { disableImpact: ['games'] })
-    expect(thirdParty.category).toBe('specialized')
     const usage = pluginUsage(thirdParty, source('error'))
     expect(usage).toEqual({ kind: 'impactOnly', scopes: ['games'] })
     expect(usageSegments(usage)).toEqual([])
-    expect(lifecycleDecision('disable', thirdParty, usage)).toEqual({
+    expect(lifecycleDecision('disable', thirdParty)).toMatchObject({
       kind: 'confirm',
       scopes: ['games'],
     })
+    const plain = installedOne({ plugin_name: 'fast_download' })
+    expect(lifecycleDecision('disable', plain)).toEqual({ kind: 'direct' })
+    expect(lifecycleDecision('uninstall', plain)).toMatchObject({ kind: 'confirm' })
   })
 
-  it('MFW、M9A、MSS 按托管拦截，服务插件的停用与卸载列出连带专项名下的托管和计划表', () => {
-    const family = ['maafw_adapter', 'm9a_adapter', 'mss_adapter']
-    const views = toInstalledViews(
-      registry({
-        ...Object.fromEntries(
-          family.map(id => [id, { info: { plugin_name: id }, disableImpact: ['scripts'] }])
-        ),
-        runner: {
-          info: { plugin_name: 'maafw_runner' },
-          disableImpact: ['scripts', 'plans'],
-          disableCascade: family,
-          uninstallCascade: family,
-        },
-      }),
-      [],
-      { ...context(), bindings: SCRIPT_PLUGIN_BINDINGS }
+  it('没有托管影响时也确认连带停用，只列出对应操作的下游插件', () => {
+    const runner = installedOne(
+      { plugin_name: 'maafw_runner' },
+      {
+        disableCascade: ['mss_adapter'],
+        uninstallCascade: ['mss_adapter', 'm9a_adapter'],
+      }
     )
-    const usageSource: PluginUsageSource = {
-      state: 'ready',
-      scripts: ['MaaFW', 'M9A', 'MSS'].map(type => ({
-        uid: type,
-        name: `${type} 托管`,
-        scriptType: type,
-        accounts: 1,
-      })),
-      planCounts: { MSSPlanConfig: 2 },
-    }
-    const usageOf = (view: (typeof views)[number]) => pluginUsage(view, usageSource)
-    const runner = views[3]
-    for (const view of views.slice(0, 3)) {
-      const usage = usageOf(view)
-      expect(usage).toMatchObject({ kind: 'counted', scriptCount: 1 })
-      expect(lifecycleDecision('disable', view, usage)).toMatchObject({ kind: 'blockedInUse' })
-      expect(lifecycleDecision('uninstall', view, usage)).toMatchObject({ kind: 'blockedInUse' })
-    }
-    for (const action of ['disable', 'uninstall'] as const) {
-      expect(lifecycleDecision(action, runner, usageOf(runner))).toMatchObject({ kind: 'confirm' })
-      expect(lifecycleAffected(action, runner, views, usageOf)).toEqual({
-        scripts: ['MaaFW 托管', 'M9A 托管', 'MSS 托管'],
-        plans: 2,
-      })
-    }
+    expect(lifecycleDecision('disable', runner)).toEqual({
+      kind: 'confirm',
+      scopes: [],
+      cascade: ['mss_adapter'],
+    })
+    expect(lifecycleDecision('uninstall', runner)).toEqual({
+      kind: 'confirm',
+      scopes: [],
+      cascade: ['mss_adapter', 'm9a_adapter'],
+    })
   })
 
-  it('服务插件连带的专项名下还有托管或计划表时，停用与卸载同样被拦住并列出专项与数量', () => {
-    const family = ['maafw_adapter', 'm9a_adapter', 'mss_adapter']
-    const views = toInstalledViews(
-      registry({
-        ...Object.fromEntries(
-          family.map(id => [id, { info: { plugin_name: id }, disableImpact: ['scripts'] }])
-        ),
-        runner: {
-          info: { plugin_name: 'maafw_runner' },
-          disableImpact: ['scripts', 'plans'],
-          disableCascade: family,
-          uninstallCascade: family,
-        },
-      }),
-      [],
-      { ...context(), bindings: SCRIPT_PLUGIN_BINDINGS }
-    )
-    const runner = views[3]
-    const nameOf = (id: string) => views.find(view => view.pluginId === id)!.name
-    const decide = (action: 'disable' | 'uninstall', usageSource: PluginUsageSource) => {
-      const usageOf = (view: (typeof views)[number]) => pluginUsage(view, usageSource)
-      return lifecycleDecision(
-        action,
-        runner,
-        usageOf(runner),
-        lifecycleCascadeUsage(action, runner, views, usageOf)
+  it('按适配条目统计 MaaFW 家族的托管与 MSS 计划表', () => {
+    for (const type of ['MaaFW', 'M9A', 'MSS']) {
+      const view = installedOne(
+        { plugin_name: `${type.toLowerCase()}_adapter` },
+        {},
+        { ...context(), bindings: SCRIPT_PLUGIN_BINDINGS }
       )
-    }
-    const scripts = (types: string[]) =>
-      types.map(type => ({ uid: type, name: `${type} 托管`, scriptType: type, accounts: 1 }))
-
-    for (const action of ['disable', 'uninstall'] as const) {
       expect(
-        decide(action, {
+        pluginUsage(view, {
           state: 'ready',
-          scripts: scripts(['MaaFW', 'M9A']),
+          scripts: [{ uid: type, name: type, scriptType: type, accounts: 1 }],
           planCounts: { MSSPlanConfig: 2 },
         })
-      ).toEqual({
-        kind: 'blockedCascade',
-        plugins: [
-          { pluginId: 'maafw_adapter', name: nameOf('maafw_adapter'), scripts: 1, plans: 0 },
-          { pluginId: 'm9a_adapter', name: nameOf('m9a_adapter'), scripts: 1, plans: 0 },
-          // 名下只有计划表、没有托管的专项同样算在用。
-          { pluginId: 'mss_adapter', name: nameOf('mss_adapter'), scripts: 0, plans: 2 },
-        ],
-      })
-      // 连带范围里的专项名下都空着：照旧弹原来的确认。
-      expect(
-        decide(action, { state: 'ready', scripts: [], planCounts: { MSSPlanConfig: 0 } })
-      ).toEqual({ kind: 'confirm', scopes: ['scripts', 'plans'] })
-      // 用量还不知道时不当成空着。
-      expect(decide(action, { state: 'loading', scripts: [], planCounts: null })).toEqual({
-        kind: 'blockedUnknown',
-        reason: 'loading',
-      })
-      expect(decide(action, { state: 'error', scripts: [], planCounts: null })).toEqual({
-        kind: 'blockedUnknown',
-        reason: 'failed',
-      })
+      ).toMatchObject({ kind: 'counted', scriptCount: 1, planCount: type === 'MSS' ? 2 : null })
     }
-    // 不在连带范围里的专项不算。
-    const usageOf = (view: (typeof views)[number]) =>
-      pluginUsage(view, { state: 'ready', scripts: scripts(['MaaFW']), planCounts: {} })
-    expect(lifecycleCascadeUsage('disable', views[1], views, usageOf)).toEqual([])
   })
 
   it('数量拿不到或为 0 的段不显示', () => {

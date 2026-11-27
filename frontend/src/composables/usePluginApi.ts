@@ -168,7 +168,7 @@ export function usePluginApi() {
     }
   }
   const runCommand = (
-    action: Action,
+    action: Exclude<Action, 'uninstall'>,
     body: TriggerWriteIn,
     onProgress?: (stage: InstallationStage) => void
   ) =>
@@ -234,6 +234,14 @@ export function usePluginApi() {
         t('core.plugins.marketLoadFailed')
       ),
     refreshCatalog,
+    uninstallPlugin: (recordId: string, purgeConfig = false) =>
+      perform('uninstall', () =>
+        requestApi(
+          () =>
+            Service.uninstallPluginApiPluginUninstallPost({ recordId, purge_config: purgeConfig }),
+          t('core.plugins.actionFailed')
+        )
+      ),
     getConfig: (recordId: string) =>
       /* 读取插件自有配置及其独立配置 UID。 */ requestApi(
         () => Service.getPluginConfigApiPluginConfigGetPost({ recordId }, locale()),

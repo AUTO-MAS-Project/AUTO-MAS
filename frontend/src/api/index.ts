@@ -1262,6 +1262,7 @@ export type { PluginRegistryGetIn } from './models/PluginRegistryGetIn';
 export type { PluginRegistryGetOut } from './models/PluginRegistryGetOut';
 export type { PluginReleaseNote } from './models/PluginReleaseNote';
 export type { PluginRuntimeListOut } from './models/PluginRuntimeListOut';
+export type { PluginUninstallIn } from './models/PluginUninstallIn';
 export { PluginState } from './models/PluginState';
 export type { PowerCountdownSnapshot } from './models/PowerCountdownSnapshot';
 export type { PowerIn } from './models/PowerIn';

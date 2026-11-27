@@ -16,6 +16,7 @@ vi.mock('@/api', async importOriginal => ({
   ...(await importOriginal<typeof import('@/api')>()),
   Service: {
     updatePluginConfigApiPluginConfigUpdatePost: vi.fn(),
+    uninstallPluginApiPluginUninstallPost: vi.fn(),
     refreshPluginCatalogApiPluginCatalogRefreshPost: vi.fn(),
     writeConfigTriggerApiConfigTriggersWritePost: boundary.start,
     getConfigTriggerResultApiConfigTriggersResultPost: boundary.get,
@@ -343,6 +344,20 @@ describe('plugin commands and settings', () => {
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action, outcome: 'failure' })
     }
   )
+
+  it('卸载默认保留配置，清理请求被拒时展示原因并记录失败', async () => {
+    const uninstall = vi
+      .spyOn(Service, 'uninstallPluginApiPluginUninstallPost')
+      .mockResolvedValueOnce({ code: 200 })
+      .mockResolvedValueOnce({ code: 409, message: 'busy' })
+    const api = createApi()
+    await api.uninstallPlugin('record')
+    expect(uninstall).toHaveBeenLastCalledWith({ recordId: 'record', purge_config: false })
+    expect(finish).toHaveBeenLastCalledWith({ action: 'uninstall', outcome: 'success' })
+    await expect(api.uninstallPlugin('record', true)).rejects.toThrow('busy')
+    expect(uninstall).toHaveBeenLastCalledWith({ recordId: 'record', purge_config: true })
+    expect(finish).toHaveBeenLastCalledWith({ action: 'uninstall', outcome: 'failure' })
+  })
 
   it('shares catalog refreshes and observes only newly started manual batches', async () => {
     const refresh = vi

@@ -115,6 +115,12 @@ class PluginRecord(ConfigEntry):
         enabled: bool = Field(
             default=False, description="是否启用（意图；Manager 回写）"
         )
+        config_types: Annotated[dict[str, str], ui(visibility=UiVisibility.HIDE)] = (
+            Field(
+                default_factory=dict,
+                description="已登记的配置类型，插件缺失时按归属清理",
+            )
+        )
         last_error: str = Field(default="", description="最近错误")
         is_core: bool = Field(default=False, description="是否核心插件")
         is_local: bool = Field(default=False, description="是否本地目录插件")
@@ -189,7 +195,7 @@ class PluginRecord(ConfigEntry):
 
     @trigger_field("info.uninstall", finish_on_cancel=True)
     async def on_uninstall(self) -> None:
-        """将卸载触发器交给宿主插件管理器，移除当前插件及其配置。"""
+        """将卸载触发器交给宿主插件管理器，移除当前插件并保留配置。"""
         from app.core.plugin import Plugin
 
         await Plugin.uninstall(self)

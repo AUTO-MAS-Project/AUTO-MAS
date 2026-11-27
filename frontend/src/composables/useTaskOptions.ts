@@ -13,11 +13,14 @@ export interface TaskTarget {
   afterAccomplish?: PowerSignal
 }
 
-/** 候选目标只读取配置，不因运行锁而消失；共享同一轮在途查询。 */
-export async function fetchTaskTargets(
-  read?: (snapshot: ConfigSnapshot) => void
-): Promise<TaskTarget[]> {
-  const snapshot = await queryClient.fetchQuery({
+export interface TaskTargetSnapshot extends ConfigSnapshot {
+  targets: TaskTarget[]
+  unavailableScriptIds: string[]
+}
+
+/** 可选目标和暂不可用的托管来自同一次读取，队列展开时可据此区分停用与失效的引用。 */
+export function fetchTaskTargetSnapshot(): Promise<TaskTargetSnapshot> {
+  return queryClient.fetchQuery({
     queryKey: ['task-config-targets'],
     staleTime: 0,
     queryFn: async ({ signal }) => {
@@ -42,9 +45,20 @@ export async function fetchTaskTargets(
           kind: 'script' as const,
         })),
       ]
-      return { targets, uiSources: [...(queues.uiSources ?? []), ...(scripts.uiSources ?? [])] }
+      return {
+        targets,
+        unavailableScriptIds: (scripts.unavailable ?? []).map(item => item.uid),
+        uiSources: [...(queues.uiSources ?? []), ...(scripts.uiSources ?? [])],
+      }
     },
   })
+}
+
+/** 候选目标只读取配置，不因运行锁而消失；共享同一轮在途查询。 */
+export async function fetchTaskTargets(
+  read?: (snapshot: ConfigSnapshot) => void
+): Promise<TaskTarget[]> {
+  const snapshot = await fetchTaskTargetSnapshot()
   read?.(snapshot)
   return snapshot.targets
 }
@@ -61,18 +75,22 @@ export async function configuredTaskRequest(
 /** 每个队列项独立展开；重复托管共享用户名单读取，不共享选择状态。 */
 export async function fetchTaskScope(
   target: TaskTarget,
-  targets: readonly TaskTarget[]
-): Promise<TaskScopeDraft> {
+  { targets, unavailableScriptIds }: TaskTargetSnapshot
+) {
   const scripts = new Map(
     targets.filter(item => item.kind === 'script').map(item => [item.value, item])
   )
   const entries: { uid: string; scriptId: string }[] = []
+  const unavailableItems = new Set<string>()
   if (target.kind === 'queue') {
     const response = await GetService.getItemApiQueueItemGetPost({ queueId: target.value })
     if (response.code !== 200) throw new Error(response.message)
+    const unavailable = new Set(unavailableScriptIds)
     for (const item of response.index) {
       const scriptId = response.data[item.uid]?.Info?.ScriptId
-      if (scriptId && scriptId !== '-') entries.push({ uid: item.uid, scriptId })
+      if (!scriptId || scriptId === '-') continue
+      if (unavailable.has(scriptId)) unavailableItems.add(item.uid)
+      else entries.push({ uid: item.uid, scriptId })
     }
   } else entries.push({ uid: target.value, scriptId: target.value })
   const pending = new Map<string, Promise<TaskScopeEntry['users']>>()
@@ -103,7 +121,7 @@ export async function fetchTaskScope(
     }
     return request
   }
-  return {
+  const scope: TaskScopeDraft = {
     uid: target.value,
     kind: target.kind,
     selection: 'all',
@@ -123,6 +141,7 @@ export async function fetchTaskScope(
       })
     ),
   }
+  return { scope, unavailableItems }
 }
 
 /** [兼容旧专项] 存量配置按钮只携带目标 UUID；插件入口直接提供托管及用户要求树。 */

@@ -24,7 +24,7 @@ import sys
 import time
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import AbstractContextManager, closing, contextmanager, nullcontext
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -56,9 +56,10 @@ from app.core.config.m9a_legacy.migration import (
     repair_m9a_migration_losses,
 )
 from app.core.config.plugin_upgrade import (
-    backup_legacy_adapter_users,
     MAAFW_FAMILY_PLUGINS,
     adapter_package,
+    automatic_plugin_packages,
+    backup_legacy_adapter_users,
     backup_legacy_maafw_documents,
     install_adapter_plugin,
     install_adapter_plugins,
@@ -286,7 +287,10 @@ class AppConfig:
             file=self.config_path / "plugin_catalog.yaml",
         )
         self.GameConfig = ConfigCollection[GameEntry].build(
-            [GameEntry], name="games", file=self.config_path / "games.yaml"
+            [GameEntry],
+            name="games",
+            file=self.config_path / "games.yaml",
+            keep_unknown_types=True,
         )
         self._legacy_emulators = ConfigCollection[EmulatorConfig].build(
             [EmulatorConfig]
@@ -323,7 +327,6 @@ class AppConfig:
         self._script_configs_loaded = False
         # 启动时没装上、没启用的专项插件：插件名 → 原因，进启动提示。
         self._adapter_plugin_failures: dict[str, str] = {}
-        self._managed_restore_tasks: set[asyncio.Task] = set()
         for model in (
             *CLASS_BOOK.values(),
             MaaEndUserConfig,
@@ -604,7 +607,6 @@ class AppConfig:
             required_game_plugins,
         )
 
-        required_adapters = dict(required)
         required_games = required_game_plugins(self.config_path)
         required.update(required_games)
         prepare_runtime = prepare_plugins
@@ -623,14 +625,21 @@ class AppConfig:
 
         async def prepare_plugin_upgrade() -> None:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
+            # 发现会新增默认停用的注册项，先区分首次接手与用户已有的选择。
+            packages = (
+                automatic_plugin_packages(
+                    required, self.plugin_registry, self.setting.plugin.uninstalled
+                )
+                if version == "v2.2"
+                else required
+            )
             if prepare_runtime is not None:
                 await prepare_runtime()
             if version == "v2.2":
-                # 数据已是插件化格式：专项插件装不上只让它的托管旁挂，不挡启动；
-                # 游戏集合没有旁挂区，游戏插件仍然必须装上。
-                if required_games:
-                    await install_adapter_plugins(required_games)
-                for name, package in required_adapters.items():
+                for name, package in packages.items():
+                    if name in required_games:
+                        await install_adapter_plugin(name, package)
+                        continue
                     try:
                         await install_adapter_plugin(name, package)
                     except Exception as error:  # noqa: BLE001
@@ -693,7 +702,7 @@ class AppConfig:
             prepare_plugin_documents(self.config_path)
             entry_migrations: LegacyEntryMigrations = {}
             script_path = self.config_path / "ScriptConfig.json"
-            if script_path.exists():
+            if script_path.exists() and "M9AConfig" in self.ScriptConfig.entry_types:
                 self._m9a_migration = await asyncio.to_thread(
                     migrate_legacy_m9a_scripts,
                     script_path,
@@ -705,20 +714,22 @@ class AppConfig:
                     skip_uids=set(self._m9a_migration.migrated_uids),
                 )
                 self._m9a_managed = await asyncio.to_thread(
-                    normalize_m9a_managed_entries, script_path
+                    normalize_m9a_managed_entries,
+                    script_path,
+                    registered_types=self.ScriptConfig.entry_types,
                 )
-                if await asyncio.to_thread(
-                    contains_legacy_type, script_path, HSRConfig.__name__
-                ):
-                    from app.task.HSR.migration import (
-                        archive_legacy_direct_for_upgrade,
-                        migrate_legacy_user_payload,
-                    )
+            if script_path.exists() and await asyncio.to_thread(
+                contains_legacy_type, script_path, HSRConfig.__name__
+            ):
+                from app.task.HSR.migration import (
+                    archive_legacy_direct_for_upgrade,
+                    migrate_legacy_user_payload,
+                )
 
-                    entry_migrations = {HSRUserConfig: migrate_legacy_user_payload}
-                    notice = await archive_legacy_direct_for_upgrade(script_path)
-                    if notice is not None:
-                        self.startup_notices.append(notice)
+                entry_migrations = {HSRUserConfig: migrate_legacy_user_payload}
+                notice = await archive_legacy_direct_for_upgrade(script_path)
+                if notice is not None:
+                    self.startup_notices.append(notice)
             prepared = {
                 key: await node.to_dict()
                 for key, node in self._config_nodes.items()
@@ -755,7 +766,9 @@ class AppConfig:
             # 整理要读 interface，MFW 解析库随插件装进插件环境，所以排在插件就绪之后、
             # 托管集合激活之前（激活后旧键就按插件类丢了）。
             self._m9a_managed = await asyncio.to_thread(
-                normalize_m9a_managed_entries, self.config_path / "scripts.yaml"
+                normalize_m9a_managed_entries,
+                self.config_path / "scripts.yaml",
+                registered_types=self.ScriptConfig.entry_types,
             )
         await migrate_games()
         from app.core.game_manager import GameManager
@@ -810,7 +823,6 @@ class AppConfig:
             for script in self.ScriptConfig.values():
                 await self._initialize_script_config(script)
             await config_manager.flush()
-        self._connect_managed_restore()
         if version not in {"v2.0", "v2.1", "v2.2"}:
             # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
             with closing(sqlite3.connect(self.database_path)) as database:
@@ -1414,62 +1426,55 @@ class AppConfig:
         entry = cast(ConfigEntry, self.ScriptConfig[uid])
         await entry.update(type(entry).model_validate(data))
 
-    async def del_script(self, script_id: str) -> None:
-        """删除托管配置"""
-
+    async def del_script(
+        self,
+        script_id: str,
+        *,
+        on_removed: Callable[[str], Awaitable[None] | None] | None = None,
+    ) -> None:
+        """删除托管、队列引用和数据目录。卸载时由仍持有实例的宿主提供删除钩子。"""
         logger.info(f"删除托管配置: {script_id}")
-
         uid = uuid.UUID(script_id)
-
-        if self.ScriptConfig.is_unresolved(uid):
-            await self._del_unavailable_script(uid)
-            return
-
-        if self.ScriptConfig[uid].is_locked:
+        script = (
+            None if self.ScriptConfig.is_unresolved(uid) else self.ScriptConfig[uid]
+        )
+        if script is not None and script.is_locked:
             raise RuntimeError(f"托管 {script_id} 正在运行, 无法删除")
 
-        # 删除脚本相关的队列项
-        for queue in self.QueueConfig.values():
-            for key, value in queue.QueueItem.items():
-                if value.Info.ScriptId == uid:
-                    queue.QueueItem.remove(key)
-                    await queue.QueueItem.commit()
-
-        script_config = self.ScriptConfig[uid]
-        handler = self._get_script_config_handler(script_config)
+        handler = (
+            self._get_script_config_handler(script) if script is not None else None
+        )
         if handler is not None and handler.prepare_script_removal is not None:
-            await handler.prepare_script_removal(script_config)
+            await handler.prepare_script_removal(script)
 
-        self.ScriptConfig.remove(uid)
-        await self.ScriptConfig.commit()
-        if handler is not None and handler.after_script_removal is not None:
-            handler.after_script_removal()
-        # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
-        # rmtree 删到它们会抛 PermissionError，而此时配置已经移除，目录残留在磁盘上、
-        # 再点这个托管还会报「配置项不存在」。目录删除是阻塞 IO（force_rmtree 内部
-        # 还有 sleep 重试），放线程里跑，别让事件循环跟着等。
-        script_data_dir = self.data_path / f"{uid}"
-        if script_data_dir.exists():
-            await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
-        if handler is not None and handler.cleanup_script_files is not None:
-            await handler.cleanup_script_files(str(uid))
+        async with config_manager.transaction():
+            for queue in self.QueueConfig.values():
+                for key, value in list(queue.QueueItem.items()):
+                    if value.Info.ScriptId == uid:
+                        queue.QueueItem.remove(key)
+                        await queue.QueueItem.commit()
+            if script is not None:
+                self.ScriptConfig.remove(uid)
+                await self.ScriptConfig.commit()
 
-    async def _del_unavailable_script(self, uid: uuid.UUID) -> None:
-        """删除所属插件不可用的托管：插件的删除回调拿不到，只删队列引用、配置和数据目录。"""
+            # 删除守卫已通过；文件占用时回滚配置与队列，保留 uid 供重试。
+            directory = self.data_path / str(uid)
+            if directory.exists():
+                await asyncio.to_thread(_utils_io.force_rmtree, directory)
+                if directory.exists():
+                    raise OSError(f"无法清理托管数据目录: {directory}")
 
-        for queue in self.QueueConfig.values():
-            doomed = [
-                key
-                for key, value in queue.QueueItem.items()
-                if value.Info.ScriptId == uid
-            ]
-            for key in doomed:
-                queue.QueueItem.remove(key)
-                await queue.QueueItem.commit()
-        await self.ScriptConfig.discard_unresolved(uid)
-        script_data_dir = self.data_path / f"{uid}"
-        if script_data_dir.exists():
-            await asyncio.to_thread(_utils_io.force_rmtree, script_data_dir)
+        if script is None:
+            await self.ScriptConfig.discard_unresolved(uid)
+        if handler is not None:
+            if handler.after_script_removal is not None:
+                handler.after_script_removal()
+            if on_removed is None:
+                on_removed = handler.cleanup_script_files
+        if on_removed is not None:
+            result = on_removed(str(uid))
+            if inspect.isawaitable(result):
+                await result
 
     async def reorder_script(self, index_list: list[str]) -> None:
         """重新排序托管"""
@@ -3137,34 +3142,6 @@ class AppConfig:
         self.startup_notices.append(
             {"level": "warning", "title": title, "lines": lines}
         )
-
-    def _connect_managed_restore(self) -> None:
-        """插件运行中变为已启用后，把它的旁挂托管还原回来（只在已启用之后做）。"""
-        if getattr(self, "_managed_restore_receiver", None) is not None:
-            return
-        from app.plugin.signals import capabilities_changed
-
-        def on_capabilities_changed(sender, *, enabled: bool = False, **_kw) -> None:
-            if not enabled:
-                return
-            if not (self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()):
-                return
-            task = asyncio.get_running_loop().create_task(
-                self.restore_unavailable_managed()
-            )
-            self._managed_restore_tasks.add(task)
-
-            def done(finished: asyncio.Task) -> None:
-                self._managed_restore_tasks.discard(finished)
-                if not finished.cancelled() and finished.exception() is not None:
-                    logger.opt(exception=finished.exception()).warning(
-                        "还原所属插件已恢复的托管失败"
-                    )
-
-            task.add_done_callback(done)
-
-        self._managed_restore_receiver = on_capabilities_changed
-        capabilities_changed.connect(on_capabilities_changed, weak=False)
 
     async def restore_unavailable_managed(self) -> list[uuid.UUID]:
         """把类型此刻已登记的旁挂计划表与托管还原成真成员，返回还原的托管 uid。"""
