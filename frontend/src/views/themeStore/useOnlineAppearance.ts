@@ -121,8 +121,12 @@ export function useOnlineAppearance(options: {
   const listError = ref<string | null>(null)
   const page = ref(1)
   const total = ref(0)
-  const hasMore = computed(() => items.value.length < total.value)
   const keyword = ref('')
+  /** 当前列表结果对应的已生效搜索词；输入框改词后、新词第 1 页回来前不允许沿旧列表追加。 */
+  const loadedKeyword = ref('')
+  const hasMore = computed(
+    () => items.value.length < total.value && keyword.value.trim() === loadedKeyword.value
+  )
   let listRevision = 0
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -266,8 +270,13 @@ export function useOnlineAppearance(options: {
   }
 
   const loadList = async (targetPage = 1, append = false): Promise<void> => {
-    cancelScheduledSearch()
+    if (append) {
+      if (keyword.value.trim() !== loadedKeyword.value) return
+    } else {
+      cancelScheduledSearch()
+    }
     const revision = ++listRevision
+    const query = append ? loadedKeyword.value : keyword.value.trim()
     if (append) {
       loadingMore.value = true
     } else {
@@ -275,7 +284,6 @@ export function useOnlineAppearance(options: {
       listError.value = null
     }
     try {
-      const query = keyword.value.trim()
       const request = {
         page: targetPage,
         pageSize: ONLINE_APPEARANCE_PAGE_SIZE,
@@ -305,12 +313,14 @@ export function useOnlineAppearance(options: {
       }
       const fetched = result.items ?? []
       if (append) {
+        if (query !== loadedKeyword.value) return
         const seen = new Set(items.value.map(item => `${item.categoryKey ?? ''}:${item.fileKey}`))
         const nextItems = fetched.filter(
           item => !seen.has(`${item.categoryKey ?? ''}:${item.fileKey}`)
         )
         items.value = [...items.value, ...nextItems]
       } else {
+        loadedKeyword.value = query
         items.value = fetched
       }
       page.value = result.pagination?.page ?? targetPage
@@ -337,7 +347,14 @@ export function useOnlineAppearance(options: {
   }
 
   const loadMore = async (): Promise<void> => {
-    if (listLoading.value || loadingMore.value || !hasMore.value) return
+    if (
+      listLoading.value ||
+      loadingMore.value ||
+      !hasMore.value ||
+      keyword.value.trim() !== loadedKeyword.value
+    ) {
+      return
+    }
     await loadList(page.value + 1, true)
   }
 
@@ -671,6 +688,7 @@ export function useOnlineAppearance(options: {
     page.value = 1
     total.value = 0
     keyword.value = ''
+    loadedKeyword.value = ''
     installing.value = false
     coverLoader.reset()
   }

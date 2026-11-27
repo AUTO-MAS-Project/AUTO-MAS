@@ -67,6 +67,14 @@ vi.mock('@/utils/config', () => ({
   saveConfig: saveConfigMock,
 }))
 
+vi.mock('@/stores/appearanceTryOn', () => ({
+  useAppearanceTryOnStore: () => ({
+    active: false,
+    session: null,
+    start: vi.fn(),
+  }),
+}))
+
 vi.mock('@/composables/useTheme', () => ({
   useTheme: () => ({
     themeMode: { value: 'light' },
@@ -388,5 +396,85 @@ describe('资源商店全量待更新扫描与批量更新边界', () => {
     expect(modalConfirmMock).toHaveBeenCalledTimes(1)
     expect(installOnlineThemeMock).toHaveBeenCalledTimes(1)
     expect(installOnlineThemeMock).toHaveBeenCalledWith('tok:theme-b:2', false)
+  })
+
+  it('输入新搜索词的防抖窗口内点加载更多不会吞掉新词首页或把新词第 2 页追加到旧列表', async () => {
+    vi.useFakeTimers()
+    try {
+      const electronAPI = (
+        globalThis as unknown as {
+          window: {
+            electronAPI: {
+              listOnlineAppearances: ReturnType<typeof vi.fn>
+              getOnlineAppearanceCover?: ReturnType<typeof vi.fn>
+            }
+          }
+        }
+      ).window.electronAPI
+
+      electronAPI.getOnlineAppearanceCover = vi.fn(async () => ({ success: false }))
+      electronAPI.listOnlineAppearances.mockImplementation(
+        async (query: { page?: number; keyword?: string }) => {
+          if (query.keyword === 'miku' && query.page === 1) {
+            return {
+              success: true,
+              items: [makeItem({ fileKey: 'miku-1', hasCover: false })],
+              pagination: { page: 1, pageSize: 48, total: 60, hasNext: true },
+            }
+          }
+          if (query.keyword === 'miku' && query.page === 2) {
+            return {
+              success: true,
+              items: [makeItem({ fileKey: 'miku-2', hasCover: false })],
+              pagination: { page: 2, pageSize: 48, total: 60, hasNext: false },
+            }
+          }
+          return {
+            success: true,
+            items: [makeItem({ fileKey: 'old-1', hasCover: false })],
+            pagination: { page: 1, pageSize: 48, total: 60, hasNext: true },
+          }
+        }
+      )
+
+      const { useOnlineAppearance, ONLINE_APPEARANCE_SEARCH_DEBOUNCE } =
+        await import('./useOnlineAppearance')
+      const store = useOnlineAppearance({
+        categoryKey: 'theme',
+        install: async () => 'installed',
+      })
+
+      await store.loadList(1)
+      expect(store.items.value.map(item => item.fileKey)).toEqual(['old-1'])
+      expect(store.hasMore.value).toBe(true)
+
+      // 用户输入新关键词，在 400ms 防抖期内尝试点加载更多
+      store.keyword.value = 'miku'
+      store.scheduleSearch()
+      expect(store.hasMore.value).toBe(false)
+
+      await store.loadMore()
+      // 不能取消待执行的新词第 1 页搜索，也不能用旧页码去拉新词第 2 页
+      expect(electronAPI.listOnlineAppearances).toHaveBeenCalledTimes(1)
+
+      // 防抖到期后正确从第 1 页拉取新词结果并替换旧列表
+      await vi.advanceTimersByTimeAsync(ONLINE_APPEARANCE_SEARCH_DEBOUNCE)
+      expect(electronAPI.listOnlineAppearances).toHaveBeenLastCalledWith(
+        { page: 1, pageSize: 48, keyword: 'miku' },
+        'theme'
+      )
+      expect(store.items.value.map(item => item.fileKey)).toEqual(['miku-1'])
+      expect(store.hasMore.value).toBe(true)
+
+      // 新词第 1 页就绪后，再点加载更多才追加新词第 2 页
+      await store.loadMore()
+      expect(electronAPI.listOnlineAppearances).toHaveBeenLastCalledWith(
+        { page: 2, pageSize: 48, keyword: 'miku' },
+        'theme'
+      )
+      expect(store.items.value.map(item => item.fileKey)).toEqual(['miku-1', 'miku-2'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
