@@ -48,7 +48,10 @@ async def test_capture_hint_follows_plugin_guard_support(
     device = game.devices.add(LDPlayerDevice, payload={"info": {"index": "0"}})
     await game.devices.commit()
     game.info.baselines = {str(device): {"resolution_width": 1280}}
-    await games.commit()
+    await game.commit()
+    # 守卫开着、已记录过基准：入口是否出现只看插件，不看这些数据
+    assert game.info.config_guard is True
+    assert game.info.baselines == {str(device): {"resolution_width": 1280}}
 
     for control_class, guarded in (
         (control_module.Control, True),
