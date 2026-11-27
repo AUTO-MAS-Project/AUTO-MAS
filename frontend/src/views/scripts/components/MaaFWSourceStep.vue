@@ -1,5 +1,5 @@
-<!-- 新建对话框 MFW 家族第二步「项目从哪来」的默认分节（契约 create.source，见
-     views/EditView/MaaFWFlavor/sectionContracts.ts）。已导入过的项目直接列出来复用（从那个脚本的
+<!-- 新建对话框 MFW 家族第二步「项目从哪来」（props / 事件见 scriptCreateFlow.ts 的
+     MaaFWCreateSourceSectionProps）。已导入过的项目直接列出来复用（从那个脚本的
      副本克隆，运行时与模型共用、不另占空间，来源目录删了也能建）；只列与入口同类型的项目。
      第一行永远是「导入新项目」。当前类型一个可复用的项目都没有时对话框跳过这一步。
      选中状态归对话框所有，这里只显示并交回选择。 -->
@@ -58,7 +58,7 @@
       </SelectableOptionCard>
     </template>
     <div v-else-if="!error" class="choice-placeholder">
-      {{ t('core.scripts.create.mfwReuseEmpty', { type: resolveMaaFWFlavor(type).typeTagLabel }) }}
+      {{ t('core.scripts.create.mfwReuseEmpty', { type: maafwLabel(type) }) }}
     </div>
   </SelectableOptionList>
 </template>
@@ -67,26 +67,26 @@
 import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CopyOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
-import { resolveMaaFWFlavor, usesMaaFWProjectIcon } from '@/composables/useMaaFWFlavor'
+import { maafwLabel, maafwUsesProjectIcon } from '@/plugins/maafwFamily'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import type {
   MaaFWCreateSourceSectionEmits,
   MaaFWCreateSourceSectionProps,
-} from '@/views/EditView/MaaFWFlavor/sectionContracts'
-import type { MfwReuseChoice } from './scriptCreateFlow'
+  MfwReuseChoice,
+} from './scriptCreateFlow'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 scriptCreateFlow.ts
 const props = defineProps<MaaFWCreateSourceSectionProps>()
 
 // 通用 MaaFW 的每一行是不同的项目，用项目自己的图标认；没有图标（后端 404）就换回复制图标。
-// 特调的行都是同一个项目类型，图标一样认不出来，保持复制图标
+// M9A、MSS 的行都是同一个项目类型，图标一样认不出来，保持复制图标
 const failedIcons = reactive(new Set<string>())
 const showProjectIcon = (choice: MfwReuseChoice) =>
-  usesMaaFWProjectIcon(resolveMaaFWFlavor(props.type)) && !failedIcons.has(choice.scriptId)
+  maafwUsesProjectIcon(props.type) && !failedIcons.has(choice.scriptId)
 
 const emit = defineEmits<MaaFWCreateSourceSectionEmits>()
 

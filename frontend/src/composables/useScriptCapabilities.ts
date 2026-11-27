@@ -1,4 +1,6 @@
 import { computed, onScopeDispose, type Ref } from 'vue'
+import { usePluginRegistry } from './usePluginScriptTypes'
+import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { GetService } from '@/api'
 import { translate as t } from '@/i18n'
@@ -19,6 +21,7 @@ export async function fetchScriptCapabilities() {
 export function useScriptCapabilities(open: Ref<boolean>) {
   // 新建窗口读取当前后端能力；插件启停及连接恢复时重新查询，不使用静态列表兜底。
   const client = useQueryClient()
+  const registry = usePluginRegistry(open)
   const key = ['scripts', 'capabilities']
   const query = useQuery({
     queryKey: key,
@@ -28,15 +31,19 @@ export function useScriptCapabilities(open: Ref<boolean>) {
     retry: false,
     queryFn: fetchScriptCapabilities,
   })
-  const refresh = () => {
+  const refreshTypes = () => client.invalidateQueries({ queryKey: key }, { cancelRefetch: false })
+  const refresh = async () => {
     // 失效缓存以覆盖窗口打开期间及断线期间发生的插件能力变化。
-    return client.invalidateQueries({ queryKey: key })
+    await Promise.all([
+      refreshTypes(),
+      client.invalidateQueries({ queryKey: ['plugins', 'registry'] }, { cancelRefetch: false }),
+    ])
   }
   const subscription = subscribe(
     { id: WS_ID_PLUGIN, type: WS_PLUGIN_CAPABILITIES_UPDATED },
     refresh
   )
-  const stopConnected = onConnected(refresh)
+  const stopConnected = onConnected(refreshTypes)
   onScopeDispose(() => {
     // 窗口组件释放时注销订阅，避免重复刷新与页面保活。
     unsubscribe(subscription)
@@ -44,12 +51,12 @@ export function useScriptCapabilities(open: Ref<boolean>) {
   })
   return {
     types: computed(() => query.data.value ?? []),
-    loading: query.isFetching,
-    error: computed(() =>
-      query.error.value
-        ? apiErrorMessage(query.error.value, t('core.scripts.create.capabilitiesLoadFailed'))
-        : null
-    ),
+    provided: computed(() => indexPluginScriptTypes(registry.data.value?.data)),
+    loading: computed(() => query.isFetching.value || registry.isFetching.value),
+    error: computed(() => {
+      const error = query.error.value ?? registry.error.value
+      return error ? apiErrorMessage(error, t('core.scripts.create.capabilitiesLoadFailed')) : null
+    }),
     refresh,
   }
 }

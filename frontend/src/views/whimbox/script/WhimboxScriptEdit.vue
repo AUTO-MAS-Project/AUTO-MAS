@@ -1,144 +1,95 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <ScriptEditHeader
-        script-type="Whimbox"
-        :title="t('core.edit.editScript')"
-        :doc-url="MAS_DOC_URLS.scripts"
-        @cancel="handleCancel"
-      />
+  <ScriptEditLayout
+    :script-id="scriptId"
+    :loading="pageLoading"
+    :header="{
+      scriptType: 'Whimbox',
+      title: t('core.edit.editScript'),
+      docUrl: MAS_DOC_URLS.scripts,
+    }"
+    :form="{ model: formData, rules }"
+    :form-label="t('core.edit.whimboxScriptConfiguration')"
+    @cancel="handleCancel"
+  >
+    <template #basic>
+      <ScriptBasicInfoCard
+        v-model:name="formData.name"
+        @save-name="handleChange('Info', 'Name', $event)"
+      >
+        <template #actions>
+          <a-tag v-if="upstreamVersion" color="blue">v{{ upstreamVersion }}</a-tag>
+        </template>
+        <template #path>
+          <a-form-item name="path" :rules="rules.path">
+            <template #label>
+              <FieldLabelWithHint
+                :text="t('core.edit.whimboxPath')"
+                :hint="t('core.edit.whimboxPickExeDir')"
+                variant="form"
+              />
+            </template>
+            <PathPickerField
+              v-model="formData.path"
+              mode="folder"
+              :placeholder="t('core.edit.whimboxPickExeDirPlaceholder')"
+              :pick-label="t('core.edit.pickDirectory')"
+              :disabled="isSaving"
+              @pick="selectRootPath"
+            />
+          </a-form-item>
+        </template>
+      </ScriptBasicInfoCard>
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
-      <a-card
-        :title="t('core.edit.whimboxScriptConfiguration')"
-        :loading="pageLoading"
-        class="config-card"
+    <template #run>
+      <SectionCard
+        variant="card"
+        :title="t('core.edit.runConfiguration')"
+        :icon="ThunderboltOutlined"
       >
-        <template #extra>
-          <a-space :size="8">
-            <a-tag v-if="upstreamVersion" color="blue" class="type-tag">
-              v{{ upstreamVersion }}
-            </a-tag>
-            <a-tag color="pink" class="type-tag">{{ SCRIPT_LABELS.Whimbox }}</a-tag>
-          </a-space>
-        </template>
-
-        <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
-          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <a-form-item name="name">
-                  <template #label>
-                    <FieldLabelWithHint :text="t('core.edit.scriptName')" variant="form" />
-                  </template>
-                  <a-input
-                    v-model:value="formData.name"
-                    :placeholder="t('core.edit.enterScriptName')"
-                    size="large"
-                    class="modern-input"
-                    @blur="handleChange('Info', 'Name', formData.name)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="16">
-                <a-form-item name="path" :rules="rules.path">
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.whimboxPath')"
-                      :hint="t('core.edit.whimboxPickExeDir')"
-                      variant="form"
-                    />
-                  </template>
-                  <PathPickerField
-                    v-model="formData.path"
-                    mode="folder"
-                    :placeholder="t('core.edit.whimboxPickExeDirPlaceholder')"
-                    :pick-label="t('core.edit.pickDirectory')"
-                    :disabled="isSaving"
-                    @pick="selectRootPath"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-
-          <SectionCard variant="plain" :title="t('core.edit.runConfiguration')">
-            <ScriptHardTimeoutField
-              v-model:value="whimboxConfig.Run.HardTimeLimit"
-              @save="handleChange('Run', 'HardTimeLimit', whimboxConfig.Run.HardTimeLimit)"
+        <ScriptRunLimitsSection
+          v-model:hard-time-limit="whimboxConfig.Run.HardTimeLimit"
+          v-model:daily-limit="whimboxConfig.Run.ProxyTimesLimit"
+          v-model:retry-limit="whimboxConfig.Run.RunTimesLimit"
+          v-model:timeout="whimboxConfig.Run.RunTimeLimit"
+          :retry-hint="t('core.edit.whimboxRetryLimitHint')"
+          :timeout-hint="t('core.edit.whimboxRunTimeoutHint')"
+          enhanced
+          @save="key => handleChange('Run', key, whimboxConfig.Run[key])"
+        />
+        <a-row :gutter="24">
+          <a-col :xs="24" :md="12">
+            <SwitchTile
+              v-model:checked="whimboxConfig.Run.UseAdmin"
+              :title="t('core.edit.whimboxUseAdmin')"
+              :description="t('core.edit.whimboxUseAdminHint')"
+              @change="handleChange('Run', 'UseAdmin', whimboxConfig.Run.UseAdmin)"
             />
-            <a-row :gutter="24">
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.ProxyTimesLimit"
-                  kind="daily"
-                  :label="t('core.edit.runsPerDay')"
-                  :hint="t('core.edit.k0MeansNoLimit')"
-                  @save="handleChange('Run', 'ProxyTimesLimit', whimboxConfig.Run.ProxyTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.RunTimesLimit"
-                  kind="retry"
-                  :label="t('core.edit.retryLimit2')"
-                  :hint="t('core.edit.whimboxRetryLimitHint')"
-                  @save="handleChange('Run', 'RunTimesLimit', whimboxConfig.Run.RunTimesLimit)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <ScriptRunLimitField
-                  v-model="whimboxConfig.Run.RunTimeLimit"
-                  kind="timeout"
-                  :label="t('core.edit.runTimeoutMinutes')"
-                  :hint="t('core.edit.whimboxRunTimeoutHint')"
-                  @save="handleChange('Run', 'RunTimeLimit', whimboxConfig.Run.RunTimeLimit)"
-                />
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.whimboxUseAdmin')"
-                      :hint="t('core.edit.whimboxUseAdminHint')"
-                      variant="form"
-                    />
-                  </template>
-                  <a-select
-                    v-model:value="whimboxConfig.Run.UseAdmin"
-                    size="large"
-                    style="width: 100%"
-                    @change="handleChange('Run', 'UseAdmin', whimboxConfig.Run.UseAdmin)"
-                  >
-                    <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                    <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-            </a-row>
-          </SectionCard>
-          <WhimboxUpdateSettings
-            v-model:update="whimboxConfig.Update"
-            :ready="!pageLoading && !isInitializing"
-            @change="handleChange('Update', 'TakeoverEnabled', $event)"
-          />
-        </a-form>
-      </a-card>
-    </ConfigLockPanel>
-  </ConfigEditShell>
+          </a-col>
+        </a-row>
+      </SectionCard>
+    </template>
+
+    <template #program-update>
+      <WhimboxUpdateSettings
+        v-model:update="whimboxConfig.Update"
+        :ready="!pageLoading && !isInitializing"
+        @change="handleChange('Update', 'TakeoverEnabled', $event)"
+      />
+    </template>
+  </ScriptEditLayout>
 </template>
 
 <script setup lang="ts">
-import ScriptRunLimitField from '@/views/EditView/Script/components/ScriptRunLimitField.vue'
+import { ThunderboltOutlined } from '@ant-design/icons-vue'
+import ScriptRunLimitsSection from '@/views/EditView/Script/components/ScriptRunLimitsSection.vue'
 import WhimboxUpdateSettings from './WhimboxUpdateSettings.vue'
 import type { WhimboxConfig_Update } from '@/api'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
-import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PathPickerField from '@/components/PathPickerField.vue'
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import ScriptBasicInfoCard from '@/components/ScriptBasicInfoCard.vue'
+import ScriptEditLayout from '@/components/ScriptEditLayout.vue'
+import { SectionCard, SwitchTile } from '@/components/ui'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -148,7 +99,6 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptSaveMutation } from '@/composables/useScriptSaveMutation'
 import { useWhimboxTaskCatalog } from '@/views/whimbox/useWhimboxTaskCatalog'
-import { SCRIPT_LABELS } from '@/utils/scriptLogos'
 
 const { t } = useI18n()
 const { alert } = useConfirm()
@@ -308,5 +258,3 @@ const selectRootPath = async () => {
 
 onMounted(loadScript)
 </script>
-
-<style scoped src="@/styles/scriptEditForm.css"></style>

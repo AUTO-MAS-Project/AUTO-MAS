@@ -144,9 +144,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             </a-tag>
           </template>
 
-          <!-- 账号标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.showAccount"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handleUserIdClick(user)"
@@ -154,9 +153,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             {{ getUserIdDisplayText(user) }}
           </a-tag>
 
-          <!-- 密码标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.Info.Password !== undefined"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handlePasswordClick(user)"

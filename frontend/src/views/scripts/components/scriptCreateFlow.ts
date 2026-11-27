@@ -1,23 +1,24 @@
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import { MAAFW_FLAVORS, isMaaFWFamily, type MaaFWFlavorType } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, type MaaFWFamilyType } from '@/plugins/maafwFamily'
 import type { ScriptType } from '@/types/script'
-import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+import type { PluginScriptTypes } from '@/utils/pluginScriptTypes'
+import { isBuiltinScriptType, SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
 export type ConfigMode = 'template' | 'custom'
 /** MFW 家族新建时项目从哪来：进引导页选目录导入，还是直接复用已有脚本的副本 */
 export type MfwSourceMode = 'new' | 'reuse'
 export type CreateStepKey = 'type' | 'config'
 
-/** 由 MaaFW 引擎运行的类型（各特调登记在特调注册表，类型最终由项目决定） */
-export type MfwFamilyType = MaaFWFlavorType
+/** 由 MaaFW 引擎运行的类型（看适配条目上的家族标记，类型最终由项目决定） */
+export type MfwFamilyType = MaaFWFamilyType
 export const isMfwFamily = (type: ScriptType): type is MfwFamilyType => isMaaFWFamily(type)
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
-interface ScriptTypeOption {
+export interface ScriptTypeOption {
   value: ScriptType
-  titleKey: string
-  descriptionKey: string
+  title: string
+  description: string
   /** 搜索别名。刻意保留中文：译成英文中文用户就搜不到了，英文用户用 latin 别名一样能命中 */
   keywords: string[]
   group: Exclude<ScriptTypeGroup, 'all'>
@@ -43,32 +44,49 @@ interface CreateRequestState {
 }
 
 export type ScriptCreateRequest =
-  | { kind: 'new'; type: Exclude<ScriptType, 'General'> }
+  | { kind: 'new'; type: ScriptType }
   /** 同一个 MFW 项目再建一个脚本：建好后从 sourceScriptId 的副本克隆，不再选目录 */
   | { kind: 'mfw-reuse'; type: MfwFamilyType; sourceScriptId: string }
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: ShareTemplateItem }
 
-// MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 create.card.after 插回原位
-const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = (Object.keys(SCRIPT_METADATA) as ScriptType[])
-  .sort((left, right) => SCRIPT_METADATA[left].createOrder - SCRIPT_METADATA[right].createOrder)
-  .filter(type => !isMaaFWFamily(type))
-  .map(type => ({ value: type, ...SCRIPT_METADATA[type].create, icon: SCRIPT_METADATA[type].logo }))
+// 全部类型（含 MaaFW 家族）按各自 metadata.createOrder 排
+const builtinOptions = Object.entries(SCRIPT_METADATA).sort(
+  ([, left], [, right]) => left.createOrder - right.createOrder
+)
 
-const withMaaFWFlavorOptions = (base: readonly ScriptTypeOption[]): ScriptTypeOption[] => {
-  const options = [...base]
-  for (const flavor of MAAFW_FLAVORS) {
-    const { after, ...card } = flavor.create.card
-    const option: ScriptTypeOption = { value: flavor.type, ...card, icon: flavor.logo }
-    const index = after ? options.findIndex(item => item.value === after) : -1
-    if (index >= 0) options.splice(index + 1, 0, option)
-    else options.push(option)
+export function getScriptTypeOptions(
+  enabled: readonly string[],
+  plugins: PluginScriptTypes,
+  t: (key: string) => string
+): ScriptTypeOption[] {
+  const options = builtinOptions.flatMap(([value, { create, logo }]) =>
+    enabled.includes(value)
+      ? [
+          {
+            value,
+            title: t(create.titleKey),
+            description: t(create.descriptionKey),
+            keywords: create.keywords,
+            group: create.group,
+            icon: logo,
+          },
+        ]
+      : []
+  )
+  for (const { scriptKey, displayName, description } of plugins.byScriptKey.values()) {
+    if (isBuiltinScriptType(scriptKey) || !enabled.includes(scriptKey)) continue
+    options.push({
+      value: scriptKey,
+      title: displayName,
+      description,
+      keywords: [scriptKey],
+      group: 'specialized',
+      icon: SCRIPT_METADATA.General.logo,
+    })
   }
   return options
 }
-
-export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] =
-  withMaaFWFlavorOptions(BASE_SCRIPT_TYPE_OPTIONS)
 
 /** 第二步列表里的一行「已导入的项目」：同一项目开了几个脚本只列一行，克隆源取其中一个 */
 export interface MfwReuseChoice {
@@ -132,25 +150,11 @@ export const buildCreateSteps = ({ type }: Pick<CreateRequestState, 'type'>): Cr
   return steps
 }
 
-type TypeSearchFields = Pick<ScriptTypeOption, 'titleKey' | 'descriptionKey' | 'keywords'>
-
-/** translate 缺省时按 key 原样参与匹配，别名（keywords）永远参与匹配 */
-export const filterScriptTypeOptions = <T extends TypeSearchFields>(
-  options: T[],
-  keyword: string,
-  translate: (key: string) => string = key => key
-): T[] => {
-  const normalizedKeyword = keyword.trim().toLowerCase()
-  return options.filter(option => {
-    const searchableText = [
-      translate(option.titleKey),
-      translate(option.descriptionKey),
-      ...option.keywords,
-    ]
-      .join(' ')
-      .toLowerCase()
-    return !normalizedKeyword || searchableText.includes(normalizedKeyword)
-  })
+export const filterScriptTypeOptions = (options: ScriptTypeOption[], keyword: string) => {
+  const search = keyword.trim().toLowerCase()
+  return options.filter(option =>
+    [option.title, option.description, ...option.keywords].join(' ').toLowerCase().includes(search)
+  )
 }
 
 export const splitScriptTypeOptions = <T extends Pick<ScriptTypeOption, 'group'>>(
@@ -173,4 +177,28 @@ export const buildCreateRequest = (state: CreateRequestState): ScriptCreateReque
     return { kind: 'general-custom' }
   }
   return state.template ? { kind: 'general-template', template: state.template } : null
+}
+
+/**
+ * 新建流程 `source`：MFW 家族第二步「项目从哪来」的选项（新建一个别的项目 / 复用已导入的项目）。
+ * 选中状态归对话框所有（返回再进来照样保留，列表变了选中的源失效时由对话框退回 'new'），
+ * 分节只负责显示与交回选择。
+ */
+export interface MaaFWCreateSourceSectionProps {
+  /** 选中的类型卡片：只列与它同类型的项目 */
+  type: MfwFamilyType
+  /** 可复用的项目（已按类型筛好、同一项目并成一行） */
+  choices: MfwReuseChoice[]
+  /** 候选列表正在读 */
+  loading: boolean
+  /** 候选列表没读出来的原因；有值就显示错误条 + 重试 */
+  error: string | null
+  /** 'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  value: string
+}
+
+export interface MaaFWCreateSourceSectionEmits {
+  'update:value': [value: string]
+  /** 点了错误条上的「重试」：对话框重新读候选列表 */
+  retry: []
 }

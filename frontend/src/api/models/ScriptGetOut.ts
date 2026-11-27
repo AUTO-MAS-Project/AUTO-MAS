@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { BAAHConfig } from './BAAHConfig';
 import type { BetterGIConfig } from './BetterGIConfig';
 import type { GeneralConfig } from './GeneralConfig';
@@ -15,6 +16,7 @@ import type { OkNteConfig } from './OkNteConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { ScriptIndexItem } from './ScriptIndexItem';
 import type { SrcConfig } from './SrcConfig';
+import type { UnavailableConfigItem } from './UnavailableConfigItem';
 import type { WhimboxConfig } from './WhimboxConfig';
 import type { ZzzOdConfig } from './ZzzOdConfig';
 export type ScriptGetOut = {
@@ -31,6 +33,7 @@ export type ScriptGetOut = {
      */
     message?: string;
     uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 托管索引列表
      */
@@ -38,6 +41,10 @@ export type ScriptGetOut = {
     /**
      * 托管数据字典, key来自于index列表的uid
      */
-    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig | MaaConfig | WhimboxConfig | SrcConfig)>;
+    data: Record<string, (GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | HSRConfig | ZzzOdConfig | BAAHConfig | BetterGIConfig | M9AConfig | MaaConfig | MaaFWConfig | MSSConfig | SrcConfig | WhimboxConfig)>;
+    /**
+     * 所属插件不可用的托管，只在获取全部托管时给出；只能删除
+     */
+    unavailable?: Array<UnavailableConfigItem>;
 };
 

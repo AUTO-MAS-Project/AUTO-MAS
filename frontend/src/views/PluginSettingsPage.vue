@@ -5,28 +5,24 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import PluginDeclarativeForm from './plugins/components/PluginDeclarativeForm.vue'
+import { DeclarativeForm } from '@/components/declarative'
+import {
+  declarativeGroups,
+  declarativeTables,
+  declarativeValues,
+} from '@/components/declarative/declarativeLayout'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
-import { AppPage, PageHeader, PageSurface, StateView } from '@/components/ui'
-import type { PluginRegistryGetOut } from '@/api'
+import { AppPage, PageHeader, StateView } from '@/components/ui'
+import type { PluginConfigUi, PluginRegistryGetOut } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
-import {
-  joinSegments,
-  pluginSettingsGroups,
-  toInstalledViews,
-  toMarketViews,
-} from '@/views/plugins/pluginCenterModel'
-import {
-  usePluginSettingsDraft,
-  type SettingsValues,
-} from '@/views/plugins/settings/usePluginSettingsDraft'
-import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { joinSegments, toInstalledViews, toMarketViews } from '@/views/plugins/pluginCenterModel'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
-import type { DeclarativeHint } from './plugins/components/PluginDeclarativeField.vue'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -35,22 +31,15 @@ const api = usePluginApi()
 const modelContext = usePluginModelContext()
 const draft = usePluginSettingsDraft()
 const saving = ref(false)
-const runningKey = ref<string | null>(null)
 const configUid = ref('')
-const { data: activeTriggers } = useActiveTriggers()
-const activeFields = computed(() =>
-  activeTriggers.value
-    .filter(item => item.configUid === configUid.value)
-    .map(item => `${item.group}.${item.field}`)
-)
+const optionsInvalid = ref(false)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
-const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
+const configUi = shallowRef<PluginConfigUi>()
+const groups = computed(() => declarativeGroups(configUi.value))
+const tables = computed(() => declarativeTables(configUi.value))
 
-const pluginId = computed(() =>
-  /* 从路由参数取得当前插件记录标识，支持同页面实例内切换插件。 */ String(
-    route.params.pluginId || ''
-  )
-)
+// 路由切换插件时复用页面实例。
+const pluginId = computed(() => String(route.params.pluginId || ''))
 /** 只读插件中心已经取到的市场目录缓存（不在这里发请求），给名称回落用。 */
 const catalog = usePluginQuery(
   () => pluginCatalogQueryKey(locale.value),
@@ -72,11 +61,7 @@ const headerMeta = computed(() =>
     view.value?.version,
   ])
 )
-const errorMessage = (error: unknown) =>
-  /* 从接口异常中提取可展示原因，缺失时使用插件操作失败提示。 */ apiErrorMessage(
-    error,
-    t('core.plugins.actionFailed')
-  )
+const errorMessage = (error: unknown) => apiErrorMessage(error, t('core.plugins.actionFailed'))
 
 const {
   loading,
@@ -110,12 +95,22 @@ const {
   () => /* 为插件专属配置查询提供当前语言的加载失败提示。 */ t('core.plugins.settingsLoadFailed')
 )
 
+const { runningKey, activeFields, runAction } = useDeclarativeActions(
+  configUid,
+  saving,
+  fetchSettings,
+  draft
+)
+const writeBusy = computed(
+  () => loading.value || saving.value || !!runningKey.value || !!activeFields.value.length
+)
+
 watch(
   pluginId,
   () => {
     configUid.value = ''
     registry.value = null
-    groups.value = []
+    configUi.value = undefined
     draft.reset({}, { keepDraft: false })
     return fetchSettings()
   },
@@ -129,80 +124,34 @@ watch(
     if (!result || result.requestedId !== pluginId.value || result.requestedLocale !== locale.value)
       return
     registry.value = result.registry
-    const data =
-      result.config && typeof result.config === 'object'
-        ? (result.config as Record<string, unknown>)
-        : {}
+    const data = result.config ?? {}
+    const keepDraft = data.uid === configUid.value
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
-    // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
-    groups.value = pluginSettingsGroups<DeclarativeHint>(data)
-    const next: SettingsValues = {}
-    for (const group of groups.value) {
-      const source = data[group.name]
-      const values = source && typeof source === 'object' ? Object.entries(source) : []
-      next[group.name] = Object.fromEntries(
-        values.filter(
-          ([field]) => !group.hints.some(hint => hint.field === field && hint.state !== undefined)
-        )
-      )
-    }
-    draft.reset(next, { keepDraft: true })
+    configUi.value = data.ui
+    draft.reset(declarativeValues(groups.value, data), { keepDraft })
   },
   { immediate: true }
 )
 
 const save = async (options: { reload: boolean } = { reload: true }) => {
   // 在无在途保存或动作时提交当前配置值，成功后按需重新读取后端规范化结果。
-  if (saving.value || runningKey.value || activeFields.value.length) return false
+  if (writeBusy.value || optionsInvalid.value) return false
   saving.value = true
   try {
     const submitted = draft.snapshot()
-    const data: SettingsValues = {}
-    for (const { group, field } of draft.changes.value) {
-      const fields = (data[group] ??= {})
-      fields[field] = submitted[group]?.[field]
-    }
-    await api.updateConfig({ recordId: pluginId.value, data })
+    await api.updateConfig({ recordId: pluginId.value, data: draft.patch(submitted) })
     // 先把基线设为刚提交的值；之后重读失败也只剩失败重试条，不再显示未保存。
     draft.commit(submitted)
     message.success(t('core.plugins.saved'))
     if (options.reload) await fetchSettings()
     return true
   } catch (error) {
-    message.error(errorMessage(error))
+    const reason = errorMessage(error)
+    draft.saveFailed(error)
+    message.error(reason)
     return false
   } finally {
     saving.value = false
-  }
-}
-
-const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
-  // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
-  const field = hint.field
-  if (
-    value !== true ||
-    !field ||
-    !configUid.value ||
-    hint.editable !== true ||
-    runningKey.value ||
-    saving.value ||
-    activeFields.value.includes(`${group}.${field}`)
-  )
-    return
-  runningKey.value = `${group}.${field}`
-  try {
-    const result = await api.runCommand('config', {
-      configUid: configUid.value,
-      group,
-      field,
-      value,
-    })
-    message.success(result.message || t('core.plugins.actionComplete'))
-    await fetchSettings()
-  } catch (error) {
-    message.error(errorMessage(error))
-  } finally {
-    runningKey.value = null
   }
 }
 
@@ -246,7 +195,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         <PluginAvatar v-if="view" :icon="view.icon" />
       </template>
     </PageHeader>
-    <PageSurface>
+    <div class="plugin-settings-content">
       <StateView
         :loading="loading"
         :error="loadError"
@@ -255,9 +204,16 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
         overlay-loading
         @retry="fetchSettings"
       >
-        <PluginDeclarativeForm
+        <DeclarativeForm
           v-if="groups.length"
           :groups="groups"
+          :tables="tables"
+          :steps="configUi?.steps"
+          :sections="configUi?.sections"
+          :plugin-name="view?.pluginId"
+          :submit-disabled="writeBusy || !draft.dirtyCount.value"
+          :submitting="saving"
+          :errors="draft.errors.value"
           :uid="configUid"
           :namespace="`plugins.${view?.pluginId ?? ''}.config`"
           :disabled="saving || runningKey !== null"
@@ -265,25 +221,41 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           :running-key="runningKey"
           :active-fields="activeFields"
           @update:value="draft.update"
+          @update:options-invalid="optionsInvalid = $event"
           @action="runAction"
-        />
+          @finish="save()"
+        >
+          <template #footer="{ wizard }">
+            <SettingsDirtyBar
+              v-if="draft.dirtyCount.value"
+              :count="draft.dirtyCount.value"
+              :saving="saving"
+              :disabled="writeBusy"
+              :save-disabled="optionsInvalid"
+              :wizard="wizard"
+              @discard="draft.discard"
+              @save="save()"
+            />
+          </template>
+        </DeclarativeForm>
       </StateView>
-      <SettingsDirtyBar
-        v-if="draft.dirtyCount.value"
-        :count="draft.dirtyCount.value"
-        :saving="saving"
-        :disabled="loading || runningKey !== null || activeFields.length > 0"
-        @discard="draft.discard"
-        @save="save()"
-      />
-    </PageSurface>
+    </div>
     <SettingsLeaveModal
       :open="leaveOpen"
       :count="draft.dirtyCount.value"
       :saving="saving"
+      :save-disabled="writeBusy || optionsInvalid"
       @stay="finishLeave(false)"
       @discard="discardAndLeave"
       @save="saveAndLeave"
     />
   </AppPage>
 </template>
+
+<style scoped>
+.plugin-settings-content {
+  flex: 1;
+  overflow: auto;
+  padding: var(--app-page-content-padding);
+}
+</style>

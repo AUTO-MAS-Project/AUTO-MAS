@@ -1,21 +1,15 @@
 <template>
   <div class="log-timestamp-selector">
-    <!-- 切换视图模式：large 尺寸与右列大号输入框等高，保持两列观感齐平 -->
-    <a-radio-group
-      v-model:value="viewMode"
-      size="large"
-      class="view-mode-group"
-      @change="onViewModeChange"
-    >
+    <!-- 切换视图模式 -->
+    <a-radio-group v-model:value="viewMode" class="view-mode-group" @change="onViewModeChange">
       <a-radio-button value="input">{{ t('core.comp.textInput') }}</a-radio-button>
       <a-radio-button value="visual">{{ t('core.comp.visualSelection') }}</a-radio-button>
     </a-radio-group>
 
     <!-- 输入框模式 -->
     <div v-if="viewMode === 'input'">
-      <!-- gutter 与外层分区保持一致，子列边界才能和外层两列对齐 -->
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :xs="24" :md="12">
           <a-form-item name="logTimeStart" :rules="rules.logTimeStart">
             <template #label>
               <FieldLabelWithHint :text="t('core.comp.logTimestampStart')" variant="form" />
@@ -24,13 +18,12 @@
               v-model:value="formData.logTimeStart"
               :min="1"
               :max="9999"
-              size="large"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeStart', formData.logTimeStart)"
             />
           </a-form-item>
         </a-col>
-        <a-col :span="12">
+        <a-col :xs="24" :md="12">
           <a-form-item name="logTimeEnd" :rules="rules.logTimeEnd">
             <template #label>
               <FieldLabelWithHint :text="t('core.comp.logTimestampEnd')" variant="form" />
@@ -39,7 +32,6 @@
               v-model:value="formData.logTimeEnd"
               :min="1"
               :max="9999"
-              size="large"
               style="width: 100%"
               @blur="handleChange('Script', 'LogTimeEnd', formData.logTimeEnd)"
             />
@@ -339,12 +331,12 @@ const applySelection = async () => {
   width: 100%;
 }
 
-/* 间距沿用 16px；large 尺寸让模式切换与右列大号输入框等高，保持两列观感齐平 */
 .view-mode-group {
   margin-bottom: 16px;
 }
 
 .visual-mode-container {
+  margin-bottom: 16px;
   border: 1px solid var(--ant-color-border);
   border-radius: 8px;
   padding: 16px;

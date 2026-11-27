@@ -13,8 +13,8 @@ export namespace PlanCreateIn {
         UNIVERSAL_PLAN = 'UniversalPlan',
         MAA_END_PLAN = 'MaaEndPlan',
         BAAHPLAN = 'BAAHPlan',
-        MSSPLAN = 'MSSPlan',
         MAA_PLAN_CONFIG = 'MaaPlanConfig',
+        MSSPLAN_CONFIG = 'MSSPlanConfig',
     }
 }
 

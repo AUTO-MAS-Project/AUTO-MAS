@@ -29,6 +29,7 @@ import type {
   OnlineAppearanceDetailResult,
   OnlineAppearanceInstallResult,
   OnlineAppearanceListResult,
+  OnlineAppearancePrepareProgress,
   OnlineAppearancePrepareResult,
   OnlineAppearanceQuery,
 } from '@/types/appearance'
@@ -411,7 +412,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
-  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType）；同项目的脚本合成一组 */
+  /** configTypes：要列出的脚本配置类名（MaaFW 家族适配条目上的 scriptConfigType）；同项目的脚本合成一组 */
   listMaaFWIssueReportProjects: (configTypes: string[]) => Promise<
     Array<{
       /** 组键，原样传给 exportMaaFWIssueReport */
@@ -537,9 +538,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath: string,
     category?: AppearanceCategory
   ) => Promise<LocalAppearanceInspectResult>
-  inspectAppearanceCover?: (
-    imagePath: string
-  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  inspectAppearanceCover?: (imagePath: string) => Promise<{
+    success: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    error?: string
+  }>
+  onOnlineAppearancePrepareProgress?: (
+    callback: (progress: OnlineAppearancePrepareProgress) => void
+  ) => () => void
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 

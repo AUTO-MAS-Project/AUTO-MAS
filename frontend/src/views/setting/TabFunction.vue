@@ -347,8 +347,8 @@ const handleVirtualDisplayModeChange = (value: unknown) => {
 .telemetry-detail-text {
   margin: 0;
   color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 /* 行标签沿用 SettingRow 的 form 级排版，供富文本 ⓘ 的行使用 */

@@ -87,6 +87,16 @@ class CallGate:
         if loop is not None:
             loop.call_soon_threadsafe(self._changed.set)
 
+    @contextmanager
+    def active_call(self) -> Iterator[None]:
+        """持有准入直至整个业务操作退出，停用时等待在途调用。"""
+        with call_context() as owner:
+            self._enter(owner)
+            try:
+                yield
+            finally:
+                self._leave(owner)
+
     def wrap(self, method: Callable[..., Any]) -> Callable[..., Any]:
         """为同步、异步或返回可等待对象的方法添加准入和在途计数，使卸载能等待真实调用结束。"""
         if inspect.iscoroutinefunction(method):
@@ -94,12 +104,8 @@ class CallGate:
             @wraps(method)
             async def asynchronous(*args, **kwargs):
                 """在异步方法执行前登记调用，无论成功、异常或取消都在结束后释放登记。"""
-                with call_context() as owner:
-                    self._enter(owner)
-                    try:
-                        return await method(*args, **kwargs)
-                    finally:
-                        self._leave(owner)
+                with self.active_call():
+                    return await method(*args, **kwargs)
 
             return asynchronous
 

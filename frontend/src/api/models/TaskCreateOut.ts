@@ -22,6 +22,6 @@ export type TaskCreateOut = {
     /**
      * 启动未受理时可由客户端处理的原因
      */
-    reason?: (string | null);
+    reason?: ('desktop_session_disconnected' | 'admin_required' | 'unsupported_config' | 'plugin_unavailable' | null);
 };
 

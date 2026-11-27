@@ -46,6 +46,7 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 
 其他常用适配器仓库：
 - 奇想盒：`AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter` → `plugins/whimbox_adapter`
+- BetterGI：[AUTO-MAS-BetterGI-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-BetterGI-Adapter) → `plugins/bettergi_adapter`
 - SRC：[AUTO-MAS-SRC-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-SRC-Adapter) → `plugins/src_adapter`
 
 开发约定：
@@ -54,9 +55,20 @@ git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/m
 - **旧配置自动补装**：已有托管的配置升级需要对应插件时，主程序会在激活领域配置前自动通过发行包入口补装（有效的本地源码覆盖仍优先）。
 - **版本约束**：正式发布前按实际配套 SDK 发行版本收紧最低版本约束并用该 SDK 验证。
 
+### 本地库
+
+插件依赖的共用库尚未发布时，把库的源码工程同样放进 `plugins/<目录>`（`src/` 下恰好一个普通包，`pyproject.toml` 的 `keywords` 写 `auto-mas-library`、不写 `auto-mas-plugin`）。主程序把它当作本地库，不进插件中心、不进注册表：
+- **依赖求解**：库目录作为求解目标，插件对该包名（带版本范围也行）的依赖由它满足；库自己的包不装进共享环境，它声明的第三方依赖照常安装。改库的 `pyproject.toml` 会触发重新求解。
+- **导入优先级**：启动时把库的 `src` 放到导入路径最前，优先于共享环境里的同名发行包。改库代码要重启后端，库不支持热重载。
+- **联调**：先卸掉共享环境里的同名发行包，否则 `importlib.metadata` 读到的仍是发行包的版本。
+
 ## 前端静态页面归属
 
-在动态前端加载上线前，MAA、奇想盒、SRC 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
+在动态前端加载上线前，MAA、奇想盒、SRC、BetterGI 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
+
+`frontend/src/views/gamesign/` 这类由插件能力承载的普通功能页同样留在主程序，但走普通路由（不经 `entry.ts`），页面只调 `frontend/src/services/` 下的薄封装。
+
+插件自有的 HTTP 端点（如 `/api/plugin/signflow/*`）由宿主在启停时挂到 `app.routes`，因此只有生成那一刻已启用的插件才会进 `frontend/src/api`。整仓重跑 `yarn openapi` 会把未启用插件的契约模型当作过期文件清掉，**不要用它来同步插件端点**；这类端点改在主程序 `frontend/src/services/` 里手写薄封装，视图与组合式函数只调该模块。
 
 ## 回归与测试环境
 

@@ -10,7 +10,7 @@
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
               <a-menu-item v-for="planType in availablePlanTypes" :key="planType.configType">
-                {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
+                {{ t('core.plan.createTyped', { name: planType.displayName }) }}
               </a-menu-item>
             </a-menu>
           </template>
@@ -41,7 +41,7 @@
     ref="universalDialog"
     :active-plan-id="activePlanId"
     :creating="creating"
-    @create="emit('add-plan', PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
+    @create="addPlan(PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
   />
 </template>
 
@@ -53,9 +53,10 @@ import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import {
   PLAN_CONFIG_TYPES,
-  PLAN_TYPE_DESCRIPTORS,
-  type PlanConfigType,
+  getAvailablePlanTypes,
+  type PlanTypeOption,
 } from '@/utils/planTypeRegistry'
+import type { PlanListItem } from '../planList'
 import { ConfirmActionButton } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -63,20 +64,11 @@ import { MAS_DOC_URLS } from '@/utils/openExternal'
 const { t } = useI18n()
 const capabilities = useScriptCapabilities(ref(true))
 const availablePlanTypes = computed(() =>
-  PLAN_TYPE_DESCRIPTORS.filter(
-    descriptor =>
-      descriptor.configType !== PLAN_CONFIG_TYPES.MAA || capabilities.types.value.includes('MAA')
-  )
+  getAvailablePlanTypes(capabilities.types.value, capabilities.provided.value)
 )
 
-interface Plan {
-  id: string
-  name: string
-  type: PlanConfigType
-}
-
 interface Props {
-  planList: Plan[]
+  planList: PlanListItem[]
   activePlanId: string
   creating?: boolean
   removePlan: (planId: string) => void | Promise<unknown>
@@ -84,16 +76,20 @@ interface Props {
 
 defineProps<Props>()
 const emit = defineEmits<{
-  'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
+  'add-plan': [plan: PlanTypeOption, owner?: { scriptId: string }]
 }>()
 
 const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
+const addPlan = (key: string, owner?: { scriptId: string }) => {
+  const plan = availablePlanTypes.value.find(option => option.configType === key)
+  if (plan) emit('add-plan', plan, owner)
+}
 const onAddPlanMenu = ({ key }: { key: string }) => {
   if (key === PLAN_CONFIG_TYPES.UNIVERSAL) {
     void universalDialog.value?.show()
     return
   }
-  emit('add-plan', key as PlanConfigType)
+  addPlan(key)
 }
 </script>
 

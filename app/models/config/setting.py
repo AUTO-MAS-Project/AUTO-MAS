@@ -86,6 +86,9 @@ class GlobalConfig(DomainEntry):
 
     class PluginHostFields(ConfigGroup):
         max_operations: int = Field(default=32, ge=1, description="插件命令并发上限")
+        uninstalled: Annotated[list[str], ui(visibility=UiVisibility.HIDE)] = Field(
+            default_factory=list, description="已卸载、不再根据遗留配置补装的插件"
+        )
 
     class DownloadFields(ConfigGroup):
         max_running: int = Field(default=4, ge=1, description="统一下载并发上限")

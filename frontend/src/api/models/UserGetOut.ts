@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { BAAHUserConfig } from './BAAHUserConfig';
 import type { BetterGIUserConfig } from './BetterGIUserConfig';
 import type { GeneralUserConfig } from './GeneralUserConfig';
@@ -31,6 +32,7 @@ export type UserGetOut = {
      */
     message?: string;
     uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 账号索引列表
      */
@@ -38,6 +40,6 @@ export type UserGetOut = {
     /**
      * 账号数据字典, key来自于index列表的uid
      */
-    data: Record<string, (GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | MSSUserConfig | MaaUserConfig | WhimboxUserConfig | SrcUserConfig)>;
+    data: Record<string, (GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | HSRUserConfig | ZzzOdUserConfig | BAAHUserConfig | BetterGIUserConfig | M9AUserConfig | MaaUserConfig | MaaFWUserConfig | MSSUserConfig | SrcUserConfig | WhimboxUserConfig)>;
 };
 

@@ -10,6 +10,6 @@ import type { WinProcessDeviceInput } from './WinProcessDeviceInput';
 export type GameDeviceUpdateIn = {
     gameId: string;
     deviceId: string;
-    data: (MuMuDeviceInput | LDPlayerDeviceInput | ModAvdDeviceInput | GeneralDeviceInput | WinProcessDeviceInput);
+    data: (GeneralDeviceInput | LDPlayerDeviceInput | ModAvdDeviceInput | MuMuDeviceInput | WinProcessDeviceInput);
 };
 

@@ -16,6 +16,7 @@ from .errors import (
     ConfigRemoveRejected,
     ConfigPersistenceError,
     DeletedNodeError,
+    UnresolvedEntryError,
 )
 from .core.manager import (
     ConfigManager,
@@ -26,7 +27,7 @@ from .core.manager import (
 )
 from .core.node import ConfigNode, ExportContext, LockTicket, NodeState
 from .signals import CollectionChangeEvent, FieldChangeEvent
-from .core.collection import CollectionOrderItem, ConfigCollection
+from .core.collection import CollectionOrderItem, ConfigCollection, UnresolvedEntry
 from .core.group import ConfigGroup, ConfigTableColumn
 from .core.entry import ConfigEntry
 from .core.staging import StagedOp, StageKind
@@ -45,6 +46,8 @@ from .fields import (
     Trigger,
     UiHintMarker,
     UiHintsMap,
+    UiSection,
+    UiStep,
     UiTablesList,
     UiVisibility,
     Virtual,
@@ -97,6 +100,7 @@ __all__ = [
     "ConfigManager",
     "config_manager",
     "CollectionOrderItem",
+    "UnresolvedEntry",
     "TransactionContext",
     "RootRecord",
     "PersistenceFailure",
@@ -111,6 +115,8 @@ __all__ = [
     "OptionHint",
     "TableHint",
     "UiHintsMap",
+    "UiSection",
+    "UiStep",
     "UiTablesList",
     "UiHintMarker",
     "UiVisibility",
@@ -164,5 +170,6 @@ __all__ = [
     "ConfigRemoveRejected",
     "ConfigPersistenceError",
     "DeletedNodeError",
+    "UnresolvedEntryError",
     "ConfigErrorList",
 ]

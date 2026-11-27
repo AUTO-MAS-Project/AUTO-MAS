@@ -421,7 +421,7 @@ jobs:
   cnb:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, release]
     permissions:
       contents: read
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))

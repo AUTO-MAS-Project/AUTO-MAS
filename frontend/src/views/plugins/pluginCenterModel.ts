@@ -2,10 +2,12 @@ import type {
   PluginReleaseNote,
   PluginCatalogDocument,
   PluginCatalogGetOut,
+  PluginConfigDocument,
   PluginConfigUi,
   PluginRegistryDocument,
   PluginRegistryGetOut,
 } from '@/api'
+import { declarativeGroups } from '@/components/declarative/declarativeLayout'
 import { pluginActionHint, pluginToggleChecked } from './configActions'
 
 /**
@@ -26,7 +28,7 @@ export type InstalledFilter = 'all' | 'official' | 'update' | 'fault'
 export const INSTALLED_FILTERS: readonly InstalledFilter[] = ['all', 'official', 'update', 'fault']
 export type MarketFilter = 'all' | 'specialized' | 'extension'
 export const MARKET_FILTERS: readonly MarketFilter[] = ['all', 'specialized', 'extension']
-export type DisableScope = 'scripts' | 'games'
+export type DisableScope = 'scripts' | 'games' | 'plans'
 export type LifecycleAction = 'enable' | 'disable' | 'reload' | 'uninstall'
 
 /** 启停、重载、卸载的按钮文案键。写成字面量而不是拼接，词条审计才查得出失效的 core.plugins.* 键。 */
@@ -41,6 +43,12 @@ export const LIFECYCLE_LABEL_KEYS: Record<LifecycleAction, string> = {
 const OFFICIAL_PACKAGE_NAMES: ReadonlySet<string> = new Set([
   'auto-mas-maa-adapter',
   'auto-mas-whimbox-adapter',
+  'auto-mas-maafw-adapter',
+  'auto-mas-m9a-adapter',
+  'auto-mas-mss-adapter',
+  'auto-mas-maafw-agent-env',
+  'auto-mas-maafw-project-update',
+  'auto-mas-maafw-runner',
 ])
 
 /** 专项前端入口声明的所属插件，用来对上托管类型、计划表类型与图标。 */
@@ -322,7 +330,10 @@ function findBinding(
 
 const disableScopes = (value: unknown): DisableScope[] =>
   Array.isArray(value)
-    ? value.filter((scope): scope is DisableScope => scope === 'scripts' || scope === 'games')
+    ? value.filter(
+        (scope): scope is DisableScope =>
+          scope === 'scripts' || scope === 'games' || scope === 'plans'
+      )
     : []
 
 // ---------- 条目整理 ----------
@@ -535,7 +546,7 @@ export function detailFieldKeys(view: PluginView): DetailFieldKey[] {
   return (Object.keys(present) as DetailFieldKey[]).filter(key => present[key])
 }
 
-// ---------- 用量与停用拦截 ----------
+// ---------- 插件用量 ----------
 
 export interface UsageScript {
   uid: string
@@ -554,7 +565,7 @@ export interface PluginUsageSource {
 
 /**
  * 用量来源状态。current 表示本次进入插件中心后已成功取到过托管列表；
- * 跨页缓存里的旧数据不算，一律按加载中处理，不能据此放行停用与卸载。
+ * 跨页缓存里的旧数量在本次读取成功后再展示。
  */
 export function usageSourceState(input: {
   failed: boolean
@@ -628,28 +639,19 @@ export function usageSegments(usage: PluginUsage): UsageSegment[] {
   return segments.flatMap(([key, count]) => (count ? [{ key, count }] : []))
 }
 
-export type LifecycleDecision =
-  /** 有托管在用，前端拦住，列出在用托管。 */
-  | { kind: 'blockedInUse'; scripts: UsageScript[] }
-  /** 用量还不知道，先拦住并提示重试，不当成没有托管。 */
-  | { kind: 'blockedUnknown'; reason: 'loading' | 'failed' }
-  /** 照现有流程确认后执行；scopes 为后端给的影响范围（可能为空）。 */
-  | { kind: 'confirm'; scopes: DisableScope[] }
+type LifecycleDecision =
   | { kind: 'direct' }
+  | { kind: 'confirm'; scopes: DisableScope[]; cascade: string[] }
 
-/** 停用与卸载的拦截判断；按钮能否点仍由界面提示决定，见 actionHint。 */
+/** 卸载始终确认；停用有配置影响或会连带停用下游时才确认。可执行性由后端界面提示决定。 */
 export function lifecycleDecision(
   action: 'disable' | 'uninstall',
-  view: Pick<InstalledPluginView, 'disableImpact'>,
-  usage: PluginUsage
+  view: Pick<InstalledPluginView, 'disableImpact' | 'document'>
 ): LifecycleDecision {
-  if (usage.kind === 'pending') return { kind: 'blockedUnknown', reason: 'loading' }
-  if (usage.kind === 'failed') return { kind: 'blockedUnknown', reason: 'failed' }
-  if (usage.kind === 'counted' && usage.scriptCount > 0)
-    return { kind: 'blockedInUse', scripts: usage.scripts }
-  if (action === 'uninstall') return { kind: 'confirm', scopes: [...view.disableImpact] }
-  return view.disableImpact.length
-    ? { kind: 'confirm', scopes: [...view.disableImpact] }
+  const cascade =
+    (action === 'disable' ? view.document.disableCascade : view.document.uninstallCascade) ?? []
+  return action === 'uninstall' || view.disableImpact.length || cascade.length
+    ? { kind: 'confirm', scopes: view.disableImpact, cascade }
     : { kind: 'direct' }
 }
 
@@ -799,23 +801,10 @@ export function updatableEntries(
 // ---------- 设置入口 ----------
 
 export type SettingsVisibility = 'visible' | 'hidden' | 'unknown' | 'loading'
-export interface PluginSettingsGroup<THint = unknown> {
-  name: string
-  hints: THint[]
-}
 
-/** 插件自有配置里有提示项的分组；与设置页使用同一判据。 */
-export function pluginSettingsGroups<THint = unknown>(
-  config: unknown
-): PluginSettingsGroup<THint>[] {
-  if (!config || typeof config !== 'object') return []
-  const ui = (config as Record<string, unknown>).ui
-  const hints = ui && typeof ui === 'object' ? (ui as Record<string, unknown>).hints : null
-  if (!hints || typeof hints !== 'object') return []
-  return Object.entries(hints as Record<string, unknown>).flatMap(([name, value]) =>
-    Array.isArray(value) && value.length ? [{ name, hints: value as THint[] }] : []
-  )
-}
+/** 插件中心按表单实际能渲染的分组展示设置入口。 */
+export const pluginSettingsGroups = (config?: PluginConfigDocument | null) =>
+  declarativeGroups(config?.ui)
 
 /** 确定没有可见设置才隐藏；读失败时仍给入口，由设置页显示失败与重试。 */
 export const showSettingsEntry = (visibility: SettingsVisibility) =>

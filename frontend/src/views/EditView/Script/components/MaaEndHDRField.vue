@@ -1,12 +1,11 @@
 <template>
   <a-row :gutter="24">
-    <a-col :span="24">
+    <a-col :xs="24" :md="12">
       <a-form-item :label="label" :help="help">
         <a-select
           :value="value"
           :options="options"
           :disabled="disabled"
-          size="large"
           @change="emit('change', $event)"
         />
       </a-form-item>

@@ -1,4 +1,5 @@
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef } from 'vue'
+import { ApiResponseError } from '@/utils/apiResult'
 
 export type SettingsValues = Record<string, Record<string, unknown>>
 
@@ -34,6 +35,7 @@ export function settingsChanges(
  */
 export function usePluginSettingsDraft() {
   const values = reactive<SettingsValues>({})
+  const errors = ref<Record<string, string>>({})
   const baseline = shallowRef<SettingsValues>({})
 
   const changes = computed(() => settingsChanges(values, baseline.value))
@@ -46,6 +48,8 @@ export function usePluginSettingsDraft() {
 
   /** 用读取结果替换编辑稿；keepDraft 时把仍存在的分组里的改动放回去。 */
   const reset = (next: SettingsValues, options: { keepDraft: boolean }) => {
+    const previousErrors = errors.value
+    errors.value = {}
     const kept = options.keepDraft
       ? changes.value.map(change => ({
           ...change,
@@ -54,17 +58,44 @@ export function usePluginSettingsDraft() {
       : []
     baseline.value = clone(next)
     assign(next)
-    for (const change of kept)
-      if (values[change.group]) values[change.group][change.field] = change.value
+    for (const { group, field, value } of kept) {
+      const fields = values[group]
+      if (!fields) continue
+      const key = `${group}.${field}`
+      if (previousErrors[key] && !sameValue(fields[field], value))
+        errors.value[key] = previousErrors[key]
+      fields[field] = value
+    }
   }
 
   const update = (group: string, field: string, value: unknown) => {
+    delete errors.value[`${group}.${field}`]
     if (!values[group]) values[group] = {}
     values[group][field] = value
   }
 
   /** 放弃改动，恢复到上次读取的值。 */
-  const discard = () => assign(baseline.value)
+  const discard = () => {
+    errors.value = {}
+    assign(baseline.value)
+  }
+
+  const discardField = (group: string, field: string) =>
+    update(group, field, clone(baseline.value[group]?.[field]))
+
+  /** 只标出接口确认校验失败的字段。 */
+  const saveFailed = (error: unknown) => {
+    errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
+  }
+
+  function patch(submitted: SettingsValues) {
+    const data: SettingsValues = {}
+    for (const { group, field } of changes.value) {
+      const fields = (data[group] ??= {})
+      fields[field] = submitted[group]?.[field]
+    }
+    return data
+  }
 
   /** 提交时刻的编辑值快照，保存成功后交给 commit。 */
   const snapshot = (): SettingsValues => clone({ ...values })
@@ -74,8 +105,22 @@ export function usePluginSettingsDraft() {
    * 之后的重读失败也不会让已保存的内容继续显示成未保存。
    */
   const commit = (submitted: SettingsValues) => {
+    errors.value = {}
     baseline.value = clone(submitted)
   }
 
-  return { values, changes, dirtyCount, reset, update, discard, snapshot, commit }
+  return {
+    values,
+    errors,
+    saveFailed,
+    changes,
+    dirtyCount,
+    reset,
+    update,
+    discard,
+    discardField,
+    snapshot,
+    patch,
+    commit,
+  }
 }

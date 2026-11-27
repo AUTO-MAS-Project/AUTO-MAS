@@ -1,17 +1,23 @@
 <script setup lang="ts">
+import type { Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { SectionCard } from '@/components/ui'
 
-defineProps<{
-  ready: boolean
-  enabled: boolean
-  channel: 'stable' | 'beta'
-  cdk: string
-  title: string
-  hint: string
-  cdkHint: string
-}>()
+withDefaults(
+  defineProps<{
+    ready: boolean
+    enabled: boolean
+    channel: 'stable' | 'beta'
+    cdk: string
+    title: string
+    hint: string
+    cdkHint: string
+    variant?: 'plain' | 'card'
+    icon?: Component
+  }>(),
+  { variant: 'plain', icon: undefined }
+)
 const emit = defineEmits<{
   enabled: [value: boolean]
   channel: [value: 'stable' | 'beta']
@@ -22,7 +28,7 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <SectionCard variant="plain" :title="title">
+  <SectionCard :variant="variant" :title="title" :icon="icon">
     <a-row :gutter="24">
       <a-col :span="$slots['package-mode'] ? 6 : 8">
         <a-form-item :label="t('core.edit.updateChannel')">

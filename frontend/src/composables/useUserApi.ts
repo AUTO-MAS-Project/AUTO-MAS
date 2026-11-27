@@ -6,7 +6,7 @@ import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { Service } from '@/api'
 import type {
-  UserInBase,
+  UserCreateIn,
   UserCreateOut,
   UserUpdateIn,
   UserDeleteIn,
@@ -25,6 +25,7 @@ import {
 const logger = window.electronAPI.getLogger('用户API')
 
 interface AddUserOptions {
+  firstOnly?: boolean
   showError?: boolean
   playSuccessSound?: boolean
 }
@@ -48,8 +49,9 @@ export function useUserApi() {
     const showError = options.showError ?? true
 
     try {
-      const requestData: UserInBase = {
+      const requestData: UserCreateIn = {
         scriptId,
+        firstOnly: options.firstOnly,
       }
 
       const response = await Service.addUserApiScriptsUserAddPost(requestData)

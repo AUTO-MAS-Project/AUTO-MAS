@@ -38,6 +38,9 @@ const backgroundAttempt = ref(0)
 const NOTE_BACKGROUND_BASE = 'https://doc.auto-mas.top/community-notes'
 
 // 这些中文值是后端稳定游戏枚举，只用于映射，不参与界面翻译。
+// 主题变量只提供语义色（primary / success），没有按游戏区分的强调色，
+// 所以原神、星穹铁道、绝区零三个强调色落在下方样式的 CSS 变量里，
+// 明暗各给一套——浅色下需要压深才和浅底有对比，深色下需要提亮才压得住背景图。
 const GAME_VISUALS: Record<string, GameVisual> = {
   明日方舟: {
     accent: 'var(--ant-color-primary)',
@@ -56,7 +59,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     uiClass: 'activity-card--endfield',
   },
   原神: {
-    accent: '#8fe3b0',
+    accent: 'var(--gamesign-accent-genshin)',
     backgroundImage: `${NOTE_BACKGROUND_BASE}/genshin-background.webp?v=f06788a6cb81`,
     icon: CompassOutlined,
     image: genshinNoteImage,
@@ -64,7 +67,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     uiClass: 'activity-card--genshin',
   },
   星穹铁道: {
-    accent: '#62c4e7',
+    accent: 'var(--gamesign-accent-star-rail)',
     backgroundImage: `${NOTE_BACKGROUND_BASE}/star-rail-background.webp?v=1048d29ea88f`,
     icon: RocketOutlined,
     image: starRailNoteImage,
@@ -72,7 +75,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     uiClass: 'activity-card--star-rail',
   },
   绝区零: {
-    accent: '#ffd24a',
+    accent: 'var(--gamesign-accent-zenless)',
     backgroundImage: `${NOTE_BACKGROUND_BASE}/zenless-background.webp?v=e4f8798de02c`,
     icon: ThunderboltOutlined,
     image: zenlessNoteImage,
@@ -223,7 +226,16 @@ watch(
 </template>
 
 <style scoped>
+/*
+ * 五个游戏里，明日方舟与终末地能直接用语义色（primary / success），
+ * 其余三个米家游戏没有对应语义色，写死 hex 又会在另一套配色下失去对比，
+ * 因此收成一组组件内变量，明暗各一套。
+ */
 .activity-card {
+  --gamesign-accent-genshin: #2f9e6a;
+  --gamesign-accent-star-rail: #1a8ab5;
+  --gamesign-accent-zenless: #d48806;
+
   position: relative;
   isolation: isolate;
   overflow: hidden;
@@ -338,7 +350,7 @@ watch(
 
 .activity-card-title span {
   color: var(--ant-color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .activity-card-title,
@@ -354,7 +366,7 @@ watch(
   gap: 2px 8px;
   margin: 4px 0 6px;
   color: var(--ant-color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .activity-identity strong {
@@ -386,7 +398,7 @@ watch(
 .activity-section h3 {
   margin: 0 0 2px;
   color: var(--ant-color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -430,7 +442,7 @@ watch(
   margin-top: auto;
   padding-top: 6px;
   color: var(--ant-color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -455,6 +467,12 @@ watch(
 .activity-card--zenless .activity-background {
   object-position: 70% center;
   opacity: 0.28;
+}
+
+html.dark .activity-card {
+  --gamesign-accent-genshin: #8fe3b0;
+  --gamesign-accent-star-rail: #62c4e7;
+  --gamesign-accent-zenless: #ffd24a;
 }
 
 html.dark .activity-card--zenless .activity-background {

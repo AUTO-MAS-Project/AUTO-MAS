@@ -42,6 +42,10 @@ export interface OnlineAppearanceItem {
   installed: OnlineAppearanceInstalled | null
   /** 发布版本有没有封面；分享站没给这个字段时为 false。 */
   hasCover: boolean
+  /** 分享站累计下载次数。 */
+  downloadCount?: number
+  /** 分享站标签名称列表。 */
+  tags?: string[]
 }
 
 export interface OnlineAppearanceVersion {
@@ -82,6 +86,29 @@ export interface OnlineAppearancePreview {
   mode?: AppearanceMode
   tokens?: AppearanceManifest['tokens']
   previewUrl?: string
+  tryOnAppearance?: Awaited<ReturnType<typeof inspectAppearancePackage>>['tryOnAppearance']
+  hasBundledMascot?: boolean
+  precheck?: {
+    hasCustomMenuIcons: boolean
+    hasDefaultMenuIcon: boolean
+    menuIconCount: number
+    hasBackground: boolean
+    hasCursors: boolean
+    hasMascot: boolean
+    previewDimensions?: { width: number; height: number }
+  }
+}
+
+export type OnlineAppearancePreparePhase = 'metadata' | 'downloading' | 'verifying'
+
+export interface OnlineAppearancePrepareProgress {
+  categoryKey: AppearanceCategory
+  fileKey: string
+  versionNo: number
+  phase: OnlineAppearancePreparePhase
+  loadedBytes: number
+  totalBytes: number
+  percent: number
 }
 
 export interface OnlineAppearancePrepareResult {
@@ -403,7 +430,11 @@ interface CacheEntry {
 export interface OnlineAppearanceService {
   list(query: OnlineAppearanceQuery): Promise<OnlineAppearanceListResult>
   detail(fileKey: unknown): Promise<OnlineAppearanceDetailResult>
-  prepare(fileKey: unknown, versionNo: unknown): Promise<OnlineAppearancePrepareResult>
+  prepare(
+    fileKey: unknown,
+    versionNo: unknown,
+    onProgress?: (progress: OnlineAppearancePrepareProgress) => void
+  ): Promise<OnlineAppearancePrepareResult>
   install(token: unknown, replace: boolean): Promise<OnlineAppearanceInstallResult>
   discard(token: unknown): { success: boolean }
   /** 取封面；versionNo 省略时取发布版本的封面。成功结果按 fileKey + 版本号缓存在内存里。 */
@@ -614,6 +645,24 @@ export function createOnlineAppearanceService(
   ): OnlineAppearanceItem | null => {
     if (!isPlainObject(raw) || !isValidOnlineFileKey(raw.file_key)) return null
     const fileKey = raw.file_key
+    const rawDownloadCount = raw.download_count
+    const downloadCount =
+      typeof rawDownloadCount === 'number' &&
+      Number.isSafeInteger(rawDownloadCount) &&
+      rawDownloadCount >= 0
+        ? rawDownloadCount
+        : undefined
+    const tags = Array.isArray(raw.tags)
+      ? raw.tags
+          .map(tag =>
+            isPlainObject(tag)
+              ? clipText(tag.tag_name ?? tag.tag_key, 32).trim()
+              : typeof tag === 'string'
+                ? clipText(tag, 32).trim()
+                : ''
+          )
+          .filter(Boolean)
+      : undefined
     return {
       fileKey,
       displayName: clipText(raw.display_name, 120) || fileKey,
@@ -627,6 +676,8 @@ export function createOnlineAppearanceService(
       hasCover:
         raw.has_cover === true ||
         (isPlainObject(raw.published_version) && raw.published_version.has_cover === true),
+      ...(downloadCount !== undefined ? { downloadCount } : {}),
+      ...(tags && tags.length > 0 ? { tags } : {}),
     }
   }
 
@@ -708,7 +759,8 @@ export function createOnlineAppearanceService(
     fileKey: string,
     versionNo: number,
     expectedBytes: number,
-    partPath: string
+    partPath: string,
+    onProgress?: (loadedBytes: number, totalBytes: number) => void
   ): Promise<{ bytes: number; sha256: string }> => {
     const limit = ASSET_CATEGORY_LIMITS[kind].archiveBytes
     const controller = new AbortController()
@@ -745,6 +797,8 @@ export function createOnlineAppearanceService(
       handle = await fs.promises.open(partPath, 'wx')
       const hash = crypto.createHash('sha256')
       let bytes = 0
+      let lastReportAt = 0
+      onProgress?.(0, expectedBytes)
       for (;;) {
         let chunk: { done: boolean; value?: Uint8Array }
         try {
@@ -769,6 +823,11 @@ export function createOnlineAppearanceService(
         }
         hash.update(chunk.value)
         await handle.write(chunk.value)
+        const currentAt = now()
+        if (bytes >= expectedBytes || currentAt - lastReportAt >= 80) {
+          lastReportAt = currentAt
+          onProgress?.(bytes, expectedBytes)
+        }
       }
       await handle.close()
       handle = undefined
@@ -855,13 +914,31 @@ export function createOnlineAppearanceService(
 
   const prepare = async (
     fileKey: unknown,
-    versionNo: unknown
+    versionNo: unknown,
+    onProgress?: (progress: OnlineAppearancePrepareProgress) => void
   ): Promise<OnlineAppearancePrepareResult> => {
     if (!isValidOnlineFileKey(fileKey)) return invalidArgument('外观包标识无效')
     const pinnedVersion = positiveInteger(versionNo)
     if (pinnedVersion === null) return invalidArgument('版本号无效')
     purgeExpired()
+    const reportProgress = (
+      phase: OnlineAppearancePreparePhase,
+      loadedBytes: number,
+      totalBytes: number,
+      percent: number
+    ): void => {
+      onProgress?.({
+        categoryKey: kind,
+        fileKey,
+        versionNo: pinnedVersion,
+        phase,
+        loadedBytes,
+        totalBytes,
+        percent,
+      })
+    }
     try {
+      reportProgress('metadata', 0, 0, 0)
       const versions = await fetchVersions(fileKey)
       const version = versions.find(item => item.versionNo === pinnedVersion)
       if (!version) {
@@ -880,7 +957,17 @@ export function createOnlineAppearanceService(
       logger.info(
         `开始下载在线外观: ${fileKey} 版本 ${version.versionNo}，大小 ${version.fileSize} 字节`
       )
-      const downloaded = await download(fileKey, version.versionNo, version.fileSize, partPath)
+      const downloaded = await download(
+        fileKey,
+        version.versionNo,
+        version.fileSize,
+        partPath,
+        (loadedBytes, totalBytes) => {
+          const percent =
+            totalBytes > 0 ? Math.min(99, Math.round((loadedBytes / totalBytes) * 100)) : 0
+          reportProgress('downloading', loadedBytes, totalBytes, percent)
+        }
+      )
       if (downloaded.bytes !== version.fileSize || downloaded.sha256 !== version.sha256) {
         removeQuietly(partPath)
         logger.warn(
@@ -891,6 +978,7 @@ export function createOnlineAppearanceService(
       logger.info(
         `在线外观校验通过: ${fileKey} 版本 ${version.versionNo}，SHA-256 ${version.sha256}`
       )
+      reportProgress('verifying', version.fileSize, version.fileSize, 100)
       try {
         fs.renameSync(partPath, zipPath)
       } catch (error) {
@@ -922,6 +1010,21 @@ export function createOnlineAppearanceService(
       const { manifest, previewUrl } = inspected
       const existing = getInstalled(options.userDataPath(), manifest.id)
       const theme = 'tokens' in manifest ? manifest : null
+      const tryOnAppearance = 'tryOnAppearance' in inspected ? inspected.tryOnAppearance : undefined
+      const previewDimensions =
+        'previewDimensions' in inspected ? inspected.previewDimensions : undefined
+      const menuIconKeys = Object.keys(theme?.menuIcons ?? {})
+      const precheck = theme
+        ? {
+            hasCustomMenuIcons: menuIconKeys.length > 0,
+            hasDefaultMenuIcon: Boolean(theme.menuIcons?.default),
+            menuIconCount: menuIconKeys.length,
+            hasBackground: Boolean(theme.background),
+            hasCursors: Object.keys(theme.cursors ?? {}).length > 0,
+            hasMascot: Boolean(theme.mascot),
+            ...(previewDimensions ? { previewDimensions } : {}),
+          }
+        : undefined
       const tokens = theme
         ? (Object.fromEntries(
             Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
@@ -940,6 +1043,9 @@ export function createOnlineAppearanceService(
           ...(manifest.description === undefined ? {} : { description: manifest.description }),
           ...(theme ? { mode: theme.mode, tokens } : {}),
           ...(previewUrl ? { previewUrl } : {}),
+          ...(tryOnAppearance ? { tryOnAppearance } : {}),
+          ...(theme ? { hasBundledMascot: Boolean(theme.mascot) } : {}),
+          ...(precheck ? { precheck } : {}),
         },
         existing: existing ? { id: existing.id, name: existing.name } : null,
       }

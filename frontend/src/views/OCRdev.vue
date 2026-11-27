@@ -11,7 +11,7 @@
     <a-tabs v-model:active-key="activeTab" type="card">
       <!-- 截图测试 -->
       <a-tab-pane key="screenshot" tab="窗口截图">
-        <a-card title="截图参数配置" class="config-card">
+        <SectionCard title="截图参数配置" class="config-card">
           <a-form :model="screenshotForm" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="24">
@@ -79,7 +79,7 @@
               </a-space>
             </a-form-item>
           </a-form>
-        </a-card>
+        </SectionCard>
 
         <!-- 截图结果展示 -->
         <a-card v-if="screenshotResult" title="截图结果" class="result-card">
@@ -115,7 +115,7 @@
 
       <!-- ADB 截图测试 -->
       <a-tab-pane key="adb-screenshot" tab="ADB 截图">
-        <a-card title="ADB 截图参数配置" class="config-card">
+        <SectionCard title="ADB 截图参数配置" class="config-card">
           <a-form :model="adbScreenshotForm" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="24">
@@ -182,7 +182,7 @@
               </a-space>
             </a-form-item>
           </a-form>
-        </a-card>
+        </SectionCard>
 
         <!-- ADB 截图结果展示 -->
         <a-card v-if="adbScreenshotResult" title="ADB 截图结果" class="result-card">
@@ -218,7 +218,7 @@
 
       <!-- 图像检查测试 -->
       <a-tab-pane key="check" tab="图像检查">
-        <a-card title="图像检查配置" class="config-card">
+        <SectionCard title="图像检查配置" class="config-card">
           <a-form :model="checkForm" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="24">
@@ -321,7 +321,7 @@
               </a-space>
             </a-form-item>
           </a-form>
-        </a-card>
+        </SectionCard>
 
         <!-- 检查结果展示 -->
         <a-card v-if="checkResult" title="检查结果" class="result-card">
@@ -348,7 +348,7 @@
 
       <!-- 点击操作测试 -->
       <a-tab-pane key="click" tab="点击操作">
-        <a-card title="点击操作配置" class="config-card">
+        <SectionCard title="点击操作配置" class="config-card">
           <a-form :model="clickForm" layout="vertical">
             <a-row :gutter="16">
               <a-col :span="24">
@@ -444,7 +444,7 @@
               </a-space>
             </a-form-item>
           </a-form>
-        </a-card>
+        </SectionCard>
 
         <!-- 点击结果展示 -->
         <a-card v-if="clickResult" title="点击结果" class="result-card">
@@ -481,6 +481,7 @@ import {
   SearchOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
+import { SectionCard } from '@/components/ui'
 import { OcrService } from '@/api/services/OcrService'
 import type { OCRScreenshotIn } from '@/api/models/OCRScreenshotIn'
 import type { OCRScreenshotOut } from '@/api/models/OCRScreenshotOut'
@@ -785,7 +786,8 @@ const resetClickForm = () => {
   margin: 0 auto;
 }
 
-.page-header {
+.page-header,
+.config-card {
   margin-bottom: 24px;
 }
 
@@ -804,10 +806,6 @@ const resetClickForm = () => {
   margin: 0;
   color: var(--ant-color-text-secondary);
   font-size: 14px;
-}
-
-.config-card {
-  margin-bottom: 24px;
 }
 
 .result-card {

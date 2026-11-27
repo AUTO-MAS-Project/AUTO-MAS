@@ -3,8 +3,21 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
+
+
+class ReportableError(Exception):
+    """文本写给用户看的异常：触发器结果把 ``message`` 与 ``payload`` 交给界面。
+
+    只有显式继承本类的异常才对外显示原文；其他异常只报类名，避免把路径等内部信息带出去。
+    """
+
+    def __init__(self, message: str, *, payload: dict[str, Any] | None = None) -> None:
+        """保存面向用户的消息和可序列化的附加信息。"""
+        super().__init__(message)
+        self.message = message
+        self.payload = payload or {}
 
 
 class ConfigError(Exception):
@@ -39,10 +52,28 @@ class ConfigPersistenceError(ConfigError):
 class ConfigAggregateError(ConfigError):
     """聚合多条错误（activate / commit / update）；``errors`` 可含嵌套的 ``ConfigAggregateError``。"""
 
-    def __init__(self, errors: list[Exception]) -> None:
+    def __init__(
+        self, errors: list[Exception], *, field_path: tuple[str, str] | None = None
+    ) -> None:
         self.errors = list(errors)
+        self.field_path = field_path
         detail = "; ".join(f"{type(e).__name__}: {e}" for e in self.errors)
         super().__init__(detail or "操作失败")
+
+
+class UnresolvedEntryError(KeyError):
+    """按 uid 取到的是所属类型没登记、原样保留着的成员（所属插件不可用）。
+
+    继承 ``KeyError``：按「不存在」处理的调用方照旧走缺失分支。
+    """
+
+    def __init__(self, uid: UUID | str, type_name: str) -> None:
+        super().__init__(uid)
+        self.uid = uid
+        self.type_name = type_name
+
+    def __str__(self) -> str:
+        return f"所属插件不可用：{self.uid}（{self.type_name}）"
 
 
 # activate / commit / update 收集的错误列表元素类型（可嵌套聚合）

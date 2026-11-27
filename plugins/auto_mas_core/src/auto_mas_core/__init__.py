@@ -22,7 +22,11 @@ from app.config import (
     JsonDictString,
     JsonListString,
     LockTicket,
+    OptionHint,
+    ScriptRootPath,
     Trigger,
+    UiSection,
+    UiStep,
     UiVisibility,
     Virtual,
     collection,
@@ -47,6 +51,7 @@ from app.models.config import (
     ScriptEntry,
     UserEntry,
 )
+from app.models.config.script import DesktopSessionRunFields
 from app.models.config.tag import TagItem
 from app.models.schema import (
     DownloadRequest,
@@ -77,7 +82,8 @@ from app.plugin.base import (
 from app.plugin.base.client import ClientControl
 from app.plugin.base.extension import AdapterRuntime
 from app.plugin.base.game import GameRuntime
-from app.plugin.errors import PluginError, PluginPrecheckError
+from app.plugin.base.script import DesktopSessionCheckReason, FirstAccountMode
+from app.plugin.errors import PluginBusyError, PluginError, PluginPrecheckError
 from app.plugin.http import plugin_route
 from app.plugin.services import ServiceResolver
 from app.plugin.types import PLUGIN_API_VERSION, PluginState
@@ -89,6 +95,8 @@ from app.task import (
     ScriptViewWorker,
     UserExpander,
 )
+from app.task.user_expander import ScriptSkip
+from app.utils.common.config.restore import ConfigRestorePool, RestoreContext
 
 from ._version import __version__
 from .core_plugin import CorePlugin
@@ -130,6 +138,8 @@ if not TYPE_CHECKING:
 
 
 __all__ = [
+    "DesktopSessionCheckReason",
+    "DesktopSessionRunFields",
     "BackgroundTaskGroup",
     "BackgroundTaskHandle",
     "DownloadRequest",
@@ -150,6 +160,7 @@ __all__ = [
     "ConfigCollection",
     "ConfigEntry",
     "ConfigGroup",
+    "ConfigRestorePool",
     "ConfigTableColumn",
     "CorePlugin",
     "DeviceHandle",
@@ -162,6 +173,7 @@ __all__ = [
     "EmulatorExpect",
     "ExecutablePath",
     "FilePath",
+    "FirstAccountMode",
     "FolderPath",
     "JsonDictString",
     "JsonListString",
@@ -176,12 +188,18 @@ __all__ = [
     "History",
     "__version__",
     "LockTicket",
+    "OptionHint",
+    "RestoreContext",
+    "ScriptRootPath",
+    "UiSection",
+    "UiStep",
     "UiVisibility",
     "PLUGIN",
     "PLUGIN_API_VERSION",
     "Plugin",
     "PluginConfig",
     "PlanEntry",
+    "PluginBusyError",
     "PluginError",
     "Publisher",
     "ScriptEntry",
@@ -191,6 +209,7 @@ __all__ = [
     "TaskUserItem",
     "UserEntry",
     "UserExpander",
+    "ScriptSkip",
     "WSTaskNoticeData",
     "encrypted",
     "protocol",

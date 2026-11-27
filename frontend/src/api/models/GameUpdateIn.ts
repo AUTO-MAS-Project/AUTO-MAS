@@ -9,6 +9,6 @@ import type { MuMuGameInput } from './MuMuGameInput';
 import type { WinProcessGameInput } from './WinProcessGameInput';
 export type GameUpdateIn = {
     gameId: string;
-    data: (MuMuGameInput | LDPlayerGameInput | ModAvdGameInput | GeneralGameInput | WinProcessGameInput);
+    data: (GeneralGameInput | LDPlayerGameInput | ModAvdGameInput | MuMuGameInput | WinProcessGameInput);
 };
 

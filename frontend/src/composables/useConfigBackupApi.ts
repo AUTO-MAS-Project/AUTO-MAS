@@ -6,7 +6,7 @@ import { beginAnalyticsOperation, getAnalyticsScriptType } from '@/utils/analyti
 
 interface ConfigBackupApiOptions {
   scriptId: MaybeRefOrGetter<string>
-  userId: MaybeRefOrGetter<string>
+  userId?: MaybeRefOrGetter<string | null | undefined>
   logger: Pick<ReturnType<typeof window.electronAPI.getLogger>, 'error'>
 }
 
@@ -60,27 +60,26 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
   const restoreApi = {
     list: async (target: string) => {
       const { scriptId, userId } = context()
-      return Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target)
+      return Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, target, userId)
     },
     preview: async (target: string, time: string) => {
       const { scriptId, userId } = context()
       return Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
         scriptId,
-        userId,
         time,
-        target
+        target,
+        userId
       )
     },
-    // 普通入口维持双参数契约；有损坏配置二次确认的页面显式接入带 force 的 restore。
-    restore: (target: string, time: string) => restore(target, time),
+    restore,
     readFile: async (target: string, time: string, path: string) => {
       const { scriptId, userId } = context()
       return Service.getConfigBackupFileApiApiScriptsBackupFileGet(
         scriptId,
-        userId,
         time,
         target,
-        path
+        path,
+        userId
       )
     },
   }
@@ -91,7 +90,8 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
 
   /** 归档失败提示后继续编辑；需要展示专项诊断的页面自行处理 ensure 的响应。 */
   const ensureBackup = async (target: string) => {
-    if (!toValue(userId)) return
+    // 旧账号编辑页用空串表示账号尚未创建；托管级备份允许省略账号。
+    if (toValue(userId) === '') return
     try {
       const resp = await ensure(target)
       if (resp.code !== 200)

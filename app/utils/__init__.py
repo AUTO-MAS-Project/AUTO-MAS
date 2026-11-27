@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from .common import expression as expression
     from .common import fluxdown_cli as fluxdown_cli
     from .common import game_apk as game_apk
+    from .common import game_resolution as game_resolution
     from .common import game_update as game_update
     from .common import hpatchz as hpatchz
     from .common import i18n as i18n
@@ -319,6 +320,7 @@ _COMMON_MODULES = {
     "constants": ".common.constants",
     "io": ".common.io",
     "game_apk": ".common.game_apk",
+    "game_resolution": ".common.game_resolution",
     "display": ".unsupported.display",
     "fluxdown_cli": ".common.fluxdown_cli",
     "supervision": ".common.supervision",
@@ -522,6 +524,7 @@ __all__ = [
     "constants",
     "io",
     "game_apk",
+    "game_resolution",
     "display",
     "fluxdown_cli",
     "supervision",

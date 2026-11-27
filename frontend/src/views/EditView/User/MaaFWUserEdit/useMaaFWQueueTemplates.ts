@@ -3,7 +3,7 @@ import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 import type { MaaFWScriptConfig, MaaFWTaskSnapshot } from '@/types/script'
-import type { MaaFWQueueTemplateView } from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWQueueTemplateView } from './sectionProps'
 import {
   addMaaFWQueueTemplate,
   buildMaaFWQueueTemplateSnapshot,

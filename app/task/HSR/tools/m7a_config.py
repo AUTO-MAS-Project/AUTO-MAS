@@ -34,6 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
+from .m7a_paths import resolve_m7a_config_path
 from .managed_fields import M7A_MANAGED_FIELDS, auto_managed_keys, managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
@@ -576,7 +577,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     root = str(raw_root or "").strip()
     if not root:
         raise FileNotFoundError("请先设置三月七路径")
-    path = Path(root) / "config.yaml"
+    path = resolve_m7a_config_path(root)
     if not path.is_file():
         raise FileNotFoundError(f"三月七原生配置不存在：{path}")
     try:

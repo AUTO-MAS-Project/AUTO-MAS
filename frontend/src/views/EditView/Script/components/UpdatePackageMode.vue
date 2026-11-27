@@ -2,7 +2,10 @@
 import { useI18n } from 'vue-i18n'
 import { useId } from 'vue'
 
-const { disabled = false } = defineProps<{ disabled?: boolean }>()
+const { disabled = false, size = 'large' } = defineProps<{
+  disabled?: boolean
+  size?: 'large' | 'middle'
+}>()
 const mode = defineModel<'full' | 'incremental'>({ required: true })
 const emit = defineEmits<{ change: [value: 'full' | 'incremental'] }>()
 const { t } = useI18n()
@@ -14,7 +17,7 @@ const selectId = useId()
     <a-select
       :id="selectId"
       v-model:value="mode"
-      size="large"
+      :size="size"
       :aria-label="t('core.edit.updatePackageMode')"
       :disabled="disabled"
       :options="[

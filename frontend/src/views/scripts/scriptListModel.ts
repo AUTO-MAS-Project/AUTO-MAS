@@ -1,12 +1,14 @@
+import type { PluginProvidedScriptType } from '@/api'
 import { UserIndexItem } from '@/api'
 import type { MaaUserConfig_Info, UserGetOut, ZzzOdUserConfig_Game } from '@/api'
 import type { ScriptDetail, ScriptType } from '@/types/script'
-import { isMaaFWFamily, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, maafwUserConfigTypes } from '@/plugins/maafwFamily'
 
 /** 列表只读投影；用户操作用 scriptId / id 定位，不能作为配置整体回写。 */
 export interface ScriptListUser {
   id: string
   scriptId: string
+  showAccount: boolean
   name: string
   Info: Pick<
     MaaUserConfig_Info,
@@ -42,7 +44,7 @@ const ACCOUNT_CONFIG_TYPES = new Set([
 
 const PASSWORD_CONFIG_TYPES = new Set(['MaaUserConfig', 'SrcUserConfig', 'MaaEndUserConfig'])
 
-const BASE_DEFAULTS: Partial<Record<UserIndexItem.type, string>> = {
+const BASE_DEFAULTS: Partial<Record<string, string>> = {
   MaaUserConfig: 'shared',
   SrcUserConfig: 'shared',
   MaaEndUserConfig: 'shared',
@@ -52,7 +54,7 @@ const BASE_DEFAULTS: Partial<Record<UserIndexItem.type, string>> = {
   ZzzOdUserConfig: 'independent',
 }
 
-const SERVER_DEFAULTS: Partial<Record<UserIndexItem.type, string>> = {
+const SERVER_DEFAULTS: Partial<Record<string, string>> = {
   MaaUserConfig: 'Official',
   SrcUserConfig: 'CN-Official',
 }
@@ -68,14 +70,16 @@ const defaultIfMissing = <T>(value: T | undefined, fallback: T): T =>
 
 export function toScriptListUser(
   scriptId: string,
-  index: UserGetOut['index'][number],
-  config: UserGetOut['data'][string] | undefined
+  index: { uid: string; type: string },
+  config: UserGetOut['data'][string] | undefined,
+  provided?: PluginProvidedScriptType
 ): ScriptListUser | null {
-  if (!config || !USER_CONFIG_TYPES.has(index.type)) return null
+  if (!config || (!provided && !USER_CONFIG_TYPES.has(index.type))) return null
   const info = config.Info
   const fallbackName = `账号${index.uid}`
   const isMaaFW = maafwUserConfigTypes().has(index.type)
-  const hasAccount = ACCOUNT_CONFIG_TYPES.has(index.type)
+  const hasAccount = provided?.hasAccountField ?? ACCOUNT_CONFIG_TYPES.has(index.type)
+  const hasPassword = provided?.hasPasswordField ?? PASSWORD_CONFIG_TYPES.has(index.type)
   const baseDefault = BASE_DEFAULTS[index.type]
   const serverDefault = SERVER_DEFAULTS[index.type]
   const quickConfig = info && 'IfQuickConfig' in info ? info.IfQuickConfig : undefined
@@ -84,12 +88,14 @@ export function toScriptListUser(
   return {
     id: index.uid,
     scriptId,
+    // 旧宿主只在账密专项展示账号标签，其余 Id 仍参与搜索。
+    showAccount: provided?.hasAccountField ?? hasPassword,
     name: info?.Name || fallbackName,
     Info: {
       Name: isMaaFW ? info?.Name || fallbackName : defaultIfMissing(info?.Name, fallbackName),
       Status: isMaaFW ? (info?.Status ?? true) : defaultIfMissing(info?.Status, true),
       Id: hasAccount ? defaultIfMissing(info && 'Id' in info ? info.Id : undefined, '') : undefined,
-      Password: PASSWORD_CONFIG_TYPES.has(index.type)
+      Password: hasPassword
         ? defaultIfMissing(info && 'Password' in info ? info.Password : undefined, '')
         : undefined,
       // 账号配置里的配置来源：有该字段的专项取真实值，没有的按列表默认展示

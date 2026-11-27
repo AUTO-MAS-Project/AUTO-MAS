@@ -30,15 +30,19 @@ from pydantic import (
     BaseModel,
     Field,
     SerializeAsAny,
-    model_validator,
+    SkipValidation,
+    ValidationError,
 )
 
 import app.models.config as _config_models
+from app.api._config_editors import config_detail_ui, config_update_data
 from app.api._error_codes import config_error_code
-from app.config.wire import ConfigInput, ConfigPayload, config_contract
+from app.config.errors import ConfigAggregateError
+from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.models.schema import (
-    ConfigSnapshotOut,
+    ConfigUpdateOut,
+    DeclarativeConfigGetOut,
     OutBase,
     UserDeleteIn,
     UserInBase,
@@ -50,12 +54,6 @@ BAAHUserConfig = ConfigPayload[_config_models.BAAHUserConfig]
 
 
 BAAHUserConfigInput = ConfigInput[_config_models.BAAHUserConfig]
-
-
-BetterGIUserConfig = ConfigPayload[_config_models.BetterGIUserConfig]
-
-
-BetterGIUserConfigInput = ConfigInput[_config_models.BetterGIUserConfig]
 
 
 GeneralUserConfig = ConfigPayload[_config_models.GeneralUserConfig]
@@ -70,28 +68,10 @@ HSRUserConfig = ConfigPayload[_config_models.HSRUserConfig]
 HSRUserConfigInput = ConfigInput[_config_models.HSRUserConfig]
 
 
-M9AUserConfig = ConfigPayload[_config_models.M9AUserConfig]
-
-
-M9AUserConfigInput = ConfigInput[_config_models.M9AUserConfig]
-
-
-MSSUserConfig = ConfigPayload[_config_models.MSSUserConfig]
-
-
-MSSUserConfigInput = ConfigInput[_config_models.MSSUserConfig]
-
-
 MaaEndUserConfig = ConfigPayload[_config_models.MaaEndUserConfig]
 
 
 MaaEndUserConfigInput = ConfigInput[_config_models.MaaEndUserConfig]
-
-
-MaaFWUserConfig = ConfigPayload[_config_models.MaaFWUserConfig]
-
-
-MaaFWUserConfigInput = ConfigInput[_config_models.MaaFWUserConfig]
 
 
 OkNteUserConfig = ConfigPayload[_config_models.OkNteUserConfig]
@@ -121,13 +101,9 @@ class UserIndexItem(BaseModel):
                 "OkwwUserConfig",
                 "OkNteUserConfig",
                 "MaaEndUserConfig",
-                "M9AUserConfig",
-                "MaaFWUserConfig",
                 "HSRUserConfig",
-                "BetterGIUserConfig",
                 "ZzzOdUserConfig",
                 "BAAHUserConfig",
-                "MSSUserConfig",
             ]
         },
         default=...,
@@ -149,7 +125,7 @@ class UserGetIn(UserInBase):
     )
 
 
-class UserGetOut(ConfigSnapshotOut):
+class UserGetOut(DeclarativeConfigGetOut):
     index: List[UserIndexItem] = Field(..., description="账号索引列表")
     data: Dict[
         str,
@@ -159,68 +135,45 @@ class UserGetOut(ConfigSnapshotOut):
             OkwwUserConfig,
             OkNteUserConfig,
             MaaEndUserConfig,
-            M9AUserConfig,
-            MaaFWUserConfig,
             HSRUserConfig,
-            BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
-            MSSUserConfig,
         ],
     ] = Field(..., description="账号数据字典, key来自于index列表的uid")
 
 
+class UserCreateIn(UserInBase):
+    firstOnly: bool = False
+
+
 class UserCreateOut(OutBase):
-    userId: str = Field(..., description="新创建的账号ID")
+    userId: str = Field(..., description="账号ID")
     data: Union[
         SerializeAsAny[BaseModel],
         GeneralUserConfig,
         OkwwUserConfig,
         OkNteUserConfig,
         MaaEndUserConfig,
-        M9AUserConfig,
-        MaaFWUserConfig,
         HSRUserConfig,
-        BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
-        MSSUserConfig,
     ] = Field(..., description="账号配置数据")
 
 
 class UserUpdateIn(UserInBase):
     userId: str = Field(..., description="账号ID")
-    data: Union[
-        SerializeAsAny[BaseModel],
-        GeneralUserConfigInput,
-        OkwwUserConfigInput,
-        OkNteUserConfigInput,
-        MaaEndUserConfigInput,
-        M9AUserConfigInput,
-        MaaFWUserConfigInput,
-        HSRUserConfigInput,
-        BetterGIUserConfigInput,
-        ZzzOdUserConfigInput,
-        BAAHUserConfigInput,
-        MSSUserConfigInput,
+    data: SkipValidation[
+        Union[
+            SerializeAsAny[BaseModel],
+            GeneralUserConfigInput,
+            OkwwUserConfigInput,
+            OkNteUserConfigInput,
+            MaaEndUserConfigInput,
+            HSRUserConfigInput,
+            ZzzOdUserConfigInput,
+            BAAHUserConfigInput,
+        ]
     ] = Field(..., description="账号更新数据")
-
-    @model_validator(mode="before")
-    @classmethod
-    def select_config_contract(cls, value):
-        """按目标配置选输入类型，避免联合类型丢弃其他专项的同组字段。"""
-        if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
-            return value
-        try:
-            target = script_users(Config.ScriptConfig[value["scriptId"]])[
-                value["userId"]
-            ]
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return value
-        payload = config_contract(type(target), mode="input").model_validate(
-            value["data"]
-        )
-        return {**value, "data": payload}
 
 
 class UserReorderIn(UserInBase):
@@ -244,6 +197,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
         index, data = await Config.get_user(user.scriptId, user.userId)
         index = [UserIndexItem(**_) for _ in index]
         user_configs = script_users(Config.ScriptConfig[uuid.UUID(user.scriptId)])
+        ui = config_detail_ui(user_configs[user.userId], data) if user.userId else None
         data = {
             uid: ConfigPayload[type(user_configs[uuid.UUID(uid)])](**cfg)
             for uid, cfg in data.items()
@@ -261,6 +215,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
         {
             "index": index,
             "data": data,
+            "ui": ui,
             "uiSources": [uuid.UUID(user.userId) if user.userId else user_configs.uid],
         }
     )
@@ -297,10 +252,12 @@ async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDi
     response_model=UserCreateOut,
     status_code=200,
 )
-async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
+async def add_user(user: UserCreateIn = Body(...)) -> UserCreateOut:
 
     try:
-        uid, config = await Config.add_user(user.scriptId, native_defaults=True)
+        uid, config = await Config.add_user(
+            user.scriptId, native_defaults=True, first_only=user.firstOnly
+        )
         data = ConfigPayload[type(config)](
             **config.model_dump(context={"audience": "api"})
         )
@@ -328,24 +285,26 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
     "/user/update",
     tags=["Update"],
     summary="更新账号配置信息",
-    response_model=OutBase,
+    response_model=ConfigUpdateOut,
     status_code=200,
 )
 async def update_user(
     user: UserUpdateIn = Body(...),
-) -> OutBase:
-    data = user.data.model_dump(exclude_unset=True)
-
+) -> ConfigUpdateOut:
     try:
+        entry = script_users(Config.ScriptConfig[user.scriptId])[user.userId]
+        data = config_update_data(entry, user.data)
         await Config.update_user(user.scriptId, user.userId, data=data)
+    except (ValidationError, ConfigAggregateError) as e:
+        return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:
         logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
-        return OutBase(
+        return ConfigUpdateOut(
             code=config_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
         )
-    return OutBase()
+    return ConfigUpdateOut()
 
 
 @router.post(

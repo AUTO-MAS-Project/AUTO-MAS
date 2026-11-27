@@ -22,7 +22,7 @@
 
 import asyncio
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -175,6 +175,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_config: ConfigCollection[HSRUserConfig],
         user_item: UserItem,
         runtime: HSRRuntimeState,
+        *,
+        prepare_m7a_config: Callable[[], Awaitable[None]],
     ) -> None:
         super().__init__()
         if script_info.task_info is None:
@@ -188,6 +190,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.cur_user_uid: uuid.UUID = uuid.UUID(user_item.user_id)
         self.cur_user_config: HSRUserConfig = self.user_config[self.cur_user_uid]
         self.runtime = runtime
+        self._prepare_m7a_config = prepare_m7a_config
         self._log_lines: list[str] = runtime.log_lines
         # 账号级任务前/后脚本成对标记：前置跑过才收尾后置，且每账号只收尾一次。
         self._extra_scripts_started = False
@@ -480,12 +483,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_id: str,
         user_name: str,
     ) -> None:
-        """整轮 HSR 账号任务成功后，登记列表日常代理状态写回。"""
+        """日常全部执行成功后，登记账号列表的代理状态。"""
 
         self._queue_data_writeback(
             user_id=user_id,
             user_name=user_name,
-            reason="HSR 账号任务成功完成",
+            reason="HSR 日常任务完成",
             fields=self._build_daily_proxy_writeback_fields(self.cur_user_config),
         )
 
@@ -1853,16 +1856,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _format_queue_failures(
         self,
         failures: list[HSRRunItem],
-        retry_limit: int,
     ) -> str:
-        """格式化账号级重试后仍失败的任务。"""
+        """列出未完成的模块和实际执行次数。"""
 
-        parts = [f"HSR 账号任务重试后仍未完成（最大尝试次数 {retry_limit}）"]
+        parts = ["HSR 账号仍有任务未完成"]
         for item in failures:
+            attempts = f"已尝试 {item.attempts} 次" if item.attempts else "未执行"
+            if item.attempts and not item.retryable:
+                attempts += "，不可补跑"
             parts.append(
                 f"账号「{item.user_name}」模块「{item.module_name}」"
                 f"（{engine_label(item.script, left=False, right=False)}，"
-                f"已尝试 {item.attempts} 次）："
+                f"{attempts}）："
                 f"{item.last_error or '未知错误'}"
             )
         return "\n".join(parts)
@@ -1966,12 +1971,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
             await self._finish_current_user_log("HSR 本轮无需执行，已跳过")
             return
 
-        # 执行任务前脚本（每账号仅一次，补跑不重复执行）
-        self._extra_scripts_started = True
-        await run_script_before_task(user_cfg)
-
-        failed_items: list[HSRRunItem] = []
         permanent_failures: list[HSRRunItem] = []
+        pending_daily = {
+            id(item)
+            for item in full_queue
+            if item.phase == "daily" and item.module_key != "StartGame"
+        }
         current_items = full_queue
         for attempt in range(1, retry_limit + 1):
             if not current_items:
@@ -1986,6 +1991,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             try:
                 if attempt == 1:
+                    if any(item.script == "M7A" for item in current_items):
+                        await self._prepare_m7a_config()
+                    # 迁移和备份先完成，再执行可能修改配置的用户前置脚本。
+                    self._extra_scripts_started = True
+                    await run_script_before_task(user_cfg)
                     await self._prepare_before_first_attempt(
                         user_name=user_name,
                         login_plan=login_plan,
@@ -1995,7 +2005,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
                 point(self, "run")
                 failed_items = await self._run_queue_items(current_items)
-                point(self, "run", state="failed" if failed_items else "succeeded")
+                point(
+                    self,
+                    "run",
+                    state="failed"
+                    if failed_items or permanent_failures
+                    else "succeeded",
+                )
             except asyncio.CancelledError:
                 await self._mark_current_user_abnormal("任务被用户手动中止")
                 raise
@@ -2003,37 +2019,28 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 await self._mark_current_user_abnormal(f"HSR 运行异常: {e}")
                 raise
 
-            if not failed_items:
-                status = "HSR 账号任务完成" if attempt == 1 else "HSR 失败任务补跑完成"
-            else:
-                status = (
-                    "HSR 账号任务部分失败"
-                    if attempt == 1
-                    else "HSR 失败任务补跑部分失败"
+            # 日常和周常分别记账。只在本轮所有日常模块成功后登记一次，
+            # 日常前半段成功而后半段尚未跑完时，不能提前消耗代理次数。
+            if pending_daily:
+                failed_ids = {id(item) for item in failed_items}
+                pending_daily.difference_update(
+                    id(item) for item in current_items if id(item) not in failed_ids
                 )
-            # 只要日常阶段有模块执行成功，就登记代理日期；
-            # 后续周常失败不影响日常已完成的事实。
-            _daily_items = [
-                i
-                for i in current_items
-                if i.phase == "daily" and i.module_key != "StartGame"
-            ]
-            _daily_failed = [
-                i
-                for i in failed_items
-                if i.phase == "daily" and i.module_key != "StartGame"
-            ]
-            if _daily_items and len(_daily_failed) < len(_daily_items):
-                self._queue_daily_proxy_completion(uid, user_name)
+                if not pending_daily:
+                    self._queue_daily_proxy_completion(uid, user_name)
+
+            permanent_failures.extend(i for i in failed_items if not i.retryable)
+            retryable_failures = [i for i in failed_items if i.retryable]
             # 结束当前账号日志会清空账号上下文，每轮只能调用一次；
             # 账号状态必须在这一次里定好，否则后续补写全部失效。
-            if not failed_items:
+            if not permanent_failures and not retryable_failures:
+                status = "HSR 账号任务完成" if attempt == 1 else "HSR 失败任务补跑完成"
                 await self._finish_current_user_log(status)
                 return
 
-            # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
-            permanent_failures.extend(i for i in failed_items if not i.retryable)
-            retryable_failures = [i for i in failed_items if i.retryable]
+            status = (
+                "HSR 账号任务部分失败" if attempt == 1 else "HSR 补跑后仍有任务未完成"
+            )
             if attempt < retry_limit and retryable_failures:
                 if is_cloud_platform(self.script_config):
                     retry_action = "云·星穹铁道保持浏览器，直接补跑"
@@ -2069,11 +2076,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         module_name=failed_item.module_name,
                         script=failed_item.script,
                         status="failed",
-                        reason=failed_item.last_error or "重试后仍未完成",
+                        reason=failed_item.last_error or "任务未完成",
                     )
-                raise RuntimeError(
-                    self._format_queue_failures(failed_items, retry_limit)
-                )
+                raise RuntimeError(self._format_queue_failures(failed_items))
 
     async def final_task(self):
         """账号任务结束后清理临时配置；异常时停止外部脚本。"""

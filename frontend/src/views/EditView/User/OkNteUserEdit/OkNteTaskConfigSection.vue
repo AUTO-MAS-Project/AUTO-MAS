@@ -1,7 +1,7 @@
 <template>
   <SectionCard variant="plain" :title="t('core.edit.taskConfiguration')">
-    <a-card class="config-card" :loading="loading">
-      <a-form layout="vertical" class="config-form">
+    <StateView :loading="loading">
+      <a-form layout="vertical">
         <a-row :gutter="24">
           <a-col :span="12">
             <a-form-item>
@@ -44,14 +44,14 @@
           </a-col>
         </a-row>
       </a-form>
-    </a-card>
+    </StateView>
   </SectionCard>
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import { SectionCard } from '@/components/ui'
+import { SectionCard, StateView } from '@/components/ui'
 import { OkNteSetupService } from '@/composables/useAdapterSetupApi'
 
 const taskIndex = defineModel<number>('taskIndex', { required: true })

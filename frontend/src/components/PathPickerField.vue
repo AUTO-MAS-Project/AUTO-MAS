@@ -1,16 +1,16 @@
 <template>
-  <a-space-compact block size="large">
+  <a-space-compact block :size="size">
     <a-input
       v-model:value="value"
       :placeholder="placeholder"
-      size="large"
+      :size="size"
       class="path-picker-input"
       readonly
       aria-readonly="true"
       :disabled="disabled"
     />
     <slot name="before-pick" />
-    <a-button size="large" :disabled="disabled || pickDisabled" @click="emit('pick')">
+    <a-button :size="size" :disabled="disabled || pickDisabled" @click="emit('pick')">
       <template #icon>
         <FolderOpenOutlined v-if="mode === 'folder'" />
         <FileOutlined v-else />
@@ -24,7 +24,8 @@
 <script setup lang="ts" generic="T extends string | null | undefined">
 import { FileOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 
-defineProps<{
+const { size = 'large' } = defineProps<{
+  size?: 'large' | 'middle'
   mode: 'file' | 'folder'
   placeholder: string
   pickLabel: string

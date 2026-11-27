@@ -8,8 +8,8 @@ description: >-
   exports. Use when lowering user setup friction, judging whether a change
   stays inside the black-box boundary (barrier first, then capability
   ownership), or changing ScriptType registration, task lifecycle, config
-  ownership, ScriptConfig sessions, Electron integration, frontend edit
-  surfaces, and verification.
+  ownership, ScriptConfig sessions, Desktop Session (桌面分身), Electron
+  integration, frontend edit surfaces, and verification.
 ---
 
 # 专项适配
@@ -31,11 +31,12 @@ description: >-
 3. 必读 [adapter-code-norms.md](references/adapter-code-norms.md)，再按需只读对应参考：
    - 案例：[SRC](references/examples-src.md) · [MaaEnd](references/examples-maaend.md) · [M9A（MFW 特调）](references/examples-m9a.md) · [Okww](references/examples-okww.md) · [OkNte](references/examples-oknte.md) · [HSR](references/examples-hsr.md) · [ZzzOd](references/examples-zzzod.md) · [BAAH](references/examples-baah.md) · [BetterGI](references/examples-bettergi.md) · [Whimbox](references/examples-whimbox.md)
    - 子能力：日志管线 [logbox-api.md](references/logbox-api.md) · OCR [ocr-tools.md](references/ocr-tools.md) · 归档 [config-archive.md](references/config-archive.md) · 恢复 [config-restore.md](references/config-restore.md) · 问题包 [issue-report.md](references/issue-report.md)
+   - 桌面分身：新增或迁移插件专项、保存执行会话、处理子会话进程时读 [desktop-session.md](references/desktop-session.md)。
 4. 联动 Skill：调度/会话/锁加 `mas-task-scheduler`；前端/UI 加 `mas-frontend-standards` + `mas-frontend-ui`；配置加 `mas-data-model`。
 
 ## 关键架构约定
 
-- **全切面反查**：增改 `ScriptType` 时现场 grep 核对配置/schema、`TYPE_BOOK`（漏则 KeyError）、任务模块、前端入口、Electron 能力及 OpenAPI 生成（**禁手改 `frontend/src/api/**`**）。自动发现、手动选择与后端 `check()` 须用**同一组哨兵文件**。
+- **全切面反查**：增改内置 `ScriptType` 时现场 grep 核对配置/schema、`TYPE_BOOK`、任务模块、前端入口、Electron 能力及 OpenAPI 生成（**禁手改 `frontend/src/api/**`**）。独立插件通过自身声明注册，桌面分身复用宿主的通用派发。自动发现、手动选择与后端 `check()` 须用**同一组哨兵文件**。
 - **日志与报告**：`app.utils.log_box` 只提供纯文本处理；专项自持开关、路径、线程/取消收尾与账号归属，增量读复用 `LogSource`，翻译复用 `PoTranslator`，排版复用 `app.core.notify.report`。含采集的专项必查「采集→报告」闭环与账号级开关隔离。
 - **配置备份恢复（新专项标配）**：原语用 `archive.py`，恢复用 `restore.py` + `/backup/*` + `ConfigRestoreSection.vue`，遮罩用 `GuiSessionMask.vue`；**归档三时机**：进编辑页归档原生、退编辑页归档 MAS、运行前归档原生（覆盖操作前强制归档）。
 - **OCR**：新画面文字识别用共享工具 `app/tools/common/ocr/__init__.py`，交互层由专项自持。

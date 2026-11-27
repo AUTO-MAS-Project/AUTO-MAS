@@ -350,7 +350,8 @@ it.each([
         queueId: 'emulator',
         taskId: '',
         targetKind: 'queue',
-        label: 'Emulator queue',
+        label: 'Whimbox queue',
+        reason: 'admin_required',
         code: 'unsupported_target',
       },
     ]
@@ -383,7 +384,7 @@ it.each([
           confirmTaskDispatch: async ({ desktop, main }) => {
             expect(submissions).toEqual([])
             expect(desktop.map(target => target.label)).toEqual(['Desktop task'])
-            expect(main.map(target => target.label)).toEqual(['Emulator queue'])
+            expect(main).toMatchObject([{ label: 'Whimbox queue', reason: 'admin_required' }])
             return choice
           },
         }

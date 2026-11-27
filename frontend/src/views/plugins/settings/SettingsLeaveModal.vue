@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { AppModal } from '@/components/ui'
 
 /** 离开设置页时有未保存更改的确认：继续编辑、放弃并离开、保存并离开。 */
-defineProps<{ open: boolean; count: number; saving: boolean }>()
+defineProps<{ open: boolean; count: number; saving: boolean; saveDisabled?: boolean }>()
 const emit = defineEmits<{ stay: []; discard: []; save: [] }>()
 const { t } = useI18n()
 </script>
@@ -23,7 +23,7 @@ const { t } = useI18n()
       <a-button danger :disabled="saving" @click="emit('discard')">{{
         t('core.plugins.discardAndLeave')
       }}</a-button>
-      <a-button type="primary" :loading="saving" @click="emit('save')">{{
+      <a-button type="primary" :loading="saving" :disabled="saveDisabled" @click="emit('save')">{{
         t('core.plugins.saveAndLeave')
       }}</a-button>
     </template>

@@ -1,5 +1,5 @@
 <template>
-  <ConfigEditShell :surface="false">
+  <ConfigEditShell :max-width="1200">
     <template #header>
       <WhimboxUserEditHeader
         :script-id="scriptId"
@@ -10,8 +10,8 @@
       />
     </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
+    <template #default>
+      <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
         <a-form
           ref="formRef"
           :model="formData"
@@ -28,27 +28,29 @@
             @quick-config-change="handleQuickConfigChange"
           />
 
-          <TaskConfigSection
-            :loading="loading"
-            :steps="catalogSteps"
-            :options="catalogOptions"
-            :upstream-version="catalogData?.upstream_version ?? ''"
-            :catalog-error="catalogError"
-            :catalog-loading="catalogLoading || isInitializing"
-            :run-all-accounts="formData.OneDragon.IfRunAllAccounts"
-            :tasks="taskState"
-            :option-state="optionState"
-            @save="handleTaskConfigSave"
-            @tasks-change="handleTasksChange"
-            @options-change="handleOptionsChange"
-          />
+          <SectionCard variant="plain">
+            <TaskConfigSection
+              :loading="loading"
+              :steps="catalogSteps"
+              :options="catalogOptions"
+              :upstream-version="catalogData?.upstream_version ?? ''"
+              :catalog-error="catalogError"
+              :catalog-loading="catalogLoading || isInitializing"
+              :run-all-accounts="formData.OneDragon.IfRunAllAccounts"
+              :tasks="taskState"
+              :option-state="optionState"
+              @save="handleTaskConfigSave"
+              @tasks-change="handleTasksChange"
+              @options-change="handleOptionsChange"
+            />
+          </SectionCard>
 
           <ExtraScriptSection :form-data="formData" :loading="loading" @save="handleFieldSave" />
 
           <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
         </a-form>
-      </a-card>
-    </ConfigLockPanel>
+      </ConfigLockPanel>
+    </template>
 
     <template #overlay>
       <!-- ══ 配置恢复（通用组件：MAS 用户字段 + 奇想盒原生配置双池）══ -->
@@ -73,7 +75,7 @@
 
 <script setup lang="ts">
 import BasicInfoRestorePreview from '@/views/whimbox/user/BasicInfoRestorePreview.vue'
-import { ConfigEditShell } from '@/components/ui'
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -485,5 +487,3 @@ onUnmounted(() => {
   void ensureBackup('mas')
 })
 </script>
-
-<style scoped src="@/styles/userEditForm.css"></style>

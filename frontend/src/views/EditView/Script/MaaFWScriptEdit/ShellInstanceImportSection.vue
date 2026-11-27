@@ -1,5 +1,5 @@
 <template>
-  <MaaFWFormSection :title="t('core.edit.shellImportTitle')" compact>
+  <MaaFWFormSection :title="t('core.edit.shellImportTitle')" :icon="ImportOutlined" compact>
     <p class="shell-import-hint">
       {{ t('core.edit.shellImportHint', { count: instances.length, source: sourceLabel }) }}
     </p>
@@ -67,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import { ImportOutlined } from '@ant-design/icons-vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaFWShellInstanceItem } from '@/api'
@@ -76,11 +77,11 @@ import MaaFWFormSection from './MaaFWFormSection.vue'
 import type {
   MaaFWScriptShellImportSectionEmits,
   MaaFWScriptShellImportSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+} from './sectionProps'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptShellImportSectionProps>()
 
 const emit = defineEmits<MaaFWScriptShellImportSectionEmits>()

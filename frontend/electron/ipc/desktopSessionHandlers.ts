@@ -42,8 +42,8 @@ const PREVIEW_ACCEPT_TIMEOUT_MS = 300_000
 const MODES: readonly DesktopSessionRequest['mode'][] = ['proxy', 'native']
 const RESOLUTIONS: readonly DesktopSessionRequest['resolution'][] = ['1080p', 'primary']
 
-function promptTarget({ label, targetKind }: DesktopQueueResult) {
-  return { label, targetKind }
+function promptTarget({ label, targetKind, reason }: DesktopQueueResult) {
+  return { label, targetKind, reason }
 }
 
 const promptActions: Record<DesktopSessionPrompt['kind'], readonly DesktopSessionPromptAction[]> = {

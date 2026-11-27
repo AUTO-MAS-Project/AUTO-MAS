@@ -406,6 +406,254 @@ async def test_restore_failure_preserves_account_success_counts_and_runs_later_s
         assert all(not scripts[sid].is_locked for sid in sids)
 
 
+async def _plugin_script_world(scheduler, monkeypatch, expander, game):
+    """真实调度 + 插件路径：建一个绑定 ``game`` 的插件托管（一位账号），返回托管 uid。"""
+    from uuid import uuid4
+
+    from app.config import config_manager
+    from app.core import Config, Plugin
+    from app.models.config import ScriptEntry, UserEntry
+    from app.plugin.base.script import ScriptTypeDecl
+
+    class Script(ScriptEntry):
+        pass
+
+    manager, scripts, _, _ = scheduler
+    games = ConfigCollection[GameEntry].build([GameEntry])
+    monkeypatch.setattr(Config, "GameConfig", games)
+    monkeypatch.setitem(config_manager._collections, "games", games)
+    await games.activate()
+    gid = games.add(
+        GameEntry, payload={"info": {"name": "测试游戏", "concurrent_execution": False}}
+    )
+    await games.commit()
+
+    class Control(ExternalControl):
+        fail_restore = False
+
+    _GameManager.create_control(config=games[gid], control_class=Control)
+    scripts.add_type(Script)
+    await scripts.commit()
+    binding = game if game is not None else {"game_id": str(gid), "device_id": "-"}
+    sid = scripts.add(Script, payload={"info": {"name": "plugin"}, "game": binding})
+    await scripts.commit()
+    scripts[sid].users.add(UserEntry, payload={"info": {"name": "account"}})
+    await scripts[sid].users.commit()
+    monkeypatch.setattr(
+        manager, "plugin_expander", lambda script, config: expander(script, config)
+    )
+    monkeypatch.setattr(
+        Plugin, "script_types", {uuid4(): ScriptTypeDecl(Script, UserEntry, expander)}
+    )
+    return sid, gid
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deferred", [False, True], ids=["preselected", "deferred"])
+async def test_plugin_deferred_game_selection_waits_for_runnable_accounts(
+    scheduler, monkeypatch, deferred
+):
+    """插件声明「确认有可运行账号之后自己选定」：没有可运行账号时不占游戏、不排队；
+    有账号时由插件选定。没声明的类型照旧由 L2 在派 L3 之前选定。"""
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+
+    runnable = [False]
+    seen: list[bool] = []
+
+    class Expander(UserExpander):
+        defer_game_session = deferred
+
+        async def main_task(self):
+            self._entered = True
+            seen.append(self.game_session.control is not None)
+            if runnable[0]:
+                await self.select_game_session()
+                seen.append(self.game_session.control is not None)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    sid, gid = await _plugin_script_world(scheduler, monkeypatch, Expander, None)
+    game_manager = _GameManager()
+    monkeypatch.setattr("app.core.GameManager", game_manager)
+
+    async def run_once():
+        uid = await manager.start(
+            TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+        )
+        run = manager.task_handler[uid]
+        await asyncio.wait_for(run.accomplish.wait(), 3)
+        return run.task_info.script_list[0]
+
+    if deferred:
+        # 串行游戏被别的托管占着：没有可运行账号的这一轮不该排队等它。
+        _, holder = await game_manager.subscribe(gid)
+        try:
+            script = await run_once()
+        finally:
+            await game_manager.unsubscribe(holder)
+        assert seen == [False]
+        assert "等待获取游戏实例" not in script.log
+        seen.clear()
+
+    runnable[0] = True
+    script = await run_once()
+    assert seen == ([False, True] if deferred else [True, True])
+    assert "已获取游戏实例「测试游戏」" in script.log
+
+
+@pytest.mark.asyncio
+async def test_failed_game_selection_marks_waiting_accounts_failed(
+    scheduler, monkeypatch
+):
+    """插件托管选定游戏失败：账号与内置专项一样记「异常」，不留在「等待」。"""
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(True)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    reason = "所选游戏的适配插件已停用"
+    sid, _ = await _plugin_script_world(
+        scheduler,
+        monkeypatch,
+        Expander,
+        {"game_id": "-", "device_id": "-", "unavailable_reason": reason},
+    )
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert not entered
+    assert script.status == "异常" and reason in script.log
+    assert [(u.status, u.log_record) for u in script.user_list] == [("异常", {})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["precheck", "no_declaration"])
+async def test_plugin_pre_dispatch_failure_marks_waiting_accounts_failed(
+    scheduler, monkeypatch, failure
+):
+    """排队期间插件被停用：派发 L3 之前就失败时，账号记「异常」、托管写明原因，不留在「等待」。"""
+    from app.core import Plugin
+    from app.models.task import TaskMode
+    from app.plugin.errors import PluginPrecheckError
+    from app.task.user_expander import UserExpander
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(True)
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager = scheduler[0]
+    sid, _ = await _plugin_script_world(
+        scheduler, monkeypatch, Expander, {"game_id": "-", "device_id": "-"}
+    )
+    reason = "托管所属插件当前不可用"
+    if failure == "precheck":
+
+        def unavailable(script, config):
+            raise PluginPrecheckError(reason)
+
+        monkeypatch.setattr(manager, "plugin_expander", unavailable)
+    else:
+        # 执行对象已建好，类型声明在准备期间被摘掉。
+        monkeypatch.setattr(Plugin, "script_types", {})
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert not entered
+    assert script.status == "异常" and reason in script.log
+    assert [u.status for u in script.user_list] == ["异常"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_factory_failure_keeps_waiting_accounts(scheduler, monkeypatch):
+    """插件解析器不接手、改走旧工厂后失败：账号照内置口径留在「等待」，不跟插件路径记「异常」。"""
+    from app.models.config import GeneralConfig
+    from app.models.task import TaskMode
+
+    manager, _, _, sid = scheduler
+    monkeypatch.setattr(manager, "plugin_expander", lambda script, config: None)
+    monkeypatch.setattr(
+        manager, "manager_factories", {GeneralConfig: lambda script: None}
+    )
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(sid)}}}}
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    script = run.task_info.script_list[0]
+    assert script.status == "异常" and "该托管没有内建执行能力" in script.log
+    assert [u.status for u in script.user_list] == ["等待", "等待"]
+
+
+@pytest.mark.asyncio
+async def test_plugin_unconfirmed_writer_stops_following_scripts(
+    scheduler, monkeypatch
+):
+    """插件 L3 无法确认停写时与内置专项一样中止整个队列，后面的托管不再运行。"""
+    from app.models.config import UserEntry
+    from app.models.task import TaskMode
+    from app.task.user_expander import UserExpander
+    from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+
+    entered = []
+
+    class Expander(UserExpander):
+        async def main_task(self):
+            entered.append(self.script_info.info.name)
+            if self.script_info.info.name == "plugin":
+                raise FluxdownCancelUnconfirmed("daemon may still write")
+            self._entered = True
+
+        def build_worker(self, user, config):
+            raise NotImplementedError
+
+    manager, scripts, _, _ = scheduler
+    binding = {"game_id": "-", "device_id": "-"}
+    sid, _ = await _plugin_script_world(scheduler, monkeypatch, Expander, binding)
+    following = scripts.add(
+        type(scripts[sid]), payload={"info": {"name": "following"}, "game": binding}
+    )
+    await scripts.commit()
+    scripts[following].users.add(UserEntry, payload={"info": {"name": "account"}})
+    await scripts[following].users.commit()
+    uid = await manager.start(
+        TaskMode.AUTO_PROXY,
+        {
+            0: {
+                "uid": "-",
+                "children": {0: {"uid": str(sid)}, 1: {"uid": str(following)}},
+            }
+        },
+    )
+    run = manager.task_handler[uid]
+    await asyncio.wait_for(run.accomplish.wait(), 3)
+    assert isinstance(run.error, FluxdownCancelUnconfirmed)
+    assert run.task_info.status == "error"
+    assert entered == ["plugin"]
+    assert run.task_info.script_list[0].status == "异常"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("concurrent_execution", [False, True], ids=["gate", "device"])
 async def test_waiting_for_game_pushes_task_log_before_acquisition(

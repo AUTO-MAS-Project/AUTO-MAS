@@ -133,16 +133,14 @@ test.describe('@settings @shared-form-styles', () => {
         await expect(userHeaders.first()).toBeVisible()
         await app.evidence(`shared-form-user-${mode}-narrow`)
         const userOverflow = await page
-          .locator('.content-area, .user-edit-content, .user-edit-content .ant-card-body')
+          .locator('.content-area, .config-edit-shell__surface')
           .evaluateAll(elements =>
             elements.map(element => element.scrollWidth - element.clientWidth)
           )
         expect
           .soft(Math.max(...userOverflow), 'Narrow user content fits horizontally')
           .toBeLessThanOrEqual(1)
-        await expect
-          .soft(page.locator('.user-edit-content .config-card > .ant-card-body'))
-          .toHaveCSS('padding', '32px')
+        await expect.soft(page.locator('.config-edit-shell__surface')).toHaveCSS('padding', '12px')
       }
     } finally {
       await app.goto('/settings')
@@ -276,11 +274,10 @@ test.describe('@settings @shared-form-styles', () => {
         const userHeaders = page.locator('.user-edit-content .form-section > .section-header')
         await expect(userHeaders.first()).toBeVisible()
         await app.evidence(`shared-form-appearance-user-${appearance.mode}`)
+        const userSurface = page.locator('.config-edit-shell__surface')
+        await expect.soft(userSurface).toHaveCSS('background-color', surfaceColor)
         await expect
-          .soft(page.locator('.user-edit-content .config-card'))
-          .toHaveCSS('background-color', surfaceColor)
-        await expect
-          .soft(page.locator('.user-edit-content .config-card > .ant-card-body'))
+          .soft(userSurface.locator('.ui-section-card--plain').first())
           .toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
         await expectContentDividers(userHeaders, dividerColor)
 
