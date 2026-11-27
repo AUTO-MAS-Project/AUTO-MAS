@@ -3790,6 +3790,8 @@
   "core.plugins.maskedPlaceholder": "已配置（留空保持不变）",
   "core.plugins.moreActions": "更多操作",
   "core.plugins.noConfigFields": "此项没有可配置的字段。",
+  "core.plugins.optionUnavailable": "当前选择已不可用，请重新选择。",
+  "core.plugins.restoreDiscardDraft": "恢复成功后将覆盖尚未保存的修改。",
   "core.plugins.noMatch": "没有符合条件的插件",
   "core.plugins.noPages": "暂无可用页面",
   "core.plugins.noSettings": "该插件没有可配置设置。",

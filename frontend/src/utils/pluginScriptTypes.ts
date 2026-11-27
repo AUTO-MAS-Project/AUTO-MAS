@@ -1,6 +1,10 @@
-import type { PluginProvidedScriptType, PluginRegistryDocument } from '@/api'
+import { PluginProvidedScriptType, type PluginRegistryDocument } from '@/api'
 
-type PluginScriptType = PluginProvidedScriptType & { displayName: string; description: string }
+type PluginScriptType = PluginProvidedScriptType & {
+  firstAccountMode: PluginProvidedScriptType.firstAccountMode
+  displayName: string
+  description: string
+}
 
 export function indexPluginScriptTypes(documents: Record<string, PluginRegistryDocument> = {}) {
   const byScriptKey = new Map<string, PluginScriptType>()
@@ -12,6 +16,8 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
     if (!providedScript) continue
     const script = {
       ...providedScript,
+      firstAccountMode:
+        providedScript.firstAccountMode ?? PluginProvidedScriptType.firstAccountMode.DIRECT,
       displayName: info?.display_name || info?.plugin_name || providedScript.scriptKey,
       description: info?.description ?? '',
     }

@@ -3,6 +3,7 @@ import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
+import { fetchPluginScriptTypes } from '@/composables/usePluginScriptTypes'
 import type { useTemplateApi } from '@/composables/useTemplateApi'
 import type { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
 import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
@@ -18,6 +19,9 @@ interface CreationOptions {
   importTemplate: ReturnType<typeof useTemplateApi>['importScriptFromTemplate']
   cloneProject: ReturnType<typeof useMaaFWEmbeddedApi>['cloneEmbedded']
 }
+
+const usesFirstAccountWizard = async (type: ScriptType) =>
+  (await fetchPluginScriptTypes()).byScriptKey.get(type)?.firstAccountMode === 'wizard'
 
 /** 新建、模板导入、项目复用与复制的完整流程；基础记录创建不等于导入完成。 */
 export function useScriptCreation(options: CreationOptions) {
@@ -46,9 +50,17 @@ export function useScriptCreation(options: CreationOptions) {
     let outcome: AnalyticsEventProps['script_create_finished']['outcome'] = 'failure'
     addLoading.value = true
     try {
+      const wizard =
+        request.kind === 'new' && !isMfwFamily(type) && (await usesFirstAccountWizard(type))
       const result = await addScript(type)
       if (!result) return
       outcome = 'partial'
+      if (wizard) {
+        outcome = 'success'
+        options.closeDialog()
+        openEditor(type, 'setup', { id: result.scriptId })
+        return
+      }
       if (request.kind === 'mfw-reuse') {
         try {
           const { message: text } = await options.cloneProject(
@@ -95,11 +107,23 @@ export function useScriptCreation(options: CreationOptions) {
     }
   }
 
-  const createUser = async (script: Pick<ScriptListItem, 'id' | 'type'>) => {
+  const createUser = async (
+    script: Pick<ScriptListItem, 'id' | 'type' | 'users' | 'usersLoadError'>
+  ) => {
     const scriptId = script.id
-    if (addLoading.value || openEditor(script.type, 'userAdd', { scriptId })) return
+    if (addLoading.value) return
     addLoading.value = true
     try {
+      if (
+        !script.usersLoadError &&
+        !script.users.length &&
+        !isMfwFamily(script.type) &&
+        (await usesFirstAccountWizard(script.type))
+      ) {
+        openEditor(script.type, 'setup', { id: scriptId })
+        return
+      }
+      if (openEditor(script.type, 'userAdd', { scriptId })) return
       const user = await addUser(scriptId)
       if (user?.userId) openEditor(script.type, 'user', { scriptId, userId: user.userId })
     } finally {

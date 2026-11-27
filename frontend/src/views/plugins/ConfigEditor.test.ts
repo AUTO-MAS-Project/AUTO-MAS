@@ -1,20 +1,42 @@
+// @vitest-environment vue-client
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { createSSRApp, h, onServerPrefetch } from 'vue'
+import { createSSRApp, defineComponent, h, onServerPrefetch } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
+import axios from 'axios'
 import Antd, { message } from 'ant-design-vue'
-import { Service, type DeclarativeConfigUi } from '@/api'
+import { BackgroundTaskState, BackupTargetHint, Service, type DeclarativeConfigUi } from '@/api'
+import { editorView } from '../../../tests/declarativeEditorView'
+import { fire } from '../../../tests/vueRenderer'
+import type { ConfirmOptions } from '@/composables/useConfirm'
+import * as confirmation from '@/composables/useConfirm'
+import * as taskApi from '@/composables/useTaskApi'
 import { genericEditorRoutes } from '@/router/scriptEditorRoutes'
 import ConfigEditor from './ConfigEditor.vue'
 import * as editorModule from './useDeclarativeConfigEditor'
 import type { SettingsValues } from './settings/usePluginSettingsDraft'
 
+vi.hoisted(() => {
+  vi.stubGlobal('window', {
+    __AUTO_MAS_BROWSER_DEV_MODE__: true,
+    setTimeout,
+    clearTimeout,
+    electronAPI: { getLogger: () => ({ error: vi.fn() }) },
+  })
+})
+vi.mock('@/composables/useAudioPlayer', () => ({ useAudioPlayer: () => ({ playSound: vi.fn() }) }))
 vi.mock('@/components/DocLink.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/components/GameBindingSection.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/services/websocket/subscriptions', () => ({ subscribe: vi.fn(), unsubscribe: vi.fn() }))
-vi.mock('@/services/websocket/connection', () => ({ reconnectNow: vi.fn() }))
+vi.mock('@/services/websocket/connection', () => ({
+  reconnectNow: vi.fn(),
+  connectionState: vi.fn(),
+  send: vi.fn(),
+  request: vi.fn(),
+  connectionInfo: vi.fn(),
+}))
 vi.mock('@/composables/useAppLifecycle', () => ({
   beginIntentionalBackendRestart: vi.fn(),
   endIntentionalBackendRestart: vi.fn(),
@@ -123,6 +145,270 @@ async function render(
 describe('Demo15 配置编辑器', () => {
   const scriptPath = '/scripts/s/edit/plugin/Demo15'
   const userPath = '/scripts/s/users/u/edit/plugin/Demo15'
+  it('普通保存也要等当前插件的新选项可用并修正失效选择', async () => {
+    const state = detail(
+      's',
+      { Setup: { Region: 'cn', Profile: 'cn-profile' } },
+      {
+        Setup: [
+          { field: 'Region' },
+          {
+            field: 'Profile',
+            component: 'select',
+            option_source: 'profiles',
+            depends_on: { region: 'Setup.Region' },
+          },
+        ],
+      }
+    )
+    vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
+      ...state,
+      ui: { ...state.ui, pluginName: 'demo15' },
+    })
+    vi.spyOn(axios, 'request').mockImplementation(async config => {
+      const url = new URL(config.url!, 'http://mas.test')
+      expect(url.pathname).toBe('/api/plugin/demo15/options/profiles')
+      const value = url.searchParams.get('region') + '-profile'
+      return { status: 200, data: { code: 200, data: [{ value }] } }
+    })
+    const write = vi
+      .spyOn(Service, 'updateScriptApiScriptsUpdatePost')
+      .mockResolvedValue({ code: 200 })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() =>
+        expect(view.find('select')?.props.options).toMatchObject([{ value: 'cn-profile' }])
+      )
+      await fire(view.find('input')!, 'onUpdate:value', 'jp')
+      await vi.waitFor(() => expect(view.find('p', 'core.plugins.optionUnavailable')).toBeDefined())
+      expect(view.find('button', 'core.plugins.save')!.props.disabled).toBe(true)
+      expect(view.find('select')!.props.value).toBe('cn-profile')
+      await fire(view.find('select')!, 'onUpdate:value', 'jp-profile')
+      expect(view.find('button', 'core.plugins.save')!.props.disabled).toBe(false)
+      await view.click('core.plugins.save')
+      await vi.waitFor(() => expect(view.find('input')!.props.disabled).toBe(false))
+      expect(write.mock.calls).toEqual([
+        [{ scriptId: 's', data: { Setup: { Region: 'jp', Profile: 'jp-profile' } } }],
+      ])
+    } finally {
+      view.app.unmount()
+    }
+  })
+  it('行内动作使用本配置的可见触发器，放弃路径草稿后回读并保留其他修改', async () => {
+    const hints = {
+      Info: [
+        { field: 'Path', component: 'path', action_ref: 'Info.Discover' },
+        { field: 'Name' },
+        { field: 'Discover', component: 'button', editable: true },
+      ],
+    }
+    const read = vi
+      .spyOn(Service, 'getScriptApiScriptsGetPost')
+      .mockResolvedValue(detail('s', { Info: { Path: 'old', Name: 'one' } }, hints))
+    const command = vi
+      .spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost')
+      .mockResolvedValue({ code: 200, data: 'job' })
+    vi.spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost').mockResolvedValue({
+      code: 200,
+      data: { state: BackgroundTaskState.SUCCEEDED },
+    })
+    const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    vi.spyOn(confirmation, 'useConfirm').mockReturnValue({ confirm, alert: vi.fn() })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('button', 'Discover')).toBeDefined())
+      const owner = view
+        .all()
+        .find(node => node.tag === 'div' && node.props['aria-label'] === 'Path')!
+      const triggers = view
+        .all()
+        .filter(node => node.tag === 'button' && view.text(node) === 'Discover')
+      expect(triggers).toHaveLength(1)
+      expect(view.all(owner)).toContain(triggers[0])
+      const input = (value: string) =>
+        view.all().find(node => node.tag === 'input' && node.props.value === value)!
+      await fire(input('old'), 'onUpdate:value', 'draft')
+      await fire(input('one'), 'onUpdate:value', 'unsaved')
+      await view.click('Discover')
+      await vi.waitFor(() => expect(confirm).toHaveBeenCalledOnce())
+      expect(command).not.toHaveBeenCalled()
+      expect(input('draft')).toBeDefined()
+      read.mockResolvedValue(detail('s', { Info: { Path: 'discovered', Name: 'one' } }, hints))
+      await view.click('Discover')
+      await vi.waitFor(() => expect(input('discovered')).toBeDefined())
+      expect(command).toHaveBeenCalledWith({
+        configUid: 's',
+        group: 'Info',
+        field: 'Discover',
+        value: true,
+      })
+      expect(input('unsaved')).toBeDefined()
+      client.setQueryData(['config-triggers', 'active'], {
+        code: 200,
+        data: [{ configUid: 's', group: 'Info', field: 'Discover' }],
+      })
+      await vi.waitFor(() => expect(view.find('button', 'Discover')!.props.disabled).toBe(true))
+    } finally {
+      view.app.unmount()
+    }
+  })
+  it('托管进入和保存后归档，强制恢复成功才回读并替换草稿', async () => {
+    const state = detail(
+      's',
+      { Run: { Retries: 1 } },
+      { Run: [{ field: 'Retries', component: 'number' }] }
+    )
+    const pool = { key: 'run', kind: BackupTargetHint.kind.SCRIPT }
+    const get = vi
+      .spyOn(Service, 'getScriptApiScriptsGetPost')
+      .mockResolvedValue({ ...state, ui: { ...state.ui, backupTargets: [pool] } })
+    const ensure = vi
+      .spyOn(Service, 'ensureConfigBackupApiApiScriptsBackupEnsurePost')
+      .mockResolvedValue({ code: 200, created: true, time: 't' })
+    const time = '20261125_101112'
+    const list = vi
+      .spyOn(Service, 'listConfigBackupsApiApiScriptsBackupListGet')
+      .mockResolvedValue({ code: 200, data: [{ time }] })
+    const restore = vi
+      .spyOn(Service, 'restoreConfigBackupApiApiScriptsBackupRestorePost')
+      .mockResolvedValueOnce({ code: 409, target: 'run' })
+      .mockResolvedValue({ code: 200, target: 'run' })
+    vi.spyOn(Service, 'updateScriptApiScriptsUpdatePost').mockResolvedValue({ code: 200 })
+    const confirm = vi.fn<(options: ConfirmOptions) => Promise<boolean>>()
+    vi.spyOn(confirmation, 'useConfirm').mockReturnValue({ confirm, alert: vi.fn() })
+    const view = await editorView(scriptPath, client)
+    view.stub({ AListItem: 'div', ASegmented: 'div', NoData: 'div' })
+    view.app.component(
+      'AModal',
+      defineComponent({
+        props: ['open'],
+        setup:
+          (props, { slots }) =>
+          () =>
+            props.open && h('dialog', slots.default?.()),
+      })
+    )
+    view.app.component(
+      'AList',
+      defineComponent({
+        props: ['dataSource'],
+        setup:
+          (props, { slots }) =>
+          () =>
+            h(
+              'div',
+              props.dataSource.map((item: unknown) => slots.renderItem?.({ item }))
+            ),
+      })
+    )
+    view.mount()
+    try {
+      await vi.waitFor(() =>
+        expect(ensure).toHaveBeenCalledWith({ scriptId: 's', userId: null, target: 'run' })
+      )
+      await fire(view.find('input')!, 'onUpdate:value', 2)
+      await view.click('core.plugins.save')
+      await vi.waitFor(() => {
+        expect(ensure).toHaveBeenCalledTimes(2)
+        expect(view.find('input')!.props.disabled).toBe(false)
+      })
+      await fire(view.find('input')!, 'onUpdate:value', 9)
+      await view.click('core.edit.configRestoreTitle')
+      await vi.waitFor(() =>
+        expect(view.find('button', 'core.edit.configRestoreAction')).toBeDefined()
+      )
+      expect(list).toHaveBeenCalledWith('s', 'run', null)
+      await view.click('core.edit.configRestoreAction')
+      expect(restore).not.toHaveBeenCalled()
+      await confirm.mock.lastCall![0].onOk!()
+      expect(view.find('input')!.props.value).toBe(9)
+      const updated = detail('s', { Run: { Retries: 6 } }, state.ui.hints)
+      get.mockResolvedValue({ ...updated, ui: { ...updated.ui, backupTargets: [pool] } })
+      await confirm.mock.lastCall![0].onOk!()
+      expect(restore).toHaveBeenLastCalledWith({
+        scriptId: 's',
+        userId: null,
+        target: 'run',
+        time,
+        force: true,
+      })
+      await vi.waitFor(() => expect(view.find('input')!.props.value).toBe(6))
+      expect(view.find('button', 'core.plugins.save')!.props.disabled).toBe(true)
+    } finally {
+      view.app.unmount()
+    }
+  })
+
+  it('只有归档池的配置仍有恢复入口', async () => {
+    const state = detail('s', {}, {})
+    vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
+      ...state,
+      ui: { ...state.ui, backupTargets: [{ key: 'archive', kind: BackupTargetHint.kind.SCRIPT }] },
+    })
+    vi.spyOn(Service, 'ensureConfigBackupApiApiScriptsBackupEnsurePost').mockResolvedValue({
+      code: 200,
+      created: false,
+      time: '',
+    })
+    const { html } = await render(scriptPath)
+    const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
+    expect(buttons.some(button => button.includes('core.edit.configRestoreTitle'))).toBe(true)
+    expect(html).not.toContain('core.plugins.noConfigFields')
+  })
+
+  it.each([
+    ['script', 'view'],
+    ['user', 'config'],
+  ] as const)('原生 %s 会话使用当前目标，停止时执行对应的关闭或保存动作', async (mode, session) => {
+    const id = mode === 'script' ? 's' : 'u'
+    const state = detail(id, {}, {})
+    const response = { ...state, ui: { ...state.ui, nativeSession: session } }
+    const read =
+      mode === 'script'
+        ? vi.spyOn(Service, 'getScriptApiScriptsGetPost')
+        : vi.spyOn(Service, 'getUserApiScriptsUserGetPost')
+    read.mockResolvedValue(response)
+    const start = vi
+      .spyOn(taskApi, 'requestScriptConfigStart')
+      .mockResolvedValue({ code: 200, taskId: 'session' })
+    const stop = vi.spyOn(taskApi, 'stopNativeConfig').mockResolvedValue({ code: 200 })
+    const view = await editorView(mode === 'script' ? scriptPath : userPath, client)
+    view.mount()
+    try {
+      const launch =
+        session === 'view' ? 'core.scheduler.mode.scriptView' : 'core.edit.openConfigWindow'
+      await vi.waitFor(() => expect(view.find('button', launch)).toBeDefined())
+      await view.click(launch)
+      expect(start).toHaveBeenCalledWith(id, session === 'view', mode, undefined)
+      client.setQueryData(
+        [
+          'script-config-lock',
+          mode === 'script' ? { scriptId: 's' } : { scriptId: 's', userId: 'u' },
+        ],
+        { code: 200, locked: true }
+      )
+      const stopLabel =
+        session === 'view' ? 'core.edit.generalViewClose' : 'core.scripts.mask.saveConfig'
+      await vi.waitFor(() => expect(view.all().some(node => node.props.inert === true)).toBe(true))
+      const locked = view.all().find(node => node.props.inert === true)!
+      const button = view.find('button', stopLabel)!
+      expect(view.all(locked)).not.toContain(button)
+      expect(button.props.disabled).toBeFalsy()
+      read.mockResolvedValue(
+        detail(id, { Run: { Name: 'after native' } }, { Run: [{ field: 'Name' }] })
+      )
+      await view.click(stopLabel)
+      await vi.waitFor(() =>
+        expect(stop).toHaveBeenCalledWith('session', session === 'view' ? 'close' : 'save')
+      )
+      await vi.waitFor(() => expect(view.find('input')?.props.value).toBe('after native'))
+      expect(view.find('button', stopLabel)).toBeUndefined()
+    } finally {
+      view.app.unmount()
+    }
+  })
   it('读取托管声明和翻译，保存修改时省略掩码令牌', async () => {
     const get = vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue(
       detail(

@@ -5,14 +5,21 @@ import type { DeclarativeHint } from './useDeclarativeOptions'
 import { useActiveTriggers } from './useActiveTriggers'
 import { usePluginApi } from './usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
+import { useConfirm } from './useConfirm'
+import type {
+  SettingsChange,
+  usePluginSettingsDraft,
+} from '@/views/plugins/settings/usePluginSettingsDraft'
 
 export function useDeclarativeActions(
   configUid: Readonly<Ref<string>>,
   saving: Readonly<Ref<boolean>>,
-  refresh: () => Promise<unknown>
+  refresh: () => Promise<unknown>,
+  draft?: ReturnType<typeof usePluginSettingsDraft>
 ) {
   const { t } = useI18n()
   const { runCommand } = usePluginApi()
+  const { confirm } = useConfirm()
   const runningKey = ref<string | null>(null)
   const { data: activeTriggers } = useActiveTriggers()
   const activeFields = computed(() =>
@@ -21,7 +28,12 @@ export function useDeclarativeActions(
       .map(item => `${item.group}.${item.field}`)
   )
 
-  const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
+  const runAction = async (
+    group: string,
+    hint: DeclarativeHint,
+    value: unknown,
+    owner?: SettingsChange
+  ) => {
     // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
     const field = hint.field
     if (
@@ -44,6 +56,22 @@ export function useDeclarativeActions(
     const uid = configUid.value
     runningKey.value = `${group}.${field}`
     try {
+      const dirty =
+        owner &&
+        draft?.changes.value.some(
+          change => change.group === owner.group && change.field === owner.field
+        )
+      if (
+        dirty &&
+        !(await confirm({
+          title: t('core.edit.youHaveUnsavedChanges'),
+          okText: t('core.edit.discardChanges'),
+          cancelText: t('core.edit.keepEditing'),
+          tone: 'warning',
+        }))
+      )
+        return
+      if (uid !== configUid.value) return
       const result = await runCommand('config', {
         configUid: uid,
         group,
@@ -52,7 +80,10 @@ export function useDeclarativeActions(
         ...(dropdown ? { option: value } : {}),
       })
       message.success(result.message || t('core.plugins.actionComplete'))
-      if (configUid.value === uid) await refresh()
+      if (configUid.value === uid) {
+        if (dirty) draft!.discardField(owner.group, owner.field)
+        await refresh()
+      }
     } catch (error) {
       message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
     } finally {

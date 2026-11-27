@@ -26,5 +26,12 @@ export type PluginProvidedScriptType = {
      * 用户配置是否声明 Info.Password
      */
     hasPasswordField: boolean;
+    firstAccountMode?: PluginProvidedScriptType.firstAccountMode;
 };
+export namespace PluginProvidedScriptType {
+    export enum firstAccountMode {
+        DIRECT = 'direct',
+        WIZARD = 'wizard',
+    }
+}
 

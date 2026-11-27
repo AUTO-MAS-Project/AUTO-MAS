@@ -8,7 +8,7 @@
         show-icon
         :message="t('core.edit.configLocked')"
       />
-      <slot />
+      <slot :locked="configLocked" />
       <GameBindingSection v-if="showBottomGameBinding" :script-id="scriptId" />
     </ConfigProvider>
   </div>
@@ -29,7 +29,7 @@ const props = withDefaults(
     contentClass: string
     gameBinding?: 'auto' | 'none'
   }>(),
-  { gameBinding: 'auto' }
+  { gameBinding: 'auto', userId: undefined }
 )
 
 const { t } = useI18n()

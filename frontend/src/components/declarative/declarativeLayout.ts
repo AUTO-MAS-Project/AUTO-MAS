@@ -1,4 +1,5 @@
-import type { PluginConfigUi } from '@/api'
+import type { PluginConfigUi, UiSection, UiStep } from '@/api'
+import { computed, reactive, ref, watch, type ComputedRef } from 'vue'
 import type { DeclarativeHint } from '@/composables/useDeclarativeOptions'
 import type { DeclarativeTableHint } from './DeclarativeTable.vue'
 
@@ -76,4 +77,132 @@ export function tableColumnTypes(
     if (kinds.size === 1) types[column] = [...kinds][0]!
   }
   return types
+}
+
+type LayoutGroup = { name: string; hints: DeclarativeHint[] }
+type CardContent =
+  | { table: DeclarativeTableHint; columnTypes: Record<string, string> }
+  | { group: LayoutGroup; runs: ReturnType<typeof fieldRuns> }
+
+/** 先从可见字段中提取行内动作、表格，再按插件声明分步。 */
+export function declarativeLayout(
+  groups: LayoutGroup[],
+  tables: DeclarativeTableHint[],
+  steps: UiStep[] = [],
+  sections: Record<string, UiSection> = {}
+) {
+  const fields = new Map<string, { group: string; hint: DeclarativeHint }>(
+    groups.flatMap(({ name, hints }) =>
+      hints.map(hint => [`${name}.${hint.field}`, { group: name, hint }] as const)
+    )
+  )
+  const actions = new Map<string, { group: string; hint: DeclarativeHint }>()
+  const referenced = new Set<string>()
+  for (const [key, { hint }] of fields) {
+    const ref = hint.action_ref
+    const target = ref && fields.get(ref)
+    if (
+      target &&
+      !referenced.has(ref) &&
+      ['button', 'dropdown-button'].includes(target.hint.component ?? '')
+    ) {
+      actions.set(key, target)
+      referenced.add(ref)
+    }
+  }
+  const hintFor = (group: string, field: string) => {
+    const key = `${group}.${field}`
+    return referenced.has(key) ? undefined : fields.get(key)?.hint
+  }
+  const card = (key: string, fields: string[], content: CardContent) => ({
+    key,
+    fields,
+    ...content,
+    step: sections[key]?.step ?? steps[0]?.key ?? '',
+    collapsible: !!sections[key]?.collapsible,
+    defaultCollapsed: !!sections[key]?.default_collapsed,
+  })
+  const tableFields = new Set<string>()
+  const cards = tables.flatMap((source, index) => {
+    const rows = source.rows.filter(group => source.columns.some(field => hintFor(group, field)))
+    const columns = source.columns.filter(field => rows.some(group => hintFor(group, field)))
+    if (!rows.length) return []
+    const table = { ...source, rows, columns }
+    const keys = rows.flatMap(group =>
+      columns.filter(field => hintFor(group, field)).map(field => `${group}.${field}`)
+    )
+    for (const key of keys) tableFields.add(key)
+    return [
+      card(table.key == null ? `anonymous-table:${index}` : `table:${table.key}`, keys, {
+        table,
+        columnTypes: tableColumnTypes(table, hintFor),
+      }),
+    ]
+  })
+  for (const { name, hints } of groups) {
+    const remaining = hints.filter(
+      ({ field }) => !referenced.has(`${name}.${field}`) && !tableFields.has(`${name}.${field}`)
+    )
+    if (remaining.length)
+      cards.push(
+        card(
+          `group:${name}`,
+          remaining.map(hint => `${name}.${hint.field}`),
+          { group: { name, hints: remaining }, runs: fieldRuns(remaining) }
+        )
+      )
+  }
+  const visibleSteps = (steps.length ? steps : [{ key: '' }])
+    .map(step => ({
+      ...step,
+      cards: cards.filter(card => card.step === step.key),
+    }))
+    .filter(step => step.cards.length)
+  return { steps: visibleSteps, cards, actions, hintFor }
+}
+
+/** 同一 UID 重读布局时保留折叠选择；后台字段错误优先于当前步骤。 */
+export function useDeclarativeSteps(
+  layout: ComputedRef<ReturnType<typeof declarativeLayout>>,
+  uid: () => string,
+  errors: () => Record<string, string>
+) {
+  const selected = ref('')
+  const collapsedByUid = reactive(new Map<string, Record<string, boolean>>())
+  watch(
+    [uid, layout],
+    ([id, { cards }], previous) => {
+      if (id !== previous?.[0]) selected.value = ''
+      if (!collapsedByUid.has(id)) collapsedByUid.set(id, {})
+      const state = collapsedByUid.get(id)!
+      for (const card of cards) state[card.key] ??= card.defaultCollapsed
+    },
+    { immediate: true, flush: 'sync' }
+  )
+  const collapsed = computed(() => collapsedByUid.get(uid())!)
+  const current = computed({
+    get: () =>
+      Math.max(
+        0,
+        layout.value.steps.findIndex(step => step.key === selected.value)
+      ),
+    set: index => {
+      selected.value = layout.value.steps[index].key
+    },
+  })
+  watch(
+    errors,
+    fields => {
+      for (const field of Object.keys(fields)) {
+        const card = layout.value.cards.find(card => card.fields.includes(field))
+        if (card) {
+          selected.value = card.step
+          collapsed.value[card.key] = false
+          break
+        }
+      }
+    },
+    { immediate: true }
+  )
+  return { current, collapsed }
 }

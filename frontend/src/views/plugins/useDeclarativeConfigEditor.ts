@@ -1,4 +1,4 @@
-import { computed, ref, watch, type ComputedRef } from 'vue'
+import { computed, onScopeDispose, ref, watch, type ComputedRef } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
@@ -9,6 +9,9 @@ import {
   declarativeValues,
 } from '@/components/declarative/declarativeLayout'
 import { useConfirm } from '@/composables/useConfirm'
+import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
+import { useUserApi } from '@/composables/useUserApi'
+import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
 import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { useConfigQuery } from '@/services/configUiSync'
 import { apiErrorMessage, requestApi } from '@/utils/apiResult'
@@ -16,11 +19,12 @@ import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analyti
 import { usePluginSettingsDraft, type SettingsValues } from './settings/usePluginSettingsDraft'
 
 export type ConfigEditorTarget =
-  | { mode: 'script' | 'plan'; id: string }
+  | { mode: 'script' | 'setup' | 'plan'; id: string }
   | { mode: 'user'; id: string; scriptId: string }
 
 async function readConfig(target: ConfigEditorTarget) {
   switch (target.mode) {
+    case 'setup':
     case 'script':
       return Service.getScriptApiScriptsGetPost({ scriptId: target.id })
     case 'user':
@@ -32,6 +36,7 @@ async function readConfig(target: ConfigEditorTarget) {
 
 function writeConfig(target: ConfigEditorTarget, data: SettingsValues) {
   switch (target.mode) {
+    case 'setup':
     case 'script':
       return Service.updateScriptApiScriptsUpdatePost({ scriptId: target.id, data })
     case 'user':
@@ -51,6 +56,30 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   const { confirm } = useConfirm()
   const draft = usePluginSettingsDraft()
   const saving = ref(false)
+  const creatingUser = ref(false)
+  const optionsInvalid = ref(false)
+  const { addUser } = useUserApi()
+  const native = useNativeGuiSession({
+    loggerName: '插件配置',
+    keys: {
+      stopFailed: 'core.plan.universal.stopFailed',
+      startFailed: 'core.plan.universal.startFailed',
+      setupFailed: 'core.plan.universal.setupFailed',
+      opened: 'core.plan.universal.sessionOpened',
+      viewOpened: 'core.plan.universal.sessionOpened',
+      timeoutWarn: 'core.plan.universal.sessionTimeoutWarn',
+      saved: 'core.plan.universal.sessionSaved',
+      saveFailed: 'core.plan.universal.saveFailed',
+    },
+  })
+  onScopeDispose(() => {
+    void native.dispose()
+  })
+  const { restoreApi, ensureBackup } = useConfigBackupApi({
+    scriptId: () => (target.value.mode === 'user' ? target.value.scriptId : target.value.id),
+    userId: () => (target.value.mode === 'user' ? target.value.id : null),
+    logger: window.electronAPI.getLogger('配置归档'),
+  })
   const detail = useConfigQuery({
     queryKey: computed(() => ['declarative-config', target.value]),
     queryFn: async () => {
@@ -73,20 +102,43 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     )
   )
   const tables = computed(() => declarativeTables(ui.value))
-  const { activeFields, runningKey, runAction } = useDeclarativeActions(configUid, saving, () =>
-    detail.refetch()
+  const backupTargets = computed(() => ui.value?.backupTargets ?? [])
+  const ensureTargets = () => Promise.all(backupTargets.value.map(pool => ensureBackup(pool.key)))
+  watch(
+    configUid,
+    uid => {
+      if (uid) void ensureTargets()
+    },
+    { immediate: true, flush: 'sync' }
   )
-  const busy = computed(() => saving.value || runningKey.value !== null)
-  const canSave = computed(
+  const { activeFields, runningKey, runAction } = useDeclarativeActions(
+    configUid,
+    saving,
+    () => detail.refetch(),
+    draft
+  )
+  const busy = computed(
     () =>
+      saving.value ||
+      creatingUser.value ||
+      runningKey.value !== null ||
+      native.configLoading.value ||
+      !!native.taskId.value ||
+      native.stopping.value
+  )
+  const canSubmit = computed(
+    () =>
+      !!configUid.value &&
       !busy.value &&
+      !optionsInvalid.value &&
       !detail.isFetching.value &&
+      !detail.isError.value &&
       !activeFields.value.length &&
-      draft.dirtyCount.value > 0 &&
       draft.changes.value.every(({ group, field }) =>
         ui.value?.hints[group]?.some(hint => hint.field === field && hint.editable !== false)
       )
   )
+  const canSave = computed(() => canSubmit.value && draft.dirtyCount.value > 0)
 
   // 锁、触发器和其它窗口都可能引起回读。仅在同一条目内保留未提交的字段。
   watch(
@@ -111,8 +163,29 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     )
   }
 
-  function beforeLeave() {
-    return !busy.value && confirmDiscard()
+  async function beforeLeave() {
+    if (saving.value || creatingUser.value || runningKey.value || !(await confirmDiscard()))
+      return false
+    return native.stopSession(true)
+  }
+
+  function startNative() {
+    const selected = target.value
+    const mode = ui.value?.nativeSession
+    if (!busy.value && mode && selected.mode !== 'plan') {
+      return native.startSession(
+        selected.id,
+        mode === 'view',
+        selected.mode === 'user' ? 'user' : 'script'
+      )
+    }
+  }
+
+  async function stopNative() {
+    const selected = target.value
+    if (native.currentSessionViewOnly.value) await native.stopSession(true)
+    else await native.saveSession()
+    if (isCurrent(selected) && !native.taskId.value) await detail.refetch()
   }
 
   function isCurrent(selected: ConfigEditorTarget) {
@@ -125,12 +198,20 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     )
   }
 
-  async function readBack(selected: ConfigEditorTarget) {
+  async function readBack(selected: ConfigEditorTarget, uid?: string) {
+    if (!isCurrent(selected) || (uid && configUid.value !== uid)) return
     const result = await detail.refetch()
-    if (result.isSuccess && isCurrent(selected)) {
+    if (result.isSuccess && isCurrent(selected) && (!uid || uid === result.data.ui?.configUid)) {
       draft.reset(result.data.values, { keepDraft: false })
     }
   }
+
+  // 恢复确认打开时固定配置身份，旧弹窗不能回读新条目。
+  const onRestored = computed(() => {
+    const selected = target.value
+    const uid = configUid.value
+    return () => readBack(selected, uid)
+  })
 
   async function reload() {
     const selected = target.value
@@ -156,7 +237,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       if (isCurrent(selected)) {
         draft.commit(submitted)
         message.success(t('core.plugins.saved'))
-        await readBack(selected)
+        await Promise.all([readBack(selected), ensureTargets()])
       }
       return true
     } catch (error) {
@@ -169,12 +250,26 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       plan?.finish({ plan_type: 'unknown', view_kind: 'complex', operation_kind: 'save', outcome })
       if (selected.mode !== 'plan')
         config?.finish({
-          owner_kind: selected.mode,
+          owner_kind: selected.mode === 'setup' ? 'script' : selected.mode,
           section_kind: analyticsConfigSection(data),
           script_type: 'unknown',
           outcome,
         })
       saving.value = false
+    }
+  }
+
+  async function finishSetup(openUser: (id: string) => void) {
+    const selected = target.value
+    if (selected.mode !== 'setup' || !canSubmit.value) return
+    if (draft.dirtyCount.value && !(await save())) return
+    if (!isCurrent(selected) || !canSubmit.value) return
+    creatingUser.value = true
+    try {
+      const user = await addUser(selected.id, { firstOnly: true })
+      if (user?.userId && isCurrent(selected)) openUser(user.userId)
+    } finally {
+      creatingUser.value = false
     }
   }
 
@@ -186,6 +281,16 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     tables,
     saving,
     canSave,
+    canSubmit,
+    creatingUser,
+    optionsInvalid,
+    finishSetup,
+    backupTargets,
+    restoreApi,
+    onRestored,
+    native,
+    startNative,
+    stopNative,
     busy,
     loading: detail.isFetching,
     error: computed(

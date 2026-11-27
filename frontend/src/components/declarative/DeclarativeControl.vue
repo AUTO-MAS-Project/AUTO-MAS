@@ -4,6 +4,7 @@ import type { Dayjs } from 'dayjs'
 import { useI18n } from 'vue-i18n'
 import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
+import { isBrowserDevelopment } from '@/utils/environment'
 import DeclarativeOrderedSelect from './DeclarativeOrderedSelect.vue'
 import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
@@ -70,6 +71,7 @@ const kind = computed(() => {
   if ((component === 'segmented' || props.widget === 'segmented') && props.options.length)
     return 'segmented'
   if (component === 'ref-select') return 'select'
+  if (component === 'path' && isBrowserDevelopment()) return 'input'
   return ['switch', 'path', 'number', 'select', 'date', 'button', 'dropdown-button'].includes(
     component
   )
@@ -78,7 +80,10 @@ const kind = computed(() => {
 })
 
 const update = (value: unknown) =>
-  /* 把控件值变更通过模型更新事件交给上层，持久化由表单负责。 */ emit('update:modelValue', value)
+  /* 把控件值变更通过模型更新事件交给上层，路径清空时提交 null。 */ emit(
+    'update:modelValue',
+    props.component === 'path' && value === '' ? null : value
+  )
 const updateDate = (value: unknown) =>
   /* 将日期清空事件规范化为空串后提交控件值变更。 */ update(value ?? '')
 const dateValue = computed(() => (typeof props.modelValue === 'string' ? props.modelValue : ''))
@@ -178,7 +183,6 @@ const updateTime = (value: string | null) => {
         :disabled="disabled"
         :bordered="bordered"
         readonly
-        @update:value="update"
         @blur="emit('blur')"
       />
       <a-button

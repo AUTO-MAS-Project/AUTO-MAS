@@ -80,6 +80,9 @@ export function usePluginSettingsDraft() {
     assign(baseline.value)
   }
 
+  const discardField = (group: string, field: string) =>
+    update(group, field, clone(baseline.value[group]?.[field]))
+
   /** 只标出接口确认校验失败的字段。 */
   const saveFailed = (error: unknown) => {
     errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
@@ -115,6 +118,7 @@ export function usePluginSettingsDraft() {
     reset,
     update,
     discard,
+    discardField,
     snapshot,
     patch,
     commit,

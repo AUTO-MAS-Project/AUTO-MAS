@@ -1,12 +1,23 @@
+// @vitest-environment vue-client
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createApp } from 'vue'
+import { QueryClient } from '@tanstack/vue-query'
+import { editorView } from '../../../tests/declarativeEditorView'
+import { fire } from '../../../tests/vueRenderer'
+import { message } from 'ant-design-vue'
 import { createMemoryHistory, createRouter, loadRouteLocation, routerKey } from 'vue-router'
 import {
   buildScriptEditorRoutes,
   genericEditorRoutes,
   useScriptEditorNavigation,
 } from '@/router/scriptEditorRoutes'
-import { Service, type PluginRegistryDocument, type ScriptIndexItem } from '@/api'
+import {
+  PluginProvidedScriptType,
+  Service,
+  type PluginRegistryDocument,
+  type ScriptIndexItem,
+} from '@/api'
+import { maafwRouteName } from '@/router/maafwRoutes'
 import { queryClient } from '@/services/queryClient'
 import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { getAvailablePlanTypes, getPlanTypeDescriptor } from '@/utils/planTypeRegistry'
@@ -15,6 +26,7 @@ import { buildCreateRequest, getScriptTypeOptions } from './components/scriptCre
 import { toScriptListUser } from './scriptListModel'
 
 vi.mock('@/composables/useAudioPlayer', () => ({ useAudioPlayer: () => ({ playSound: vi.fn() }) }))
+vi.mock('@/components/GameBindingSection.vue', () => ({ default: { render: () => null } }))
 
 const demo = {
   uid: 'plugin',
@@ -96,6 +108,10 @@ describe('运行时专项', () => {
 
   it('创建 Demo15 后进入新托管，再新增账号时进入返回的账号', async () => {
     vi.stubGlobal('window', { electronAPI: { getLogger: () => ({}) } })
+    vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue({
+      code: 200,
+      data: registry,
+    })
     vi.spyOn(Service, 'addScriptApiScriptsAddPost').mockResolvedValue({
       code: 200,
       scriptId: 'new-script',
@@ -123,13 +139,169 @@ describe('运行时专项', () => {
         params: { scriptId: 'new-script', scriptType: 'Demo15' },
       })
     )
-    await creation.createUser({ id: 'new-script', type: 'Demo15' })
+    await creation.createUser({ id: 'new-script', type: 'Demo15', users: [], usersLoadError: null })
     await vi.waitFor(() =>
       expect(router.currentRoute.value).toMatchObject({
         name: 'GenericUserEdit',
         params: { scriptId: 'new-script', userId: 'second', scriptType: 'Demo15' },
       })
     )
+  })
+
+  it('向导托管只建托管，退出后可由新增首账号重入，MFW 仍走自己的引导', async () => {
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({ error: vi.fn() }) } })
+    const wizard = {
+      ...demo,
+      providedScript: {
+        ...demo.providedScript,
+        firstAccountMode: PluginProvidedScriptType.firstAccountMode.WIZARD,
+      },
+    }
+    vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue({
+      code: 200,
+      data: { demo: wizard },
+    })
+    vi.spyOn(Service, 'addScriptApiScriptsAddPost').mockResolvedValue({
+      code: 200,
+      scriptId: 's',
+      data: {},
+    })
+    const addUser = vi.spyOn(Service, 'addUserApiScriptsUserAddPost')
+    const empty = { render: () => null }
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        ...genericEditorRoutes,
+        { path: '/scripts', name: 'Scripts', component: empty },
+        {
+          path: '/scripts/:id/setup/mfw',
+          name: maafwRouteName('MaaFW', 'setup'),
+          component: empty,
+        },
+      ],
+    })
+    const { useScriptCreation } = await import('./useScriptCreation')
+    const creation = createApp({})
+      .provide(routerKey, router)
+      .runWithContext(() =>
+        useScriptCreation({
+          reloadScripts: vi.fn(),
+          closeDialog: vi.fn(),
+          importTemplate: vi.fn(),
+          cloneProject: vi.fn(),
+        })
+      )
+    await creation.submit({ kind: 'new', type: 'Demo15' })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/scripts/s/setup/plugin/Demo15')
+    )
+    await router.push({ name: 'Scripts' })
+    await creation.createUser({ id: 's', type: 'Demo15', users: [], usersLoadError: null })
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('GenericScriptSetup'))
+    await creation.submit({ kind: 'new', type: 'MaaFW' })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.name).toBe(maafwRouteName('MaaFW', 'setup'))
+    )
+    expect(addUser).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { mode: 'setup', dirty: true },
+    { mode: 'setup', dirty: false },
+    { mode: 'script', dirty: true },
+    { mode: 'cancel', dirty: false },
+  ] as const)('$mode 编辑在 dirty=$dirty 时仅在向导完成后创建首账号', async ({ mode, dirty }) => {
+    vi.spyOn(message, 'success').mockImplementation(vi.fn())
+    vi.spyOn(message, 'error').mockImplementation(vi.fn())
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({ error: vi.fn() }) } })
+    const settings: Record<string, Record<string, unknown>> = { Setup: { Name: 'initial' } }
+    const state = {
+      code: 200,
+      data: { s: settings },
+      index: [],
+      ui: {
+        configUid: 'uid',
+        hints: { Setup: [{ field: 'Name' }], Run: [{ field: 'Count' }] },
+        tables: [],
+        steps: [{ key: 'setup' }, { key: 'run' }],
+        sections: { 'group:Run': { step: 'run' } },
+      },
+    }
+    vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue(state)
+    vi.spyOn(Service, 'getScriptLockApiScriptsLockPost').mockResolvedValue({
+      code: 200,
+      locked: false,
+    })
+    vi.spyOn(Service, 'getUserApiScriptsUserGetPost').mockResolvedValue({
+      code: 200,
+      index: [],
+      data: { first: {} },
+    })
+    vi.spyOn(Service, 'getActiveConfigTriggersApiConfigTriggersActiveGet').mockResolvedValue({
+      code: 200,
+      data: [],
+    })
+    const write = vi
+      .spyOn(Service, 'updateScriptApiScriptsUpdatePost')
+      .mockResolvedValueOnce({
+        code: 422,
+        fieldErrors: { 'Setup.Name': 'invalid' },
+      })
+      .mockResolvedValue({ code: 200 })
+    const create = vi
+      .spyOn(Service, 'addUserApiScriptsUserAddPost')
+      .mockResolvedValue({ code: 200, userId: 'first', data: {} })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = await editorView(
+      `/scripts/s/${mode === 'script' ? 'edit' : 'setup'}/plugin/Demo15`,
+      client
+    )
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('input')?.props.value).toBe('initial'))
+      if (mode === 'cancel') {
+        await view.click('core.comp.back')
+        await vi.waitFor(() => expect(view.router.currentRoute.value.name).toBe('Scripts'))
+        expect(write).not.toHaveBeenCalled()
+        expect(create).not.toHaveBeenCalled()
+        return
+      }
+      if (dirty) {
+        await fire(view.find('input')!, 'onUpdate:value', 'invalid')
+        await view.click('core.edit.next')
+        await view.click('core.taskboard.complete')
+        await vi.waitFor(() => expect(view.find('p', 'invalid')?.props.role).toBe('alert'))
+        expect(view.find('steps')?.props.current).toBe(0)
+        expect(create).not.toHaveBeenCalled()
+        await fire(view.find('input')!, 'onUpdate:value', 'valid')
+      }
+      await view.click('core.edit.next')
+      expect(view.find('button', 'core.taskboard.complete')!.props.disabled).toBe(false)
+      await view.click('core.taskboard.complete')
+      if (dirty)
+        expect(write).toHaveBeenLastCalledWith({
+          scriptId: 's',
+          data: { Setup: { Name: 'valid' } },
+        })
+      else expect(write).not.toHaveBeenCalled()
+      if (mode === 'script') {
+        await vi.waitFor(() =>
+          expect(view.find('button', 'core.taskboard.complete')!.props.loading).toBe(false)
+        )
+        expect(view.router.currentRoute.value.name).toBe('GenericScriptEdit')
+        expect(create).not.toHaveBeenCalled()
+        return
+      }
+      await vi.waitFor(() =>
+        expect(view.router.currentRoute.value.fullPath).toBe(
+          '/scripts/s/users/first/edit/plugin/Demo15'
+        )
+      )
+      expect(create.mock.calls).toEqual([[{ scriptId: 's', firstOnly: true }]])
+    } finally {
+      view.app.unmount()
+      client.clear()
+    }
   })
 
   it('列表和详情按注册表解析脚本配置类名', async () => {

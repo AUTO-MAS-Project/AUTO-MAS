@@ -11,9 +11,9 @@ export type ConfigBackupRestoreIn = {
      */
     scriptId: string;
     /**
-     * 目标账号ID
+     * 目标账号ID，托管级池可省略
      */
-    userId: string;
+    userId?: (string | null);
     /**
      * 备份时间戳
      */
