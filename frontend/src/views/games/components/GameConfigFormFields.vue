@@ -196,6 +196,12 @@ function handleAdapterChange(value: SelectValue): void {
 </script>
 
 <style scoped>
+/* 栅格行的负外边距会比表单宽出半个间距，放进对话框时底部多出一条横向滚动条；
+   超出的部分只有列的内边距，裁掉即可 */
+.config-grid-form {
+  overflow-x: clip;
+}
+
 .config-grid-form :deep(.ant-form-item) {
   margin-bottom: 12px;
 }
