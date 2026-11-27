@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EyeOutlined, EyeInvisibleOutlined } from '@ant-design/icons-vue'
-import { AppModal } from '@/components/ui'
+import DesktopSessionPasswordDialog from './components/DesktopSessionPasswordDialog.vue'
 import {
   DESKTOP_SESSION_CREDENTIAL_ERRORS,
   type DesktopSessionPendingRequest,
@@ -22,7 +22,6 @@ const readingPending = ref(false)
 const results = shallowRef<DesktopQueueResult[]>([])
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
-const password = ref('')
 const passwordDialog = ref(false)
 const confirmingRepair = ref(false)
 const repairing = ref(false)
@@ -158,15 +157,7 @@ async function cancelTaskConnect() {
   await readPending()
 }
 
-function cancelPassword() {
-  password.value = ''
-  passwordDialog.value = false
-  void cancelTaskConnect()
-}
-
-function submitPassword() {
-  const input = password.value
-  password.value = ''
+function submitPassword(input: string) {
   passwordDialog.value = false
   void start(input)
 }
@@ -354,15 +345,10 @@ onBeforeUnmount(() => {
         }}
       </a-typography-text>
     </a-flex>
-    <AppModal
+    <DesktopSessionPasswordDialog
       v-model:open="passwordDialog"
-      size="sm"
-      :title="t('bootstrap.desktopSession.passwordTitle')"
-      :ok-text="t('bootstrap.desktopSession.connect')"
-      :cancel-text="t('bootstrap.desktopSession.cancel')"
-      :ok-disabled="!password"
-      @ok="submitPassword"
-      @cancel="cancelPassword"
+      @submit="submitPassword"
+      @cancel="cancelTaskConnect"
     >
       <a-alert
         v-if="snapshot?.code && snapshot.code !== 'password_required' && errorText"
@@ -373,13 +359,7 @@ onBeforeUnmount(() => {
       <a-typography-paragraph v-if="authenticationDetail" type="secondary">
         {{ authenticationDetail }}
       </a-typography-paragraph>
-      <a-input-password
-        v-model:value="password"
-        :placeholder="t('bootstrap.desktopSession.password')"
-        autocomplete="off"
-        @press-enter="password && submitPassword()"
-      />
-    </AppModal>
+    </DesktopSessionPasswordDialog>
   </main>
 </template>
 

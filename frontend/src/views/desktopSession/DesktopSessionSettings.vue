@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { SectionCard } from '@/components/ui'
+import DesktopSessionPasswordDialog from './components/DesktopSessionPasswordDialog.vue'
+import { finishDesktopLogin, pendingDesktopLogin } from '@/composables/useDesktopSessionLogin'
 import { PowerSignal } from '@/api'
 import { useI18n } from 'vue-i18n'
 import { fetchTaskTargets, type TaskTarget } from '@/composables/useTaskOptions'
@@ -11,6 +13,7 @@ import {
   type DesktopSessionRequest,
 } from '../../../electron/services/desktopSessionProtocol'
 
+const props = defineProps<{ active: boolean }>()
 const { t } = useI18n()
 const selected = ref<string[]>([])
 const targets = ref<TaskTarget[]>([])
@@ -34,6 +37,73 @@ const starting = ref(false)
 const mode = ref<DesktopSessionRequest['mode']>('proxy')
 const resolution = ref<DesktopSessionRequest['resolution']>('1080p')
 const supported = ref<boolean>()
+const loginDialog = ref(false)
+const loginError = ref('')
+
+function closeLogin() {
+  loginDialog.value = false
+  loginError.value = ''
+  finishDesktopLogin('cancelled')
+}
+
+watch(
+  [pendingDesktopLogin, () => props.active, supported],
+  ([waiting, active, available]) => {
+    if (!active) {
+      if (loginDialog.value) closeLogin()
+      return
+    }
+    if (!waiting) return
+    if (available === false) finishDesktopLogin('failed')
+    if (available) loginDialog.value = true
+  },
+  { immediate: true }
+)
+onBeforeUnmount(closeLogin)
+
+async function submitLogin(password: string) {
+  if (starting.value) return
+  const waiter = pendingDesktopLogin.value
+  starting.value = true
+  loginError.value = ''
+  try {
+    const result = await window.electronAPI.desktopSessionConnectForTask?.({
+      password,
+      mode: mode.value,
+      resolution: resolution.value,
+      forTask: !!waiter,
+    })
+    if (!loginDialog.value) return
+    if (result !== 'connected') {
+      if (result === 'cancelled') closeLogin()
+      else
+        loginError.value = t(
+          result === 'credentials_rejected'
+            ? 'bootstrap.desktopSession.loginRejected'
+            : result === 'login_state_save_failed'
+              ? 'bootstrap.desktopSession.loginStateSaveFailed'
+              : result === 'preview_unavailable'
+                ? 'bootstrap.desktopSession.errors.preview_unavailable'
+                : 'bootstrap.desktopSession.startFailed'
+        )
+      return
+    }
+    loginDialog.value = false
+    finishDesktopLogin('connected')
+    if (!waiter && selected.value.length) {
+      await window.electronAPI.desktopSessionOpen?.({
+        queueIds: [...selected.value],
+        mode: mode.value,
+        resolution: resolution.value,
+      })
+    }
+  } catch {
+    if (loginDialog.value) loginError.value = t('bootstrap.desktopSession.startFailed')
+    else message.error(t('bootstrap.desktopSession.openFailed'))
+  } finally {
+    starting.value = false
+  }
+}
 
 async function loadQueues() {
   loading.value = true
@@ -60,7 +130,15 @@ async function open() {
   if (!launch) return
   starting.value = true
   try {
-    await launch({ queueIds: [...selected.value], mode: mode.value, resolution: resolution.value })
+    const result = await launch({
+      queueIds: [...selected.value],
+      mode: mode.value,
+      resolution: resolution.value,
+    })
+    if (result === 'setup_required') {
+      loginError.value = ''
+      loginDialog.value = true
+    }
   } catch {
     message.error(t('bootstrap.desktopSession.openFailed'))
   } finally {
@@ -69,10 +147,14 @@ async function open() {
 }
 
 onMounted(async () => {
-  if (!(await window.electronAPI?.desktopSessionSupported?.())) {
+  try {
+    supported.value = (await window.electronAPI?.desktopSessionSupported?.()) === true
+  } catch {
+    message.error(t('bootstrap.desktopSession.loadTasksFailed'))
     supported.value = false
     return
   }
+  if (!supported.value) return
   try {
     const saved = (await getConfig()).desktopSessionQueueIds
     if (Array.isArray(saved)) selected.value = saved.filter(id => typeof id === 'string')
@@ -80,7 +162,6 @@ onMounted(async () => {
     message.warning(t('bootstrap.desktopSession.loadSelectionFailed'))
   }
   await loadQueues()
-  supported.value = true
 })
 </script>
 
@@ -138,5 +219,15 @@ onMounted(async () => {
         </a-flex>
       </template>
     </a-flex>
+    <DesktopSessionPasswordDialog
+      v-model:open="loginDialog"
+      first-login
+      :submitting="starting"
+      @submit="submitLogin"
+      @cancel="closeLogin"
+    >
+      <a-typography-text>{{ t('bootstrap.desktopSession.firstLoginHint') }}</a-typography-text>
+      <a-alert v-if="loginError" type="error" show-icon :message="loginError" />
+    </DesktopSessionPasswordDialog>
   </SectionCard>
 </template>

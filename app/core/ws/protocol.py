@@ -74,6 +74,8 @@ TASK_SCRIPT_FINISHED = "task.script.finished"
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
 # 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。
 SYSTEM_NOTICE = "system.notice"
+DESKTOP_SESSION_LOGIN_FINISHED = "desktop-session.login.finished"
+DESKTOP_SESSION_LOGIN_NEEDED = "desktop-session.login.needed"
 FRONTEND_CLOSE_REQUESTED = "frontend.close.requested"
 # 与上一条同理，只是收尾后由 Electron 重新拉起：队列的「完成后操作」选了重启软件
 FRONTEND_RESTART_REQUESTED = "frontend.restart.requested"

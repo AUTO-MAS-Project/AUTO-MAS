@@ -2464,7 +2464,15 @@ app.whenReady().then(async () => {
   desktopSession = registerDesktopSession(
     () => mainWindow,
     mainWindowIcon,
-    () => loadConfig().language
+    () => loadConfig().language,
+    {
+      completed: () => loadConfig().desktopSessionLoginCompleted === true,
+      markCompleted: () => {
+        patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), {
+          desktopSessionLoginCompleted: true,
+        })
+      },
+    }
   )
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')

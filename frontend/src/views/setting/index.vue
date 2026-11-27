@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
+import { pendingDesktopLogin } from '@/composables/useDesktopSessionLogin'
 import { message } from 'ant-design-vue'
 import { openConfirm } from '@/composables/useConfirm'
 import type { SelectValue } from 'ant-design-vue/es/select'
@@ -66,7 +67,15 @@ const {
 
 // 活动标签
 const route = useRoute()
-const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
+const activeKey = ref('basic')
+watch(
+  [() => route.query.tab, pendingDesktopLogin],
+  ([tab, login]) => {
+    if (login || tab === 'desktop-session') activeKey.value = 'desktop-session'
+    else if (tab === 'function') activeKey.value = 'function'
+  },
+  { immediate: true }
+)
 const version = computed(() => import.meta.env.VITE_APP_VERSION || t('core.setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
@@ -248,7 +257,7 @@ onMounted(() => {
         <TabFunction :settings="settings" :handle-setting-change="handleSettingChange" />
       </template>
       <template #desktop-session>
-        <DesktopSessionSettings />
+        <DesktopSessionSettings :active="activeKey === 'desktop-session'" />
       </template>
       <template #notify>
         <TabNotify

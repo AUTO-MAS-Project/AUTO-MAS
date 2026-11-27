@@ -19,6 +19,8 @@ export interface FrontendConfig {
   settingsShowNavigation?: boolean
   /** 桌面分身独立选择的队列与托管任务。 */
   desktopSessionQueueIds?: string[]
+  /** 当前配置已成功连接过桌面分身。 */
+  desktopSessionLoginCompleted?: boolean
 
   // 主题设置
   themeMode: ThemeMode

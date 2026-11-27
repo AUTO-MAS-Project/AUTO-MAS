@@ -20,6 +20,9 @@ export type DesktopSessionConnectResult =
   | 'cancelled'
   | 'failed'
   | 'preview_unavailable'
+  | 'setup_required'
+  | 'credentials_rejected'
+  | 'login_state_save_failed'
 
 export const DESKTOP_SESSION_REPAIRS = [
   'child_enabled',
@@ -35,6 +38,14 @@ export interface DesktopSessionRequest {
   mode: 'proxy' | 'native'
   resolution: '1080p' | 'primary'
   password?: string
+}
+
+/** 密码只在设置页到主进程的本次连接中传递；空字符串表示显式无密码连接。 */
+export interface DesktopSessionFirstLogin {
+  mode: DesktopSessionRequest['mode']
+  resolution: DesktopSessionRequest['resolution']
+  forTask: boolean
+  password: string
 }
 
 export type DesktopSessionPendingRequest = Omit<DesktopSessionRequest, 'password'> & {

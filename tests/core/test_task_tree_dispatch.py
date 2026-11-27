@@ -464,6 +464,103 @@ async def test_recovery_summary_reaches_current_task_completion(
 
 
 @pytest.mark.asyncio
+async def test_cycle_waits_for_configured_desktop_before_recording_admission(
+    scheduler, monkeypatch, tmp_path
+):
+    from app.core import timer
+    from app.core.desktop_session.lifecycle import _DesktopSessionLifecycle
+    from app.utils.common.process.session import (
+        DesktopProcessTarget,
+        desktop_process_target,
+    )
+
+    manager, _, queues, _ = scheduler
+    qid = queues.add(
+        QueueConfig,
+        payload={"Info": {"CycleEnabled": True, "ExecutionSession": "desktop"}},
+    )
+    await queues.commit()
+    service = _DesktopSessionLifecycle()
+    monkeypatch.setattr(timer, "DesktopSessionLifecycle", service)
+    monkeypatch.setattr("app.core.TaskManager", manager)
+    monkeypatch.setenv("AUTO_MAS_DEVELOPER_AUTOMATION", "1")
+    clock = timer._MainTimer()
+    await clock.timed_start()
+    assert queues[qid].Cycle.LastRunAt is None
+    assert not manager.task_info
+
+    monkeypatch.setattr(
+        service,
+        "_connected_target",
+        lambda: DesktopProcessTarget(7, tmp_path, tmp_path),
+    )
+    await clock.timed_start()
+    assert queues[qid].Cycle.LastRunAt is not None
+    assert len(service.task_ids) == 1
+    assert desktop_process_target.get() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("connected", [True, False])
+async def test_desktop_login_resumes_only_the_confirmed_startup(
+    scheduler, monkeypatch, tmp_path, connected
+):
+    from app.core import timer
+    from app.core.desktop_session.lifecycle import _DesktopSessionLifecycle
+    from app.models.schema import WSEnvelope
+    from app.utils.common.process.session import DesktopProcessTarget
+
+    manager, _, queues, _ = scheduler
+    queues.add(
+        QueueConfig,
+        payload={"Info": {"StartUpMode": "Always", "ExecutionSession": "desktop"}},
+    )
+    await queues.commit()
+    service = _DesktopSessionLifecycle()
+    monkeypatch.setattr(timer, "DesktopSessionLifecycle", service)
+    monkeypatch.setattr("app.core.TaskManager", manager)
+    monkeypatch.setenv("AUTO_MAS_DEVELOPER_AUTOMATION", "1")
+    clock = timer._MainTimer()
+
+    def notices():
+        return [
+            c.kwargs["data"]["requestId"]
+            for c in Publisher.send.call_args_list
+            if c.kwargs["type"] == protocol.DESKTOP_SESSION_LOGIN_NEEDED
+        ]
+
+    await clock.timed_start(startup=True)
+    await clock.timed_start()
+    assert len(notices()) == 1
+    reply = WSEnvelope(
+        id=protocol.ID_MAIN,
+        type=protocol.DESKTOP_SESSION_LOGIN_FINISHED,
+        data={"requestId": notices()[0], "retryStartup": connected},
+    )
+    clock.finish_desktop_login(reply)
+    if not connected:
+        queues.add(
+            QueueConfig,
+            payload={"Info": {"CycleEnabled": True, "ExecutionSession": "desktop"}},
+        )
+        await queues.commit()
+        await clock.timed_start()
+        await clock.timed_start()
+        assert len(set(notices())) == len(notices()) == 2
+    monkeypatch.setattr(
+        service,
+        "_connected_target",
+        lambda: DesktopProcessTarget(7, tmp_path, tmp_path),
+    )
+    await clock.timed_start()
+    clock.finish_desktop_login(reply)
+    await clock.timed_start()
+    assert len(manager.task_info) == 1
+    task = next(iter(manager.task_info.values()))
+    assert task.info.trigger.value == ("startup" if connected else "cycle")
+
+
+@pytest.mark.asyncio
 async def test_desktop_queue_rechecks_plugin_before_admission(
     scheduler, monkeypatch, tmp_path
 ):

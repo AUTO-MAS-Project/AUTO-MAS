@@ -99,7 +99,8 @@ function openPreview() {
   const bridge = registerDesktopSession(
     () => main as unknown as BrowserWindow,
     '',
-    () => 'en-US'
+    () => 'en-US',
+    { completed: () => true, markCompleted: vi.fn() }
   )
   invoke(main, 'open', { queueIds: [], resolution: 'primary', mode: 'native' })
   return { bridge, window: preview! }
@@ -176,7 +177,8 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64').each([
   const bridge = registerDesktopSession(
     () => main as unknown as BrowserWindow,
     '',
-    () => 'en-US'
+    () => 'en-US',
+    { completed: () => true, markCompleted: vi.fn() }
   )
   const pending = invoke(main, 'connect-for-task') as Promise<string>
   const window = preview!
@@ -207,7 +209,8 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     const bridge = registerDesktopSession(
       () => main,
       '',
-      () => 'en-US'
+      () => 'en-US',
+      { completed: () => true, markCompleted: vi.fn() }
     )
     bridge.setRendererResponsive(main, false)
     mocks.messageBox.mockResolvedValueOnce({ response: 1 })
@@ -228,7 +231,8 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     const bridge = registerDesktopSession(
       () => main as unknown as BrowserWindow,
       '',
-      () => 'en-US'
+      () => 'en-US',
+      { completed: () => true, markCompleted: vi.fn() }
     )
     const first = invoke(main, 'connect-for-task')
     const window = preview!
@@ -258,7 +262,8 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64')(
     registerDesktopSession(
       () => main as unknown as BrowserWindow,
       '',
-      () => 'en-US'
+      () => 'en-US',
+      { completed: () => true, markCompleted: vi.fn() }
     )
     const first = invoke(main, 'connect-for-task')
     const window = preview!
@@ -284,7 +289,8 @@ it.runIf(process.platform === 'win32' && process.arch === 'x64').each(['unrespon
       registerDesktopSession(
         () => main as unknown as BrowserWindow,
         '',
-        () => 'en-US'
+        () => 'en-US',
+        { completed: () => true, markCompleted: vi.fn() }
       )
       const first = invoke(main, 'connect-for-task')
       const window = preview!
@@ -322,7 +328,8 @@ it
     registerDesktopSession(
       () => main as unknown as BrowserWindow,
       '',
-      () => 'en-US'
+      () => 'en-US',
+      { completed: () => true, markCompleted: vi.fn() }
     )
     const first = invoke(main, 'connect-for-task')
     const window = preview!
@@ -362,5 +369,61 @@ it
     snapshot.state = 'connected'
     await invoke(window, 'start', current)
     await expect(retry).resolves.toBe('connected')
+  }
+)
+
+it.runIf(process.platform === 'win32' && process.arch === 'x64')(
+  '首次连接在设置输入凭据，失败可重试，只有已连接才记住登录结果',
+  async () => {
+    const main = new TestWindow()
+    let completed = false
+    registerDesktopSession(
+      () => main as unknown as BrowserWindow,
+      '',
+      () => 'en-US',
+      {
+        completed: () => completed,
+        markCompleted: () => {
+          completed = true
+        },
+      }
+    )
+    await expect(invoke(main, 'connect-for-task')).resolves.toBe('setup_required')
+    expect(preview).toBeUndefined()
+    const login = { password: 'test-input', mode: 'native', resolution: 'primary', forTask: true }
+    const first = invoke(main, 'connect-for-task', login)
+    const window = preview!
+    const request = invoke(window, 'pending')
+    expect(request).not.toHaveProperty('password')
+    const [, bounds] = mocks.on.mock.calls.find(([name]) => name === 'desktop-session:bounds')!
+    bounds(
+      { sender: window.webContents, senderFrame: window.webContents.mainFrame },
+      {
+        x: 0,
+        y: 0,
+        width: 500,
+        height: 300,
+      }
+    )
+    mocks.start.mockResolvedValueOnce({ code: 'password_invalid', queues: [] })
+    await invoke(window, 'start', request)
+    await expect(first).resolves.toBe('credentials_rejected')
+    expect(completed).toBe(false)
+    expect(mocks.start.mock.calls[0][0]).toMatchObject({ password: 'test-input' })
+    await expect(invoke(main, 'connect-for-task')).resolves.toBe('setup_required')
+    const second = invoke(main, 'connect-for-task', { ...login, password: '' })
+    mocks.start.mockImplementationOnce(async () => {
+      snapshot.state = 'connected'
+      return { queues: [] }
+    })
+    await invoke(window, 'start', invoke(window, 'pending'))
+    await expect(second).resolves.toBe('connected')
+    expect(completed).toBe(true)
+    expect(mocks.start.mock.calls[1][0]).toMatchObject({ password: '' })
+    const later = invoke(main, 'connect-for-task')
+    const next = invoke(window, 'pending')
+    expect(next).toMatchObject({ forTask: true })
+    invoke(window, 'cancel-task-connect', next.taskConnectId)
+    await expect(later).resolves.toBe('cancelled')
   }
 )

@@ -7,8 +7,11 @@
 import { h } from 'vue'
 import { notification } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
+import { send } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
+  WS_DESKTOP_SESSION_LOGIN_FINISHED,
+  WS_DESKTOP_SESSION_LOGIN_NEEDED,
   WS_EMULATOR_NOTICE,
   WS_ID_EMULATOR_MANAGER,
   WS_ID_MAIN,
@@ -83,6 +86,17 @@ export function bootstrapSystemNotices(): void {
     subscribe({ id: WS_ID_EMULATOR_MANAGER, type: WS_EMULATOR_NOTICE }, message =>
       showNotice(t('core.emulator2.noticeTitle'), message.data)
     ),
+    subscribe({ id: WS_ID_MAIN, type: WS_DESKTOP_SESSION_LOGIN_NEEDED }, async message => {
+      const { requestId } = message.data
+      let retryStartup = false
+      try {
+        const { promptScheduledDesktopLogin } = await import('@/composables/useDesktopSessionLogin')
+        retryStartup = (await promptScheduledDesktopLogin()) === true
+      } finally {
+        if (requestId)
+          send(WS_ID_MAIN, WS_DESKTOP_SESSION_LOGIN_FINISHED, { requestId, retryStartup })
+      }
+    }),
     subscribe({ id: WS_ID_MAIN, type: WS_SYSTEM_NOTICE }, message =>
       showSystemNotice(message.data)
     ),

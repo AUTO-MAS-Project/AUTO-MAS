@@ -1,6 +1,12 @@
 {
   "zh-CN": {
     "title": "桌面分身",
+    "queueLaunchLocation": "启动位置",
+    "firstLoginHint": "首次连接桌面分身，请输入当前 Windows 账户密码，或选择无密码连接。",
+    "passwordless": "无密码连接",
+    "loginRejected": "登录失败，请检查账户密码或无密码连接选项。",
+    "loginStateSaveFailed": "已连接，但未能保存登录状态，请重试。",
+    "queueAutoConnectHint": "自动触发前，请先连接桌面分身。",
     "executionSession": "执行会话",
     "executionSessionHint": "仅用于单独启动此托管。",
     "chooseExecutionSession": "请选择执行会话",
@@ -80,6 +86,7 @@
     "dispatchFailed": "任务派发失败，请查看分身日志。",
     "targetMissing": "队列或托管任务不存在。",
     "errors": {
+      "setup_required": "请在设置的“桌面分身”中完成首次登录。",
       "password_required": "请输入当前 Windows 账户的密码。",
       "password_invalid": "Windows 密码验证失败，请重新输入账户密码。可查看 Windows 安全日志中的事件 4625。",
       "account_mismatch": "凭据所属账户与当前 Windows 账户不一致。",
@@ -175,6 +182,12 @@
   },
   "en-US": {
     "title": "Desktop Session",
+    "queueLaunchLocation": "Launch location",
+    "firstLoginHint": "For your first connection, enter your Windows account password or choose to connect without a password.",
+    "passwordless": "Connect without a password",
+    "loginRejected": "Sign-in failed. Check your Windows password or the passwordless option.",
+    "loginStateSaveFailed": "Connected, but the sign-in status could not be saved. Please retry.",
+    "queueAutoConnectHint": "Connect the desktop session before an automatic trigger runs.",
     "executionSession": "Execution session",
     "executionSessionHint": "Only applies when starting this script on its own.",
     "chooseExecutionSession": "Select an execution session",
@@ -254,6 +267,7 @@
     "dispatchFailed": "Could not dispatch the task. Check the session logs.",
     "targetMissing": "The queue or managed task no longer exists.",
     "errors": {
+      "setup_required": "Complete the first sign-in under Settings → Desktop session.",
       "password_required": "Enter the current Windows account password.",
       "password_invalid": "Windows password verification failed. Re-enter your account password or check event 4625 in the Windows Security log.",
       "account_mismatch": "The credentials belong to a different Windows account.",
@@ -349,6 +363,12 @@
   },
   "ja-JP": {
     "title": "デスクトップセッション",
+    "queueLaunchLocation": "起動先",
+    "firstLoginHint": "初回は現在の Windows アカウントのパスワードを入力するか、パスワードなしで接続してください。",
+    "passwordless": "パスワードなしで接続",
+    "loginRejected": "サインインできませんでした。パスワードまたは接続方法を確認してください。",
+    "loginStateSaveFailed": "接続しましたが、ログイン状態を保存できませんでした。もう一度お試しください。",
+    "queueAutoConnectHint": "自動実行の前にデスクトップセッションに接続してください。",
     "executionSession": "実行セッション",
     "executionSessionHint": "このスクリプトを単独で起動する場合に適用されます。",
     "chooseExecutionSession": "実行セッションを選択",
@@ -428,6 +448,7 @@
     "dispatchFailed": "タスクを開始できませんでした。セッションログを確認してください。",
     "targetMissing": "キューまたは管理タスクが存在しません。",
     "errors": {
+      "setup_required": "設定のデスクトップセッションで初回ログインを完了してください。",
       "password_required": "現在の Windows アカウントのパスワードを入力してください。",
       "password_invalid": "Windows パスワード認証に失敗しました。パスワードを再入力するか、Windows セキュリティログのイベント 4625 を確認してください。",
       "account_mismatch": "資格情報が現在の Windows アカウントと一致しません。",
