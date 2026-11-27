@@ -40,7 +40,6 @@
           :view-mode="viewMode"
           :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
-          :compact="currentPlan?.type === PLAN_CONFIG_TYPES.BAAH"
           :disabled="planOperationPending"
           @update:current-plan-name="currentPlanName = $event"
           @update:current-mode="onModeChange"
@@ -53,11 +52,6 @@
           <component
             :is="currentPlanDescriptor.tableComponent"
             ref="planTable"
-            v-bind="
-              currentPlan?.type === PLAN_CONFIG_TYPES.BAAH
-                ? { interactionDisabled: planOperationPending }
-                : {}
-            "
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
