@@ -10,17 +10,12 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.giveScriptNameYou')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #path>
           <a-form-item name="path" :rules="rules.path">
             <template #label>
-              <FieldLabelWithHint
-                :text="t('core.edit.srcPath')"
-                :hint="t('core.edit.pickFolderHoldingSrc2')"
-                variant="form"
-              />
+              <FieldLabelWithHint :text="t('core.edit.srcPath')" variant="form" />
             </template>
             <PathPickerField
               v-model="formData.path"
@@ -71,7 +66,6 @@
                 <template #label>
                   <FieldLabelWithHint
                     :text="t('core.edit.accountSwitchingMethod')"
-                    :hint="t('core.edit.whatDoWhenSwitching')"
                     variant="form"
                   />
                 </template>

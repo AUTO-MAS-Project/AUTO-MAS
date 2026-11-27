@@ -14,7 +14,6 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.whimboxInstanceNameHint')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #actions>

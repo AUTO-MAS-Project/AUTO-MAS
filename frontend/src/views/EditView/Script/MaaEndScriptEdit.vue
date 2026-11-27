@@ -51,17 +51,12 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.tellsMaaendScriptInstances')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #path>
           <a-form-item name="path" :rules="rules.path">
             <template #label>
-              <FieldLabelWithHint
-                :text="t('core.edit.maaendPath')"
-                :hint="t('core.edit.pickDirectoryHoldingMaaend2')"
-                variant="form"
-              />
+              <FieldLabelWithHint :text="t('core.edit.maaendPath')" variant="form" />
             </template>
             <PathPickerField
               v-model="formData.path"
@@ -81,11 +76,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.controller')"
-                  :hint="t('core.edit.pickHowGameControlled')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.controller')" variant="form" />
               </template>
               <a-select
                 v-model:value="maaEndConfig.Game.ControllerType"
@@ -288,7 +279,6 @@
             <SwitchTile
               v-model:checked="maaEndConfig.Game.CloseOnFinish"
               :title="t('core.edit.closeGameAfterTask2')"
-              :description="t('core.edit.whetherGameClosesAfter')"
               @change="handleChange('Game', 'CloseOnFinish', $event)"
             />
           </a-col>

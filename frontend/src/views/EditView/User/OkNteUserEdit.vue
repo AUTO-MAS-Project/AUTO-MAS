@@ -87,11 +87,7 @@
               <a-col :span="12">
                 <a-form-item>
                   <template #label>
-                    <FieldLabelWithHint
-                      :text="t('core.edit.gameResource')"
-                      :hint="t('core.edit.pickGameResourceThis')"
-                      variant="form"
-                    />
+                    <FieldLabelWithHint :text="t('core.edit.gameResource')" variant="form" />
                   </template>
                   <a-select
                     v-model:value="formData.Info.Resource"

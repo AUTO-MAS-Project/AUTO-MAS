@@ -130,7 +130,6 @@ const handleLocaleChange = (value: unknown): void => {
 
       <SettingRow
         :label="t('core.setting.basic.themeMode')"
-        :hint="t('core.setting.basic.themeModeTip')"
         :disabled="themeColorDisabled"
         :disabled-reason="t('core.setting.basic.appearanceControlledReason')"
       >
@@ -147,7 +146,6 @@ const handleLocaleChange = (value: unknown): void => {
       <SettingRow
         class="theme-color-row"
         :label="t('core.setting.basic.themeColor')"
-        :hint="t('core.setting.basic.themeColorTip')"
         :disabled="themeColorDisabled"
         :disabled-reason="t('core.setting.basic.appearanceControlledReason')"
         stacked
@@ -194,10 +192,7 @@ const handleLocaleChange = (value: unknown): void => {
         </a-select>
       </SettingRow>
 
-      <SettingRow
-        :label="t('core.setting.basic.interfaceLanguage')"
-        :hint="t('core.common.languageTip')"
-      >
+      <SettingRow :label="t('core.setting.basic.interfaceLanguage')">
         <a-select
           class="row-select language-select"
           :value="locale"
