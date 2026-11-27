@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Protocol
 
 from .errors import PluginBusyError, PluginError
@@ -83,3 +84,19 @@ class ServiceRegistry:
     def list_services(self) -> dict[str, str]:
         """返回服务名称到提供者的映射副本，供宿主检查服务归属。"""
         return dict(self._owners)
+
+    def iter_prefix(self, prefix: str) -> Iterable[tuple[str, Any]]:
+        """按名称顺序返回当前前缀下的服务快照。
+
+        宿主有少数需要广播给一组插件的扩展点。服务名称仍由插件自行声明，
+        宿主只约定一个前缀，因此不需要为每种插件能力再扩展一套注册表。
+        返回快照让调用方可以在执行过程中安全地停用插件或注销服务。
+        """
+
+        if not self._accepting:
+            return ()
+        return tuple(
+            (name, self._services[name])
+            for name in sorted(self._services)
+            if name.startswith(prefix)
+        )

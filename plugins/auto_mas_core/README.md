@@ -51,6 +51,7 @@ class PLUGIN(BasePlugin):
 
 - **资源绑定与停用**：宿主在 `pre_enable()` 前绑定 `self.services` 与 `self.background_tasks`。停用、卸载或重载时，宿主先关闭新调用准入并等待在途调用与后台任务结束；外部进程、订阅与私有资源由插件自行释放。
 - **服务与 HTTP**：跨插件服务通过 `provides_services` 声明，使用 `self.services.get(name)` / `require(name)` 消费（提供者先于依赖者启用）。HTTP 路由使用 `plugin_route` 声明。
+- **宿主扩展点**：插件可用 `task.before_auto_proxy:<plugin_name>` 登记一个无参数协程，宿主在 AutoProxy 开始前调用它。单个钩子超时或失败只记日志，不影响任务。失败视频提供方使用固定服务名 `history.failure_video.enabled`（同步返回 `bool`）、`history.failure_video.capture`（接收 `temporary_copy: bool`，异步返回路径）和 `history.failure_video.discard`（接收 `Path`，异步返回是否成功）。宿主在未登记提供方时兼容旧实现。
 - **插件依赖插件**：在 `requires` 写对方提供的服务名，并在 `pyproject.toml` 的 `dependencies` 写对方的发行包。从插件中心安装时，宿主先加载（只加载、不启用）按 `Requires-Dist` 一起装上的新插件，再加载或重载目标；启用目标时沿 `requires` 先启用上游，装完不用重启。插件注册表（`/api/plugin_registry/get`）每条记录给出 `dependsOn`（直接上游）、`missingServices`（找不到提供者的服务）、`disableCascade`（停用或重载会一并拆掉的插件）和 `uninstallCascade`（卸载会一并卸掉的插件）；`disableImpact` 列出会被删除的配置领域，声明了 `plan_type` 的专项含 `plans`。
 - **失败原因**：插件命令（启用、停用、重载、卸载、安装）失败时，界面显示 `PluginError`（及其子类）的消息，`payload` 一并返回。宿主自己的拒绝原因、钩子里抛出的 `PluginError`，以及生命周期执行阶段被宿主包成 `PluginOperationError` 的原异常文本都会原样显示，因此钩子里的异常消息要写给用户看，不要带密钥或隐私；不是 `PluginError` 的异常直接冒出命令时只报类名。依赖无法共同满足时，消息会列出 uv 诊断里涉及的包。
 - **拆卸前的拒绝出口**：停用、重载、卸载、卸包和安装升级会连带拆掉依赖本插件的全部下游。宿主在动任何实例之前先对整棵要拆的树一起预检：适配器的托管被任务锁住，或任一插件的 `teardown_blockers()` 返回非空，整个操作被拒绝，界面显示每条原因，树上的插件和托管保持原样。有在途工作而又不对应托管锁的插件（运行、手动更新、准备环境等）覆写这个方法：

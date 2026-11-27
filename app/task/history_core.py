@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
@@ -24,6 +25,88 @@ if TYPE_CHECKING:
     from app.models.task import ScriptItem, TaskItem, UserItem
 
 logger = get_logger("任务历史")
+
+FAILURE_VIDEO_ENABLED = "history.failure_video.enabled"
+FAILURE_VIDEO_CAPTURE = "history.failure_video.capture"
+FAILURE_VIDEO_DISCARD = "history.failure_video.discard"
+
+
+def _plugin_services():
+    """延迟取得插件服务表，避免历史模块导入时初始化插件运行时。"""
+
+    from app.core import Plugin
+
+    return Plugin.services
+
+
+def _failure_video_enabled() -> bool:
+    """读取插件开关，插件未安装时兼容旧 Replay.Enabled。"""
+
+    provider = _plugin_services().get(FAILURE_VIDEO_ENABLED)
+    if provider is None:
+        return bool(Config.setting.Replay.Enabled)
+    try:
+        value = provider()
+        if inspect.isawaitable(value):
+            logger.warning("失败回放启用服务必须同步返回布尔值，已按未启用处理")
+            return False
+        return bool(value)
+    except Exception as error:
+        logger.warning(f"读取失败回放启用状态失败，按未启用处理：{error}")
+        return False
+
+
+async def _capture_failure_video(*, temporary_copy: bool = True) -> Path:
+    """通过插件服务采集回放，未安装插件时回退到旧 OBS 实现。"""
+
+    provider = _plugin_services().get(FAILURE_VIDEO_CAPTURE)
+    if provider is not None:
+        try:
+            parameters = tuple(inspect.signature(provider).parameters.values())
+        except (TypeError, ValueError):
+            result = provider(temporary_copy=temporary_copy)
+        else:
+            if any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters
+            ) or any(parameter.name == "temporary_copy" for parameter in parameters):
+                result = provider(temporary_copy=temporary_copy)
+            elif any(
+                parameter.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                )
+                for parameter in parameters
+            ):
+                result = provider(temporary_copy)
+            else:
+                result = provider()
+        if inspect.isawaitable(result):
+            result = await result
+        return Path(result)
+
+    from app.services import obs_replay
+
+    options = Config.obs_replay_options()
+    if temporary_copy:
+        return await obs_replay.ObsReplay.capture(options)
+    return await obs_replay.ObsReplay.capture(options, temporary_copy=False)
+
+
+async def _discard_failure_video(path: Path) -> bool:
+    """通过插件服务释放回放副本，未安装插件时回退到旧 OBS 实现。"""
+
+    provider = _plugin_services().get(FAILURE_VIDEO_DISCARD)
+    if provider is not None:
+        result = provider(path)
+        if inspect.isawaitable(result):
+            result = await result
+        return bool(result)
+
+    from app.services import obs_replay
+
+    return await obs_replay.ObsReplay.discard_temporary(path)
 
 
 @dataclass(frozen=True)
@@ -113,18 +196,15 @@ class TaskHistorySession:
             or not user.log_record
         ):
             return
-        if not Config.setting.Replay.Enabled:
+        if not _failure_video_enabled():
             return
         run = str(script.uid)
         key = (run, str(user.uid))
         if key in self._seen or key in self._captures:
             return
-        from app.services import obs_replay as _service_obs_replay
-
-        options = Config.obs_replay_options()
 
         async def capture_file() -> Path:
-            path = await _service_obs_replay.ObsReplay.capture(options)
+            path = await _capture_failure_video()
             # 文件所有权独立于结果缓存：即使结果过期或等待方取消，close 仍会清理。
             self._files[key] = path
             return path
@@ -204,9 +284,7 @@ class TaskHistorySession:
             return []
 
     async def _discard_history_capture_file(self, path: Path) -> bool:
-        from app.services import obs_replay
-
-        return await obs_replay.ObsReplay.discard_temporary(path)
+        return await _discard_failure_video(path)
 
     async def discard_user_history_capture(
         self, script: ScriptItem, user: UserItem
@@ -233,7 +311,7 @@ class TaskHistorySession:
         if (
             self.task.mode != "AutoProxy"
             or (self.cancelled or self.closed)
-            or not Config.setting.Replay.Enabled
+            or not _failure_video_enabled()
         ):
             return
         run = str(script.uid)
@@ -241,15 +319,10 @@ class TaskHistorySession:
         if key in self._seen:
             return
         self._seen.add(key)
-        options = Config.obs_replay_options()
 
         async def capture() -> None:
-            from app.services import obs_replay as _service_obs_replay
-
             try:
-                path = await _service_obs_replay.ObsReplay.capture(
-                    options, temporary_copy=False
-                )
+                path = await _capture_failure_video(temporary_copy=False)
                 message = f"{reason}；回放仅保留在 OBS 输出：{path}"
             except Exception as error:
                 message = f"{reason}；诊断回放未采集：{error}"
