@@ -1,11 +1,7 @@
 <template>
   <a-form-item>
     <template #label>
-      <FieldLabelWithHint
-        :text="t('core.edit.enabled')"
-        :hint="hint ?? t('core.edit.whetherThisUserEnabled')"
-        variant="form"
-      />
+      <FieldLabelWithHint :text="t('core.edit.enabled')" :hint="hint" variant="form" />
     </template>
     <a-select
       :value="value ? 'enabled' : 'disabled'"

@@ -260,7 +260,6 @@ const schemas: Record<AnalyticsEventName, Record<string, readonly string[]>> = {
     plan_type: [
       'MaaPlanConfig',
       'MaaEndPlanConfig',
-      'BAAHPlanConfig',
       'MSSPlanConfig',
       'UniversalPlanConfig',
       'multi',

@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ControlOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
 import type { SettingChangeHandler } from './settingTypes'
 import { navigateTo } from '@/router'
+import AppModal from '@/components/ui/AppModal.vue'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import VoiceSettings from './components/VoiceSettings.vue'
 import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue'
 
 const { t } = useI18n()
+const telemetryDetailOpen = ref(false)
 
 const { settings, handleSettingChange } = defineProps<{
   settings: GlobalConfig
@@ -80,8 +82,11 @@ const handleHistoryRetentionChange = (value: unknown) => {
 
       <SettingRow
         :label="t('core.setting.func.telemetry')"
-        :hint="t('core.setting.func.telemetryTip')"
+        :description="t('core.setting.func.telemetrySummary')"
       >
+        <a-button type="link" size="small" @click="telemetryDetailOpen = true">
+          {{ t('core.setting.func.telemetryDetails') }}
+        </a-button>
         <a-switch
           :checked="settings.Function?.IfEnableTelemetry !== false"
           :aria-label="t('core.setting.func.telemetry')"
@@ -148,12 +153,28 @@ const handleHistoryRetentionChange = (value: unknown) => {
         <span class="mystery-entry-label">{{ t('core.mystery.entry') }}</span>
       </a-button>
     </div>
+
+    <AppModal
+      v-model:open="telemetryDetailOpen"
+      size="md"
+      :title="t('core.setting.func.telemetry')"
+      footer="close"
+    >
+      <p class="telemetry-detail-text">{{ t('core.setting.func.telemetryTip') }}</p>
+    </AppModal>
   </div>
 </template>
 
 <style scoped>
 .retention-select {
   width: 220px;
+}
+
+.telemetry-detail-text {
+  margin: 0;
+  color: var(--ant-color-text-secondary);
+  font-size: 14px;
+  line-height: 22px;
 }
 
 /* 行标签沿用 SettingRow 的 form 级排版，供富文本 ⓘ 的行使用 */
