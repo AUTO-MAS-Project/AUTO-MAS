@@ -578,8 +578,7 @@ async def collect_community_activity(
     """独立并发查询多款游戏，保证单款失败不取消其他游戏。
 
     该函数只使用本地活动查询 semaphore，不获取签到锁、不调用签到入口，也不
-    负责保存凭据。调用方若需要防止重复点击，应在 `community_activity_flow()`
-    边界内调用本函数。
+    负责保存凭据。调用方若需要防止重复点击，应在自己的串行边界内调用本函数。
 
     Args:
         targets: 待查询的账号/角色集合。
