@@ -73,6 +73,7 @@ from app.plugin.types import (
 )
 from app.plugin.uv.precheck import host_dependencies
 from app.utils import get_logger
+from app.utils.common.log_flow.session import LogFlowSession
 from app.utils.common.tools import to_pep440
 
 if TYPE_CHECKING:
@@ -266,8 +267,7 @@ class _PluginManager:
 
         if plugin._background_tasks is not None:
             await BackgroundTaskManager.unregister_group(plugin._background_tasks)
-        gate = self._calls.pop(plugin.record.uid, None)
-        if gate is not None:
+        if (gate := self._calls.pop(plugin.record.uid, None)) is not None:
             gate.accepting = False
 
     # ==================== 初始化 ====================
@@ -1396,10 +1396,12 @@ class _PluginManager:
                 if libraries := self._host_libraries():
                     # 重建环境时留住宿主内置托管要的库（例如 MaaEnd 用的 MFW 解析库）。
                     options["libraries"] = libraries
+                await LogFlowSession.retry_unconfirmed_workers()
                 restart_required = await uv_tool.install(
                     requirement,
                     plugin_name=plugin_id,
                     meta_id=meta.uid,
+                    has_shared_environment_readers=LogFlowSession.has_shared_environment_readers,
                     **options,
                 )
                 if restart_required:
@@ -1534,32 +1536,39 @@ class _PluginManager:
                 package = record.info.package_name or name
                 tree = self._teardown_tree(record, enabled_only=False)
                 await self._precheck_teardown(tree)
-                from app.core.config import Config
+                await LogFlowSession.retry_unconfirmed_workers()
+                with LogFlowSession.block_new_shared_environment_readers():
+                    if LogFlowSession.has_shared_environment_readers():
+                        raise PluginBusyError("仍有独立进程使用插件环境，请稍后重试")
+                    from app.core.config import Config
 
-                removed = {item.info.plugin_name for item in tree}
-                deps = await self.unload(
-                    record, held=True, remove_record=False, purge_config=purge_config
-                )
-                # 卸包成功后注册项会消失，先落盘，重启才能分清主动卸载与首次迁移。
-                Config.setting.plugin.uninstalled = sorted(
-                    set(Config.setting.plugin.uninstalled) | removed
-                )
-                await Config.setting.commit()
-                await config_manager.flush()
-                try:
-                    await uv_tool.uninstall(package)
-                    if purge_config:
-                        (Config.config_path / "plugins" / f"{name}.yaml").unlink(
-                            missing_ok=True
-                        )
-                except Exception as exc:
-                    record.info.state = PluginState.FAULT_LOAD
-                    record.info.last_error = str(exc)
-                    await record.commit()
-                    raise
-                Config.plugin_registry.remove(record.uid)
-                await Config.plugin_registry.commit()
-                return deps
+                    removed = {item.info.plugin_name for item in tree}
+                    deps = await self.unload(
+                        record,
+                        held=True,
+                        remove_record=False,
+                        purge_config=purge_config,
+                    )
+                    # 卸包成功后注册项会消失，先落盘，重启才能分清主动卸载与首次迁移。
+                    Config.setting.plugin.uninstalled = sorted(
+                        set(Config.setting.plugin.uninstalled) | removed
+                    )
+                    await Config.setting.commit()
+                    await config_manager.flush()
+                    try:
+                        await uv_tool.uninstall(package)
+                        if purge_config:
+                            (Config.config_path / "plugins" / f"{name}.yaml").unlink(
+                                missing_ok=True
+                            )
+                    except Exception as exc:
+                        record.info.state = PluginState.FAULT_LOAD
+                        record.info.last_error = str(exc)
+                        await record.commit()
+                        raise
+                    Config.plugin_registry.remove(record.uid)
+                    await Config.plugin_registry.commit()
+                    return deps
 
     async def refresh_market(self) -> None:
         """全量刷新市场目录（写 ``Config.plugin_catalog``）。"""

@@ -21,9 +21,12 @@
 #   Contact: DLmaster_361@163.com
 
 
+from ipaddress import ip_address
 from typing import Literal
+from urllib.parse import urlsplit
+from uuid import UUID
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Request, Response
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -75,8 +78,14 @@ class TaskCreateIn(BaseModel):
         return TaskSelectionNode.validate_indices(value)
 
 
+class TaskLogAnalysisQuery(BaseModel):
+    scriptRunId: UUID
+    userRunId: UUID
+
+
 class TaskGetIn(BaseModel):
     taskId: str | None = None
+    logAnalysis: TaskLogAnalysisQuery | None = None
 
 
 class TaskIndexItem(BaseModel):
@@ -142,8 +151,66 @@ async def get_task_status(task_id: str) -> TaskStatusOut:
     return result
 
 
-@router.post("/get", tags=["Get"], response_model=TaskGetOut)
-async def get_tasks(body: TaskGetIn = Body(...)) -> TaskGetOut:
+def _loopback_host(host: str | None) -> bool:
+    if host == "localhost":
+        return True
+    try:
+        address = ip_address(host or "")
+    except ValueError:
+        return False
+    return (getattr(address, "ipv4_mapped", None) or address).is_loopback
+
+
+def _local_node_reader(request: Request) -> bool:
+    if (
+        request.client is None
+        or not _loopback_host(request.client.host)
+        or not _loopback_host(request.url.hostname)
+    ):
+        return False
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    try:
+        source = urlsplit(origin)
+        return source.scheme in ("http", "https") and _loopback_host(source.hostname)
+    except ValueError:
+        return False
+
+
+@router.post(
+    "/get",
+    tags=["Get"],
+    response_model=TaskGetOut,
+    responses={
+        400: {"model": TaskGetOut, "description": "任务运行 ID 格式错误"},
+        403: {"model": TaskGetOut, "description": "日志分析查询仅限本机"},
+        404: {"model": TaskGetOut, "description": "账号运行没有可查询的日志分析"},
+    },
+)
+async def get_tasks(
+    request: Request, response: Response, body: TaskGetIn = Body(...)
+) -> TaskGetOut:
+    if (selection := body.logAnalysis) is not None:
+        response.headers["Cache-Control"] = "no-store"
+        if not _local_node_reader(request):
+            response.status_code = 403
+            return TaskGetOut(code=403, status="error", message="日志分析仅限本机读取")
+        try:
+            task_id = UUID(body.taskId or "")
+        except ValueError:
+            response.status_code = 400
+            return TaskGetOut(code=400, status="error", message="任务 ID 格式错误")
+        tree = TaskManager.get_task(
+            task_id, analysis_run=(selection.scriptRunId, selection.userRunId)
+        )
+        if tree is None:
+            response.status_code = 404
+            return TaskGetOut(
+                code=404, status="error", message="账号运行没有可查询的日志分析"
+            )
+        uid = str(task_id)
+        return TaskGetOut(index=[TaskIndexItem(uid=uid)], data={uid: tree})
     ids = [body.taskId] if body.taskId else [str(uid) for uid in TaskManager.task_info]
     try:
         data = {

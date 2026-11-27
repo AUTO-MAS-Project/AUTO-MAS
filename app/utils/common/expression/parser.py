@@ -9,7 +9,7 @@
     segment    = regex_segment | literal
     regex_segment = '$(' regex ')' ('.' function)*
     literal    = '"' text '"'                 # 支持 \\" \\\\ \\n \\t 转义
-    function   = identifier '(' args ')'
+    function   = ([namespace ':'] identifier) '(' args ')'
     args       = arg (',' arg)* | ε
     arg        = literal | number
 
@@ -21,8 +21,17 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Union
+
+# 命名空间允许发行包常用的点和连字符；无命名空间的函数语法保持不变。
+_QUALIFIED_FUNCTION = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*:[A-Za-z_][A-Za-z0-9_]*")
+
+
+def is_qualified_function_name(name: str) -> bool:
+    return _QUALIFIED_FUNCTION.fullmatch(name) is not None
+
 
 # ==================== AST 节点 ====================
 
@@ -63,11 +72,12 @@ class ExpressionError(Exception):
 # ==================== 解析器 ====================
 
 
-def parse(expr_str: str) -> list[list[Segment]]:
+def parse(expr_str: str, *, allow_qualified: bool = False) -> list[list[Segment]]:
     """将表达式字符串解析为「行 → 片段」二维列表。
 
     Args:
         expr_str: 表达式字符串
+        allow_qualified: 允许会话级的限定函数名
 
     Returns:
         lines: 每个元素是一行的片段列表
@@ -78,15 +88,16 @@ def parse(expr_str: str) -> list[list[Segment]]:
     if not expr_str or not expr_str.strip():
         return []
 
-    parser = _Parser(expr_str)
+    parser = _Parser(expr_str, allow_qualified=allow_qualified)
     return parser.parse()
 
 
 class _Parser:
     """字符级扫描解析器"""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, *, allow_qualified: bool):
         self.text = text
+        self.allow_qualified = allow_qualified
         self.pos = 0
         self.length = len(text)
 
@@ -214,7 +225,16 @@ class _Parser:
         functions: list[FunctionCall] = []
         while self.pos < self.length and self.text[self.pos] == ".":
             self.pos += 1  # 跳过 .
-            name = self._parse_identifier()
+            qualified = (
+                _QUALIFIED_FUNCTION.match(self.text, self.pos)
+                if self.allow_qualified
+                else None
+            )
+            if qualified:
+                name = qualified[0]
+                self.pos = qualified.end()
+            else:
+                name = self._parse_identifier()
             if not name:
                 raise ExpressionError(f"位置 {self.pos}：'.' 后需要函数名")
             # 跳过空白

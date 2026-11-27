@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 from weakref import ref
 
@@ -45,6 +47,16 @@ from app.utils.contracts.power import PowerSignal
 
 logger = get_logger("任务调度")
 _selection = TypeAdapter(dict[int, TaskSelectionNode])
+_RECENT_ANALYSIS_BYTES = 16 * 1024 * 1024
+
+
+@dataclass
+class _RecentTask:
+    ended_at: float
+    tree: dict[str, Any]
+    finished_at: str
+    analysis_sizes: dict[tuple[str, str], int]
+
 
 if TYPE_CHECKING:
     from app.models.config import QueueConfig, ScriptConfigType
@@ -82,9 +94,7 @@ class _TaskManager:
         )
         self._factories_bound = False
         self._running: dict[UUID, ScriptExpander] = {}
-        self._recent: OrderedDict[str, tuple[float, dict[str, Any], str]] = (
-            OrderedDict()
-        )
+        self._recent: OrderedDict[UUID, _RecentTask] = OrderedDict()
         self._stopping_all = False
         self._restart_pending = False
         self._creating = 0
@@ -458,10 +468,23 @@ class _TaskManager:
         由任务结束或查询触发，使用单调时钟计算年龄；与持久化执行历史分开。
         """
         while self._recent:
-            _, (at, _, _) = next(iter(self._recent.items()))
-            if len(self._recent) <= 200 and time.monotonic() - at <= 1800:
+            task = next(iter(self._recent.values()))
+            if len(self._recent) <= 200 and time.monotonic() - task.ended_at <= 1800:
                 break
             self._recent.popitem(last=False)
+
+        remaining = _RECENT_ANALYSIS_BYTES
+        for task in reversed(self._recent.values()):
+            for path in reversed(tuple(task.analysis_sizes)):
+                size = task.analysis_sizes[path]
+                if size <= remaining:
+                    remaining -= size
+                else:
+                    script_id, user_id = path
+                    task.tree["scripts"]["data"][script_id]["users"]["data"][
+                        user_id
+                    ].pop("log_analysis", None)
+                    del task.analysis_sizes[path]
 
     def describe_lock_holders(self, config: ConfigNode, *, cascade: bool) -> str:
         """只诊断当前冲突票据；从实际执行器查询占用者，不建立另一份锁登记。"""
@@ -491,20 +514,81 @@ class _TaskManager:
             holders.append("其他配置操作（占用者未知）")
         return "、".join(holders)
 
-    def get_task(self, task_id: str | UUID) -> dict[str, Any] | None:
-        """按运行 UUID 查询完整任务树，包含全部日志；找不到时返回 None。
+    @staticmethod
+    def _export_task(
+        info: TaskItem, *, log_analysis_scope: UUID | Literal["all"] | None = None
+    ) -> dict[str, Any]:
+        tree = info.export_for_dispatch(log_analysis_scope=log_analysis_scope)
+        for script in tree["scripts"]["data"].values():
+            for user in script["users"]["data"].values():
+                analysis = user.get("log_analysis")
+                if not analysis or (
+                    log_analysis_scope == "all"
+                    and not analysis["nodes"]
+                    and analysis["close_reason"] is None
+                ):
+                    user.pop("log_analysis", None)
+        return tree
 
-        优先读取运行中的热态树，再查询尚未过期的最近终态；非法 UUID 向外报错。
-        """
+    @staticmethod
+    def _omit_cached_analysis(
+        tree: dict[str, Any], *, keep: tuple[str, str] | None
+    ) -> dict[str, Any]:
+        scripts = tree["scripts"]
+        return {
+            **tree,
+            "scripts": {
+                **scripts,
+                "data": {
+                    script_id: {
+                        **script,
+                        "users": {
+                            **script["users"],
+                            "data": {
+                                user_id: {
+                                    key: value
+                                    for key, value in user.items()
+                                    if key != "log_analysis"
+                                    or keep == (script_id, user_id)
+                                }
+                                for user_id, user in script["users"]["data"].items()
+                            },
+                        },
+                    }
+                    for script_id, script in scripts["data"].items()
+                },
+            },
+        }
+
+    def get_task(
+        self, task_id: str | UUID, *, analysis_run: tuple[UUID, UUID] | None = None
+    ) -> dict[str, Any] | None:
+        """按运行 UUID 查询任务树，可选择一个账号的日志分析字段。"""
         uid = UUID(str(task_id))
-        run = self._running.get(uid)
-        if run is not None:
-            return TaskTreeData.model_validate(run.task_info.model_dump()).model_dump(
-                mode="json"
-            )
+        if (run := self._running.get(uid)) is not None:
+            analysis_scope = None
+            if analysis_run is not None:
+                script_uid, user_uid = analysis_run
+                script = run.task_info.scripts.get(script_uid)
+                if script is None or script.users.get(user_uid) is None:
+                    return None
+                analysis_scope = user_uid
+            tree = self._export_task(run.task_info, log_analysis_scope=analysis_scope)
+            return TaskTreeData.model_validate(tree).model_dump(mode="json")
         self._prune_recent()
-        recent = self._recent.get(str(uid))
-        return recent[1] if recent else None
+        if (recent := self._recent.get(uid)) is None:
+            return None
+        keep = None
+        if analysis_run is not None:
+            script_uid, user_uid = analysis_run
+            keep = (str(script_uid), str(user_uid))
+            if keep not in recent.analysis_sizes:
+                return None
+        return (
+            self._omit_cached_analysis(recent.tree, keep=keep)
+            if recent.analysis_sizes
+            else recent.tree
+        )
 
     def get_task_status(self, task_id: str) -> TaskStatusOut | None:
         """从完整任务树生成轻量状态响应，将 pending 映射为 running。
@@ -516,14 +600,16 @@ class _TaskManager:
             return None
         info = tree["info"]
         # 与 get_task 一样按标准 UUID 取终态缓存，大写等合法写法也能取到结束时间。
-        recent = self._recent.get(str(UUID(str(task_id))))
+        recent = self._recent.get(UUID(str(task_id)))
         return TaskStatusOut(
             taskId=str(task_id),
             status="running" if info["status"] == "pending" else info["status"],
             mode=info["mode"],
             trigger=info["trigger"],
             detail=info["result"],
-            finishedAt=recent[2] if recent and info["status"] != "pending" else None,
+            finishedAt=recent.finished_at
+            if recent and info["status"] != "pending"
+            else None,
         )
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
@@ -554,7 +640,7 @@ class _TaskManager:
                             )
                             for script in info.scripts.values()
                         ],
-                        "task": info.model_dump(),
+                        "task": self._export_task(info),
                         **info.get_log_snapshot(),
                     }
                 )
@@ -573,10 +659,21 @@ class _TaskManager:
             return
         self._running.pop(info.uid, None)
         info.clear_log_cursor()
-        self._recent[info.task_id] = (
-            time.monotonic(),
-            TaskTreeData.model_validate(info.model_dump()).model_dump(mode="json"),
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        tree = TaskTreeData.model_validate(
+            self._export_task(info, log_analysis_scope="all")
+        ).model_dump(mode="json")
+        self._recent[info.uid] = _RecentTask(
+            ended_at=time.monotonic(),
+            tree=tree,
+            finished_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            analysis_sizes={
+                (script_id, user_id): len(
+                    json.dumps(analysis, ensure_ascii=False).encode("utf-8")
+                )
+                for script_id, script in tree["scripts"]["data"].items()
+                for user_id, user in script["users"]["data"].items()
+                if (analysis := user.get("log_analysis")) is not None
+            },
         )
         self._prune_recent()
         await self.task_ended.send_async(self, task=info)

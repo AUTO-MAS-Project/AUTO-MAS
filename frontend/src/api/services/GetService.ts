@@ -884,6 +884,9 @@ export class GetService {
             body: requestBody,
             mediaType: 'application/json',
             errors: {
+                400: `任务运行 ID 格式错误`,
+                403: `日志分析查询仅限本机`,
+                404: `账号运行没有可查询的日志分析`,
                 422: `Validation Error`,
             },
         });

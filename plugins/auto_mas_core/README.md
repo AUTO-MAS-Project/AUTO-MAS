@@ -161,6 +161,12 @@ result = await Notify.send_global(
 
 `send_user()`、`send_statistics()`、`push_proxy_result()` 分别复用账号通知、统计策略与代理结果流程；`attempted == 0` 不代表已投递。
 
+## LogFlow 日志节点
+
+L4 账号执行器传入本轮日志监视器、当前账号运行节点与规则，使用 `await self.spawn(LogFlow(monitor, self.user_info, rules))` 运行。LogFlow 负责实时更新运行树、排空尾部和提交采集终态。专项按原业务结果决策，并在托管层按需汇总通知。
+
+完整 L4 范例、来源组合和查询方法见 [LogFlow 接入与迁移](https://github.com/AUTO-MAS-Project/AUTO-MAS/blob/dev/.agents/skills/mas-script-specialized-adapter/references/logflow-api.md)。
+
 ## 静态类型与开发环境
 
 - SDK 顶层及 `host.*`、`utils`、`services`、`plugin` 均静态引用宿主真实类型；wheel 含 `py.typed`，但不打包 `app.*` 类型桩。

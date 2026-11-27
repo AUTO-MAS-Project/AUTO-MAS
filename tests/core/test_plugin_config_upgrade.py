@@ -239,7 +239,7 @@ with sqlite3.connect(Config.database_path) as db:
     pending = db.execute("SELECT v FROM version").fetchone()[0] != "v2.2"
 installs = []
 
-async def install(spec, *, plugin_name, meta_id, dry_run=False, minimum=None):
+async def install(spec, *, plugin_name, meta_id, dry_run=False, minimum=None, has_shared_environment_readers=None):
     global visible
     assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)

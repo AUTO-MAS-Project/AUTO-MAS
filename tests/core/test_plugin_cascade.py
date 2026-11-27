@@ -1,19 +1,43 @@
 """插件级联重载恢复状态，卸载等待全部下游的在途调用结束。"""
 
 import asyncio
+import json
+import sys
+from contextlib import suppress
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 import pytest_asyncio
+from auto_mas_core.log_flow import LogMonitor
 
 from app.config import ConfigCollection, config_manager
+from app.core import Notify
+from app.core.background_tasks import BackgroundTaskRegistry
+from app.core.notify import tasks as notification_tasks
+from app.core.notify.rendering import AsyncNotificationRenderer
 from app.core.plugin.manager import _PluginManager
-from app.models.config import GlobalConfig, PluginRecord, PluginRegistryCollection
+from app.models.config import (
+    GlobalConfig,
+    PluginMeta,
+    PluginRecord,
+    PluginRegistryCollection,
+)
+from app.models.notification.channel import ChannelTarget, DeliveryChannel, NotifyTarget
+from app.models.notification.report import TaskReportPolicy, TaskResultReport
+from app.models.task import TaskUserItem
 from app.plugin.errors import PluginBusyError, PluginOperationError, PluginPrecheckError
-from app.plugin.runtime import loader
+from app.plugin.runtime import discover, loader
 from app.plugin.types import PluginState
 from app.utils import io
+from app.utils.common.log_flow.analysis import analyze_logs
+from app.utils.common.log_flow.contracts import PipelineSpec, WorkerPluginPackage
+from app.utils.common.log_flow.declaration import SimpleFlowDeclaration
+from app.utils.common.log_flow.push import SubmitResult
+from app.utils.common.log_flow.session import LogFlowSession
+from tests.support.scheduler import create_runtime_tree
 
 
 @pytest_asyncio.fixture
@@ -152,6 +176,403 @@ async def test_reload_restores_complete_tree_without_enabling_inactive_descendan
 
 
 @pytest.mark.asyncio
+async def test_explicit_analysis_loads_its_worker_factories_after_plugin_reload(
+    cascade_plugins, tmp_path
+):
+    manager, records = await cascade_plugins({"flow_declared": ()})
+    record = records["flow_declared"]
+    entry = tmp_path / "flow_declared" / "__init__.py"
+
+    def write_plugin(prefix):
+        entry.write_text(
+            "from auto_mas_core.log_flow import FunctionRef, LineRule, SimpleFlowDeclaration, Source, TextProcessor, TextRecord, WorkerFactorySpec\n"
+            "from app.plugin.base import BasePlugin\n"
+            f"def prefix(text, _args): return {prefix!r} + text\n"
+            "def clean(line): return line.removeprefix('raw:')\n"
+            "class Processor:\n"
+            "    def process(self, line):\n"
+            f"        yield '普通', {prefix!r} + line\n"
+            "    def close(self): return ()\n"
+            "def processor(options) -> TextProcessor: return Processor()\n"
+            "class SampleSource:\n"
+            "    def open(self): pass\n"
+            "    def poll(self): return ()\n"
+            "    def close(self): return (TextRecord(text='source tail'),)\n"
+            "def source(options) -> Source: return SampleSource()\n"
+            "class Adapter(BasePlugin): pass\n"
+            "PLUGIN = Adapter\n",
+            encoding="utf-8",
+        )
+
+    async def collect(name, text="event"):
+        from auto_mas_core.log_flow import (
+            FunctionRef,
+            LineRule,
+            WorkerFactorySpec,
+            WorkerPluginPackage,
+        )
+
+        module = record.info.import_name
+        if name == "declared":
+            declaration = SimpleFlowDeclaration(
+                processor=WorkerFactorySpec(
+                    factory=FunctionRef(
+                        name="declared:processor", module=module, attribute="processor"
+                    )
+                ),
+            )
+            source = WorkerFactorySpec(
+                factory=FunctionRef(
+                    name="declared:source", module=module, attribute="source"
+                )
+            )
+        else:
+            declaration = SimpleFlowDeclaration(
+                rules=(
+                    LineRule(
+                        match="^event$", extract="$().probe:prefix()", node_type="普通"
+                    ),
+                ),
+                preprocess=FunctionRef(
+                    name="probe:clean", module=module, attribute="clean"
+                ),
+                functions=(
+                    FunctionRef(name="probe:prefix", module=module, attribute="prefix"),
+                ),
+            )
+            source = None
+        async with analyze_logs(
+            declaration,
+            accept_push=True,
+            source=source,
+            plugin_package=WorkerPluginPackage(
+                name=module,
+                import_root=str(tmp_path),
+                dependency_root=str(tmp_path),
+                sdk_root=str(Path("plugins/auto_mas_core/src").resolve()),
+            ),
+        ) as flow:
+            assert flow.reporter is not None
+            assert flow.reporter.text(text) == SubmitResult.ACCEPTED
+        return [flow.report_lines(mode="逐条")]
+
+    write_plugin("before:")
+    await manager.reload(record)
+    await manager.enable(record)
+    assert await collect("declared") == [["before:event", "before:source tail"]]
+    assert await collect("expression", "raw:event") == [["before:event"]]
+    write_plugin("after!:")
+    await manager.reload(record)
+    assert await collect("declared") == [["after!:event", "after!:source tail"]]
+    assert await collect("expression", "raw:event") == [["after!:event"]]
+
+
+@pytest.mark.asyncio
+async def test_explicit_general_flow_uses_current_webui_rules():
+    from auto_mas_core.log_flow import GeneralFlowDeclaration
+
+    patterns = json.dumps(
+        [
+            {"type": "regex", "match": ".+", "extract": '"停用"', "enabled": False},
+            {"type": "regex", "match": "redacted", "extract": r"$(token=(\w+))"},
+            {"type": "split", "match": "redacted"},
+        ]
+    )
+    for replacement in ("first", "second"):
+        rules = GeneralFlowDeclaration(
+            patterns=patterns,
+            hooks=json.dumps(
+                [
+                    {"type": "drop", "match": "^noise"},
+                    {
+                        "type": "replace",
+                        "match": r"token=\w+",
+                        "replace": f"token={replacement}",
+                    },
+                ]
+            ),
+        )
+        async with analyze_logs(rules, accept_push=True) as flow:
+            assert flow.reporter is not None
+            lines = (
+                '@@LOGBOX@@{"op":"push","type":"普通","text":"旧宿主节点"}',
+                "noise redacted token=discarded",
+                "redacted token=secret",
+                "@@LOGBOX@@ redacted token=secret",
+            )
+            for line in lines:
+                assert flow.reporter.text(line) == SubmitResult.ACCEPTED
+        page = flow.result
+        assert page is not None
+        assert page.reason == "complete"
+        assert [node.text for node in page.nodes] == [
+            replacement,
+            replacement,
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True], ids=["complete", "cancel"])
+async def test_autoproxy_worker_explicitly_records_analysis_for_its_account(
+    cancel, tmp_path
+):
+    from auto_mas_core import AutoProxyWorker, UserExpander
+    from auto_mas_core.log_flow import LineRule, LogFlow, LogFlowTaskReport
+    from app.models.config import GeneralConfig
+
+    _, script, account = await create_runtime_tree(user_id="default")
+    report = LogFlowTaskReport(script)
+    declaration = SimpleFlowDeclaration(
+        rules=(LineRule(match="^done:", node_type="daily", status="success"),),
+    )
+    processes = []
+    tail_written = tmp_path / "tail-written"
+
+    async def capture_display(_lines, _latest_timestamp):
+        pass
+
+    async def launch():
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-u",
+            "-c",
+            "from pathlib import Path; import sys; print('done:claim'); sys.stdin.readline(); "
+            "print('done:tail', end=''); Path(sys.argv[1]).touch(); sys.stdin.readline()",
+            str(tail_written),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+        )
+        processes.append(process)
+        return process
+
+    class Worker(AutoProxyWorker):
+        async def main_logic(self):
+            monitor = LogMonitor((0, 0), "", capture_display, process_factory=launch)
+            flow = LogFlow(monitor, self.user_info, declaration)
+            await self.spawn(flow)
+            assert flow.result is not None and monitor.source_returncode == 0
+            report.record(self.user_info, "汇总", flow.result)
+            await self.user_info.set_state(status="完成")
+
+    class Expander(UserExpander):
+        def build_worker(self, user, config):
+            return Worker(self, user, config)
+
+    worker = Expander(script, GeneralConfig.build()).build_worker(account, None)
+    worker.start()
+    try:
+        async with asyncio.timeout(5):
+            while not account.log_analysis.nodes:
+                assert not worker.accomplish.is_set(), worker.error
+                await asyncio.sleep(0.01)
+        assert [node.text for node in account.log_analysis.nodes] == ["done:claim"]
+        assert account.log_analysis.close_reason is None
+        [process] = processes
+        assert process.stdin is not None
+        if cancel:
+            process.stdin.write(b"\n")
+            await process.stdin.drain()
+            async with asyncio.timeout(5):
+                while not tail_written.exists():
+                    await asyncio.sleep(0.01)
+            assert process.returncode is None
+            await asyncio.wait_for(worker.stop(), 8)
+        else:
+            process.stdin.close()
+            await asyncio.wait_for(worker.accomplish.wait(), 8)
+        assert worker.error is None, worker.error
+        assert process.returncode is not None
+        assert account.log_analysis.close_reason == "complete"
+        if cancel:
+            assert account.status == "已取消"
+            assert [node.text for node in account.log_analysis.nodes] == [
+                "done:claim",
+                "done:tail",
+            ]
+        else:
+            assert account.status == "完成"
+            assert [node.text for node in account.log_analysis.nodes] == [
+                "done:claim",
+                "done:tail",
+            ]
+            assert report.details_for(account) == ["✅ 成功: done:claim, done:tail"]
+    finally:
+        if not worker.accomplish.is_set():
+            await worker.stop()
+
+
+@pytest.mark.asyncio
+async def test_log_flow_report_retry_depends_on_notify_acceptance(monkeypatch):
+    from auto_mas_core.log_flow import LogFlowTaskReport
+
+    from app.core.notify.coordinator import TaskReportCoordinator
+
+    _, script, _ = await create_runtime_tree()
+    report = LogFlowTaskReport(script)
+    result = TaskResultReport("10:00", "10:01", 1, 0, "账号执行结果")
+
+    def fail_before_acceptance(**_):
+        raise asyncio.CancelledError
+
+    attempts = []
+
+    async def fail_after_acceptance(self, *, request, payload):
+        attempts.append(payload.text)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(Notify, "global_target", fail_before_acceptance)
+    monkeypatch.setattr(
+        TaskReportCoordinator, "_dispatch_report_payload", fail_after_acceptance
+    )
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    monkeypatch.setattr(Notify, "global_target", lambda **_: NotifyTarget())
+    with pytest.raises(asyncio.CancelledError):
+        await report.send(title="任务报告", report=result)
+
+    await report.send(title="任务报告", report=result)
+    assert len(attempts) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uncompleted", [0, 1], ids=["all-complete", "mixed-result"])
+async def test_explicit_log_flow_delivers_one_task_report_via_notify(
+    tmp_path, monkeypatch, uncompleted
+):
+    from auto_mas_core.log_flow import FunctionRef, LogFlowTaskReport, WorkerFactorySpec
+
+    task, script, first = await create_runtime_tree()
+    second_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "second", "name": "Second"}}
+    )
+    muted_uid = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "muted", "name": "Muted"}}
+    )
+    await script.users.commit()
+    second, muted = script.users[second_uid], script.users[muted_uid]
+    report = LogFlowTaskReport(script)
+    delivered = []
+
+    async def send_channel(*, channel, target, rendered):
+        delivered.append((target.id, rendered.content))
+
+    renderer = AsyncNotificationRenderer()
+    tasks = notification_tasks.NotificationTasks()
+    monkeypatch.setattr(
+        notification_tasks, "BackgroundTaskManager", BackgroundTaskRegistry()
+    )
+    monkeypatch.setattr(Notify, "tasks", tasks)
+    monkeypatch.setitem(Notify.__dict__, "_renderer", renderer)
+    monkeypatch.setitem(
+        Notify.__dict__, "_transport", SimpleNamespace(send_channel=send_channel)
+    )
+    monkeypatch.setattr(
+        Notify,
+        "read_task_report_policy",
+        lambda: TaskReportPolicy("任何时刻", community_enabled=False, wait_seconds=0),
+    )
+    monkeypatch.setattr(
+        Notify,
+        "global_target",
+        lambda **_: NotifyTarget(
+            channels=(
+                (DeliveryChannel("probe", None), ChannelTarget("probe", "Probe")),
+            )
+        ),
+    )
+    try:
+        with Notify.task_notification_batch(task_id=task.task_id):
+            for run, key, mode, text in [
+                (first, "normal", "逐条", "first step"),
+                (second, "slow", None, "second step"),
+                (muted, "slow", "关闭", "muted step"),
+            ]:
+                sink = (
+                    WorkerFactorySpec(
+                        factory=FunctionRef(
+                            name="test:sink",
+                            module="tests.support.log_flow_functions",
+                            attribute="sample_sink",
+                        ),
+                        options={
+                            "path": str(tmp_path / "slow-sink.txt"),
+                            "mode": "block_close",
+                        },
+                    )
+                    if key == "slow" and mode != "关闭"
+                    else None
+                )
+                async with analyze_logs(
+                    SimpleFlowDeclaration(),
+                    accept_push=True,
+                    sink=sink,
+                    close_timeout=0.5,
+                    prepare_report=mode != "关闭",
+                ) as flow:
+                    assert flow.reporter is not None
+                    assert flow.reporter.node("普通", text) == SubmitResult.ACCEPTED
+                    if run is first:
+                        assert (
+                            flow.reporter.node("普通", "step outcome", status="failed")
+                            == SubmitResult.ACCEPTED
+                        )
+                        assert (
+                            flow.reporter.node("失败", "category only")
+                            == SubmitResult.ACCEPTED
+                        )
+                    if run is not muted:
+                        assert (
+                            flow.reporter.node(
+                                "步骤", f"{text} diagnostic", status="exception"
+                            )
+                            == SubmitResult.ACCEPTED
+                        )
+                assert flow.result is not None
+                await run.record_log_analysis(flow.result)
+                report.record(run, mode or "汇总", flow.result)
+            assert second.log_analysis.close_reason == "timeout"
+            assert muted.log_analysis.close_reason == "complete"
+            assert report.details_for(muted) == []
+            result = TaskResultReport(
+                "10:00", "10:01", 3 - uncompleted, uncompleted, "账号执行结果"
+            )
+            assert (await report.send(title="任务报告", report=result)).queued
+            duplicate = await LogFlowTaskReport(script).send(
+                title="重复报告", report=result
+            )
+            assert not duplicate.queued and duplicate.attempted == 0
+            assert delivered == []
+        assert await tasks.drain_notifications(timeout=3)
+        [(target, content)] = delivered
+        assert target == "probe"
+        assert f"未完成数: {uncompleted}" in content
+        rendered_details = content.split("账号执行结果\n\n【User】\n", 1)[1]
+        first_block, second_block = rendered_details.split("\n\n【Second】\n", 1)
+        assert first_block.splitlines() == [
+            "first step",
+            "❌ 失败: step outcome",
+            "category only",
+            "⚠ 异常: first step diagnostic",
+        ]
+        assert second_block.splitlines()[:3] == [
+            "second step",
+            "⚠ 异常: second step diagnostic",
+            "⚠️ 节点采集不完整",
+        ]
+        assert content.count(" diagnostic") == 2
+        assert "muted step" not in content
+    finally:
+        await tasks.close()
+        renderer.close()
+
+
+@pytest.mark.asyncio
 async def test_reload_shared_descendant_is_disabled_and_restored_once(cascade_plugins):
     """菱形依赖只记录实际拆卸路径，正常启用仍能先恢复尚未轮到的上游。"""
     manager, records = await cascade_plugins(
@@ -204,6 +625,129 @@ async def test_reload_restore_failure_skips_branch_and_continues_other_branches(
     assert records["cascade_c"]._plugin_cls.events.count("enable") == 1
     assert records["cascade_d"].info.state == PluginState.ENABLED
     assert await manager.services.require("cascade_d")() is records["cascade_d"]._plugin
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform != "win32", reason="使用真实的 Windows Job")
+async def test_shared_environment_kept_until_log_flow_worker_exit_is_confirmed(
+    cascade_plugins, monkeypatch
+):
+    from app.plugin import uv
+
+    manager, records = await cascade_plugins({"worker_reader": ()}, source="installed")
+    record = records["worker_reader"]
+    await manager.enable(record)
+    session = await LogFlowSession.open(
+        PipelineSpec(
+            accept_push=True,
+            plugin_package=WorkerPluginPackage(
+                name="worker_reader",
+                import_root=str(record._project_dir),
+                dependency_root=str(uv.site_dir(activate=False)),
+                sdk_root=str(Path("plugins/auto_mas_core/src").resolve()),
+            ),
+        )
+    )
+    process = psutil.Process(session.pid)
+    job = session._job
+    assert job is not None
+    removed = []
+
+    async def remove(package):
+        removed.append(package)
+
+    async def prepare_install(_package, *, has_shared_environment_readers, **_kwargs):
+        assert has_shared_environment_readers()
+        return True
+
+    async def keep_fixture_registry():
+        pass
+
+    def denied():
+        raise PermissionError("无法结束启动器")
+
+    def cannot_confirm():
+        raise TimeoutError("无法确认采集进程退出")
+
+    monkeypatch.setattr(uv, "uninstall", remove)
+    monkeypatch.setattr(uv, "install", prepare_install)
+    monkeypatch.setattr(discover, "refresh", keep_fixture_registry)
+    try:
+        process.suspend()
+        with monkeypatch.context() as blocked:
+            blocked.setattr(session._process, "kill", denied)
+            blocked.setattr(job, "kill", cannot_confirm)
+            summary = await session.close(timeout=0)
+            assert summary.reason == "timeout" and "退出未确认" in summary.detail
+            meta = PluginMeta.build(
+                info={
+                    "package_name": "auto-mas-worker-replacement",
+                    "plugin_name": "worker_replacement",
+                }
+            )
+            assert await manager.install(meta) == {"restart_required": True}
+            with pytest.raises(PluginBusyError):
+                await manager.uninstall(record)
+            assert not removed and record.info.state == PluginState.ENABLED
+        await manager.uninstall(record)
+        assert removed == ["worker_reader"]
+        assert not process.is_running()
+    finally:
+        await LogFlowSession.retry_unconfirmed_workers()
+        with suppress(psutil.NoSuchProcess):
+            process.kill()
+            await asyncio.to_thread(process.wait, timeout=2)
+
+
+@pytest.mark.asyncio
+async def test_uninstall_blocks_new_shared_environment_readers(
+    cascade_plugins, monkeypatch
+):
+    from app.plugin import uv
+
+    manager, records = await cascade_plugins(
+        {"being_removed": (), "separate_reader": ()}, source="installed"
+    )
+    await manager.enable(records["being_removed"])
+    await manager.enable(records["separate_reader"])
+    uninstalling = asyncio.Event()
+    finish_uninstall = asyncio.Event()
+
+    async def remove(_package):
+        uninstalling.set()
+        await finish_uninstall.wait()
+
+    monkeypatch.setattr(uv, "uninstall", remove)
+    removal = asyncio.create_task(manager.uninstall(records["being_removed"]))
+    package = WorkerPluginPackage(
+        name="separate_reader",
+        import_root=str(records["separate_reader"]._project_dir),
+        dependency_root=str(uv.site_dir(activate=False)),
+        sdk_root=str(Path("plugins/auto_mas_core/src").resolve()),
+    )
+    try:
+        await asyncio.wait_for(uninstalling.wait(), timeout=5)
+        async with analyze_logs(
+            SimpleFlowDeclaration(), accept_push=True, plugin_package=package
+        ) as blocked:
+            assert blocked.reporter is not None
+            assert blocked.reporter.text("line") is SubmitResult.CLOSED
+        assert blocked.result is not None and blocked.result.reason == "worker_error"
+
+        async with analyze_logs(SimpleFlowDeclaration(), accept_push=True) as built_in:
+            assert built_in.reporter is not None
+            assert built_in.reporter.text("line") is SubmitResult.ACCEPTED
+        assert built_in.result is not None and built_in.result.complete
+    finally:
+        finish_uninstall.set()
+        await asyncio.wait_for(removal, timeout=5)
+
+    async with analyze_logs(
+        SimpleFlowDeclaration(), accept_push=True, plugin_package=package
+    ) as resumed:
+        assert resumed.reporter is not None
+        assert resumed.reporter.text("line") is SubmitResult.ACCEPTED
+    assert resumed.result is not None and resumed.result.complete
 
 
 @pytest.mark.asyncio

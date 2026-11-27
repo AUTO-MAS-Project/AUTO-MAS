@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Literal, NotRequired, Protocol, TypedDict
+from uuid import UUID
 
 from app.models.notification import DeferredContent, NotifyPayload
 from app.models.notification.channel import DispatchResult, NotifyTarget
@@ -84,6 +85,7 @@ class TaskNotificationState:
     results: tuple[CommunityNotificationResult, ...] = field(default=(), repr=False)
     summary_consumed: bool = False
     delivered: set[str] = field(default_factory=set)
+    log_flow_reports: set[UUID] = field(default_factory=set, repr=False)
 
 
 @dataclass(frozen=True)

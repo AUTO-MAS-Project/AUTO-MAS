@@ -66,3 +66,7 @@ description: >-
 ## 验收
 
 按 `tests/AGENTS.md` 跑对应最小专项测试（缺测试不硬补，如实报缺口）；涉及任务生命周期或新专项时声明 `mas-e2e` `@real` 前置条件与证据。
+
+## 日志节点与报告
+
+新接入见 [LogFlow 接入与迁移](references/logflow-api.md)，未迁移专项继续参考 [旧 LogBox](references/logbox-api.md)。

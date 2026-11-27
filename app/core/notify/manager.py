@@ -23,7 +23,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
 from functools import cached_property
@@ -539,6 +539,7 @@ class NotificationManager:
         signature_sep: str = "\n\n",
         images: Sequence[NotificationImage] = (),
         include_system: bool = True,
+        on_accepted: Callable[[], None] | None = None,
     ) -> DispatchResult:
         """推送全局「代理结果」报告；签到合并和补发由报告协调器承担。
 
@@ -551,6 +552,7 @@ class NotificationManager:
             images: 随报告提供的图片资源。HTML 模板通过稳定资源 ID 引用需要展示的图片。
             include_system: 是否弹系统通知。本轮已由专门的通知弹过（如 MaaFW 的停服维护 /
                 需要更新）时传 False，免得同一件事弹两次。
+            on_accepted: 批次接管请求，或同步投递即将开始时调用。
         """
 
         logger.info(f"开始推送通知, 模式: 代理结果, 标题: {title}")
@@ -593,4 +595,5 @@ class NotificationManager:
                     include_system=include_system, system_timeout_seconds=10
                 )
             ],
+            on_accepted=on_accepted,
         )

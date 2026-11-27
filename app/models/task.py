@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextvars import ContextVar
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
@@ -14,6 +15,9 @@ from pydantic import (
     BaseModel,
     Field,
     PrivateAttr,
+    SerializationInfo,
+    SerializerFunctionWrapHandler,
+    model_serializer,
     WithJsonSchema,
 )
 
@@ -28,6 +32,12 @@ from app.config import (
 )
 from app.config.signals import ConfigEvent, FieldChangeEvent
 from app.models.notification.report import TaskNotificationState
+from app.utils.common.log_flow.observation import (
+    CloseReason,
+    Node,
+    SessionSummary,
+    public_log_node,
+)
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -49,6 +59,10 @@ type TaskParamValue = (
     ]
 )
 type TaskParams = dict[str, TaskParamValue]
+
+_log_analysis_scope: ContextVar[UUID | Literal["all"] | None] = ContextVar(
+    "task_log_analysis_scope", default="all"
+)
 
 # 仅限制 WS 替换包；不裁剪运行树或查询正文。
 _LOG_PUSH_MAX_CHARS = 200_000
@@ -158,6 +172,26 @@ class TaskUserItem(RuntimeEntry):
         params: TaskParams = Field(default_factory=dict)
         result: Virtual[str] = None
 
+    class LogAnalysis(ConfigGroup):
+        """本次账号运行的最终日志分析。"""
+
+        nodes: tuple[Node, ...] = Field(default=(), description="本轮最终有效日志节点")
+        close_reason: CloseReason | None = Field(
+            default=None, description="日志采集结束原因"
+        )
+
+        @model_serializer(mode="wrap")
+        def _serialize(
+            self, handler: SerializerFunctionWrapHandler, info: SerializationInfo
+        ) -> dict[str, Any]:
+            scope = _log_analysis_scope.get()
+            if scope != "all":
+                account = self.__dict__.get("_entry")
+                if scope is None or account is None or account.uid != scope:
+                    return {}
+            return super()._serialize(handler, info)
+
+    log_analysis: LogAnalysis = Field(default_factory=LogAnalysis)
     info: Info = Field(default_factory=Info)
     logs: ConfigCollection[LogRecord] = collection(LogRecord)
     _config_ref: ReferenceType | None = PrivateAttr(default=None)
@@ -181,6 +215,42 @@ class TaskUserItem(RuntimeEntry):
         if info.get("user_id") == "Default":
             info["user_id"] = "default"
         super().__init__(info=info, **values)
+
+    async def publish_log_analysis(
+        self, *, nodes: tuple[Node, ...], close_reason: CloseReason | None = None
+    ) -> None:
+        """在调用协程内提交本轮分析字段，保持业务执行状态独立。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        public_nodes = tuple(public_log_node(node) for node in nodes)
+        if self.log_analysis.nodes != public_nodes:
+            self.log_analysis.nodes = public_nodes
+        if close_reason is not None:
+            self.log_analysis.close_reason = close_reason
+        await self.commit()
+
+    async def record_log_analysis(self, result: SessionSummary) -> None:
+        """提交最终有效节点和采集结束原因。"""
+        await self.publish_log_analysis(nodes=result.nodes, close_reason=result.reason)
+
+    async def apply_log_analysis_changes(
+        self, changes: tuple[Node, ...], *, reset: bool
+    ) -> None:
+        """按事件顺序更新账号树，复用已经脱敏的节点。"""
+        if self.activation_state.value == "inactive":
+            await self.activate()
+        previous = self.log_analysis.nodes
+        current = {} if reset else {node.node_id: node for node in previous}
+        for change in changes:
+            if change.withdrawn:
+                current.pop(change.node_id, None)
+            else:
+                node = public_log_node(change)
+                current[node.node_id] = node
+        nodes = tuple(current.values())
+        if nodes != previous:
+            self.log_analysis.nodes = nodes
+            await self.commit()
 
     def iter_history_logs(self) -> list[tuple[datetime, LogRecord]]:
         """[兼容旧专项] 旧按本地时间读取日志的投影；新代码遍历 logs 并读取各记录的 info。"""
@@ -395,6 +465,16 @@ class TaskItem(RuntimeEntry):
     _log_source: UUID | None = PrivateAttr(default=None)
     _log_content: str | list[str] | None = PrivateAttr(default=None)
     _log_seq: int = PrivateAttr(default=0)
+
+    def export_for_dispatch(
+        self, *, log_analysis_scope: UUID | Literal["all"] | None
+    ) -> dict[str, Any]:
+        """按调度查询范围导出，省略分析时跳过整组节点的序列化。"""
+        token = _log_analysis_scope.set(log_analysis_scope)
+        try:
+            return self.model_dump()
+        finally:
+            _log_analysis_scope.reset(token)
 
     def clear_log_cursor(self) -> None:
         """清理已发送日志的私有基线，运行树正文继续保留。"""
@@ -641,6 +721,7 @@ async def _info_changed(sender: object, event: ConfigEvent) -> None:
             and event.group == "current"
             and event.field == "log"
         )
+        or (isinstance(node, TaskUserItem) and event.group == "log_analysis")
         or event.value == event.old_value
     ):
         return
