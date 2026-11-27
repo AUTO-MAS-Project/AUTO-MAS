@@ -25,6 +25,7 @@ import GameBindingSection from '@/components/GameBindingSection.vue'
 const props = withDefaults(
   defineProps<{
     scriptId: string
+    userId?: string
     contentClass: string
     gameBinding?: 'auto' | 'none'
   }>(),
@@ -33,7 +34,9 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const route = useRoute()
-const { configLocked } = useScriptConfigLock(() => props.scriptId)
+const { configLocked } = useScriptConfigLock(() =>
+  props.userId ? { scriptId: props.scriptId, userId: props.userId } : props.scriptId
+)
 const isAccountPage = computed(() => typeof route.params.userId === 'string')
 const isExcludedSubPage = computed(
   () =>

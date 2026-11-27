@@ -202,6 +202,8 @@ export type { ConfigBackupListOut } from './models/ConfigBackupListOut';
 export type { ConfigBackupPreviewOut } from './models/ConfigBackupPreviewOut';
 export type { ConfigBackupRestoreIn } from './models/ConfigBackupRestoreIn';
 export type { ConfigBackupRestoreOut } from './models/ConfigBackupRestoreOut';
+export type { ConfigUpdateOut } from './models/ConfigUpdateOut';
+export type { DeclarativeConfigUi } from './models/DeclarativeConfigUi';
 export type { CoreUpgradeConflict } from './models/CoreUpgradeConflict';
 export type { CoreUpgradePrecheckIn } from './models/CoreUpgradePrecheckIn';
 export type { CoreUpgradePrecheckOut } from './models/CoreUpgradePrecheckOut';

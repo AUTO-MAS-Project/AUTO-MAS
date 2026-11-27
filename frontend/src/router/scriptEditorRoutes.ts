@@ -1,6 +1,4 @@
 import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
-import { message } from 'ant-design-vue'
-import { translate as t } from '@/i18n'
 import { maafwRouteName } from './maafwRoutes'
 import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
@@ -51,11 +49,13 @@ const PAGE_ROUTES = {
 }
 
 export type ScriptEditorKind = keyof typeof PAGE_ROUTES
-const routeNameOf = (type: string, kind: ScriptEditorKind) => `${type}${PAGE_ROUTES[kind].name}`
+const routeNameOf = (type: string, kind: ScriptEditorKind | 'user') =>
+  `${type}${PAGE_ROUTES[kind === 'user' ? 'userEdit' : kind].name}`
 type ScriptEditorParams = {
   setup: { id: string }
   script: { id: string }
   userAdd: { scriptId: string }
+  user: { scriptId: string; userId: string }
   userEdit: { scriptId: string; userId: string }
 }
 
@@ -66,7 +66,26 @@ declare module 'vue-router' {
   }
 }
 
-/** 普通专项与 MFW 共用已有的路由名，跳转无需再维护类型分支。 */
+const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
+
+export const genericEditorRoutes: RouteRecordRaw[] = [
+  {
+    path: '/scripts/:scriptId/edit/plugin/:scriptType',
+    name: 'GenericScriptEdit',
+    component: genericEditor,
+    props: { mode: 'script' },
+    meta: { title: 'core.comp.editScript', scriptPage: 'script' },
+  },
+  {
+    path: PAGE_ROUTES.userEdit.path('plugin/:scriptType'),
+    name: 'GenericUserEdit',
+    component: genericEditor,
+    props: { mode: 'user' },
+    meta: { title: 'core.comp.editUser', scriptPage: 'userEdit' },
+  },
+]
+
+/** 优先进入已注册的专用页面，运行时专项从详情接口读取表单。 */
 export function useScriptEditorNavigation() {
   const router = useRouter()
   return <K extends keyof ScriptEditorParams>(
@@ -75,12 +94,20 @@ export function useScriptEditorNavigation() {
     params: ScriptEditorParams[K],
     state?: HistoryState
   ) => {
-    const name = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
-    if (!router.hasRoute(name)) {
-      message.info(t('core.plugins.editorUnavailable'))
-      return false
+    const custom = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
+    const generic =
+      kind === 'script'
+        ? 'GenericScriptEdit'
+        : kind === 'userEdit' || kind === 'user'
+          ? 'GenericUserEdit'
+          : null
+    if (custom !== generic && router.hasRoute(custom)) {
+      void router.push({ name: custom, params, state })
+      return true
     }
-    void router.push({ name, params, state })
+    if (!generic) return false
+    const ids = 'id' in params ? { scriptId: params.id } : params
+    void router.push({ name: generic, params: { ...ids, scriptType: type } })
     return true
   }
 }

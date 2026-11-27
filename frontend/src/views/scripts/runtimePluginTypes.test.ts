@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import { createApp } from 'vue'
+import { createMemoryHistory, createRouter, loadRouteLocation, routerKey } from 'vue-router'
+import {
+  buildScriptEditorRoutes,
+  genericEditorRoutes,
+  useScriptEditorNavigation,
+} from '@/router/scriptEditorRoutes'
 import { Service, type PluginRegistryDocument, type ScriptIndexItem } from '@/api'
 import { queryClient } from '@/services/queryClient'
 import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
@@ -6,6 +13,8 @@ import { getAvailablePlanTypes, getPlanTypeDescriptor } from '@/utils/planTypeRe
 import { projectPlanList } from '../plan/planList'
 import { buildCreateRequest, getScriptTypeOptions } from './components/scriptCreateFlow'
 import { toScriptListUser } from './scriptListModel'
+
+vi.mock('@/composables/useAudioPlayer', () => ({ useAudioPlayer: () => ({ playSound: vi.fn() }) }))
 
 const demo = {
   uid: 'plugin',
@@ -46,6 +55,81 @@ describe('运行时专项', () => {
       buildCreateRequest({ type: options[0].value, configMode: 'custom', template: null })
     ).toEqual({ kind: 'new', type: 'Demo15' })
     expect(getScriptTypeOptions([], types, key => key)).toEqual([])
+  })
+
+  it('未知类型进入通用托管和账号编辑器，已注册的专用入口优先', async () => {
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({}) } })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [...buildScriptEditorRoutes(), ...genericEditorRoutes],
+    })
+    const push = vi.spyOn(router, 'push').mockResolvedValue()
+    const openEditor = createApp({})
+      .provide(routerKey, router)
+      .runWithContext(useScriptEditorNavigation)
+    const resolve = () => router.resolve(push.mock.lastCall![0])
+    const editor = (await import('@/views/plugins/ConfigEditor.vue')).default
+    for (const mode of ['script', 'user'] as const) {
+      if (mode === 'script') openEditor('Demo15', mode, { id: 's' })
+      else openEditor('Demo15', mode, { scriptId: 's', userId: 'u' })
+      const route = resolve()
+      expect(router.resolve(route.fullPath).name).toBe(
+        mode === 'script' ? 'GenericScriptEdit' : 'GenericUserEdit'
+      )
+      expect(route.params).toEqual({
+        scriptType: 'Demo15',
+        scriptId: 's',
+        ...(mode === 'user' ? { userId: 'u' } : {}),
+      })
+      const loaded = await loadRouteLocation(route)
+      expect(loaded.matched[0].components?.default).toBe(editor)
+      expect(loaded.matched[0].props.default).toEqual({ mode })
+    }
+    openEditor('General', 'script', { id: 's' })
+    expect(router.resolve(resolve().fullPath).name).toBe('GeneralScriptEdit')
+    openEditor('General', 'user', { scriptId: 's', userId: 'u' })
+    expect(resolve().name).toBe('GeneralUserEdit')
+    expect(openEditor('Demo15', 'userAdd', { scriptId: 's' })).toBe(false)
+    openEditor('General', 'userAdd', { scriptId: 's' })
+    expect(resolve().name).toBe('GeneralUserAdd')
+  })
+
+  it('创建 Demo15 后进入新托管，再新增账号时进入返回的账号', async () => {
+    vi.stubGlobal('window', { electronAPI: { getLogger: () => ({}) } })
+    vi.spyOn(Service, 'addScriptApiScriptsAddPost').mockResolvedValue({
+      code: 200,
+      scriptId: 'new-script',
+      data: {},
+    })
+    vi.spyOn(Service, 'addUserApiScriptsUserAddPost')
+      .mockResolvedValueOnce({ code: 200, userId: 'first', data: {} })
+      .mockResolvedValueOnce({ code: 200, userId: 'second', data: {} })
+    const router = createRouter({ history: createMemoryHistory(), routes: genericEditorRoutes })
+    const { useScriptCreation } = await import('./useScriptCreation')
+    const creation = createApp({})
+      .provide(routerKey, router)
+      .runWithContext(() =>
+        useScriptCreation({
+          reloadScripts: vi.fn(),
+          closeDialog: vi.fn(),
+          importTemplate: vi.fn(),
+          cloneProject: vi.fn(),
+        })
+      )
+    await creation.submit({ kind: 'new', type: 'Demo15' })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value).toMatchObject({
+        name: 'GenericScriptEdit',
+        params: { scriptId: 'new-script', scriptType: 'Demo15' },
+      })
+    )
+    await creation.createUser({ id: 'new-script', type: 'Demo15' })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value).toMatchObject({
+        name: 'GenericUserEdit',
+        params: { scriptId: 'new-script', userId: 'second', scriptType: 'Demo15' },
+      })
+    )
   })
 
   it('列表和详情按注册表解析脚本配置类名', async () => {
@@ -96,10 +180,11 @@ describe('运行时专项', () => {
 
   it('没有专用表格的计划可列出和创建，停用后退出新建菜单', () => {
     const configType = 'Demo15PlanConfig'
+    const data: Record<string, Record<string, unknown>> = { p: { info: { name: 'Nightly' } } }
     const { nextPlanList } = projectPlanList(
       {
         index: [{ uid: 'p', type: configType }],
-        data: { p: { Info: { Name: 'Nightly' } } },
+        data,
       },
       types,
       message => {

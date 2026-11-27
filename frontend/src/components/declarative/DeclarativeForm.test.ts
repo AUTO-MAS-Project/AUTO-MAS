@@ -8,7 +8,7 @@ import { PathKind, Service } from '@/api'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
 import { requestApi } from '@/utils/apiResult'
-import { pluginSettingsTables } from '@/views/plugins/pluginCenterModel'
+import { declarativeTables } from './declarativeLayout'
 import DeclarativeForm from './DeclarativeForm.vue'
 
 /** 经插件表单进入真实 AntD 表格，用同一组数据验证表头、可见字段和编辑坐标。 */
@@ -80,7 +80,7 @@ async function render(
       values,
       uid: 'uid',
       namespace: 'demo',
-      tables: pluginSettingsTables({
+      tables: declarativeTables({
         tables: [
           {
             key: 'matrix',

@@ -85,6 +85,15 @@ export function usePluginSettingsDraft() {
     errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
   }
 
+  function patch(submitted: SettingsValues) {
+    const data: SettingsValues = {}
+    for (const { group, field } of changes.value) {
+      const fields = (data[group] ??= {})
+      fields[field] = submitted[group]?.[field]
+    }
+    return data
+  }
+
   /** 提交时刻的编辑值快照，保存成功后交给 commit。 */
   const snapshot = (): SettingsValues => clone({ ...values })
 
@@ -107,6 +116,7 @@ export function usePluginSettingsDraft() {
     update,
     discard,
     snapshot,
+    patch,
     commit,
   }
 }

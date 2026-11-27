@@ -6,6 +6,11 @@ import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
 import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
+import {
+  declarativeGroups,
+  declarativeTables,
+  declarativeValues,
+} from '@/components/declarative/declarativeLayout'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
@@ -13,18 +18,9 @@ import { AppPage, PageHeader, StateView } from '@/components/ui'
 import type { PluginRegistryGetOut, TableHint } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
-import {
-  joinSegments,
-  pluginSettingsGroups,
-  pluginSettingsTables,
-  toInstalledViews,
-  toMarketViews,
-} from '@/views/plugins/pluginCenterModel'
-import {
-  usePluginSettingsDraft,
-  type SettingsValues,
-} from '@/views/plugins/settings/usePluginSettingsDraft'
-import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { joinSegments, toInstalledViews, toMarketViews } from '@/views/plugins/pluginCenterModel'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
 
@@ -35,14 +31,7 @@ const api = usePluginApi()
 const modelContext = usePluginModelContext()
 const draft = usePluginSettingsDraft()
 const saving = ref(false)
-const runningKey = ref<string | null>(null)
 const configUid = ref('')
-const { data: activeTriggers } = useActiveTriggers()
-const activeFields = computed(() =>
-  activeTriggers.value
-    .filter(item => item.configUid === configUid.value)
-    .map(item => `${item.group}.${item.field}`)
-)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
 const tables = ref<TableHint[]>([])
 const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
@@ -104,6 +93,12 @@ const {
   () => /* 为插件专属配置查询提供当前语言的加载失败提示。 */ t('core.plugins.settingsLoadFailed')
 )
 
+const { runningKey, activeFields, runAction } = useDeclarativeActions(
+  configUid,
+  saving,
+  fetchSettings
+)
+
 watch(
   pluginId,
   () => {
@@ -124,25 +119,11 @@ watch(
     if (!result || result.requestedId !== pluginId.value || result.requestedLocale !== locale.value)
       return
     registry.value = result.registry
-    const data =
-      result.config && typeof result.config === 'object'
-        ? (result.config as Record<string, unknown>)
-        : {}
+    const data = result.config ?? {}
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
-    // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
-    groups.value = pluginSettingsGroups<DeclarativeHint>(data)
-    tables.value = pluginSettingsTables(result.config?.ui)
-    const next: SettingsValues = {}
-    for (const group of groups.value) {
-      const source = data[group.name]
-      const values = source && typeof source === 'object' ? Object.entries(source) : []
-      next[group.name] = Object.fromEntries(
-        values.filter(
-          ([field]) => !group.hints.some(hint => hint.field === field && hint.state !== undefined)
-        )
-      )
-    }
-    draft.reset(next, { keepDraft: true })
+    groups.value = declarativeGroups(data.ui)
+    tables.value = declarativeTables(data.ui)
+    draft.reset(declarativeValues(groups.value, data), { keepDraft: true })
   },
   { immediate: true }
 )
@@ -153,12 +134,7 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
   saving.value = true
   try {
     const submitted = draft.snapshot()
-    const data: SettingsValues = {}
-    for (const { group, field } of draft.changes.value) {
-      const fields = (data[group] ??= {})
-      fields[field] = submitted[group]?.[field]
-    }
-    await api.updateConfig({ recordId: pluginId.value, data })
+    await api.updateConfig({ recordId: pluginId.value, data: draft.patch(submitted) })
     // 先把基线设为刚提交的值；之后重读失败也只剩失败重试条，不再显示未保存。
     draft.commit(submitted)
     message.success(t('core.plugins.saved'))
@@ -171,44 +147,6 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     return false
   } finally {
     saving.value = false
-  }
-}
-
-const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
-  // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
-  const field = hint.field
-  if (
-    !field ||
-    !configUid.value ||
-    hint.editable !== true ||
-    runningKey.value ||
-    saving.value ||
-    activeFields.value.includes(`${group}.${field}`)
-  )
-    return
-  const dropdown = hint.component === 'dropdown-button'
-  if (
-    (!dropdown && value !== true) ||
-    (typeof value !== 'boolean' && typeof value !== 'string' && typeof value !== 'number')
-  ) {
-    message.error(t('core.plugins.actionFailed'))
-    return
-  }
-  runningKey.value = `${group}.${field}`
-  try {
-    const result = await api.runCommand('config', {
-      configUid: configUid.value,
-      group,
-      field,
-      value: true,
-      ...(dropdown ? { option: value } : {}),
-    })
-    message.success(result.message || t('core.plugins.actionComplete'))
-    await fetchSettings()
-  } catch (error) {
-    message.error(errorMessage(error))
-  } finally {
-    runningKey.value = null
   }
 }
 
