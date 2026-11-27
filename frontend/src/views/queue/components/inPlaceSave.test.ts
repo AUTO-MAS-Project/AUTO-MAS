@@ -272,6 +272,29 @@ describe('队列项连续就地保存', () => {
     ])
   })
 
+  it('切走后不回来：旧子表里排着的保存照常发出并回写缓存，新队列的表不受它影响', async () => {
+    const replies = [deferred<typeof ok>(), deferred<typeof ok>()]
+    replies.forEach(reply => api.updateSchedule.mockReturnValueOnce(reply.promise))
+    const view = mount()
+
+    await fire(view.node('days', 0), 'onPick', ['Monday'])
+    await fire(view.node('days', 0), 'onPick', ['Tuesday'])
+    // 旧队列的保存还在途：新队列读回后立刻显示它自己的行
+    await view.switchTo('other', [{ id: 'x', script: 's9', schedule: { Days: ['Sunday'] } }])
+    expect(view.shown('days', 'value')).toEqual(['Sunday'])
+
+    replies[0].resolve(ok)
+    await flush()
+    replies[1].resolve(ok)
+    await flush()
+    expect(api.updateSchedule.mock.calls.map(call => [call[0], call[2].Days[0]])).toEqual([
+      ['q', 'Monday'],
+      ['q', 'Tuesday'],
+    ])
+    expect(view.shown('days', 'value')).toEqual(['Sunday'])
+    expect(view.cached()[0].schedule.Days).toEqual(['Tuesday'])
+  })
+
   it('切到别的队列再切回来，旧子表里排着的保存不会晚于新子表的保存发出', async () => {
     const replies = [deferred<typeof ok>(), deferred<typeof ok>(), deferred<typeof ok>()]
     replies.forEach(reply => api.updateSchedule.mockReturnValueOnce(reply.promise))
