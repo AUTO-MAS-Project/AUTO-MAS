@@ -86,6 +86,7 @@ from .shared import (
     migrate_maaend_sanity_tasks,
     none_as,
     normalize_maaend_plan_key,
+    yaml_bool_as,
 )
 
 
@@ -1138,7 +1139,10 @@ class HSRConfig(DomainEntry):
     TaskSwitch: TaskSwitchFields = Field(default_factory=TaskSwitchFields)
 
     class UpdateFields(ConfigGroup):
-        AutoUpdateMode: Literal["Off", "BeforeRun", "AfterRun"] = Field(
+        AutoUpdateMode: Annotated[
+            Literal["Off", "BeforeRun", "AfterRun"],
+            yaml_bool_as(false="Off", true="BeforeRun"),
+        ] = Field(
             default_factory=lambda: "BeforeRun",
             description="SRA、三月七的自动更新：Off 关闭，BeforeRun 在任务开始前由 MAS 检查、下载、校验并安装。默认运行前更新；旧配置 AfterRun 兼容为运行前执行，显式关闭保持关闭。",
         )

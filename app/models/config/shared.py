@@ -57,6 +57,22 @@ def none_as(value: str | int | float) -> BeforeValidator:
     return BeforeValidator(normalize)
 
 
+def yaml_bool_as(*, false: str, true: str) -> BeforeValidator:
+    """还原被 YAML 1.1 解析成布尔值的枚举字面量。
+
+    手写或外部工具写入的 YAML 中未加引号的 ``Off`` / ``On`` / ``No`` 会被
+    ``CSafeLoader`` 解析为 ``False`` / ``True``，导致字面量校验失败并阻断启动。
+    只转换布尔值，其他非法输入照常交给字面量校验报错。
+    """
+
+    def normalize(input_value: object) -> object:
+        if isinstance(input_value, bool):
+            return true if input_value else false
+        return input_value
+
+    return BeforeValidator(normalize)
+
+
 ProxyStatus = Literal["未知", "成功", "失败", "维护中", "运行中"]
 """账号上次运行结果：全部专项共用一套取值，写入方与展示方按此对齐。"""
 
