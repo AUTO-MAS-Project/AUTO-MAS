@@ -7,7 +7,6 @@ import type { SettingChangeHandler } from './settingTypes'
 import { navigateTo } from '@/router'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
-import FailureReplaySettings from './components/FailureReplaySettings.vue'
 import VoiceSettings from './components/VoiceSettings.vue'
 import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue'
 
@@ -133,9 +132,7 @@ const handleHistoryRetentionChange = (value: unknown) => {
       </SettingRow>
     </SectionCard>
 
-    <FailureReplaySettings :settings="settings" :handle-setting-change="handleSettingChange" />
-
-    <!-- 双列时卡片按序号轮流放左右列：分身排第三张落在左列，与右列的失败回放 + 语音提示高度相近 -->
+    <!-- 双列时卡片按序号轮流放左右列：分身排第二张独占右列（清单会变长），功能与语音提示在左列 -->
     <DesktopSessionSettings :settings="settings" :handle-setting-change="handleSettingChange" />
 
     <VoiceSettings :settings="settings.Voice" :handle-setting-change="handleSettingChange" />

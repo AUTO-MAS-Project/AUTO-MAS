@@ -1,25 +1,30 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { openConfirm } from '@/composables/useConfirm'
 import { VideoCameraOutlined } from '@ant-design/icons-vue'
 import type { GlobalConfig } from '@/api'
-import type { SettingChangeHandler } from '../settingTypes'
 import { useObsReplayApi } from '@/composables/useObsReplayApi'
+import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import type { ObsReplayCheckResult } from '@/types/replay'
 import SectionCard from '@/components/ui/SectionCard.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
 import StatusChip from '@/components/ui/StatusChip.vue'
+import { useSettingPersistence } from '@/views/setting/useSettingPersistence'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  settings: GlobalConfig
-  handleSettingChange: SettingChangeHandler
-}>()
+// 回放设置仍是全局设置里的 Replay 字段，读写沿用设置页同一条保存链路（串行队列、埋点）。
+const settings = reactive<GlobalConfig>({})
+const { restartPolling } = useUpdateChecker()
+const { handleSettingChange, refreshSettings } = useSettingPersistence(settings, restartPolling)
 
-const replaySettings = computed(() => props.settings.Replay ?? null)
+onMounted(() => {
+  void refreshSettings()
+})
+
+const replaySettings = computed(() => settings.Replay ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
 const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
@@ -59,11 +64,11 @@ const updateReplaySetting = async <Key extends keyof ReplayConfig>(
   value: ReplayConfig[Key]
 ) => {
   try {
-    await props.handleSettingChange('Replay', key, value)
+    await handleSettingChange('Replay', key, value)
     if (key === 'Port' || key === 'Password' || key === 'Enabled') checkResult.value = null
     return true
   } catch {
-    // 设置页已经展示保存失败；保留当前输入供重试。
+    // 保存链路已经提示保存失败；保留当前输入供重试。
     return false
   }
 }
@@ -165,6 +170,7 @@ const runSaveReplay = async () => {
     :title="t('core.setting.replay.section')"
     :subtitle="replayIntro"
     :icon="VideoCameraOutlined"
+    class="replay-card"
   >
     <SettingRow :label="t('core.setting.replay.enable')" :hint="t('core.setting.replay.enableTip')">
       <a-switch
@@ -305,6 +311,11 @@ const runSaveReplay = async () => {
 </template>
 
 <style scoped>
+/* 标签页里只有这一张卡片，底部外边距交给 .tools-panel 的内边距 */
+.replay-card {
+  margin-bottom: 0;
+}
+
 .number-input {
   width: 140px;
 }
