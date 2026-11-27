@@ -405,10 +405,38 @@ class BackupTargetHint(BaseModel):
     kind: Literal["user", "script"]
 
 
+class PanelArtifactInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    entry: str
+    panelApi: int = Field(gt=0)
+
+
+class PanelBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    surface: Literal[
+        "script", "setup", "user", "plan", "settings", "notification", "extra"
+    ]
+    page: str
+    scriptType: str | None = None
+    planType: str | None = None
+    channel: str | None = None
+
+
+class FrontendSurfaceMount(BaseModel):
+    pageId: str
+    pluginName: str
+    revision: str
+    activationId: str
+    artifacts: dict[str, PanelArtifactInfo]
+
+
 class DeclarativeConfigUi(BaseModel):
     """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
 
     configUid: str
+    locked: bool = False
     hints: UiHintsMap
     tables: UiTablesList
     steps: list[UiStep] = Field(default_factory=list)
@@ -417,6 +445,7 @@ class DeclarativeConfigUi(BaseModel):
     pluginName: str | None = None
     backupTargets: list[BackupTargetHint] = Field(default_factory=list)
     nativeSession: Literal["view", "config"] | None = None
+    frontendSurfaces: dict[str, FrontendSurfaceMount] = Field(default_factory=dict)
 
 
 class ConfigSnapshotOut(OutBase):

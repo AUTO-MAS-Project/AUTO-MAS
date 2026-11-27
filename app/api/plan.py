@@ -23,7 +23,7 @@ from typing import (
 )
 from uuid import UUID
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import (
     BaseModel,
     Field,
@@ -33,7 +33,12 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
-from app.api._config_editors import config_detail_ui, config_update_data
+from app.api._config_editors import (
+    FrontendWriteGuard,
+    config_detail_ui,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.api._error_codes import config_error_code
 from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigPayload, StrictConfigInput, config_contract
@@ -235,13 +240,21 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
     response_model=ConfigUpdateOut,
     status_code=200,
 )
-async def update_plan(plan: PlanUpdateIn = Body(...)) -> ConfigUpdateOut:
+async def update_plan(
+    plan: PlanUpdateIn = Body(...),
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
+) -> ConfigUpdateOut:
 
     try:
-        data = config_update_data(
-            Config.PlanConfig[plan.planId], plan.data, extra="forbid"
-        )
+        entry = Config.PlanConfig[plan.planId]
+        if guard is not None:
+            guard(entry)
+        data = config_update_data(entry, plan.data, extra="forbid")
         await Config.update_plan(plan.planId, data)
+    except HTTPException:
+        raise
     except (ValidationError, ConfigAggregateError) as e:
         return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:

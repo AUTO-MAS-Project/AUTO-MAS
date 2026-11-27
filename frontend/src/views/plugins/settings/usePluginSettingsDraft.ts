@@ -88,12 +88,9 @@ export function usePluginSettingsDraft() {
     errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
   }
 
-  function patch(submitted: SettingsValues) {
+  function patch(submitted: SettingsValues, fields = changes.value) {
     const data: SettingsValues = {}
-    for (const { group, field } of changes.value) {
-      const fields = (data[group] ??= {})
-      fields[field] = submitted[group]?.[field]
-    }
+    for (const { group, field } of fields) (data[group] ??= {})[field] = submitted[group]?.[field]
     return data
   }
 
@@ -104,9 +101,15 @@ export function usePluginSettingsDraft() {
    * 保存成功后把基线设为刚提交的值，编辑稿里此后的改动仍算未保存。
    * 之后的重读失败也不会让已保存的内容继续显示成未保存。
    */
-  const commit = (submitted: SettingsValues) => {
+  const commit = (submitted: SettingsValues, fields?: SettingsChange[]) => {
     errors.value = {}
-    baseline.value = clone(submitted)
+    if (!fields) baseline.value = clone(submitted)
+    else {
+      const next = clone(baseline.value)
+      for (const { group, field } of fields)
+        (next[group] ??= {})[field] = clone(submitted[group]?.[field])
+      baseline.value = next
+    }
   }
 
   return {

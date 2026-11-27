@@ -913,6 +913,8 @@ function createWindow() {
       additionalArguments: getRendererEnvironmentArguments(),
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
       contextIsolation: true,
       backgroundThrottling: false, // 防止后台节流
     },
@@ -1278,6 +1280,8 @@ function createLogWindow(file?: LogWindowFile) {
     webPreferences: {
       additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
@@ -1419,6 +1423,8 @@ function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
     webPreferences: {
       additionalArguments: getRendererEnvironmentArguments(),
       nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      sandbox: true,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },

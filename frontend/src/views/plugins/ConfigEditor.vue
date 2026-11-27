@@ -6,11 +6,13 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { ConfigEditShell, StateView } from '@/components/ui'
 import { DeclarativeForm } from '@/components/declarative'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import PluginUiMount from '@/components/PluginUiMount.vue'
 import ConfigRestoreSection from '@/components/shared/ConfigRestoreSection.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
+import type { PluginUiActivation } from '@/utils/pluginUiRequests'
 import { useDeclarativeConfigEditor, type ConfigEditorTarget } from './useDeclarativeConfigEditor'
 
 const props = defineProps<
@@ -36,6 +38,11 @@ const {
   ui,
   configUid,
   groups,
+  surface,
+  wheel,
+  wheelTarget,
+  refreshWheel,
+  wheelEditor,
   tables,
   saving,
   canSave,
@@ -59,16 +66,18 @@ const {
   reload,
   save,
 } = useDeclarativeConfigEditor(target)
-const [DefineForm, EditorForm] = createReusableTemplate()
+const [DefineForm, EditorForm] = createReusableTemplate<{ locked: boolean }>()
+const [DefineFallback, EditorFallback] = createReusableTemplate<{ locked: boolean }>()
 const { restore } = restoreApi
 const restoreOpen = ref(false)
 watch(configUid, () => {
   restoreOpen.value = false
 })
-function finish() {
+function finish(activation?: PluginUiActivation) {
   if (!setupMode.value) return save()
-  return finishSetup(id =>
-    openEditor(scriptType.value, 'user', { scriptId: scriptId.value, userId: id })
+  return finishSetup(
+    id => openEditor(scriptType.value, 'user', { scriptId: scriptId.value, userId: id }),
+    activation
   )
 }
 
@@ -84,17 +93,17 @@ defineExpose({ beforeLeave })
 </script>
 
 <template>
-  <DefineForm>
-    <StateView
-      :loading="loading"
-      :error="error"
-      :empty="
-        !configUid || (!groups.length && !setupMode && !backupTargets.length && !ui?.nativeSession)
+  <DefineFallback v-slot="{ locked }">
+    <a-alert
+      v-if="surface"
+      class="panel-fallback-notice"
+      type="info"
+      show-icon
+      :message="
+        t('bootstrap.apiErrors.pluginPanelFallback', '插件界面不可用，已切换到内置编辑器。')
       "
-      :empty-description="t('core.plugins.noConfigFields')"
-      overlay-loading
-      @retry="reload"
-    >
+    />
+    <slot name="fallback">
       <DeclarativeForm
         v-if="groups.length || setupMode"
         :groups="groups"
@@ -109,13 +118,13 @@ defineExpose({ beforeLeave })
         :errors="draft.errors.value"
         :uid="configUid"
         :namespace="ui?.i18nNamespace ?? ''"
-        :disabled="busy || loading"
+        :disabled="locked || busy || loading"
         :active-fields="activeFields"
         :running-key="runningKey"
         @update:value="draft.update"
         @update:options-invalid="optionsInvalid = $event"
         @action="runAction"
-        @finish="finish"
+        @finish="finish()"
       >
         <template #actions="{ wizard }">
           <span v-if="draft.dirtyCount.value">{{
@@ -129,14 +138,52 @@ defineExpose({ beforeLeave })
             type="primary"
             :loading="saving"
             :disabled="!canSave"
-            @click="save"
+            @click="save()"
             >{{ t('core.plugins.save') }}</a-button
           >
         </template>
       </DeclarativeForm>
+    </slot>
+  </DefineFallback>
+  <DefineForm v-slot="{ locked }">
+    <StateView
+      :loading="loading"
+      :error="error"
+      :empty="
+        !configUid ||
+        (!surface &&
+          !$slots.fallback &&
+          !groups.length &&
+          !setupMode &&
+          !backupTargets.length &&
+          !ui?.nativeSession)
+      "
+      :empty-description="t('core.plugins.noConfigFields')"
+      overlay-loading
+      @retry="reload"
+    >
+      <PluginUiMount
+        v-if="wheel"
+        :mount="wheel"
+        :target="wheelTarget"
+        :editor="wheelEditor(locked)"
+        :refresh="refreshWheel"
+      >
+        <template #fallback><EditorFallback :locked="locked" /></template>
+        <a-button
+          v-if="setupMode"
+          type="primary"
+          :disabled="locked || !canSubmit"
+          :loading="saving || creatingUser"
+          @click="finish(wheel)"
+        >
+          {{ t('core.taskboard.complete') }}
+        </a-button>
+      </PluginUiMount>
+      <EditorFallback v-else :locked="locked" />
     </StateView>
   </DefineForm>
-  <EditorForm v-if="mode === 'plan'" />
+  <EditorForm v-if="mode === 'plan'" :locked="ui?.locked ?? false" />
   <ConfigEditShell v-else :surface="mode === 'user'" :max-width="1040">
     <template #header>
       <ScriptEditHeader
@@ -197,7 +244,13 @@ defineExpose({ beforeLeave })
         :script-id="scriptId"
         :user-id="mode === 'user' ? userId : null"
       />
-      <EditorForm />
+      <EditorForm :locked="locked || !!ui?.locked" />
     </ConfigLockPanel>
   </ConfigEditShell>
 </template>
+
+<style scoped>
+.panel-fallback-notice {
+  margin-bottom: 8px;
+}
+</style>

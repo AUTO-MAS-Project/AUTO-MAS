@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { BackupTargetHint } from './BackupTargetHint';
+import type { FrontendSurfaceMount } from './FrontendSurfaceMount';
 import type { UiHintsMap } from './UiHintsMap';
 import type { UiSection } from './UiSection';
 import type { UiStep } from './UiStep';
@@ -12,6 +13,7 @@ import type { UiTablesList } from './UiTablesList';
  */
 export type DeclarativeConfigUi = {
     configUid: string;
+    locked?: boolean;
     hints: UiHintsMap;
     tables: UiTablesList;
     steps?: Array<UiStep>;
@@ -20,5 +22,6 @@ export type DeclarativeConfigUi = {
     pluginName?: (string | null);
     backupTargets?: Array<BackupTargetHint>;
     nativeSession?: ('view' | 'config' | null);
+    frontendSurfaces?: Record<string, FrontendSurfaceMount>;
 };
 

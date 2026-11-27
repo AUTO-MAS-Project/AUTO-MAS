@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from dataclasses import dataclass, field, replace
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable
@@ -14,9 +15,12 @@ if TYPE_CHECKING:
     from fastapi import APIRouter, FastAPI
 
     from .calls import CallGate
+    from .frontend import MountedFrontend
 
 
 PLUGIN_GATEWAY_PATH = "/api/plugin/{plugin_name}/{path:path}"
+PLUGIN_UI_PATH = "/api/plugin/{plugin_name}/ui/{path:path}"
+_RESERVED_UI_PATH = re.compile(r"(?:/api/plugin/[^/]+)?/ui(?:/|$)")
 
 
 def _async_endpoint(endpoint):
@@ -63,6 +67,7 @@ class PluginHttpMount:
     plugin_name: str
     routes: list[RouteDecl] = field(default_factory=list)
     router: APIRouter | None = None
+    frontend: MountedFrontend | None = None
 
     @property
     def prefix(self) -> str:
@@ -110,12 +115,26 @@ class HttpRegistry:
         *,
         router: APIRouter | None = None,
         gate: CallGate | None = None,
+        frontend: MountedFrontend | None = None,
     ) -> PluginHttpMount:
         """为指定插件登记路由声明副本并返回挂载记录，注册表关闭时拒绝新增。"""
         if not self._accepting:
             raise RuntimeError("插件 HTTP 已密封，不可再挂载")
+        if any(
+            _RESERVED_UI_PATH.match("/" + route.path.lstrip("/")) for route in routes
+        ) or (
+            router is not None
+            and any(
+                _RESERVED_UI_PATH.match(getattr(route, "path", ""))
+                for route in router.routes
+            )
+        ):
+            raise ValueError(f"插件 {plugin_name} 的 /ui 路径保留给界面资源")
         mount = PluginHttpMount(
-            plugin_name=plugin_name, routes=list(routes), router=router
+            plugin_name=plugin_name,
+            routes=list(routes),
+            router=router,
+            frontend=frontend,
         )
         if router is not None and self._app is not None:
             from copy import copy

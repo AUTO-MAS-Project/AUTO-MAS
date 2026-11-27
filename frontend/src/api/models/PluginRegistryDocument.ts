@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { PluginConfigUi } from './PluginConfigUi';
+import type { PluginFrontendInfo } from './PluginFrontendInfo';
 import type { PluginProvidedScriptType } from './PluginProvidedScriptType';
 import type { PluginRecord_info } from './PluginRecord_info';
 /**
@@ -16,6 +17,7 @@ export type PluginRegistryDocument = {
     uid: string;
     ui: PluginConfigUi;
     providedScript?: (PluginProvidedScriptType | null);
+    frontend?: (PluginFrontendInfo | null);
     /**
      * 停用本插件及其级联下游时暂不可用的配置领域
      */

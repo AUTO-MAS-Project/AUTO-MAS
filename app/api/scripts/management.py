@@ -25,7 +25,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import (
     BaseModel,
     Field,
@@ -35,7 +35,12 @@ from pydantic import (
 )
 
 import app.models.config as _config_models
-from app.api._config_editors import config_detail_ui, config_update_data
+from app.api._config_editors import (
+    FrontendWriteGuard,
+    config_detail_ui,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.api._error_codes import config_error_code
 from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigInput, ConfigPayload
@@ -385,10 +390,16 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
 )
 async def update_script(
     script: ScriptUpdateIn = Body(...),
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
 ) -> ConfigUpdateOut:
 
     try:
-        data = config_update_data(Config.ScriptConfig[script.scriptId], script.data)
+        entry = Config.ScriptConfig[script.scriptId]
+        if guard is not None:
+            guard(entry)
+        data = config_update_data(entry, script.data)
         # 日志格式写错要等到运行期准备阶段才炸，收尾也会跟着断：保存时就挡住。
         invalid_format = reject_invalid_log_formats(data)
         if invalid_format:
@@ -398,6 +409,8 @@ async def update_script(
         if refusal:
             return ConfigUpdateOut(code=500, status="error", message=refusal)
 
+    except HTTPException:
+        raise
     except (ValidationError, ConfigAggregateError) as e:
         return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:
