@@ -105,6 +105,7 @@ class GameBindingOption(BaseModel):
     value: UUID
     label: str
     disabledReason: str | None = None
+    warning: str | None = None
 
 
 class GameBindingOptionsOut(ConfigSnapshotOut):
@@ -151,16 +152,21 @@ async def game_binding_options(body: GameBindingOptionsIn) -> GameBindingOptions
         owner is None or capabilities.account_override_supported
     ):
         for uid, entry in Config.GameConfig.items():
+            hints: list[str] = []
             reason = await GameManager.validate_binding(
                 str(body.scriptId),
                 {"game": {"game_id": uid}},
                 owner=owner,
                 script=script,
                 capabilities=capabilities,
+                hints=hints,
             )
             options.append(
                 GameBindingOption(
-                    value=uid, label=entry.info.name, disabledReason=reason
+                    value=uid,
+                    label=entry.info.name,
+                    disabledReason=reason,
+                    warning=None if reason else "；".join(hints) or None,
                 )
             )
     return GameBindingOptionsOut(

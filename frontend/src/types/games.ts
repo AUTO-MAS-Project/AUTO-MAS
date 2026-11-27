@@ -18,12 +18,17 @@ export type GameBindingValue = {
   unavailable_reason?: string | null
 }
 
+/** 目标下的可用设备；适配插件删除实例后、宿主移除条目前留下的墓碑不列出。 */
 export function gameDevices(game: GameRow): GameDeviceRow[] {
   const devices = game.document.devices
   return (devices?.order ?? []).flatMap(item => {
     const document = devices?.data?.[item.uid]
-    return document ? [{ uid: item.uid, document }] : []
+    return document && !isTombstone(document) ? [{ uid: item.uid, document }] : []
   })
+}
+
+function isTombstone(device: GameDevice): boolean {
+  return Boolean(device.info && 'tombstone' in device.info && device.info.tombstone)
 }
 
 export function gameActionHint(
@@ -32,8 +37,4 @@ export function gameActionHint(
   field: string
 ): ComponentHint | undefined {
   return row.runtime.actionHints?.[uid]?.find(hint => hint.field === field)
-}
-
-export function isDeletedDevice(device: GameDevice): boolean {
-  return Boolean(device.info && 'tombstone' in device.info && device.info.tombstone)
 }

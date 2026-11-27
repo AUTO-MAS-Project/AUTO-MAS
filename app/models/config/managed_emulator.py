@@ -10,6 +10,10 @@ from app.models.config.plugin_emulator import EmulatorDeviceEntry, EmulatorEntry
 
 class ManagedEmulatorDevice(EmulatorDeviceEntry):
     class Info(EmulatorDeviceEntry.Info):
+        # 适配插件删除实例后只置 tombstone，宿主随后移除条目
+        # （GameManager.remove_deleted_devices），所以最大的槽位号在删除后可能被
+        # 新实例再次拿到。宿主移除时一并清掉该 uid 的绑定与配置守卫基准，复用的
+        # uid 不会继承旧实例的设置。字段说明沿用旧文字，免得改动接口 schema。
         slot: Annotated[int, ui(visibility=UiVisibility.DISABLE)] = Field(
             default=0, ge=0, description="稳定显示槽位，删除后不复用"
         )

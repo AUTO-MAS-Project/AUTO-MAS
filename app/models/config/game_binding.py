@@ -17,6 +17,7 @@ from app.config import (
     ui,
 )
 from app.config.fields.ref import RefDeleteAction
+from app.models.config.game import is_deleted_device
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,8 @@ class GameBinding(ConfigGroup):
         game = config_manager.get_collection("games").get(game_id)
         if game is None or value not in game.devices:
             raise ValueError("设备不属于所选游戏目标")
+        if is_deleted_device(game.devices[value]):
+            raise ValueError("所选设备实例已删除")
         return value
 
 
@@ -100,9 +103,22 @@ class GameBindingOwner(ConfigEntry):
             group="game",
             field="game_id",
         )
+        cls.connect(
+            GameBindingOwner.on_device_changed,
+            phase="runtime",
+            group="game",
+            field="device_id",
+        )
 
     @staticmethod
     async def on_target_changed(sender, event):
         if sender.game.game_id != "-" and sender.game.unavailable_reason:
+            sender.game.unavailable_reason = ""
+            await sender.commit()
+
+    @staticmethod
+    async def on_device_changed(sender, event):
+        """所绑定设备被删除后保留目标，重新选中设备即视为已处理。"""
+        if sender.game.device_id != "-" and sender.game.unavailable_reason:
             sender.game.unavailable_reason = ""
             await sender.commit()

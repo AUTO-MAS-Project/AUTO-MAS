@@ -32,6 +32,18 @@ if TYPE_CHECKING:
 # 经 ``send_async`` 发送，接收者须为协程函数。
 device_removed = Signal("game.device_removed")
 
+# 设备条目被移除后，指向它的托管 / 账号绑定写入的不可用原因。
+DEVICE_DELETED_REASON = "所绑定的设备实例已删除"
+
+
+def is_deleted_device(device: GameDeviceEntry) -> bool:
+    """适配插件删除实例后先标记 ``info.tombstone``，宿主随后移除条目。
+
+    标记到移除之间（或旧版遗留、移除被推迟）的设备不再是可用设备：
+    不列入下拉、不允许绑定或运行，也不在游戏管理页显示。
+    """
+    return bool(getattr(device.info, "tombstone", False))
+
 
 # 触发器专用票。用户操作权限最高：只受控制器忙标记约束，不受实例订阅登记约束。
 # 任务票一律由 ``GameManager.subscribe`` 的 ``lock_s`` 签发（token 为 uuid4），
@@ -198,8 +210,11 @@ class GameEntry(ConfigEntry):
 
     @trigger_field("action.refresh", finish_on_cancel=True)
     async def on_refresh(self) -> None:
-        """走配置触发器刷新 devices，受主配置 S 锁约束。"""
+        """走配置触发器刷新 devices，受主配置 S 锁约束；随后收走已删除的设备。"""
+        from app.core.game_manager import GameManager
+
         await self._control.refresh()
+        await GameManager.remove_deleted_devices(self)
 
     @staticmethod
     async def on_add_devices(sender: object, event: CollectionChangeEvent) -> None:

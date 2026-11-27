@@ -2733,7 +2733,6 @@
   "core.games.deleteConfirm": "确认删除游戏目标？关联绑定将被清除",
   "core.games.deleteInstance": "删除实例",
   "core.games.deleteInstanceConfirm": "确认删除实例？实例内的数据将被移除",
-  "core.games.deleted": "已删除",
   "core.games.device": "实例 / 设备",
   "core.games.discard": "放弃尚未保存的修改？",
   "core.games.discover": "发现安装",
