@@ -36,7 +36,13 @@ export type ThemeColor =
 const themeMode = ref<ThemeMode>('system')
 const themeColor = ref<ThemeColor>('blue')
 const appearanceId = ref<string | null>(null)
-const activeAppearance = ref<InstalledAppearance | null>(null)
+const persistedAppearance = ref<InstalledAppearance | null>(null)
+// 试穿沙盒纯内存态：绝不写入配置或磁盘，重启/崩溃自动回到 persistedAppearance。
+const tryOnAppearance = ref<InstalledAppearance | null>(null)
+const tryOnComparing = ref(false)
+const activeAppearance = computed<InstalledAppearance | null>(() =>
+  tryOnAppearance.value && !tryOnComparing.value ? tryOnAppearance.value : persistedAppearance.value
+)
 const cursorSizePx = ref<number | null>(null)
 let savedCursorSizePx: number | null = null
 let cursorSizeSaveTimer: ReturnType<typeof setTimeout> | undefined
@@ -182,10 +188,15 @@ const restorePersistedThemeSnapshot = () => {
   themeMode.value = persistedThemeSnapshot.themeMode
   themeColor.value = persistedThemeSnapshot.themeColor
   appearanceId.value = persistedThemeSnapshot.appearanceId
-  activeAppearance.value = persistedThemeSnapshot.appearanceId
+  persistedAppearance.value = persistedThemeSnapshot.appearanceId
     ? (appearances.value.find(item => item.id === persistedThemeSnapshot.appearanceId) ?? null)
     : null
   updateTheme()
+}
+
+const clearTryOnState = () => {
+  tryOnAppearance.value = null
+  tryOnComparing.value = false
 }
 
 // 更新CSS变量
@@ -691,7 +702,8 @@ export function useTheme() {
         themeMode.value = defaults.themeMode
         themeColor.value = defaults.themeColor
         appearanceId.value = null
-        activeAppearance.value = null
+        persistedAppearance.value = null
+        clearTryOnState()
         updateTheme()
         try {
           await saveConfig(defaults)
@@ -710,8 +722,9 @@ export function useTheme() {
         const revision = ++themeRevision
         const savedConfigRevision = configRevision
         themeMode.value = mode
-        activeAppearance.value = null
+        persistedAppearance.value = null
         appearanceId.value = null
+        clearTryOnState()
         updateTheme()
         await loadCustomBackgroundIfNeeded()
         try {
@@ -768,7 +781,7 @@ export function useTheme() {
     if (loadRevision !== appearanceLoadRevision) return
     appearances.value = list
     if (listFailed) {
-      activeAppearance.value = null
+      persistedAppearance.value = null
       updateTheme()
       await loadCustomBackgroundIfNeeded()
       return
@@ -778,7 +791,7 @@ export function useTheme() {
       if (!loaded) {
         const expectedId = appearanceId.value
         const savedThemeRevision = themeRevision
-        activeAppearance.value = null
+        persistedAppearance.value = null
         updateTheme()
         const savedConfigRevision = configRevision
         try {
@@ -796,7 +809,7 @@ export function useTheme() {
               return
             }
             appearanceId.value = result.appearanceId
-            activeAppearance.value = currentAppearance ?? null
+            persistedAppearance.value = currentAppearance ?? null
             if (configRevision === savedConfigRevision) {
               setPersistedThemeSnapshot({
                 ...persistedThemeSnapshot,
@@ -810,11 +823,11 @@ export function useTheme() {
           )
         }
       } else {
-        activeAppearance.value = loaded
+        persistedAppearance.value = loaded
       }
     } else {
       // 跨窗口切回内置模式时必须清掉此前缓存的外观，否则 isDark 和 CSS 仍沿用旧包。
-      activeAppearance.value = null
+      persistedAppearance.value = null
     }
     updateTheme()
     await loadCustomBackgroundIfNeeded()
@@ -830,8 +843,9 @@ export function useTheme() {
           const revision = ++themeRevision
           const savedConfigRevision = configRevision
           if (!id) {
-            activeAppearance.value = null
+            persistedAppearance.value = null
             appearanceId.value = null
+            clearTryOnState()
             updateTheme()
             await loadCustomBackgroundIfNeeded()
             try {
@@ -854,8 +868,9 @@ export function useTheme() {
             (await window.electronAPI.getAppearance?.(id))
           if (!appearance) throw new Error('外观不存在或已损坏')
           if (revision !== themeRevision) return
-          activeAppearance.value = appearance
+          persistedAppearance.value = appearance
           appearanceId.value = appearance.id
+          clearTryOnState()
           updateTheme()
           await loadCustomBackgroundIfNeeded()
           try {
@@ -1066,11 +1081,11 @@ export function useTheme() {
       // 回声只换选择：缓存里有就直接用，全量重读留给 appearance-changed，
       // 否则每切一次主题色，每个窗口都要把所有包的素材经 IPC 重传一遍。
       if (cached === undefined) {
-        activeAppearance.value = null
+        persistedAppearance.value = null
         void loadAppearances()
         return
       }
-      activeAppearance.value = cached
+      persistedAppearance.value = cached
       updateTheme()
       if (!cached?.backgroundUrl) {
         void loadCustomBackgroundIfNeeded()
@@ -1108,6 +1123,26 @@ export function useTheme() {
     await loadCustomBackgroundIfNeeded()
   }
 
+  // 内存态临时试穿：绝不写盘、绝不改 persistedAppearance，崩溃或重启自动回到原外观。
+  const startAppearanceTryOn = (appearance: InstalledAppearance): void => {
+    tryOnAppearance.value = appearance
+    tryOnComparing.value = false
+    updateTheme()
+  }
+
+  const setAppearanceTryOnCompare = (comparing: boolean): void => {
+    if (!tryOnAppearance.value) return
+    if (tryOnComparing.value === comparing) return
+    tryOnComparing.value = comparing
+    updateTheme()
+  }
+
+  const stopAppearanceTryOn = (): void => {
+    if (!tryOnAppearance.value && !tryOnComparing.value) return
+    clearTryOnState()
+    updateTheme()
+  }
+
   return {
     cursorSizePx: computed(() => cursorSizePx.value),
     previewCursorSize,
@@ -1120,6 +1155,12 @@ export function useTheme() {
     appearances: computed(() => appearances.value),
     appearanceId: computed(() => appearanceId.value),
     activeAppearance: computed(() => activeAppearance.value),
+    persistedAppearance: computed(() => persistedAppearance.value),
+    tryOnAppearance: computed(() => tryOnAppearance.value),
+    tryOnComparing: computed(() => tryOnComparing.value),
+    startAppearanceTryOn,
+    setAppearanceTryOnCompare,
+    stopAppearanceTryOn,
     customBackgroundPath: computed(() => customBackgroundPath.value),
     customBackgroundUrl: computed(() => customBackgroundUrl.value),
     customBackgroundLoadFailed: computed(() => customBackgroundLoadFailed.value),

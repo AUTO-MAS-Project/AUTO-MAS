@@ -331,6 +331,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('appearance:inspect-local', zipPath, category),
   inspectAppearanceCover: (imagePath: string) =>
     ipcRenderer.invoke('appearance:inspect-cover', imagePath),
+  onOnlineAppearancePrepareProgress: (callback: (progress: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('appearance:online-prepare-progress', listener)
+    return () => ipcRenderer.removeListener('appearance:online-prepare-progress', listener)
+  },
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)

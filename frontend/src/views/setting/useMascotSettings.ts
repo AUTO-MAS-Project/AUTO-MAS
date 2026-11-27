@@ -15,7 +15,7 @@ const DEFAULT_CUSTOM_FPS = 60
 
 export function useMascotSettings() {
   const { t } = useI18n()
-  const { activeAppearance } = useTheme()
+  const { persistedAppearance } = useTheme()
   const [modal, modalContextHolder] = Modal.useModal()
   const { confirm } = useConfirm(modal)
   const modalOptions = { zIndex: 100 }
@@ -42,7 +42,7 @@ export function useMascotSettings() {
   const available = computed(() =>
     selectedId.value
       ? mascots.value.some(item => item.id === selectedId.value)
-      : Boolean(activeAppearance.value?.mascotUrl)
+      : Boolean(persistedAppearance.value?.mascotUrl)
   )
   const options = computed(() => [
     { label: t('core.setting.basic.mascotFollowTheme'), value: 'theme' },

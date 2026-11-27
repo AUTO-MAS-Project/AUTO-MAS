@@ -18,6 +18,7 @@ import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import AppearanceTryOnDock from './components/AppearanceTryOnDock.vue'
 import NewYearCelebration from './components/NewYearCelebration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
 import DesktopSessionPromptDialog from './views/desktopSession/components/DesktopSessionPromptDialog.vue'
@@ -205,6 +206,7 @@ onMounted(async () => {
         @page-ready="pageReady = true"
       />
       <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
+      <AppearanceTryOnDock v-if="languageResources.ready && performanceStore.initialized" />
     </div>
 
     <!-- 开发构建才带调试面板；独立小窗口（日志、虚拟显示器询问）里它会盖住内容，不挂 -->
