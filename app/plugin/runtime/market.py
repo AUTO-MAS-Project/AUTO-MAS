@@ -23,7 +23,12 @@ from app.plugin.uv.ops import candidates
 from app.utils import get_logger
 
 from . import catalog, market_index
-from .catalog_protocol import ENTRY_FIELDS, package_key, validate_entries
+from .catalog_protocol import (
+    ENTRY_FIELDS,
+    PRESENTATION_FIELDS,
+    package_key,
+    validate_entries,
+)
 
 logger = get_logger("插件市场")
 
@@ -33,6 +38,11 @@ _FETCH_CONCURRENCY = 8
 _SIMPLE_TIMEOUT = 45.0
 _PYPI = "https://pypi.org"
 _CATALOG_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download"
+_V3_CACHE = "plugin-market-v3-cache.json"
+_CATALOG_V3_URL = (
+    "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins-v3/download"
+)
+_CATALOG_V3_HOSTS = frozenset({"data.auto-mas.top", "data2.auto-mas.top"})
 _ATTEMPTS = 3
 # 开发用：刚发到 PyPI 的插件，数据站目录和 PyPI 总索引都可能还没收录。默认不设（不补）；
 # 设为逗号分隔的发行包名时，刷新目录逐个读 PyPI 单包元数据补进目录，插件中心才能看到并安装。
@@ -91,30 +101,67 @@ async def _extra_drafts(present: set[str]) -> list[PluginMeta]:
 
 async def refresh() -> None:
     """依次读取数据站、官方源和镜像源，首个完整结果作为本次目录的唯一依据。"""
-    url = os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL", _CATALOG_URL).strip()
-    if url:
-        cache = Config.data_path / "plugin-market-cache.json"
+    sources: tuple[tuple[str, int | None, str], ...] = (
+        (_CATALOG_V3_URL, 3, _V3_CACHE),
+        (_CATALOG_URL, 2, "plugin-market-cache.json"),
+    )
+    if (override := os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL")) is not None:
+        sources = (
+            ((override.strip(), None, "plugin-market-cache.json"),)
+            if override.strip()
+            else ()
+        )
+    last_organizations: dict[tuple[str, str], str] = {}
+    for url, version, cache_name in sources:
+        cache = Config.data_path / cache_name
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(5.0), follow_redirects=True, proxy=Config.proxy
+                timeout=httpx.Timeout(5.0), proxy=Config.proxy
             ) as client:
-                snapshot = await catalog.fetch_catalog(client, url, cache)
-        except (httpx.HTTPError, OSError, ValueError) as error:
+                snapshot = await catalog.fetch_catalog(
+                    client,
+                    url,
+                    cache,
+                    expected_version=version,
+                    trusted_hosts=_CATALOG_V3_HOSTS if version == 3 else frozenset(),
+                )
+        except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError) as error:
             logger.warning(
-                f"数据站插件目录不可用，改用发行源检索：{type(error).__name__}"
+                f"插件目录 v{version or '自定义'} 不可用：{type(error).__name__}"
             )
+            if version == 3:
+                previous = catalog.read_cache(cache, url)
+                if previous is not None and previous.document["schema_version"] == 3:
+                    last_organizations = {
+                        (
+                            package_key(entry["package_name"]),
+                            entry["plugin_name"],
+                        ): organization
+                        for entry in previous.document["plugins"]
+                        if (organization := entry["publisher_organization"]) is not None
+                    }
         else:
             drafts = [
-                PluginMeta.build(info=entry) for entry in snapshot.document["plugins"]
+                PluginMeta.build(
+                    info={
+                        **entry,
+                        "publisher_organization": (
+                            entry.get("publisher_organization")
+                            if version == 3
+                            else None
+                        ),
+                    }
+                )
+                for entry in snapshot.document["plugins"]
             ]
             drafts += await _extra_drafts(
                 {package_key(item.info.package_name) for item in drafts}
             )
-            await _replace_catalog(drafts)
+            await _replace_catalog(drafts, last_organizations=last_organizations)
             catalog.store_cache(cache, snapshot)
             logger.info(f"数据站插件目录刷新完成：{len(drafts)} 个插件")
             return
-    await _refresh_pypi()
+    await _refresh_pypi(last_organizations=last_organizations)
 
 
 def _install_target(meta: PluginMeta) -> tuple[str, str, str]:
@@ -123,20 +170,36 @@ def _install_target(meta: PluginMeta) -> tuple[str, str, str]:
     return package_key(info.package_name), info.plugin_name, info.version
 
 
-async def _replace_catalog(drafts: list[PluginMeta]) -> None:
+async def _replace_catalog(
+    drafts: list[PluginMeta],
+    *,
+    last_organizations: dict[tuple[str, str], str] | None = None,
+) -> None:
     """原子同步完整目录，保留相同安装目标的 UID。"""
     col = Config.plugin_catalog
     async with config_manager.transaction():
         current = {_install_target(item): item for item in col.values()}
         order = []
         for draft in sorted(drafts, key=_install_target):
-            entry = current.get(_install_target(draft))
-            info = draft.info.model_dump(mode="python", include=ENTRY_FIELDS)
+            target = _install_target(draft)
+            entry = current.get(target)
+            info = draft.info.model_dump(
+                mode="python", include=ENTRY_FIELDS | PRESENTATION_FIELDS
+            )
+            if last_organizations and (
+                organization := last_organizations.get((target[0], target[1]))
+            ):
+                info["publisher_organization"] = organization
             if entry is None:
                 order.append(col.add(PluginMeta, payload={"info": info}))
                 continue
-            if entry.info.model_dump(mode="python", include=ENTRY_FIELDS) != info:
-                await entry.update(draft, check_visibility=False)
+            if (
+                entry.info.model_dump(
+                    mode="python", include=ENTRY_FIELDS | PRESENTATION_FIELDS
+                )
+                != info
+            ):
+                await entry.update(PluginMeta.build(info=info), check_visibility=False)
             order.append(entry.uid)
 
         previous_order = list(col.keys())
@@ -149,7 +212,9 @@ async def _replace_catalog(drafts: list[PluginMeta]) -> None:
             await col.commit()
 
 
-async def _refresh_pypi() -> None:
+async def _refresh_pypi(
+    *, last_organizations: dict[tuple[str, str], str] | None = None
+) -> None:
     """逐级读取官方源及候选镜像，任一候选读取失败便放弃本级结果。
 
     总索引只补充新包名；失败后仍独立查询已知包。全部来源失败才保留旧目录，
@@ -292,7 +357,7 @@ async def _refresh_pypi() -> None:
                 continue
 
             # 来源读取与提交分开：提交失败直接上抛，不能伪装成来源不可用再覆盖一次。
-            await _replace_catalog(drafts)
+            await _replace_catalog(drafts, last_organizations=last_organizations)
             logger.info(f"插件市场刷新完成：{len(drafts)} 个插件，来源：{source}")
             return
 

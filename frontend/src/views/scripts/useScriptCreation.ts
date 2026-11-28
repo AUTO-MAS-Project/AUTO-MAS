@@ -117,8 +117,7 @@ export function useScriptCreation(options: CreationOptions) {
       if (
         !script.usersLoadError &&
         !script.users.length &&
-        !isMfwFamily(script.type) &&
-        (await usesFirstAccountWizard(script.type))
+        (isMfwFamily(script.type) || (await usesFirstAccountWizard(script.type)))
       ) {
         openEditor(script.type, 'setup', { id: scriptId })
         return

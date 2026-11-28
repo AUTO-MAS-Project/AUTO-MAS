@@ -8,8 +8,10 @@ export const getScriptLogo = (type: ScriptListItem['type']) =>
   isBuiltinScriptType(type) ? SCRIPT_LOGOS[type] : SCRIPT_METADATA.General.logo
 
 /** MaaFW 家族的头像：M9A、MSS 用适配条目上的图标；通用 MFW 用项目自己的图标，取不到由调用方回退 */
-export const getMaaFWScriptLogo = (script: Pick<ScriptListItem, 'id' | 'type'>) =>
-  maafwUsesProjectIcon(script.type) ? buildMaaFWScriptIconUrl(script.id) : maafwLogo(script.type)
+export const getMaaFWScriptLogo = (script: Pick<ScriptListItem, 'id' | 'type' | 'iconSrc'>) =>
+  maafwUsesProjectIcon(script.type)
+    ? buildMaaFWScriptIconUrl(script.id)
+    : (script.iconSrc ?? maafwLogo(script.type))
 
 export const getScriptLogoAlt = (type: ScriptListItem['type']) =>
   type === 'OkNte' ? 'ok-nte' : isBuiltinScriptType(type) ? SCRIPT_LABELS[type] : type

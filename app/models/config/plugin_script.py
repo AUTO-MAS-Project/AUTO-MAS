@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
@@ -108,3 +109,12 @@ class ScriptEntry(GameBindingOwner):
     @classmethod
     def bind_runtime_signals(cls) -> None:
         """设备绑定由公共游戏目标模型校验，不再保留 info 下的旧游戏字段。"""
+
+    async def prepare_script_removal(self) -> None:
+        """托管移除及通用数据清理前处理专项持有的资源。"""
+
+    def prepare_user_removal(
+        self, user_id: UUID
+    ) -> Callable[[], Awaitable[None]] | None:
+        """删除前捕获账号资源，返回仅在集合提交成功后运行的清理。"""
+        return None

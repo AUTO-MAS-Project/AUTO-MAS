@@ -318,6 +318,13 @@ class _TaskManager:
                         if session
                         else select(selected.children, user_configs.keys())
                     )
+                    default_user_name = "共享配置"
+                    if run.maintenance and isinstance(entry, ScriptEntry):
+                        from app.core import Plugin
+
+                        decl = Plugin.script_decl(entry)
+                        if decl is not None and decl.maintenance_default_user_name:
+                            default_user_name = decl.maintenance_default_user_name
                     for user in users:
                         if user.children:
                             raise ValueError("用户节点不能包含子项")
@@ -338,7 +345,7 @@ class _TaskManager:
                                         else config.Info.Name
                                     )
                                     if config is not None
-                                    else "共享配置",
+                                    else default_user_name,
                                     "params": deepcopy(user.params),
                                 }
                             },

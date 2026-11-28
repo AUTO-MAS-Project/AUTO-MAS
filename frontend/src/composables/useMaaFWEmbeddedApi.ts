@@ -1,88 +1,8 @@
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 import { getAnalyticsScriptType } from '@/utils/analytics'
-import { MaaFwService } from '@/api'
-import type {
-  MaaFWEmbeddedSourceItem,
-  MaaFWEmbeddedStatusData,
-  MaaFWEmbeddedStatusOut,
-} from '@/api'
-
-/**
- * MFW 内嵌副本客户端。MFW 脚本一律在副本上跑：选目录就是导入（`reimportEmbedded`），
- * 之后换目录、手动更新过来源都走同一条。
- *
- * 状态 / 导入 / 克隆三条路由都返回 `MaaFWEmbeddedStatusOut`：业务失败走 `code !== 200` + `message`
- * （HTTP 仍是 200），所以直接用生成的 `MaaFwService` 即可，不需要像项目更新那样
- * 从 AxiosError 里捞文案。成功时返回最新状态，失败时抛带后端文案的 Error。
- */
-export type MaaFWEmbeddedStatus = Required<
-  Pick<
-    MaaFWEmbeddedStatusData,
-    | 'copyPath'
-    | 'copyHealthy'
-    | 'sourcePath'
-    | 'sourceExists'
-    | 'sourceVersion'
-    | 'importedAt'
-    | 'followSourceSyncedAt'
-    | 'sourceForm'
-  >
-> & { report: MaaFWEmbeddedStatusData['report'] }
-
-export const EMPTY_EMBEDDED_STATUS: MaaFWEmbeddedStatus = {
-  copyPath: '',
-  copyHealthy: false,
-  sourcePath: '',
-  sourceExists: false,
-  sourceVersion: '',
-  importedAt: '',
-  followSourceSyncedAt: '',
-  sourceForm: false,
-  report: null,
-}
-
-const unwrap = (response: MaaFWEmbeddedStatusOut, fallback: string) => {
-  if (response.code !== 200) {
-    throw new Error(response.message || fallback)
-  }
-  const data = response.data ?? {}
-  return {
-    status: {
-      ...EMPTY_EMBEDDED_STATUS,
-      ...data,
-      report: data.report ?? null,
-    } satisfies MaaFWEmbeddedStatus,
-    message: response.message ?? '',
-  }
-}
+import { MaaFwService, type MaaFWEmbeddedSourceItem } from '@/api'
 
 export function useMaaFWEmbeddedApi() {
-  const getEmbeddedStatus = async (scriptId: string) =>
-    unwrap(
-      await MaaFwService.getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost({ scriptId }),
-      '读取内嵌状态失败'
-    )
-
-  /** 按来源目录导入副本：第一次是导入，之后是换来源或按当前来源重导。 */
-  const reimportEmbedded = async (scriptId: string, sourcePath: string) =>
-    unwrap(
-      await observeFeature(
-        'adapter_setup_finished',
-        {
-          script_type: getAnalyticsScriptType(scriptId),
-          operation_kind: 'import',
-          engine_kind: 'embedded',
-        },
-        () =>
-          MaaFwService.reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost({
-            scriptId,
-            sourcePath,
-          }),
-        apiOutcome
-      ),
-      '导入失败'
-    )
-
   /** 有健康副本的 MFW / M9A 脚本：新建脚本时「复用已有脚本的项目」的候选；传了 scriptId 就排除它自己。 */
   const listEmbeddedSources = async (scriptId?: string): Promise<MaaFWEmbeddedSourceItem[]> => {
     const response = await MaaFwService.listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
@@ -94,58 +14,25 @@ export function useMaaFWEmbeddedApi() {
     return response.data ?? []
   }
 
-  /**
-   * 跟随来源目录（开发者模式 / 源码形态）时立即从来源目录重导：不看签名，内容没变就只刷新同步时间。
-   * 成功的 message 就是结果（变了哪些文件 / 内容未变化）；运行中、被占用、来源不在时抛带原因的 Error。
-   */
-  const syncEmbedded = async (scriptId: string) =>
-    unwrap(
-      await observeFeature(
-        'adapter_setup_finished',
-        {
-          script_type: getAnalyticsScriptType(scriptId),
-          operation_kind: 'update',
-          engine_kind: 'embedded',
-        },
-        () => MaaFwService.syncMaafwEmbeddedApiScriptsMaafwEmbeddedSyncPost({ scriptId }),
-        apiOutcome
-      ),
-      '同步失败'
-    )
-
   /** 从另一个脚本的副本克隆：同一项目再建一个脚本，不用重新选目录投影。 */
-  const cloneEmbedded = async (scriptId: string, sourceScriptId: string) =>
-    unwrap(
-      await observeFeature(
-        'adapter_setup_finished',
-        {
-          script_type: getAnalyticsScriptType(scriptId),
-          operation_kind: 'import',
-          engine_kind: 'embedded',
-        },
-        () =>
-          MaaFwService.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost({
-            scriptId,
-            sourceScriptId,
-          }),
-        apiOutcome
-      ),
-      '复用项目失败'
+  const cloneEmbedded = async (scriptId: string, sourceScriptId: string) => {
+    const response = await observeFeature(
+      'adapter_setup_finished',
+      {
+        script_type: getAnalyticsScriptType(scriptId),
+        operation_kind: 'import',
+        engine_kind: 'embedded',
+      },
+      () =>
+        MaaFwService.cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost({
+          scriptId,
+          sourceScriptId,
+        }),
+      apiOutcome
     )
-
-  return {
-    getEmbeddedStatus,
-    reimportEmbedded,
-    syncEmbedded,
-    listEmbeddedSources,
-    cloneEmbedded,
+    if (response.code !== 200) throw new Error(response.message || '复用项目失败')
+    return { message: response.message ?? '' }
   }
-}
 
-/** 把字节数变成给人看的 MB / GB；报告里的数值都是整数字节。 */
-export const formatEmbeddedBytes = (bytes: number | undefined | null): string => {
-  const value = Number(bytes ?? 0)
-  if (!Number.isFinite(value) || value <= 0) return '0 MB'
-  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(2)} GB`
-  return `${(value / 1024 ** 2).toFixed(1)} MB`
+  return { listEmbeddedSources, cloneEmbedded }
 }

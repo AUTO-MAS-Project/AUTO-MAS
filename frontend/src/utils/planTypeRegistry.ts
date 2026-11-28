@@ -1,9 +1,5 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import {
-  SCRIPT_BUILTIN_PLANS,
-  SCRIPT_PLUGIN_BINDINGS,
-  SCRIPT_PLUGIN_PLANS,
-} from '@/plugins/scriptAdapters'
+import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
@@ -88,19 +84,6 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
       () => import('@/views/plan/tables/UniversalPlanTable.vue')
     ),
   },
-  ...SCRIPT_PLUGIN_PLANS,
-  [PLAN_CONFIG_TYPES.MAA_END]: {
-    configType: PLAN_CONFIG_TYPES.MAA_END,
-    createType: PlanCreateIn.type.MAA_END_PLAN,
-    displayNameKey: 'core.plan.type.maaEnd',
-    defaultName: '新 MaaEnd 计划表',
-    selectorTag: 'MaaEnd',
-    reloadAfterSave: false,
-    supportsSimpleView: true,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
-  },
-  // 随主程序编译的专项计划表由专项入口登记。
-  ...SCRIPT_BUILTIN_PLANS,
 }
 
 // ==================== 查询方法 ====================

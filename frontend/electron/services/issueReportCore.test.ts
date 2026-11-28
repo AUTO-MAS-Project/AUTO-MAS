@@ -3,7 +3,9 @@ import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import AdmZip = require('adm-zip')
+import { stringify } from 'yaml'
 import { createOkwwIssueReport } from './okwwIssueReportService'
+import { createZzzOdIssueReport } from './zzzOdIssueReportService'
 
 import {
   addDebugDirectory,
@@ -165,5 +167,48 @@ describe('OK-WW 启动器日志问题包', () => {
     expect(content).toContain('<HOME>')
     expect(content).not.toContain(os.homedir())
     expect(content).toContain('tail')
+  })
+})
+
+describe('ZZZ-OD 插件配置的问题包', () => {
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'zzzod-report-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true })
+  })
+
+  it('从插件托管索引定位安装，保留原生日志和脱敏注册表', () => {
+    const installation = path.join(root, 'installation')
+    write(
+      'config/scripts.yaml',
+      stringify({
+        order: [{ uid: '1', type: 'ZzzOdConfig' }],
+        data: {
+          '1': { info: {}, Info: { RootPath: installation }, users: { order: [], data: {} } },
+        },
+      })
+    )
+    write('installation/.log/log.txt', '一条龙已启动 https://api.day.app/LOG_SECRET\n')
+    write(
+      'installation/config/one_dragon.yml',
+      'instance_list: []\nwebhook: https://api.day.app/CONFIG_SECRET\n'
+    )
+    write('installation/config/01/game_account.yml', 'password: ACCOUNT_SECRET\n')
+
+    const output = path.join(root, 'report.zip')
+    expect(createZzzOdIssueReport(root, output).success).toBe(true)
+    const zip = new AdmZip(output)
+    const log = zip.getEntry('zzzod/zzzod-1/log.txt')!.getData().toString('utf-8')
+    const registry = zip
+      .getEntry('zzzod/zzzod-1/config/one_dragon.yml')!
+      .getData()
+      .toString('utf-8')
+    expect(log).toContain('一条龙已启动')
+    expect(log).not.toContain('LOG_SECRET')
+    expect(registry).toContain('instance_list')
+    expect(registry).not.toContain('CONFIG_SECRET')
+    expect(pathsOf(zip.getEntries())).not.toContain('zzzod/zzzod-1/config/01/game_account.yml')
   })
 })

@@ -30,6 +30,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from typing import Any, Literal, Optional
 from uuid import UUID
@@ -52,7 +53,7 @@ from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
-from app.core.i18n import AppLocale
+from app.core.i18n import AppLocale, PluginResources
 from app.core.plugin import Plugin
 from app.models.config import PluginMeta, PluginRecord
 from app.models.config.game import is_deleted_device
@@ -155,6 +156,7 @@ class PluginRegistryDocument(ConfigPayload[PluginRecord]):
 
     uid: UUID
     ui: PluginConfigUi
+    iconPng: str | None = Field(default=None, description="已安装插件的 PNG 头像")
     providedScript: PluginProvidedScriptType | None = None
     frontend: PluginFrontendInfo | None = None
     disableImpact: list[Literal["scripts", "games", "plans"]] = Field(
@@ -329,24 +331,34 @@ async def get_plugin_registry(
     try:
         col = Config.plugin_registry
         uids = [UUID(body.recordId)] if body.recordId else list(col.keys())
+        order = [
+            CollectionOrderItem(uid=uid, type=type(col[uid]).__name__) for uid in uids
+        ]
+        documents = [
+            {
+                "uid": uid,
+                "providedScript": _provided_script(col[uid]),
+                "frontend": _plugin_frontend(col[uid]),
+                "disableImpact": Plugin.disable_impact(col[uid]),
+                **Plugin.dependency_view(col[uid]),
+                **col[uid].model_dump(mode="json", context={"audience": "api"}),
+            }
+            for uid in uids
+        ]
+        icons = await asyncio.gather(
+            *(
+                PluginResources.get_plugin_icon(doc["info"]["plugin_name"])
+                for doc in documents
+            )
+        )
         return PluginRegistryGetOut(
             uiSources=[UUID(body.recordId) if body.recordId else col.uid],
-            order=[
-                CollectionOrderItem(uid=uid, type=type(col[uid]).__name__)
-                for uid in uids
-            ],
+            order=order,
             data={
                 str(uid): PluginRegistryDocument.model_validate(
-                    {
-                        "uid": uid,
-                        "providedScript": _provided_script(col[uid]),
-                        "frontend": _plugin_frontend(col[uid]),
-                        "disableImpact": Plugin.disable_impact(col[uid]),
-                        **Plugin.dependency_view(col[uid]),
-                        **col[uid].model_dump(mode="json", context={"audience": "api"}),
-                    }
+                    {**doc, "iconPng": icon}
                 )
-                for uid in uids
+                for uid, doc, icon in zip(uids, documents, icons, strict=True)
             },
         )
     except Exception as e:

@@ -216,8 +216,9 @@ from app.utils import io
 
 retired = '03051d8b-76d1-4e49-a8e1-0d63014e22e5'
 retained = 'a958557a-4a37-48f6-af9a-d0c8499f1a92'
-order = [{'uid': retired, 'type': 'BAAHPlanConfig'}, {'uid': retained, 'type': 'MaaEndPlanConfig'}]
-data = {retired: {'Info': {'Name': 'old BAAH'}}, retained: {'Info': {'Name': 'keep MaaEnd'}}}
+# 被保留的计划用一个不依赖插件的类型：插件托管类型缺插件时会被隔离，跑不进这条用例。
+order = [{'uid': retired, 'type': 'BAAHPlanConfig'}, {'uid': retained, 'type': 'OkwwPlanConfig'}]
+data = {retired: {'Info': {'Name': 'old BAAH'}}, retained: {'Info': {'Name': 'keep Okww'}}}
 source = Config.config_path / 'legacy-json' / 'PlanConfig.json'
 target = Config.config_path / 'plans.yaml'
 io.write_file(source, {'instances': order, **data})
@@ -239,7 +240,7 @@ with sqlite3.connect(Config.database_path) as db:
 async def run():
     await Config.check_data(prepare_plugins=AsyncMock())
     assert list(map(str, Config.PlanConfig.keys())) == [retained]
-    assert Config.PlanConfig[retained].Info.Name == 'keep MaaEnd'
+    assert Config.PlanConfig[retained].Info.Name == 'keep Okww'
     record = io.read_dict_file(Config.config_path / MIGRATION_RECORD)
     assert record['complete'] and record['files']['PlanConfig.json']['state'] == 'complete'
     assert source.read_bytes() == original_json

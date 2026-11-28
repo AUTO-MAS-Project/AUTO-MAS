@@ -138,34 +138,26 @@ def run_action(pipe) -> None:
         send(pipe, {"log": line})
 
     text = None
-    if action == "maaend_game_window":
-        import win32gui
+    if action.startswith("maaend_"):
+        # 动作实现随 MaaEnd 迁移到插件：由插件的 desktop_actions 在分身进程里执行。
+        import sys
 
-        text = json.dumps(bool(win32gui.FindWindow("UnityWndClass", "Endfield")))
-        code = 0
-    elif action == "maaend_failure_screenshot":
-        from app.services.common.maa_capture import capture_win32
-        from app.task.failure_capture_core import FailureCapture
-        from app.task.MaaEnd.AutoProxy import AutoProxyTask
-
-        hwnd = AutoProxyTask.find_failure_window(Path(arguments["game_path"]))
-        screenshot = None
-        if hwnd is not None:
-            image = asyncio.run(capture_win32(hwnd))
-            screenshot = FailureCapture(stopped=lambda: False).save(
-                image, dir_name="maaend-failure"
-            )
-        text = json.dumps(str(screenshot) if screenshot else None)
-        code = 0
-    elif action == "maaend_direct_launch":
-        from app.task.MaaEnd.tools.game_launcher import launch_game
-
-        launch_game(
-            arguments["launcher_path"],
-            Path(arguments["game_path"]),
-            arguments["game_arguments"],
+        search_path = arguments.pop("plugin_path", None)
+        sdk = Path(__file__).resolve().parents[2] / "plugins" / "auto_mas_core" / "src"
+        extra = [str(sdk)] + ([str(search_path)] if search_path else [])
+        sys.path[:0] = extra
+        from auto_mas_maaend_adapter.desktop_actions import (
+            run_action as run_maaend_action,
         )
-        code = 0
+
+        async def restart() -> None:
+            send(pipe, {"restart": True})
+            if not receive(pipe).get("restart"):
+                raise asyncio.CancelledError
+
+        code, text = run_maaend_action(
+            action, arguments, on_log=on_log, on_restart=restart
+        )
     elif action == "okww_start_game":
         from app.task.Okww.tools.launcher_start import start_game_via_launcher
 
@@ -177,46 +169,6 @@ def run_action(pipe) -> None:
         else:
             code = 0
             text = json.dumps(pid)
-    elif action == "maaend_launch":
-        from app.task.MaaEnd.tools.launcher_start import start_game_via_launcher
-
-        screenshots = []
-        code = int(
-            not start_game_via_launcher(
-                arguments["launcher_path"],
-                client_path=arguments.get("client_path"),
-                on_log=on_log,
-                on_error_screenshot=lambda path: screenshots.append(str(path)),
-            )
-        )
-        text = json.dumps(screenshots)
-    elif action == "maaend_login":
-        from app.task.MaaEnd.tools.login import LoginNotReadyError, login
-
-        async def restart() -> None:
-            send(pipe, {"restart": True})
-            if not receive(pipe).get("restart"):
-                raise asyncio.CancelledError
-
-        screenshots = []
-        not_ready = None
-        error = None
-        try:
-            asyncio.run(
-                login(
-                    arguments["account"],
-                    restart_game=restart,
-                    on_error_screenshot=lambda path: screenshots.append(str(path)),
-                )
-            )
-        except LoginNotReadyError as exc:
-            not_ready = str(exc)
-        except Exception as exc:
-            error = type(exc).__name__
-        text = json.dumps(
-            {"screenshots": screenshots, "notReady": not_ready, "error": error}
-        )
-        code = int(error is not None)
     elif action == "list_windows":
         # 通用动作：列出分身桌面上的全部窗口，按 MaaFramework 的枚举顺序；匹配规则由调用方在本进程做。
         import win32gui

@@ -1,0 +1,3 @@
+project: settings
+beta-only: true
+插件市场显示插件自带头像和官方发布方，托管页面跟随已安装插件的图标。

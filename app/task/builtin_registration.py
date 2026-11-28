@@ -17,40 +17,25 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from app.models.config import CLASS_BOOK
 from app.task.registration import ScriptCapabilities, build_script_capabilities
 from app.utils.common.startup_timing import startup_stage
 
-if TYPE_CHECKING:
-    from app.task.MaaEnd.api_service import MaaEndConfigService
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
-
-def build_builtin_script_capabilities(
-    *, maaend: MaaEndConfigService, zzzod: ZzzOdRecovery
-) -> ScriptCapabilities:
-    """绑定服务只属于本次装配；模块静态声明不保存 Config 或服务实例。"""
+def build_builtin_script_capabilities() -> ScriptCapabilities:
+    """装配宿主当前内置的专项能力。"""
     with startup_stage("后端/专项注册导入/BAAH.registration"):
         from app.task.BAAH.registration import REGISTRATION as baah
     with startup_stage("后端/专项注册导入/general.registration"):
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
         from app.task.HSR.registration import REGISTRATION as hsr
-    with startup_stage("后端/专项注册导入/MaaEnd.registration"):
-        from app.task.MaaEnd.registration import registration as maaend_registration
     with startup_stage("后端/专项注册导入/OkNte.registration"):
         from app.task.OkNte.registration import REGISTRATION as oknte
     with startup_stage("后端/专项注册导入/Okww.registration"):
         from app.task.Okww.registration import REGISTRATION as okww
-    with startup_stage("后端/专项注册导入/ZzzOd.registration"):
-        from app.task.ZzzOd.registration import registration as zzzod_registration
-
     capabilities = build_script_capabilities(
         (
-            maaend_registration(maaend=maaend),
-            zzzod_registration(zzzod=zzzod),
             okww,
             general,
             oknte,

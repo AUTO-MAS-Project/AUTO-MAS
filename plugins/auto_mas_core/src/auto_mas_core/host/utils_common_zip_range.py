@@ -9,6 +9,7 @@ __all__ = [
     "RangeReadCancelled",
     "RangeSpeedGuard",
     "format_size",
+    "rebuild_zip",
 ]
 
 if TYPE_CHECKING:
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from app.utils.common.zip_range import RangeReadCancelled as RangeReadCancelled
     from app.utils.common.zip_range import RangeSpeedGuard as RangeSpeedGuard
     from app.utils.common.zip_range import format_size as format_size
+    from app.utils.common.zip_range import rebuild_zip as rebuild_zip
 else:
 
     def __getattr__(name: str) -> Any:
