@@ -94,7 +94,7 @@ const kind = computed(() => {
 
 function update(value: unknown) {
   emit('update:modelValue', props.component === 'path' && value === '' ? null : value)
-  if (!['input', 'textarea', 'password', 'path', 'button', 'dropdown-button'].includes(kind.value))
+  if (['switch', 'select', 'segmented', 'date', 'datetime', 'time'].includes(kind.value))
     emit('commit')
 }
 const dateValue = computed(() => (typeof props.modelValue === 'string' ? props.modelValue : ''))
@@ -213,6 +213,7 @@ const updateTime = (value: string | null) => {
       :zero-label="zeroLabel"
       :aria-label="label"
       @update:model-value="update"
+      @step="emit('commit')"
       @blur="emit('blur')"
     />
     <a-input-number
@@ -226,6 +227,7 @@ const updateTime = (value: string | null) => {
       :precision="precision"
       :step="step"
       @update:value="update"
+      @step="emit('commit')"
       @blur="emit('blur')"
     />
     <a-date-picker

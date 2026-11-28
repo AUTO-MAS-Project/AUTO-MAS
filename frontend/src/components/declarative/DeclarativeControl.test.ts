@@ -102,6 +102,27 @@ describe('声明式控件的读写契约', () => {
     }
   })
 
+  it.each([true, false])('数字框连续键入只改草稿，失焦或步进才提交 (compact=%s)', async compact => {
+    const onBlur = vi.fn()
+    const onCommit = vi.fn()
+    const { inputs, update } = await render(
+      { component: 'number', compact, onBlur, onCommit },
+      'a-input-number'
+    )
+    const input = inputs['a-input-number']![0]!
+    input.emit('update:value', 1)
+    input.emit('update:value', 12)
+    expect(update).toHaveBeenLastCalledWith(12)
+    expect(onCommit).not.toHaveBeenCalled()
+    expect(onBlur).not.toHaveBeenCalled()
+    input.emit('blur')
+    expect(onBlur).toHaveBeenCalledOnce()
+    input.emit('update:value', 13)
+    input.emit('step', 13, { offset: 1, type: 'up' })
+    expect(update).toHaveBeenLastCalledWith(13)
+    expect(onCommit).toHaveBeenCalledOnce()
+  })
+
   it.each(['bool', 'boolean', 'checkbox', 'toggle-button'])(
     '旧组件名 %s 使用普通输入框',
     async component => {
