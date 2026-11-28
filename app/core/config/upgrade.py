@@ -42,6 +42,9 @@ LEGACY_SIGN_FLOW_DOCUMENTS = (
     ("GameSignResult.json", "SignFlowResult.json"),
 )
 
+#: 新文档名 → 改名前的文档名。续跑要按「内容实际落在哪个名字」结账。
+LEGACY_DOCUMENT_NAMES = {new: old for old, new in LEGACY_SIGN_FLOW_DOCUMENTS}
+
 # 专项只解释当前条目的旧载荷；递归、校验和持久化仍由升级管道负责。
 LegacyEntryMigrations = Mapping[type[ConfigEntry], Callable[[dict[str, Any]], None]]
 
@@ -416,21 +419,26 @@ def upgrade_json_configs(
         target = config_path / new_name
         archived = backup_dir / old_name
         progress = files.get(old_name)
-        if progress:
-            # 旧版把这一份写到了改名前的目标名（GameSignAccounts.json →
-            # game_sign_accounts.yaml）。断在那里时进度记的仍是旧目标，而本版
-            # 只认新目标名：照新名判定会认为目标缺失，在被迁移文件还躺在旧名下
-            # 的情况下直接拒绝启动（已迁移文件缺失）。旧目标文件在就按它结账，
-            # 改名与成员类型标签归一化仍留给 migrate_sign_flow_documents。
-            recorded = progress.get("target")
-            legacy_target = config_path / str(recorded) if recorded else target
-            if (
-                recorded
-                and recorded != new_name
-                and not target.exists()
-                and legacy_target.is_file()
-            ):
-                target = legacy_target
+        if progress and not target.exists():
+            # 改名会波及目标文件名（GameSignAccounts.json → game_sign_accounts.yaml）。
+            # 旧版续跑可能把内容写进改名前的名字，进度却记新名。核对时按「进度
+            # 里记的名字 → 改名前的名字」找实际文件：内容已写好就按它结账，需要
+            # 重写就照新名重写，写出的文件与进度记的名字始终同一个。改名与成员类型
+            # 标签归一化仍留给 migrate_sign_flow_documents。
+            for name in (progress.get("target"), LEGACY_DOCUMENT_NAMES.get(new_name)):
+                if not name or name == new_name:
+                    continue
+                candidate = config_path / str(name)
+                if not candidate.is_file():
+                    continue
+                # 只在「已写好、可直接结账」时认旧名；需要重写就留在新名上，
+                # 让写出的文件与进度记的名字同为 new_name。
+                if (
+                    progress["state"] == "complete"
+                    or _digest(candidate) == progress["target_sha256"]
+                ):
+                    target = candidate
+                break
         reset_target = record.get("reset_targets") and (
             not progress or (progress["state"] == "prepared" and source.is_file())
         )
@@ -458,6 +466,9 @@ def upgrade_json_configs(
                         source.unlink()
                     else:
                         raise ValueError(f"旧配置归档冲突：{old_name}")
+                # 结账同时把进度里的目标名对齐到磁盘上的实际文件名，
+                # 避免续跑回落到旧名后进度仍写着新名。
+                progress["target"] = target.name
                 progress["state"] = "complete"
                 _utils_io.write_file(record_path, record)
                 continue
@@ -488,9 +499,11 @@ def upgrade_json_configs(
         temporary = target.with_name(target.name + ".migration.tmp")
         _utils_io.write_file(temporary, payload, format=".yaml")
         if _utils_io.read_dict_file(temporary, format=".yaml") != payload:
-            raise ValueError(f"迁移文件校验失败：{new_name}")
+            raise ValueError(f"迁移文件校验失败：{target.name}")
         files[old_name] = {
-            "target": new_name,
+            # 进度记内容实际写入的名字：续跑回落到旧目标时也照旧名记，
+            # 否则下次启动会按新名查摘要，把写好的内容判成缺失。
+            "target": target.name,
             "source_sha256": _digest(source) if source.exists() else None,
             "target_sha256": _digest(temporary),
             "state": "prepared",
