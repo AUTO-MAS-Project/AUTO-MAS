@@ -9,6 +9,10 @@ test('@account-editors @baah edits the migrated account and restores its native 
   app,
   page,
 }) => {
+  test.skip(
+    process.env.AUTO_MAS_E2E_BAAH_READY !== '1',
+    'Set AUTO_MAS_E2E_BAAH_WHEEL to the adapter wheel in a compatible host checkout'
+  )
   const post = async (endpoint: string, data: object) => {
     const response = await page.request.post(backend + endpoint, { data })
     const body = await response.json()
