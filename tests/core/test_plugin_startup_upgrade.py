@@ -361,6 +361,22 @@ async def test_runtime_install_keeps_loaded_dependencies_until_new_process(
             from app.plugin.uv.environment import read_installation
 
             assert read_installation().progress.state == "succeeded"
+
+            async def unavailable_index(*args, **kwargs):
+                pytest.fail("已确认的插件环境在重启时仍尝试访问包源")
+
+            monkeypatch.setattr(
+                precheck.ProcessRunner, "run_process", unavailable_index
+            )
+            await ops.prepare_environment()
+            assert importlib.metadata.Distribution.at(
+                target
+                / (
+                    "startup_probe-2.0.dist-info"
+                    if mode in {"hot_reload", "hot_recover"}
+                    else "install_probe-1.0.dist-info"
+                )
+            ).version == ("2.0" if mode in {"hot_reload", "hot_recover"} else "1.0")
             return
         if old is not None:
             assert sys.modules["probe_shared"] is old

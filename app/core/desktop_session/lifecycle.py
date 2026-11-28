@@ -37,7 +37,6 @@ def _reason_probe(
         OkNteConfig,
         OkwwConfig,
         ScriptEntry,
-        ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
 
@@ -55,8 +54,6 @@ def _reason_probe(
         return None
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return None
-    if isinstance(config, ZzzOdConfig):
-        return None if IS_ELEVATED else "admin_required"
     return "unsupported_config"
 
 

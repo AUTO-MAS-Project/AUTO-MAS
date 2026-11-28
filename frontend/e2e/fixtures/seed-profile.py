@@ -107,16 +107,8 @@ def install_maaend_wheel(wheel: Path, site_packages: Path) -> None:
 def bind_script_handlers() -> None:
     """有托管的隔离副本和后端启动使用相同的专项初始化入口。"""
     from app.task.builtin_registration import build_builtin_script_capabilities
-    from app.task.ZzzOd.config_context import ZzzOdContext
-    from app.task.ZzzOd.recovery import ZzzOdRecovery
 
-    capabilities = build_builtin_script_capabilities(
-        zzzod=ZzzOdRecovery(
-            ZzzOdContext(
-                Config.ScriptConfig, flush=Config.flush, add_user=Config.add_user
-            )
-        ),
-    )
+    capabilities = build_builtin_script_capabilities()
     for entry_type, handler in capabilities.config_handlers:
         Config.bind_script_config_handler(entry_type, handler)
 
@@ -131,8 +123,7 @@ async def main() -> None:
         copy_source_projects(Path(source_projects), repo_plugins)
     local = source_adapter_names(repo_plugins, Config.plugins_path)
     names = [name for name in GAME_ADAPTERS if name in local]
-    if MAAEND_ADAPTER in local:
-        names.append(MAAEND_ADAPTER)
+    names.extend(name for name in (MAAEND_ADAPTER, "zzzod_adapter") if name in local)
     if wheel := os.environ.get("AUTO_MAS_E2E_MAAEND_WHEEL"):
         if MAAEND_ADAPTER in local:
             raise RuntimeError("MaaEnd 源码与 wheel 同时提供，请只选一种来源")

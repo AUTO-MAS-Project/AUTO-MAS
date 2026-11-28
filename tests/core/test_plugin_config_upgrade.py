@@ -13,6 +13,7 @@ from maa_adapter.config.script import MaaConfig
 from app.core.config.plugin_upgrade import (
     backup_legacy_adapter_users,
     backup_legacy_maafw_documents,
+    backup_legacy_zzzod_users,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -28,6 +29,7 @@ from app.utils import io as config_io
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
         ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("ZzzOdConfig", "zzzod_adapter", "auto-mas-zzzod-adapter"),
         ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
         ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
         ("MSSConfig", "mss_adapter", "auto-mas-mss-adapter"),
@@ -92,6 +94,93 @@ def test_maafw_backup_preserves_first_original(tmp_path, filename, config_type):
     )
     backup_legacy_maafw_documents(tmp_path)
     assert (tmp_path / "legacy-maafw-plugin" / filename).read_bytes() == original
+
+
+def test_zzzod_backup_only_archives_pre_plugin_index(tmp_path):
+    path = tmp_path / "scripts.yaml"
+    backup = tmp_path / "legacy-zzzod-plugin" / path.name
+    sid = str(uuid4())
+    order = [{"uid": sid, "type": "ZzzOdConfig"}]
+    config_io.write_file(path, {"order": order, "data": {sid: {"users": {}}}})
+    backup_legacy_zzzod_users(tmp_path)
+    assert not backup.exists()
+
+    config_io.write_file(path, {"order": order, "data": {sid: {"UserData": {}}}})
+    original = path.read_bytes()
+    backup_legacy_zzzod_users(tmp_path)
+    assert backup.read_bytes() == original
+
+
+@pytest.mark.parametrize("version", ["v2.1", "v2.2"])
+def test_startup_preserves_zzzod_when_package_is_unavailable(tmp_path, version):
+    """补装失败时仍加载其他托管，保留原始账号和回退索引。"""
+    source_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            r"""
+import asyncio
+import sqlite3
+import sys
+import uuid
+from contextlib import closing
+from uuid import uuid4
+from unittest.mock import patch
+
+from app.core import Config
+from app.models.config import GeneralConfig
+from app.plugin.errors import PluginPrecheckError
+from app.task.general.registration import build_config_handler
+from app.utils import io
+
+Config.bind_script_config_handler(GeneralConfig, build_config_handler())
+sid, uid = str(uuid4()), str(uuid4())
+general = str(uuid4())
+queue, queued = str(uuid4()), str(uuid4())
+zzzod = {"UserData": {
+    "order": [{"uid": uid, "type": "ZzzOdUserConfig"}],
+    "data": {uid: {"Info": {"Name": "原账号"}}},
+}}
+path = Config.config_path / "scripts.yaml"
+io.write_file(path, {
+    "order": [{"uid": sid, "type": "ZzzOdConfig"},
+              {"uid": general, "type": "GeneralConfig"}],
+    "data": {sid: zzzod, general: {}},
+})
+queue_path = Config.config_path / "queues.yaml"
+io.write_file(queue_path, {
+    "order": [{"uid": queue, "type": "QueueConfig"}],
+    "data": {queue: {"QueueItem": {
+        "order": [{"uid": queued, "type": "QueueItem"}],
+        "data": {queued: {"Info": {"ScriptId": sid}}},
+    }}},
+})
+original = path.read_bytes()
+version = sys.argv[1]
+with sqlite3.connect(Config.database_path) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES (?)", (version,))
+with patch("app.core.config.manager.install_adapter_plugin", side_effect=PluginPrecheckError("包源不可用")):
+    asyncio.run(Config.check_data())
+assert Config.ScriptConfig[general].uid == uuid.UUID(general)
+assert Config.ScriptConfig.is_unresolved(sid)
+assert str(Config.QueueConfig[queue].QueueItem[queued].Info.ScriptId) == sid
+assert io.read_dict_file(path)["data"][sid] == zzzod
+assert (path.parent / "legacy-zzzod-plugin" / path.name).read_bytes() == original
+with closing(sqlite3.connect(Config.database_path)) as db:
+    assert db.execute("SELECT v FROM version").fetchone() == ("v2.2",)
+""",
+            version,
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONPATH": str(source_root), "PYTHONIOENCODING": "utf-8"},
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("legacy", [False, True])

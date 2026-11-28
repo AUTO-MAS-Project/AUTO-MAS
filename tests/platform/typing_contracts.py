@@ -15,7 +15,6 @@ from app.services.windows import custom_script_native as windows_script
 from app.task.BAAH.tools.push_log import baah_resolve
 from app.task.OkNte.push_log import oknte_resolve
 from app.task.Okww.push_log import okww_resolve
-from app.task.ZzzOd.push_log import make_zzzod_resolve
 from app.utils.common import host as common_host
 from app.utils.common import startup as common_startup
 from app.utils.common import update_native as common_update
@@ -60,7 +59,6 @@ from app.utils.windows.power import WindowsPowerController
 okww_processor: PostProcessor = okww_resolve
 oknte_processor: PostProcessor = oknte_resolve
 baah_processor: PostProcessor = baah_resolve
-zzzod_processor: PostProcessor = make_zzzod_resolve(set(), {})
 file_lock_windows: FileLockAPI = windows_file_lock
 file_lock_posix: FileLockAPI = posix_file_lock
 file_lock_unsupported: FileLockAPI = unsupported_file_lock

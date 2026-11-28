@@ -41,7 +41,8 @@ async def test_full_application_recursive_schema_guards(monkeypatch):
                     tools = {
                         tool.name: tool for tool in (await session.list_tools()).tools
                     }
-        assert set(tools) == set(module.MCP_INCLUDED_OPERATIONS)
+        assert set(tools) == set(module.included_operations(app))
+        assert not any("_zzzod_" in name for name in tools)
         assert set(service._instance.operation_map) == set(tools)
         assert "get_mcp_status_api_core_mcp_status_get" not in tools
         assert "retry_mcp_api_core_mcp_retry_post" not in tools

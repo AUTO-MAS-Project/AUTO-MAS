@@ -96,12 +96,6 @@ OkwwConfig = ConfigPayload[_config_models.OkwwConfig]
 OkwwConfigInput = ConfigInput[_config_models.OkwwConfig]
 
 
-ZzzOdConfig = ConfigPayload[_config_models.ZzzOdConfig]
-
-
-ZzzOdConfigInput = ConfigInput[_config_models.ZzzOdConfig]
-
-
 class ScriptIndexItem(BaseModel):
     uid: str = Field(..., description="唯一标识符")
     type: str = Field(
@@ -112,7 +106,6 @@ class ScriptIndexItem(BaseModel):
                 "OkNteConfig",
                 "MaaEndConfig",
                 "HSRConfig",
-                "ZzzOdConfig",
                 "BAAHConfig",
             ]
         },
@@ -164,7 +157,6 @@ class ScriptCreateOut(OutBase):
         OkNteConfig,
         MaaEndConfig,
         HSRConfig,
-        ZzzOdConfig,
         BAAHConfig,
     ] = Field(..., description="托管配置数据")
 
@@ -186,7 +178,6 @@ class ScriptGetOut(DeclarativeConfigGetOut):
             OkNteConfig,
             MaaEndConfig,
             HSRConfig,
-            ZzzOdConfig,
             BAAHConfig,
         ],
     ] = Field(..., description="托管数据字典, key来自于index列表的uid")
@@ -214,7 +205,6 @@ class ScriptUpdateIn(BaseModel):
             OkNteConfigInput,
             MaaEndConfigInput,
             HSRConfigInput,
-            ZzzOdConfigInput,
             BAAHConfigInput,
         ]
     ] = Field(..., description="托管更新数据")

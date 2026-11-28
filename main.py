@@ -311,8 +311,6 @@ def main():
         from app.services import telemetry as _service_telemetry
         from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
-        from app.task.ZzzOd.config_context import ZzzOdContext
-        from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     with startup_stage("后端/专项能力绑定"):
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
@@ -324,15 +322,7 @@ def main():
                 / "recommended.json",
             )
         with startup_stage("后端/专项能力绑定/构建能力注册表"):
-            script_capabilities = build_builtin_script_capabilities(
-                zzzod=ZzzOdRecovery(
-                    ZzzOdContext(
-                        Config.ScriptConfig,
-                        flush=Config.flush,
-                        add_user=Config.add_user,
-                    )
-                ),
-            )
+            script_capabilities = build_builtin_script_capabilities()
 
         for entry_type, handler in script_capabilities.config_handlers:
             Config.bind_script_config_handler(entry_type, handler)

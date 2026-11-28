@@ -46,7 +46,6 @@ if TYPE_CHECKING:
     from .OkNte import OkNteManager as OkNteManager
     from .Okww import OkwwManager as OkwwManager
     from .user_expander import UserExpander as UserExpander
-    from .ZzzOd import ZzzOdManager as ZzzOdManager
 
 # 惰性导出（与 app/core/__init__.py 同一 idiom）：宿主启动少导入一批模块。
 # 属性访问语义不变：`import app.task as task; task.MaaEndManager` 照常可用。

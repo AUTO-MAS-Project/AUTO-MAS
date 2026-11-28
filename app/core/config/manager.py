@@ -64,6 +64,7 @@ from app.core.config.plugin_upgrade import (
     backup_legacy_adapter_users,
     backup_legacy_maaend_documents,
     backup_legacy_maafw_documents,
+    backup_legacy_zzzod_users,
     install_adapter_plugin,
     install_adapter_plugins,
     prepare_plugin_documents,
@@ -91,9 +92,6 @@ from app.models.config import (
     GlobalConfig,
     HSRConfig,
     HSRUserConfig,
-    MaaEndConfig,
-    MaaEndPlanConfig,
-    MaaEndUserConfig,
     OkNteConfig,
     OkNtePlanConfig,
     OkNteUserConfig,
@@ -111,8 +109,6 @@ from app.models.config import (
     UserConfigType,
     UserEntry,
     Webhook,
-    ZzzOdConfig,
-    ZzzOdUserConfig,
 )
 from app.models.config.game_binding import GameBindingCapabilities
 from app.models.config.setting import DESKTOP_SESSION_TARGET_LIMIT
@@ -341,7 +337,6 @@ class AppConfig:
         self._adapter_plugin_failures: dict[str, str] = {}
         for model in (
             *CLASS_BOOK.values(),
-            MaaEndUserConfig,
             BAAHUserConfig,
             HSRUserConfig,
             QueueItem,
@@ -604,6 +599,8 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
+        if _utils_environment.install_zzzod_for_development():
+            required.setdefault("zzzod_adapter", "auto-mas-zzzod-adapter")
         for adapter, config_type in (
             ("src", "SrcConfig"),
             ("bettergi", "BetterGIConfig"),
@@ -640,6 +637,8 @@ class AppConfig:
 
         async def prepare_plugin_upgrade() -> None:
             """装配运行环境并补齐已有配置所需的插件，旧格式转换只在升级阶段执行。"""
+            if "zzzod_adapter" in required:
+                await asyncio.to_thread(backup_legacy_zzzod_users, self.config_path)
             # 发现会新增默认停用的注册项，先区分首次接手与用户已有的选择。
             packages = (
                 automatic_plugin_packages(
@@ -651,12 +650,14 @@ class AppConfig:
             if prepare_runtime is not None:
                 await prepare_runtime()
             for name, package in packages.items():
-                if name in required_games or (
-                    version != "v2.2" and name != MAAEND_ADAPTER_NAME
-                ):
+                can_defer = name not in required_games and (
+                    version == "v2.2"
+                    or name == MAAEND_ADAPTER_NAME
+                    or (version == "v2.1" and name == "zzzod_adapter")
+                )
+                if not can_defer:
                     await install_adapter_plugin(name, package)
                     continue
-                # 旧版内置 MaaEnd，即使现在下载不了插件，其他托管仍应能启动。
                 try:
                     await install_adapter_plugin(name, package)
                 except Exception as error:  # noqa: BLE001
@@ -755,6 +756,8 @@ class AppConfig:
             await migrate_games()
             migration_nodes = self._config_nodes
             if MAAEND_ADAPTER_NAME in self._adapter_plugin_failures:
+                from app.models.config import MaaEndConfig, MaaEndPlanConfig
+
                 # 只借用旧模型转换 JSON 中的时间、密文和账号集合。运行集合不登记旧类，
                 # 缺插件的条目会按原编号及顺序旁挂，旧 JSON 原件由升级管道完整归档。
                 migration_nodes = dict(self._config_nodes)
@@ -825,13 +828,24 @@ class AppConfig:
                 if MAAEND_ADAPTER_NAME in self._adapter_plugin_failures
                 else set()
             )
+            # v2.2 仍会尝试补装 ZzzOd，旧托管可以先原样保留。
+            deferred_zzzod = (
+                version == "v2.1" and "zzzod_adapter" in self._adapter_plugin_failures
+            )
             items = []
             for config_collection in (self.ScriptConfig, self.PlanConfig):
                 for item in config_collection.unresolved():
-                    if item.reason != "load_failed" and item.type_name in maaend_types:
-                        held_items.append(item)
-                    else:
-                        items.append(item)
+                    if item.reason != "load_failed":
+                        if item.type_name in maaend_types:
+                            held_items.append(item)
+                            continue
+                        if (
+                            deferred_zzzod
+                            and config_collection is self.ScriptConfig
+                            and item.type_name == "ZzzOdConfig"
+                        ):
+                            continue
+                    items.append(item)
             if items:
                 types = sorted(
                     {item.type_name for item in items if item.reason != "load_failed"}
@@ -1320,14 +1334,7 @@ class AppConfig:
         payload: dict[str, Any] | None = None,
     ) -> tuple[
         uuid.UUID,
-        ScriptEntry
-        | GeneralConfig
-        | MaaEndConfig
-        | OkwwConfig
-        | OkNteConfig
-        | HSRConfig
-        | ZzzOdConfig
-        | BAAHConfig,
+        ScriptEntry | GeneralConfig | OkwwConfig | OkNteConfig | HSRConfig | BAAHConfig,
     ]:
         """添加托管配置"""
 
@@ -1477,7 +1484,9 @@ class AppConfig:
         handler = (
             self._get_script_config_handler(script) if script is not None else None
         )
-        if handler is not None and handler.prepare_script_removal is not None:
+        if isinstance(script, ScriptEntry):
+            await script.prepare_script_removal()
+        elif handler is not None and handler.prepare_script_removal is not None:
             await handler.prepare_script_removal(script)
 
         async with config_manager.transaction():
@@ -1563,8 +1572,14 @@ class AppConfig:
         if isinstance(script, (GeneralConfig, HSRConfig)):
             return {"Info": {"Base": _utils_constants.BASE_NATIVE}}
 
-        # 名单按专项登记的脚本键取值，插件版与内置版共用同一个键；没列入的其它插件
-        # 不在这里放行，仍沿用配置模型自带的缺省值。
+        if isinstance(script, ScriptEntry):
+            from app.core import Plugin
+
+            decl = Plugin.script_decl(script)
+            if decl is not None and decl.new_user_defaults is not None:
+                return decl.new_user_defaults()
+
+        # 没有自行声明默认值的插件，仅对名单内的专项保留原生配置默认值。
         plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
@@ -1572,15 +1587,7 @@ class AppConfig:
             self.script_classes.get("BetterGI"),
             self.script_classes.get("MaaEnd"),
         )
-        if not plugin_defaults and not isinstance(
-            script,
-            (
-                MaaEndConfig,
-                OkwwConfig,
-                OkNteConfig,
-                ZzzOdConfig,
-            ),
-        ):
+        if not plugin_defaults and not isinstance(script, (OkwwConfig, OkNteConfig)):
             return None
 
         return {"Info": {"Base": _utils_constants.BASE_NATIVE, "IfQuickConfig": False}}
@@ -1596,11 +1603,9 @@ class AppConfig:
         uuid.UUID,
         UserEntry
         | GeneralUserConfig
-        | MaaEndUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig
-        | ZzzOdUserConfig
         | BAAHUserConfig,
     ]:
         """添加账号配置"""
@@ -2020,7 +2025,9 @@ class AppConfig:
 
         handler = self._get_script_config_handler(script_config)
         cleanup = None
-        if handler is not None and handler.prepare_user_removal is not None:
+        if isinstance(script_config, ScriptEntry):
+            cleanup = script_config.prepare_user_removal(user_uid)
+        elif handler is not None and handler.prepare_user_removal is not None:
             cleanup = handler.prepare_user_removal(script_config, user_uid)
 
         script_users(script_config).remove(user_uid)
@@ -2082,17 +2089,13 @@ class AppConfig:
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
-        PlanEntry
-        | MaaEndPlanConfig
-        | UniversalPlanConfig
-        | OkNtePlanConfig
-        | OkwwPlanConfig,
+        PlanEntry | UniversalPlanConfig | OkNtePlanConfig | OkwwPlanConfig,
     ]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
 
-        class_name = MaaEndPlanConfig.__name__ if script == "MaaEndPlan" else script
+        class_name = "MaaEndPlanConfig" if script == "MaaEndPlan" else script
         plan_class = self.PlanConfig.entry_types.get(class_name)
         if plan_class is None or not issubclass(plan_class, PlanEntry):
             # [兼容旧专项] 旧创建标识仅供尚未迁移的计划类型使用。
@@ -2989,7 +2992,7 @@ class AppConfig:
         """获取指定消费方的计划下拉框信息"""
 
         if consumer == "maaend":
-            plan_class = self.PlanConfig.entry_types.get(MaaEndPlanConfig.__name__)
+            plan_class = self.PlanConfig.entry_types.get("MaaEndPlanConfig")
         else:
             consumer_config = next(
                 (item for item in PLAN_BOOK.values() if item["consumer"] == consumer),

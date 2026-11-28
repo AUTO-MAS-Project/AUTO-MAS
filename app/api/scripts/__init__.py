@@ -22,7 +22,6 @@ from app.task.BAAH.api import router as baah_router
 from app.task.HSR.api import router as hsr_router
 from app.task.OkNte.api import router as oknte_router
 from app.task.Okww.api import router as okww_router
-from app.task.ZzzOd.api import router as zzzod_router
 
 from . import backup, management, operations, sharing, users, webhooks
 from .users import UserUpdateIn as UserUpdateIn
@@ -37,6 +36,5 @@ router.include_router(sharing.router)
 router.include_router(okww_router)
 router.include_router(hsr_router)
 router.include_router(baah_router)
-router.include_router(zzzod_router)
 router.include_router(oknte_router)
 router.include_router(backup.router)

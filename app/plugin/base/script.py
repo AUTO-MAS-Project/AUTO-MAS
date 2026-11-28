@@ -78,6 +78,9 @@ class ScriptTypeDecl:
     # 非空时，维护操作使用受托管锁保护的 default 节点，不要求存在账号。
     maintenance_default_user_name: str | None = None
 
+    # 仅公共建号入口应用，存量账号继续按配置模型读取。
+    new_user_defaults: Callable[[], dict[str, Any]] | None = None
+
     def desktop_session_reason(
         self, config: ScriptEntry, elevated: bool, *, defer_io: bool = False
     ) -> DesktopSessionCheckReason | DesktopSessionProbe | None:

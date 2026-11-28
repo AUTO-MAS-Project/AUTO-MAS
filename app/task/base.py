@@ -11,7 +11,6 @@ from app.models.config import (
     OkNteConfig,
     OkwwConfig,
     UserConfigType,
-    ZzzOdConfig,
 )
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import execute_script_task
@@ -51,9 +50,7 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
     return None
 
 
-type ProxyScriptConfigType = (
-    OkwwConfig | OkNteConfig | GeneralConfig | ZzzOdConfig | BAAHConfig
-)
+type ProxyScriptConfigType = OkwwConfig | OkNteConfig | GeneralConfig | BAAHConfig
 
 
 class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):

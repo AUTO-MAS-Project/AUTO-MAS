@@ -19,15 +19,11 @@ from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
-def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin(monkeypatch):
+def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
     from whimbox_adapter.config import WhimboxConfig
 
-    from app.models.config import GeneralConfig, ZzzOdConfig
+    from app.models.config import GeneralConfig
 
-    monkeypatch.setattr("app.utils.IS_ELEVATED", False)
-    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) == "admin_required"
-    monkeypatch.setattr("app.utils.IS_ELEVATED", True)
-    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) is None
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
     assert lifecycle.task_unavailable_reason(general) is None
     assert (
