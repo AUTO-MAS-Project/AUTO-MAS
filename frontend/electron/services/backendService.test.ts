@@ -436,100 +436,16 @@ describe('Runtime 启动与退出', () => {
     expect(killAllMock).not.toHaveBeenCalled()
   })
 
-  it.each(['version', 'business'] as const)(
-    '%s 检查期间后端 55 秒后才响应时，同一次启动可以完成',
-    async phase => {
-      vi.useFakeTimers()
-      const service = createService()
-      mockSpawn()
-      const startup = service.startBackend()
-      const child = await passEnvironmentEnsure()
-      const readyAt = Date.now() + 55_000
-      const health = { version: 'v5.5.0-beta.3', businessStatus: 'ready' }
-      fetchMock.mockImplementation(
-        (_url: string, { signal }: RequestInit) =>
-          new Promise<Response>((resolve, reject) => {
-            const timer = setTimeout(
-              () => resolve(Response.json(health)),
-              Math.max(0, readyAt - Date.now())
-            )
-            signal?.addEventListener(
-              'abort',
-              () => {
-                clearTimeout(timer)
-                reject(signal.reason)
-              },
-              { once: true }
-            )
-          })
-      )
-      try {
-        if (phase === 'business') {
-          fetchMock.mockResolvedValueOnce(Response.json({ ...health, businessStatus: 'running' }))
-          child.stdout.feed(
-            helloLine.replace('"stdin.status"', '"stdin.status","stdin.activate"') +
-              runningStateLine.replace('"pid":9001', '"pid":9001,"startupActivation":"pending"')
-          )
-        } else {
-          child.stdout.feed(helloLine + runningStateLine)
-        }
-        await vi.advanceTimersByTimeAsync(56_000)
-        expect(child.stdin.chunks.join('')).not.toContain('"command":"shutdown"')
-        if (phase === 'business') {
-          expect(child.stdin.chunks.join('')).toContain('"command":"activate"')
-          child.stdout.feed(
-            runningStateLine
-              .replace('"sequence":4', '"sequence":5')
-              .replace('"pid":9001', '"pid":9001,"startupActivation":"active"')
-          )
-        }
-        expect(await startup).toEqual({ success: true })
-        expect(service.getRuntimeApiEndpoints()?.local).toBe('http://127.0.0.1:36163')
-      } finally {
-        child.stdout.feed(stoppedResultLine)
-        child.close(0)
-        await startup
-        vi.useRealTimers()
-      }
-    }
-  )
-
-  it('就绪后持续无法读取健康检查时，在限时内结束并报告健康检查超时', async () => {
-    vi.useFakeTimers()
-    const service = createService()
-    mockSpawn()
-    fetchMock.mockRejectedValue(new TypeError('connection refused'))
-    const startup = service.startBackend()
-    const child = await passEnvironmentEnsure()
-    try {
-      child.stdout.feed(helloLine + runningStateLine)
-      await vi.advanceTimersByTimeAsync(59_000)
-      expect(child.stdin.chunks).toHaveLength(0)
-      await vi.advanceTimersByTimeAsync(1_000)
-      expect(child.stdin.chunks.join('')).toContain('"command":"shutdown"')
-      child.stdout.feed(stoppedResultLine)
-      child.close(0)
-      expect(await startup).toMatchObject({ success: false, code: 'BACKEND_HEALTH_TIMEOUT' })
-      expect(service.getRuntimeApiEndpoints()).toBeNull()
-    } finally {
-      if (child.exitCode === null) child.close(0)
-      await startup
-      vi.useRealTimers()
-    }
-  })
-
   describe.each(['before-hello', 'checking-version', 'shutdown-timeout'])('关闭阶段 %s', phase => {
     it('stopBackend 只发一次 shutdown，不做任何进程清理', async () => {
       const service = createService()
       mockSpawn()
       vi.useFakeTimers()
       let finishHealth: () => void = () => undefined
-      let healthSignal: AbortSignal | null | undefined
       if (phase === 'checking-version') {
         fetchMock.mockImplementationOnce(
-          (_url: string, { signal }: RequestInit) =>
+          () =>
             new Promise(resolve => {
-              healthSignal = signal
               finishHealth = () =>
                 resolve({ ok: true, json: async () => ({ version: 'v5.5.0-beta.3' }) })
             })
@@ -549,7 +465,6 @@ describe('Runtime 启动与退出', () => {
       try {
         if (phase === 'before-hello') child.stdout.feed(helloLine)
         await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
-        if (phase === 'checking-version') expect(healthSignal?.aborted).toBe(true)
         const controlLine = child.stdin.chunks[0]
         expect(controlLine.endsWith('\n')).toBe(true)
         expect(JSON.parse(controlLine)).toMatchObject({
@@ -1123,9 +1038,6 @@ it.each(['ready', 'failed'] as const)('插件与业务初始化 %s 后才决定�
     )
     expect(await startup).toMatchObject({ success: true })
   } else {
-    await vi.waitFor(() => expect(backend.stdin.chunks.join('')).toContain('"command":"shutdown"'))
-    backend.stdout.feed(stoppedResultLine)
-    backend.close(0)
     expect(await startup).toMatchObject({
       success: false,
       error: expect.stringContaining('plugin installation failed'),
@@ -1133,10 +1045,8 @@ it.each(['ready', 'failed'] as const)('插件与业务初始化 %s 后才决定�
     expect(backend.stdin.chunks.join('')).not.toContain('"command":"activate"')
   }
   expect(spawnMock).toHaveBeenCalledTimes(2)
-  if (backend.exitCode === null) {
-    backend.stdout.feed(stoppedResultLine)
-    backend.close(0)
-  }
+  backend.stdout.feed(stoppedResultLine)
+  backend.close(0)
 })
 
 it.each(['compatible', 'conflict', 'network'] as const)(

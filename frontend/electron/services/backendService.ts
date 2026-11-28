@@ -159,6 +159,7 @@ export class BackendService {
   private activationPending = false
   private runtimeBaseUrl: string | null = null
   private startingRuntimeHandle: RuntimeSuperviseHandle | null = null
+  private startingRuntimeStop: Promise<BackendStopResult> | null = null
   private startupHealthAbort: AbortController | null = null
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
@@ -467,9 +468,18 @@ export class BackendService {
     const releaseStartup = () => {
       if (this.startingRuntimeHandle === handle) this.startingRuntimeHandle = null
     }
+    const cancelledStartup = (stopped: BackendStopResult) =>
+      this.buildRuntimeStartFailure(
+        stopped.error ?? '正在关闭后端，取消启动',
+        stdoutLines,
+        stderrLines
+      )
     this.startingRuntimeHandle = handle
     void handle.closed.then(releaseStartup)
-    if (this.runtimeStopping) await this.stopBackendViaRuntime(handle)
+    if (this.runtimeStopping) {
+      this.startingRuntimeStop ??= this.stopBackendViaRuntime(handle)
+      return cancelledStartup(await this.startingRuntimeStop)
+    }
 
     const timeoutMs = options?.timeout || RUNTIME_READY_TIMEOUT_MS
     let timer: NodeJS.Timeout | undefined
@@ -498,6 +508,7 @@ export class BackendService {
       this.startupHealthAbort = healthCheck
       void handle.closed.then(() => healthCheck.abort())
       if (this.runtimeStopping) healthCheck.abort()
+      let businessFailure: string | undefined
       try {
         let health: StartupHealth | undefined
         // 发行链路确认后端版本（issue #30）。显式复用环境时，Runtime 已监督指定源码的进程，
@@ -507,11 +518,18 @@ export class BackendService {
           this.assertBackendVersionMatches(health.version)
         }
         if (outcome.deferred) {
-          await this.waitForStartupBusiness(outcome.baseUrl, health, healthCheck.signal, options)
+          businessFailure = await this.waitForStartupBusiness(
+            outcome.baseUrl,
+            health,
+            healthCheck.signal,
+            options
+          )
         }
         healthCheck.signal.throwIfAborted()
       } catch (error) {
         if (healthCheck.signal.aborted) {
+          // 用户取消时共享有时限的关闭结果。只有进程主动退出时才直接取 Runtime 终态。
+          if (this.startingRuntimeStop) return cancelledStartup(await this.startingRuntimeStop)
           const stopped = await ended
           return this.buildRuntimeStartFailure(
             'result' in stopped ? stopped.result : stopped.error,
@@ -544,6 +562,8 @@ export class BackendService {
       if (outcome.deferred) {
         this.activationPending = true
         try {
+          // 后端明确报告业务初始化失败时保留监督句柄和原有诊断入口。
+          if (businessFailure) throw new Error(businessFailure)
           await this.confirmAutomaticWork(handle, 'activate')
           this.activationPending = false
         } catch (error) {
@@ -580,14 +600,14 @@ export class BackendService {
     health: StartupHealth | undefined,
     signal: AbortSignal,
     options?: BackendStartOptions
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const deadline = Date.now() + BUSINESS_READY_TIMEOUT_MS
     let previousMessage: string | null = null
     while (Date.now() < deadline) {
       health ??= await readStartupHealth(baseUrl, signal, deadline)
       const status = health.businessStatus ?? health.backgroundStatus
       if (status === 'failed' || status === 'cancelled')
-        throw new Error(health.backgroundError || '插件或业务初始化失败')
+        return health.backgroundError || '插件或业务初始化失败'
       if (status === 'ready') return
       if (status !== 'starting' && status !== 'running') throw new Error('业务初始化状态无效')
       if (health.businessMessage && health.businessMessage !== previousMessage) {
@@ -911,30 +931,23 @@ export class BackendService {
   stopBackend(): Promise<BackendStopResult> {
     this.stopRequested = true
     if (this.stopFlight) return this.stopFlight
+    // 先登记有时限的 shutdown，再打断启动等待。启动取消和队列收尾共享同一个结果。
+    if (this.startingRuntimeHandle)
+      this.startingRuntimeStop ??= this.stopBackendViaRuntime(this.startingRuntimeHandle)
     const cancelled = this.cancelRuntimePreparations()
-    // 停止请求先打断启动等待，再进入队列收口；不能排在尚未就绪的 start 后才发 shutdown。
-    const startingStopped = this.stopBackendViaRuntime(this.startingRuntimeHandle)
     const operation = this.enqueueOperation(async () => {
       await cancelled
-      const result = await startingStopped
-      if (!result.success) return result
+      const result = await this.startingRuntimeStop
+      if (result && !result.success) return result
       return this.stopBackendInternal()
     })
     this.stopFlight = operation
-    void operation.then(
-      () => {
-        if (this.stopFlight === operation) {
-          this.stopFlight = null
-          this.stopRequested = false
-        }
-      },
-      () => {
-        if (this.stopFlight === operation) {
-          this.stopFlight = null
-          this.stopRequested = false
-        }
-      }
-    )
+    const finish = () => {
+      this.stopFlight = null
+      this.stopRequested = false
+      this.startingRuntimeStop = null
+    }
+    void operation.then(finish, finish)
     return operation
   }
   private async stopBackendInternal(): Promise<BackendStopResult> {
