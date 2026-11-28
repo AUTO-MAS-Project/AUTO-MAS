@@ -181,7 +181,7 @@ describe('Demo15 配置编辑器', () => {
     try {
       await vi.waitFor(() =>
         expect(view.find('iframe')?.props).toMatchObject({
-          sandbox: 'allow-scripts',
+          sandbox: 'allow-scripts allow-forms',
           referrerpolicy: 'no-referrer',
         })
       )

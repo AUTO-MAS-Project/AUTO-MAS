@@ -26,6 +26,8 @@ vi.mock('@/services/websocket/subscriptions', () => ({
   subscribe: socket.capabilities,
   unsubscribe: vi.fn(),
 }))
+const confirm = vi.hoisted(() => vi.fn())
+vi.mock('@/composables/useConfirm', () => ({ useConfirm: () => ({ confirm }) }))
 const lightTheme = { mode: 'light', tokens: { '--mas-bg-base': '#fff' } } as const
 
 afterEach(() => vi.unstubAllGlobals())
@@ -90,7 +92,7 @@ describe('wheel iframe', () => {
     const child = pluginUiFrame(frame)
     try {
       expect(frame.props).toMatchObject({
-        sandbox: 'allow-scripts',
+        sandbox: 'allow-scripts allow-forms',
         referrerpolicy: 'no-referrer',
       })
       expect(child.url.pathname).toBe('/api/plugin/demo15/ui/rev/plans/main.html')
@@ -139,6 +141,75 @@ describe('wheel iframe', () => {
       view.app.unmount()
     }
   })
+
+  it.each(['settings', 'notification'] as const)(
+    'binds dialogs to the active %s target',
+    async kind => {
+      const { view, target, editor } = mountWheel()
+      target.value = {
+        kind,
+        scriptId: null,
+        userId: null,
+        planId: null,
+        configUid: 'uid',
+        ...(kind === 'settings' ? { pluginId: 'record' } : { channelId: 'mail' }),
+      }
+      await nextTick()
+      const child = pluginUiFrame(view.find('iframe')!)
+      try {
+        child.ready()
+        const ask = async (action: string, params: object) => {
+          const id = child.request(action, params)
+          await vi.waitFor(() => expect(child.replies.has(id)).toBe(true))
+          return child.replies.get(id)
+        }
+        const foreign = child.request(
+          'getContext',
+          {},
+          { target: { ...target.value, extra: true } }
+        )
+        expect((await ask('getContext', {}))?.result).toMatchObject({
+          surface: kind,
+          target: target.value,
+        })
+        expect(child.replies.has(foreign)).toBe(false)
+        expect((await ask('pickPath', { mode: 'file' }))?.result).toEqual({
+          ok: false,
+          code: 'unavailable',
+        })
+        const selectFile = vi.fn().mockResolvedValue(['chosen'])
+        Object.assign(window, {
+          electronAPI: { selectFile, selectFolder: vi.fn().mockResolvedValue(null) },
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', title: 'Pick', defaultPath: 'here' }))?.result
+        ).toEqual({ cancelled: false, path: 'chosen' })
+        expect(selectFile).toHaveBeenCalledWith(undefined, { title: 'Pick', defaultPath: 'here' })
+        expect((await ask('pickPath', { mode: 'folder' }))?.result).toEqual({
+          cancelled: true,
+          path: null,
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', filters: [{ name: 'File', extensions: [42] }] }))
+            ?.error
+        ).toBe('invalid_params')
+        confirm.mockResolvedValueOnce(false)
+        expect((await ask('confirm', { message: 'Continue?', danger: true }))?.result).toEqual({
+          confirmed: false,
+        })
+        expect(confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ description: 'Continue?', tone: 'danger' })
+        )
+        expect((await ask('confirm', { message: ' '.repeat(501) }))?.error).toBe('invalid_params')
+        editor.value = { ...editor.value, locked: true }
+        expect((await ask('pickPath', { mode: 'file' }))?.error).toBe('read_only')
+        expect((await ask('confirm', { message: 'Continue?' }))?.error).toBe('read_only')
+      } finally {
+        child.close()
+        view.app.unmount()
+      }
+    }
+  )
 
   it('pushes lock, busy, locale, theme and projected config changes without a new request', async () => {
     const { view, editor } = mountWheel()

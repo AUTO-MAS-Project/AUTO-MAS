@@ -4,7 +4,11 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
 import { buildMaaFWRoutes } from './maafwRoutes'
-import { buildScriptEditorRoutes, genericEditorRoutes } from './scriptEditorRoutes'
+import {
+  buildScriptEditorRoutes,
+  genericEditorRoutes,
+  resolveScriptPanelRoute,
+} from './scriptEditorRoutes'
 import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import {
   MAAFW_FAMILY_ADAPTERS,
@@ -342,9 +346,15 @@ router.beforeEach(async (to, from, next) => {
 })
 
 // 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
-router.beforeResolve(async to => {
+router.beforeEach(async to => {
   const type = to.meta.scriptType ?? to.params.scriptType
   if (typeof type !== 'string') return
+  try {
+    const editor = await resolveScriptPanelRoute(to, router, type)
+    if (editor) return editor
+  } catch (error) {
+    logger.warn(`读取 ${type} 插件面板失败: ${String(error)}`)
+  }
   // 随宿主提供的编辑器可以直接打开；静态插件入口和新插件路由都检查实际能力。
   if (
     isBuiltinScriptType(type) &&

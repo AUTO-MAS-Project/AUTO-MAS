@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator, Callable
 from typing import Any, Literal
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
 from app.config import ConfigEntry
 from app.config.wire import config_contract
@@ -11,6 +11,7 @@ from app.core import Plugin
 from app.models.config import ScriptEntry, UserEntry
 from app.models.schema import BackupTargetHint, DeclarativeConfigUi
 from app.models.task import TaskMode
+from app.plugin.frontend import MountedFrontend
 
 # 托管是否进桌面分身改由全局清单管理，旧字段只为降级与已发布插件保留，不在表单里出现。
 _DEPRECATED_FIELDS = frozenset({("Run", "ExecutionSession")})
@@ -66,9 +67,12 @@ def config_detail_ui(
 type FrontendWriteGuard = Callable[[ConfigEntry], None]
 
 
-async def require_frontend_activation(
+type FrontendSession = tuple[MountedFrontend, str, str]
+
+
+async def frontend_session(
     request: Request,
-) -> AsyncIterator[FrontendWriteGuard | None]:
+) -> AsyncIterator[FrontendSession | None]:
     """宿主请求沿用原写入流程；面板请求在整个写入期间持有当前实例的调用门。"""
     provider = request.headers.get("x-plugin-ui-provider")
     activation = request.headers.get("x-plugin-ui-activation")
@@ -82,6 +86,17 @@ async def require_frontend_activation(
     if frontend is None:
         raise HTTPException(status_code=409, detail="插件界面已失效，请重新打开")
 
+    with frontend.gate.active_call():
+        yield frontend, provider, page
+
+
+async def require_frontend_activation(
+    session: FrontendSession | None = Depends(frontend_session, scope="function"),
+) -> FrontendWriteGuard | None:
+    if session is None:
+        return None
+    frontend, _, page = session
+
     def authorize(entry: ConfigEntry) -> None:
         if not any(
             mount is frontend and binding.page == page
@@ -89,8 +104,7 @@ async def require_frontend_activation(
         ):
             raise HTTPException(status_code=403, detail="页面未绑定到此配置")
 
-    with frontend.gate.active_call():
-        yield authorize
+    return authorize
 
 
 def config_update_data(

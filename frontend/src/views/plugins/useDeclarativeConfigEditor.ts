@@ -9,6 +9,7 @@ import {
   declarativeValues,
   resolveActionOwner,
 } from '@/components/declarative/declarativeLayout'
+import { compatibleWheel } from '@/utils/pluginScriptTypes'
 import { useConfirm } from '@/composables/useConfirm'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -128,11 +129,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   })
   const configUid = computed(() => ui.value?.configUid ?? '')
   const surface = computed(() => ui.value?.frontendSurfaces?.[target.value.mode])
-  const wheel = computed(() => {
-    const mount = surface.value
-    const web = mount?.artifacts.web
-    if (mount && web?.panelApi === 1) return { ...mount, entry: web.entry }
-  })
+  const wheel = computed(() => compatibleWheel(surface.value))
   const wheelTarget = computed<PluginUiTarget>(() => {
     const { mode, id } = target.value
     return {

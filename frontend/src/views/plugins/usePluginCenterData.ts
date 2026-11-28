@@ -3,6 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import appIcon from '@/assets/AUTO-MAS.ico'
 import { usePluginApi } from '@/composables/usePluginApi'
+import { compatibleWheel, indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { usePluginRegistry } from '@/composables/usePluginScriptTypes'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -152,6 +153,9 @@ export function usePluginCenterData() {
   const enabledUids = computed(() =>
     installed.value.flatMap(view => (view.enabled ? view.uid : []))
   )
+  const settingsPanels = computed(
+    () => indexPluginScriptTypes(registry.data.value?.data).settingsPanels
+  )
   const settings = useQuery({
     // 键不含 uid 列表：注册表刷新后紧接着重取，调用时读当下已启用的插件。
     queryKey: computed(() => ['plugins', 'settingsVisibility', locale.value]),
@@ -160,6 +164,7 @@ export function usePluginCenterData() {
       Object.fromEntries(
         await Promise.all(
           enabledUids.value.map(async uid => {
+            if (compatibleWheel(settingsPanels.value.get(uid))) return [uid, 'visible'] as const
             try {
               const result = await api.getConfig(uid)
               return [uid, pluginSettingsGroups(result.data).length ? 'visible' : 'hidden'] as const

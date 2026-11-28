@@ -457,6 +457,7 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
             data=PluginConfigDocument.model_validate(
                 {
                     "uid": cfg.uid,
+                    "locked": cfg.is_locked,
                     **cfg.model_dump(mode="json", context={"audience": "api"}),
                 }
             ),

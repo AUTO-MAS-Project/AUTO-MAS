@@ -230,7 +230,7 @@ class MountedFrontend:
                 return Response(status_code=404)
             root = f"{base}{quote(prefix)}/ui/{self.revision}/"
             policy = [
-                "sandbox allow-scripts",
+                "sandbox allow-scripts allow-forms",
                 "default-src 'none'",
                 "base-uri 'none'",
                 "form-action 'none'",

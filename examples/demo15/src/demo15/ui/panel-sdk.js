@@ -120,6 +120,8 @@ globalThis.connectPanel = function connectPanel() {
     readConfig,
     saveConfig: (changes, phase = 'commit') => call('saveConfig', { changes, phase }),
     runAction: (group, field, value = true) => call('runAction', { group, field, value }),
+    pickPath: options => call('pickPath', options),
+    confirm: options => call('confirm', options),
     notify: (severity, message) => call('notify', { severity, message }),
     onStateChange: listener => subscribe(stateListeners, listener),
     onConfigReloaded: listener => subscribe(configListeners, listener),

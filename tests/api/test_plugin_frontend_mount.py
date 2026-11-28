@@ -4,6 +4,7 @@ import importlib.metadata
 import json
 import os
 import sys
+from dataclasses import replace
 from shutil import copytree, ignore_patterns
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -13,7 +14,13 @@ import pytest_asyncio
 from fastapi import APIRouter, FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api import config_triggers, plan_router, plugin_router, scripts_router
+from app.api import (
+    config_triggers,
+    plan_router,
+    plugin_router,
+    scripts_router,
+    setting_router,
+)
 from app.config import ConfigCollection, config_manager
 from app.core import Config, Plugin
 from app.core.i18n import I18n
@@ -49,7 +56,13 @@ async def host(monkeypatch, isolated_app_paths):
     for collection in (scripts, plans, registry):
         await collection.activate()
     app = FastAPI()
-    for router in (scripts_router, plan_router, plugin_router, config_triggers.router):
+    for router in (
+        scripts_router,
+        plan_router,
+        plugin_router,
+        config_triggers.router,
+        setting_router,
+    ):
         app.include_router(router)
     Plugin.http.bind_app(app)
     async with AsyncClient(
@@ -145,7 +158,7 @@ async def test_demo_assets_and_csp(host, demo_package):
             )
             root = f"http://test{asset_url(record, revision, '')}"
             assert csp == {
-                "sandbox": "allow-scripts",
+                "sandbox": "allow-scripts allow-forms",
                 "default-src": "'none'",
                 "base-uri": "'none'",
                 "form-action": "'none'",
@@ -554,6 +567,13 @@ async def test_installed_plugin_cannot_take_demo_plan_and_releases_resources(
     assert (
         await host.post("/api/plugin_config/update", json=settings, headers=headers)
     ).json()["code"] == 200
+    assert (
+        await host.post(
+            "/api/plugin_config/update",
+            json=settings,
+            headers={**headers, "X-Plugin-Ui-Activation": "stale"},
+        )
+    ).status_code == 409
     other_ui = (await registry_document(host, owner))["frontend"]
     headers = {
         "X-Plugin-Ui-Provider": "demo15",
@@ -575,3 +595,55 @@ async def test_installed_plugin_cannot_take_demo_plan_and_releases_resources(
     messages, _ = await I18n.get_messages("en-US")
     assert "panel_probe" not in messages["plugins"]
     assert (await registry_document(host, owner))["frontend"]["pages"]["plan"]
+
+
+async def test_notification_panel_may_only_write_its_channel(
+    host, demo_package, monkeypatch
+):
+    from app.core.notify import bootstrap
+
+    record, ui = demo_package
+    manifest = ui / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    data["bindings"].append(
+        {"surface": "notification", "channel": "demo15", "page": "plan"}
+    )
+    manifest.write_text(json.dumps(data), encoding="utf8")
+    await Plugin.enable(record)
+    frontend = (await registry_document(host, record))["frontend"]
+    headers = {
+        "X-Plugin-Ui-Provider": "demo15",
+        "X-Plugin-Ui-Page": "plan",
+        "X-Plugin-Ui-Activation": frontend["activationId"],
+    }
+    mail = next(
+        ch
+        for ch in bootstrap.get_notify_channels()
+        if ch.enable_field == ("Notify", "IfSendMail")
+    )
+    monkeypatch.setattr(
+        bootstrap, "get_notify_channels", lambda: (replace(mail, key="demo15"),)
+    )
+    write = AsyncMock()
+    monkeypatch.setattr(Config, "update_setting", write)
+
+    async def post(patch, identity):
+        return await host.post(
+            "/api/setting/update", json={"data": patch}, headers=identity
+        )
+
+    patch = {"Notify": {"ToAddress": "me@example.org"}}
+    assert (await post(patch, headers)).json()["code"] == 200
+    write.assert_awaited_once_with(patch)
+    for invalid in (
+        {"Notify": {"AuthorizationCode": "secret"}},
+        {"Notify": {"IfKoishiSupport": True}},
+    ):
+        assert (await post(invalid, headers)).status_code == 403
+    assert (
+        await post(patch, {**headers, "X-Plugin-Ui-Page": "unknown"})
+    ).status_code == 403
+    assert (await post(patch, {"X-Plugin-Ui-Provider": "demo15"})).status_code == 403
+    await Plugin.disable(record)
+    assert (await post(patch, headers)).status_code == 409
+    write.assert_awaited_once()

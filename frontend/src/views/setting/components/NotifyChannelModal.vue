@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { message } from 'ant-design-vue'
+import { createReusableTemplate } from '@vueuse/core'
+import PluginUiMount from '@/components/PluginUiMount.vue'
+import type { PluginUiEditor } from '@/composables/usePluginUiBridge'
+import { usePluginRegistry } from '@/composables/usePluginScriptTypes'
+import { compatibleWheel, indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import type { SettingGroupChangeHandler } from '../settingTypes'
 import { useI18n } from 'vue-i18n'
 import type { NotifyChannelOut } from '@/api/models/NotifyChannelOut'
 import { handleExternalLink } from '@/utils/openExternal'
@@ -12,6 +20,8 @@ import { channelIcon, channelIconColor } from './notifyChannelIcons'
 
 const props = withDefaults(
   defineProps<{
+    configUid: string
+    saveGroup: SettingGroupChangeHandler
     open: boolean
     channel: NotifyChannelOut | null
     /** 全局通知配置的扁平取值源（settings.Notify） */
@@ -35,7 +45,7 @@ const emit = defineEmits<{
   listed: [names: string[]]
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const icon = computed(() => channelIcon(props.channel?.icon))
 const iconColor = computed(() => channelIconColor(props.channel?.icon))
@@ -76,7 +86,79 @@ const setEnabled = async (value: boolean | string | number) => {
   }
 }
 
-const saveField = (group: string, name: string, value: unknown) => props.save(group, name, value)
+const [DefineFields, ChannelFields] = createReusableTemplate<{ secretOnly?: boolean }>()
+const registry = usePluginRegistry(computed(() => props.open))
+const wheel = computed(() =>
+  compatibleWheel(
+    indexPluginScriptTypes(registry.data.value?.data).notificationPanels.get(
+      props.channel?.key ?? ''
+    )
+  )
+)
+const refreshWheel = async () => (await registry.refetch()).isSuccess && !!wheel.value
+const draft = usePluginSettingsDraft()
+const revision = ref(0)
+const hints = computed(() =>
+  fields.value
+    .filter(field => field.group === 'Notify' && field.control !== 'password')
+    .map(field => ({
+      field: field.name,
+      editable: true,
+    }))
+)
+const savedValues = computed(() => ({
+  Notify: Object.fromEntries(hints.value.map(h => [h.field, props.values[h.field]])),
+}))
+watch(
+  [() => props.channel?.key, savedValues],
+  ([key, values], previous) => {
+    draft.reset(values, { keepDraft: !!key && key === previous?.[0] })
+    revision.value++
+  },
+  { immediate: true }
+)
+const editor = computed<PluginUiEditor>(() => ({
+  locale: locale.value,
+  locked: !props.open || !props.configUid,
+  busy: saving.value,
+  configRevision: revision.value,
+  groups: [{ name: 'Notify', hints: hints.value }],
+  values: draft.values,
+  async save(changes, commit) {
+    const activation = wheel.value
+    if (!activation || !props.open || saving.value)
+      return { ok: false, code: 'read_only', message: t('core.plugins.saveFailed') }
+    for (const { group, field, value } of changes) draft.update(group, field, value)
+    if (!commit || !changes.length) return { ok: true }
+    const submitted = draft.snapshot()
+    const key = props.channel?.key
+    saving.value = true
+    try {
+      if (await props.saveGroup('Notify', draft.patch(submitted, changes).Notify!, activation)) {
+        if (props.channel?.key === key) {
+          draft.commit(submitted, changes)
+          draft.reset(savedValues.value, { keepDraft: true })
+          revision.value++
+        }
+        return { ok: true }
+      }
+      return { ok: false, code: 'save_failed', message: t('core.plugins.saveFailed') }
+    } finally {
+      saving.value = false
+    }
+  },
+  // 渠道描述只声明普通字段；绑定、测试等动作由宿主控件持有。
+  runAction: async () => 'error',
+  notify: (severity, text) => void message[severity](text),
+}))
+
+const hasDraftField = (name: string) =>
+  Object.prototype.hasOwnProperty.call(savedValues.value.Notify, name)
+const saveField = async (group: string, name: string, value: unknown) => {
+  const key = props.channel?.key
+  const saved = await props.save(group, name, value)
+  if (saved && key === props.channel?.key && hasDraftField(name)) draft.discardField(group, name)
+}
 
 // Webhook 摘要：条目名缺省时用 uid 兜底，避免出现空名字串在列表里
 const onWebhookListed = (items: { name: string; uid: string }[]) =>
@@ -164,14 +246,36 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
           @listed="onWebhookListed"
         />
 
-        <NotifyFieldRenderer
-          v-for="field in fields"
-          :key="field.name"
-          :field="field"
-          :value="values[field.name]"
-          :get-popup-container="getPopupContainer"
-          @save="value => saveField(field.group, field.name, value)"
-        />
+        <DefineFields v-slot="{ secretOnly }">
+          <NotifyFieldRenderer
+            v-for="field in secretOnly ? fields.filter(f => f.control === 'password') : fields"
+            :key="field.name"
+            :field="field"
+            :value="
+              hasDraftField(field.name) ? draft.values.Notify[field.name] : values[field.name]
+            "
+            :get-popup-container="getPopupContainer"
+            @save="value => saveField(field.group, field.name, value)"
+          />
+        </DefineFields>
+        <PluginUiMount
+          v-if="open && wheel && configUid"
+          :mount="wheel"
+          :editor="editor"
+          :refresh="refreshWheel"
+          :target="{
+            kind: 'notification',
+            channelId: channel.key,
+            configUid,
+            scriptId: null,
+            userId: null,
+            planId: null,
+          }"
+        >
+          <ChannelFields :secret-only="true" />
+          <template #fallback><ChannelFields /></template>
+        </PluginUiMount>
+        <ChannelFields v-else />
       </div>
     </div>
   </AppModal>

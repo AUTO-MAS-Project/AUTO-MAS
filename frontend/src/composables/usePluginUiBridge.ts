@@ -1,10 +1,14 @@
 import { onScopeDispose, ref, shallowRef, watch } from 'vue'
+import { useConfirm } from './useConfirm'
+import { isBrowserDevelopment } from '@/utils/environment'
 import { OpenAPI, TriggerUiState, type ComponentHint, type FrontendSurfaceMount } from '@/api'
 import type { SettingsValues } from '@/views/plugins/settings/usePluginSettingsDraft'
 import type { PluginPanelTheme } from './pluginPanelTheme'
 
 export interface PluginUiTarget {
-  kind: 'script' | 'setup' | 'user' | 'plan'
+  kind: 'script' | 'setup' | 'user' | 'plan' | 'settings' | 'notification'
+  pluginId?: string | null
+  channelId?: string | null
   scriptId: string | null
   userId: string | null
   planId: string | null
@@ -42,14 +46,36 @@ export interface PluginUiEditor {
 }
 
 const source = 'auto-mas-wheel'
-const targetKeys = ['kind', 'scriptId', 'userId', 'planId', 'configUid'] as const
+const shortText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max
+const optionalText = (v: unknown, max: number): v is string | undefined =>
+  v === undefined || shortText(v, max)
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
+function validFilters(value: unknown): value is Array<{ name: string; extensions: string[] }> {
+  return (
+    Array.isArray(value) &&
+    value.length <= 32 &&
+    value.every(
+      filter =>
+        isRecord(filter) &&
+        Object.keys(filter).length === 2 &&
+        shortText(filter.name, 100) &&
+        filter.name.trim() &&
+        Array.isArray(filter.extensions) &&
+        filter.extensions.length > 0 &&
+        filter.extensions.length <= 32 &&
+        filter.extensions.every(
+          extension => shortText(extension, 32) && /^(?:[a-z0-9][a-z0-9._+-]*|\*)$/i.test(extension)
+        )
+    )
+  )
+}
+
 const matchesTarget = (value: unknown, target: PluginUiTarget) =>
   isRecord(value) &&
-  Object.keys(value).length === targetKeys.length &&
-  targetKeys.every(
-    key => Object.prototype.hasOwnProperty.call(value, key) && value[key] === target[key]
+  Object.keys(value).length === Object.keys(target).length &&
+  Object.entries(target).every(
+    ([key, expected]) => Object.prototype.hasOwnProperty.call(value, key) && value[key] === expected
   )
 
 function isConfigValue(value: unknown, depth = 0): boolean {
@@ -96,6 +122,7 @@ export function usePluginUiBridge(
   editor: () => PluginUiEditor,
   theme: () => PluginPanelTheme
 ) {
+  const { confirm } = useConfirm()
   const iframeUrl = ref('')
   const frameHeight = ref(320)
   const status = shallowRef<'loading' | 'ready' | 'error'>('loading')
@@ -218,6 +245,51 @@ export function usePluginUiBridge(
           return writable() && latest?.editable === true && latest.state === TriggerUiState.IDLE
         }
         reply(await current.runAction(group, hint, value, canRun))
+      } else if (action === 'confirm' || action === 'pickPath') {
+        if (!writable() || current.busy) return reject('read_only')
+        const { title } = params
+        if (!optionalText(title, 100)) return reject('invalid_params')
+        try {
+          if (action === 'confirm') {
+            const { message, confirmText, cancelText, danger } = params
+            if (
+              !shortText(message, 500) ||
+              !message.trim() ||
+              !optionalText(confirmText, 100) ||
+              !optionalText(cancelText, 100) ||
+              (danger !== undefined && typeof danger !== 'boolean')
+            )
+              return reject('invalid_params')
+            const confirmed = await confirm({
+              title: title ?? pluginName,
+              description: message,
+              ...(confirmText !== undefined && { okText: confirmText }),
+              ...(cancelText !== undefined && { cancelText }),
+              tone: danger ? 'danger' : 'info',
+            })
+            reply({ confirmed: writable() && confirmed })
+          } else {
+            const { mode, defaultPath, filters } = params
+            if (
+              (mode !== 'file' && mode !== 'folder') ||
+              !optionalText(defaultPath, 32767) ||
+              (filters !== undefined && !validFilters(filters))
+            )
+              return reject('invalid_params')
+            const api = window.electronAPI
+            if (isBrowserDevelopment() || !(mode === 'file' ? api?.selectFile : api?.selectFolder))
+              return reply({ ok: false, code: 'unavailable' })
+            const options = { title, defaultPath }
+            const path =
+              mode === 'file'
+                ? (await api.selectFile(filters, options))[0]
+                : await api.selectFolder(options)
+            if (!writable()) return reject('read_only')
+            reply({ cancelled: !path, path: path ?? null })
+          }
+        } catch {
+          reject('dialog_failed')
+        }
       } else if (action === 'notify') {
         const { severity, message } = params
         if (typeof message !== 'string' || !message.trim() || message.length > 500)

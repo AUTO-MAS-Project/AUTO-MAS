@@ -5,9 +5,16 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
+import { createReusableTemplate } from '@vueuse/core'
+import PluginUiMount from '@/components/PluginUiMount.vue'
+import type { PluginUiEditor } from '@/composables/usePluginUiBridge'
+import { compatibleWheel, indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
+import type { PluginUiActivation } from '@/utils/pluginUiRequests'
+import type { SettingsChange } from './plugins/settings/usePluginSettingsDraft'
 import { DeclarativeForm } from '@/components/declarative'
 import {
   declarativeGroups,
+  resolveActionOwner,
   declarativeTables,
   declarativeValues,
 } from '@/components/declarative/declarativeLayout'
@@ -32,6 +39,9 @@ const modelContext = usePluginModelContext()
 const draft = usePluginSettingsDraft()
 const saving = ref(false)
 const configUid = ref('')
+const locked = ref(false)
+const revision = ref(0)
+const [DefineForm, SettingsForm] = createReusableTemplate()
 const optionsInvalid = ref(false)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
 const configUi = shallowRef<PluginConfigUi>()
@@ -127,21 +137,32 @@ watch(
     const data = result.config ?? {}
     const keepDraft = data.uid === configUid.value
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
+    locked.value = data.locked === true
+    revision.value++
     configUi.value = data.ui
     draft.reset(declarativeValues(groups.value, data), { keepDraft })
   },
   { immediate: true }
 )
 
-const save = async (options: { reload: boolean } = { reload: true }) => {
+const save = async (
+  options: { reload: boolean; activation?: PluginUiActivation; fields?: SettingsChange[] } = {
+    reload: true,
+  }
+) => {
   // 在无在途保存或动作时提交当前配置值，成功后按需重新读取后端规范化结果。
-  if (writeBusy.value || optionsInvalid.value) return false
+  if (locked.value || writeBusy.value || optionsInvalid.value) return false
   saving.value = true
   try {
     const submitted = draft.snapshot()
-    await api.updateConfig({ recordId: pluginId.value, data: draft.patch(submitted) })
+    const uid = configUid.value
+    await api.updateConfig(
+      { recordId: pluginId.value, data: draft.patch(submitted, options.fields) },
+      options.activation
+    )
+    if (uid !== configUid.value) return false
     // 先把基线设为刚提交的值；之后重读失败也只剩失败重试条，不再显示未保存。
-    draft.commit(submitted)
+    draft.commit(submitted, options.fields)
     message.success(t('core.plugins.saved'))
     if (options.reload) await fetchSettings()
     return true
@@ -154,6 +175,39 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     saving.value = false
   }
 }
+
+const wheel = computed(() =>
+  compatibleWheel(indexPluginScriptTypes(registry.value?.data).settingsPanels.get(pluginId.value))
+)
+const refreshWheel = async () => !!(await fetchSettings()) && !!wheel.value
+const editor = computed<PluginUiEditor>(() => ({
+  locale: locale.value,
+  locked: locked.value,
+  busy: writeBusy.value,
+  groups: groups.value,
+  values: draft.values,
+  configRevision: revision.value,
+  async save(changes, commit) {
+    const activation = wheel.value
+    if (!activation || writeBusy.value || locked.value)
+      return { ok: false, code: 'read_only', message: t('core.plugins.saveFailed') }
+    for (const { group, field, value } of changes) draft.update(group, field, value)
+    if (!commit || !changes.length || (await save({ reload: true, activation, fields: changes })))
+      return { ok: true }
+    return {
+      ok: false,
+      code: 'save_failed',
+      message: t('core.plugins.saveFailed'),
+      fieldErrors: draft.errors.value,
+    }
+  },
+  runAction: (group, hint, value, canRun) =>
+    runAction(group, hint, value, resolveActionOwner(groups.value, group, hint.field!), {
+      activation: wheel.value!,
+      canRun,
+    }),
+  notify: (severity, text) => void message[severity](text),
+}))
 
 // 离开确认：有未保存更改时由弹层决定是否放行这次路由跳转。
 const leaveOpen = ref(false)
@@ -199,45 +253,67 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
       <StateView
         :loading="loading"
         :error="loadError"
-        :empty="!groups.length"
+        :empty="!groups.length && !wheel"
         :empty-description="t('core.plugins.noSettings')"
         overlay-loading
         @retry="fetchSettings"
       >
-        <DeclarativeForm
-          v-if="groups.length"
-          :groups="groups"
-          :tables="tables"
-          :steps="configUi?.steps"
-          :sections="configUi?.sections"
-          :plugin-name="view?.pluginId"
-          :submit-disabled="writeBusy || !draft.dirtyCount.value"
-          :submitting="saving"
-          :errors="draft.errors.value"
-          :uid="configUid"
-          :namespace="`plugins.${view?.pluginId ?? ''}.config`"
-          :disabled="saving || runningKey !== null"
-          :values="draft.values"
-          :running-key="runningKey"
-          :active-fields="activeFields"
-          @update:value="draft.update"
-          @update:options-invalid="optionsInvalid = $event"
-          @action="runAction"
-          @finish="save()"
+        <DefineForm>
+          <DeclarativeForm
+            v-if="groups.length"
+            :groups="groups"
+            :tables="tables"
+            :steps="configUi?.steps"
+            :sections="configUi?.sections"
+            :plugin-name="view?.pluginId"
+            :submit-disabled="writeBusy || !draft.dirtyCount.value"
+            :submitting="saving"
+            :errors="draft.errors.value"
+            :uid="configUid"
+            :namespace="`plugins.${view?.pluginId ?? ''}.config`"
+            :disabled="locked || saving || runningKey !== null"
+            :values="draft.values"
+            :running-key="runningKey"
+            :active-fields="activeFields"
+            @update:value="draft.update"
+            @update:options-invalid="optionsInvalid = $event"
+            @action="runAction"
+            @finish="save()"
+          >
+            <template #footer="{ wizard }">
+              <SettingsDirtyBar
+                v-if="draft.dirtyCount.value"
+                :count="draft.dirtyCount.value"
+                :saving="saving"
+                :disabled="writeBusy"
+                :save-disabled="optionsInvalid"
+                :wizard="wizard"
+                @discard="draft.discard"
+                @save="save()"
+              />
+            </template>
+          </DeclarativeForm>
+        </DefineForm>
+        <PluginUiMount
+          v-if="wheel"
+          :mount="wheel"
+          :editor="editor"
+          :refresh="refreshWheel"
+          :target="{
+            kind: 'settings',
+            pluginId,
+            configUid,
+            scriptId: null,
+            userId: null,
+            planId: null,
+          }"
         >
-          <template #footer="{ wizard }">
-            <SettingsDirtyBar
-              v-if="draft.dirtyCount.value"
-              :count="draft.dirtyCount.value"
-              :saving="saving"
-              :disabled="writeBusy"
-              :save-disabled="optionsInvalid"
-              :wizard="wizard"
-              @discard="draft.discard"
-              @save="save()"
-            />
+          <template #fallback>
+            <SettingsForm v-if="groups.length" />
+            <StateView v-else empty :empty-description="t('core.plugins.noSettings')" />
           </template>
-        </DeclarativeForm>
+        </PluginUiMount>
+        <SettingsForm v-else />
       </StateView>
     </div>
     <SettingsLeaveModal

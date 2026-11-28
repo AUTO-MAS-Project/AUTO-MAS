@@ -83,6 +83,7 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 const {
   loading,
   handleSettingChange,
+  configUid,
   handleDynamicSettingChange,
   handleSettingGroupChange,
   refreshSettings,
@@ -257,6 +258,8 @@ onMounted(() => {
       </template>
       <template #notify>
         <TabNotify
+          :config-uid="configUid"
+          :save-group="handleSettingGroupChange"
           :settings="settings"
           :handle-setting-change="handleDynamicSettingChange"
           :test-notify="testNotify"
