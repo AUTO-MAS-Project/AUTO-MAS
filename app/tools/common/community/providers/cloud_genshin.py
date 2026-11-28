@@ -236,7 +236,7 @@ async def _prepare_cloud_genshin_credential(
     value = validate_cloud_genshin_token(credential)
 
     from app.tools.common.community.providers.miyoushe import (
-        derive_miyoushe_cookie_token,
+        derive_miyoushe_tokens,
         prepare_miyoushe_session,
         validate_miyoushe_cookie,
     )
@@ -248,17 +248,19 @@ async def _prepare_cloud_genshin_credential(
     validate_miyoushe_cookie(value)
     cookies = dict(session.cookies)
     if not cookies.get("cookie_token"):
-        cookie_token, derived_uid = await derive_miyoushe_cookie_token(
+        tokens = await derive_miyoushe_tokens(
             stoken=cookies["stoken"],
             mid=cookies["mid"],
             stuid=session.uid,
             proxy=proxy,
         )
-        cookies["cookie_token"] = cookie_token
-        if derived_uid:
-            session_uid = derived_uid
-        else:
-            session_uid = session.uid
+        # 换票同时写 cookie_token 和 cookie_token_v2，云原神 Web 登录对
+        # 两代字段的兼容性不一致，缺哪个都可能被判未登录。
+        for key in ("cookie_token", "cookie_token_v2", "ltoken", "ltoken_v2"):
+            token = tokens.get(key)
+            if token:
+                cookies[key] = token
+        session_uid = tokens.get("uid") or session.uid
     else:
         session_uid = session.uid
 
