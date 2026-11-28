@@ -42,6 +42,7 @@ _V3_CACHE = "plugin-market-v3-cache.json"
 _CATALOG_V3_URL = (
     "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins-v3/download"
 )
+_CATALOG_V3_HOSTS = frozenset({"data.auto-mas.top", "data2.auto-mas.top"})
 _ATTEMPTS = 3
 # 开发用：刚发到 PyPI 的插件，数据站目录和 PyPI 总索引都可能还没收录。默认不设（不补）；
 # 设为逗号分隔的发行包名时，刷新目录逐个读 PyPI 单包元数据补进目录，插件中心才能看到并安装。
@@ -115,16 +116,16 @@ async def refresh() -> None:
         cache = Config.data_path / cache_name
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(5.0), follow_redirects=True, proxy=Config.proxy
+                timeout=httpx.Timeout(5.0), proxy=Config.proxy
             ) as client:
                 snapshot = await catalog.fetch_catalog(
                     client,
                     url,
                     cache,
                     expected_version=version,
-                    same_origin=url == _CATALOG_V3_URL,
+                    trusted_hosts=_CATALOG_V3_HOSTS if version == 3 else frozenset(),
                 )
-        except (httpx.HTTPError, OSError, ValueError) as error:
+        except (httpx.HTTPError, httpx.InvalidURL, OSError, ValueError) as error:
             logger.warning(
                 f"插件目录 v{version or '自定义'} 不可用：{type(error).__name__}"
             )

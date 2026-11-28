@@ -89,8 +89,9 @@ async def test_data_station_conditional_request_reuses_valid_document(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mirrored", [False, True])
 async def test_official_v3_ownership_survives_only_built_in_fallback(
-    catalog, monkeypatch
+    catalog, monkeypatch, mirrored
 ):
     """仅内置回退沿用同一发行包的可信组织归属，市场头像仍跟随目录。"""
     monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
@@ -110,11 +111,19 @@ async def test_official_v3_ownership_survives_only_built_in_fallback(
         "revision": content_revision(v3_entries, schema_version=3),
     }
     fail_v3 = False
+    mirror_url = market._CATALOG_V3_URL.replace(
+        "data.auto-mas.top", "data2.auto-mas.top", 1
+    )
 
     def handler(request):
         if request.url.host == "custom.test":
             return httpx.Response(200, json=v3)
         if str(request.url) == market._CATALOG_V3_URL:
+            if mirrored:
+                return httpx.Response(307, headers={"Location": mirror_url})
+            return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
+        if mirrored and str(request.url) == mirror_url:
+            assert not request.headers.get("Authorization")
             return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
         assert str(request.url) == market._CATALOG_URL
         return httpx.Response(200, json=v2)
@@ -140,6 +149,31 @@ async def test_official_v3_ownership_survives_only_built_in_fallback(
     v2["revision"] = content_revision(v2["plugins"])
     await market.refresh()
     assert next(iter(catalog.values())).info.publisher_organization is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://catalog.test/plugins.json",
+        "http://data2.auto-mas.top/plugins.json",
+        "https://data2.auto-mas.top:8443/plugins.json",
+    ],
+)
+async def test_official_v3_rejects_untrusted_redirects(catalog, monkeypatch, location):
+    """只向登记的 HTTPS 镜像请求 v3，拒绝跳转后仍可读取 v2。"""
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+
+    def handler(request):
+        if str(request.url) == market._CATALOG_V3_URL:
+            return httpx.Response(307, headers={"Location": location})
+        assert str(request.url) == market._CATALOG_URL
+        return httpx.Response(200, json=published_catalog())
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    (entry,) = catalog.values()
+    assert entry.info.publisher_organization is None
 
 
 @pytest.mark.asyncio
