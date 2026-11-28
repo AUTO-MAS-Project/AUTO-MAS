@@ -299,7 +299,9 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
     response_model=ScriptGetOut,
     status_code=200,
 )
-async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
+async def get_script(
+    script: ScriptGetIn = Body(default_factory=ScriptGetIn),
+) -> ScriptGetOut:
 
     try:
         index, data = await Config.get_script(script.scriptId)

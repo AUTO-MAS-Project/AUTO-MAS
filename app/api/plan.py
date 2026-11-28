@@ -189,7 +189,7 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
     response_model=PlanGetOut,
     status_code=200,
 )
-async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
+async def get_plan(plan: PlanGetIn = Body(default_factory=PlanGetIn)) -> PlanGetOut:
 
     try:
         raw_index, raw_data = await Config.get_plan(plan.planId)

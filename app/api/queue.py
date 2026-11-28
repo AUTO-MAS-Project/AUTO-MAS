@@ -196,7 +196,9 @@ async def add_queue() -> QueueCreateOut:
     response_model=QueueGetOut,
     status_code=200,
 )
-async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
+async def get_queues(
+    queue: QueueGetIn = Body(default_factory=QueueGetIn),
+) -> QueueGetOut:
 
     try:
         index, config = await Config.get_queue(queue.queueId)
