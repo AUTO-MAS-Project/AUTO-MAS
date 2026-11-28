@@ -759,3 +759,69 @@ async def test_desktop_queue_rechecks_plugin_before_admission(
     run = manager.task_handler[UUID(entries[0]["taskId"])]
     await asyncio.wait_for(run.accomplish.wait(), 4)
     assert run.task_info.status == "success", run.task_info.script_list[0].log
+
+
+@pytest.mark.asyncio
+async def test_previous_maintenance_declarations_still_use_account_uid(
+    scheduler, monkeypatch
+):
+    from app.config import collection
+    from app.core import Plugin
+    from app.models.config import PluginRecord, ScriptEntry, UserEntry
+    from app.plugin.base.script import ScriptTypeDecl
+    from app.task import ScriptConfigWorker, UserExpander
+
+    class Account(UserEntry):
+        pass
+
+    class AdapterScript(ScriptEntry):
+        users: ConfigCollection[Account] = collection(Account)
+
+    class Worker(ScriptConfigWorker):
+        async def main_logic(self):
+            await self.user_info.set_state(status="完成")
+
+    class Expander(UserExpander[AdapterScript]):
+        def build_worker(self, user, config):
+            return Worker(self, user, config)
+
+    manager, scripts, _, _ = scheduler
+    scripts.add_type(AdapterScript)
+    await scripts.commit()
+    sid = scripts.add(AdapterScript)
+    await scripts.commit()
+    users = scripts[sid].users
+    account_id = users.add(Account, payload={"info": {"name": "账号维护"}})
+    await users.commit()
+    record = PluginRecord.build(info={"plugin_name": "example", "state": "enabled"})
+    decl = ScriptTypeDecl(
+        script_type=AdapterScript,
+        user_type=Account,
+        expander_class=Expander,
+        maintenance_expander=Expander,
+    )
+    monkeypatch.setattr(Plugin, "script_types", {record.uid: decl})
+    monkeypatch.setattr(Plugin, "list_plugins", lambda: [record])
+    monkeypatch.setattr(manager, "plugin_expander", Plugin.resolve_script_expander)
+
+    with pytest.raises(ValueError, match="需要指定账号"):
+        await manager.start_maintenance(str(sid))
+
+    finished = asyncio.Event()
+
+    async def on_ended(*_, **__):
+        finished.set()
+
+    manager.task_ended.connect(on_ended, sender=manager)
+    try:
+        task_id = await manager.start_maintenance(str(account_id))
+        await asyncio.wait_for(finished.wait(), 4)
+    finally:
+        manager.task_ended.disconnect(on_ended, sender=manager)
+    assert manager.get_task_status(str(task_id)).status == "success"
+    (script,) = manager.get_task(task_id)["scripts"]["data"].values()
+    (user,) = script["users"]["data"].values()
+    assert (user["info"]["user_id"], user["info"]["name"]) == (
+        str(account_id),
+        "账号维护",
+    )

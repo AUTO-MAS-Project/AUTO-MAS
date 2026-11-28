@@ -311,13 +311,8 @@ def main():
         from app.services import telemetry as _service_telemetry
         from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
-        from app.task.MaaEnd.api_service import MaaEndConfigService
         from app.task.ZzzOd.config_context import ZzzOdContext
         from app.task.ZzzOd.recovery import ZzzOdRecovery
-        from app.utils.common.game_resolution import (
-            read_unity_display_type,
-            read_unity_resolution,
-        )
 
     with startup_stage("后端/专项能力绑定"):
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
@@ -328,15 +323,8 @@ def main():
                 / "BAAH"
                 / "recommended.json",
             )
-        with startup_stage("后端/专项能力绑定/MaaEnd 服务"):
-            maaend_config_service = MaaEndConfigService(
-                scripts=Config.ScriptConfig,
-                read_resolution=read_unity_resolution,
-                read_display_type=read_unity_display_type,
-            )
         with startup_stage("后端/专项能力绑定/构建能力注册表"):
             script_capabilities = build_builtin_script_capabilities(
-                maaend=maaend_config_service,
                 zzzod=ZzzOdRecovery(
                     ZzzOdContext(
                         Config.ScriptConfig,
@@ -555,14 +543,6 @@ def main():
                 with startup_stage("后端/录像临时文件清理"):
                     await _service_obs_replay.ObsReplay.cleanup_temporary()
 
-                async def preload_maaend_resources() -> None:
-                    with startup_stage("后端/MaaEnd 资源预热（后台）"):
-                        await maaend_config_service.preload_resources()
-
-                BackgroundTaskManager.register_group(
-                    "maaend-resource-preload", max_running=1, max_retained=1
-                ).spawn(preload_maaend_resources, retain_result=False)
-
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
@@ -768,7 +748,6 @@ def main():
 
             install_control(app)
         app.state.baah_config_service = baah_config_service
-        app.state.maaend_config_service = maaend_config_service
 
         app.add_middleware(
             CORSMiddleware,

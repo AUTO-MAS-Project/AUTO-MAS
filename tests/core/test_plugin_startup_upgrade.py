@@ -16,6 +16,7 @@ import pytest
 import tomli_w
 from packaging.version import Version
 
+from app.core.config import plugin_upgrade
 from app.core.plugin.manager import _PluginManager
 from app.models.config import PluginMeta, PluginRecord, PluginRegistryCollection
 from app.plugin.errors import PluginError, PluginPrecheckError
@@ -774,8 +775,7 @@ async def test_family_plugins_upgrade_together_and_unrelated_plugin_stays(
 async def test_install_keeps_host_library_for_builtin_managed(
     isolated_app_paths, monkeypatch, tmp_path, mode
 ):
-    """配置里有 MaaEnd 托管、环境里已有 MFW 解析库：装别的插件重建环境后库还在，
-    热发布与等重启换入的候选环境都一样。"""
+    """宿主托管要用的库在热发布和重启换入插件环境时均须保留。"""
     registry, site = await _plugin_family(
         isolated_app_paths, monkeypatch, tmp_path, stuck=False
     )
@@ -797,12 +797,7 @@ async def test_install_keeps_host_library_for_builtin_managed(
         content=FAMILY_PLUGIN,
         requires=["auto-mas-core>=5,<6"],
     )
-    config_path = isolated_app_paths.config_path
-    config_path.mkdir(parents=True, exist_ok=True)
-    (config_path / "scripts.yaml").write_text(
-        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
-        encoding="utf-8",
-    )
+    _add_builtin_library_requirement(isolated_app_paths, monkeypatch)
     manager = _PluginManager()
     try:
         if mode == "hot":
@@ -867,9 +862,20 @@ async def test_startup_fallback_keeps_installed_host_library(
 LIBRARY = "auto-mas-maafw-interface>=0.2.0"
 
 
+def _add_builtin_library_requirement(config, monkeypatch):
+    """模拟一个仍由宿主提供的托管需要额外库。"""
+    monkeypatch.setitem(plugin_upgrade._HOST_LIBRARIES, "GeneralConfig", LIBRARY)
+    config_path = config.config_path
+    config_path.mkdir(parents=True, exist_ok=True)
+    (config_path / "scripts.yaml").write_text(
+        "order:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: GeneralConfig\n",
+        encoding="utf-8",
+    )
+
+
 async def _pending_without_library(config, monkeypatch, tmp_path, *, available):
-    """装专项 0.2 等重启（此时配置里还没有 MaaEnd 托管，候选里没有解析库），
-    之后才建首条 MaaEnd 托管；``available`` 时索引里有解析库和它新带来的依赖。"""
+    """候选环境已经建好，稍后启动时才提出宿主库需求。
+    ``available`` 时索引里有该库和它的依赖。"""
     registry, site = await _plugin_family(config, monkeypatch, tmp_path, stuck=False)
     wheels = tmp_path / "wheels"
     if available:
@@ -902,8 +908,7 @@ async def _pending_without_library(config, monkeypatch, tmp_path, *, available):
 async def test_first_restart_adds_host_library_missing_from_pending(
     isolated_app_paths, monkeypatch, tmp_path
 ):
-    """候选建好后才加 MaaEnd 托管：第一次重启换入候选时就把解析库补进去，
-    候选里原有的发行包版本一个不变，旧环境留作回滚，安装记录等加载后确认。"""
+    """候选建好后才提出宿主库需求，换入候选时补装库并保留原有版本与回滚环境。"""
     monkeypatch.setattr(ops, "library_failure", None)
     site, pending = await _pending_without_library(
         isolated_app_paths, monkeypatch, tmp_path, available=True
@@ -932,8 +937,7 @@ async def test_first_restart_adds_host_library_missing_from_pending(
 async def test_first_restart_without_library_still_starts_and_explains(
     isolated_app_paths, monkeypatch, tmp_path, cause
 ):
-    """补不上解析库时照常换入启动；原因记下来，MaaEnd 运行时报错带上原因和恢复办法。"""
-    from app.task.MaaEnd import mfw_parse
+    """补不上解析库时照常换入启动；原因与恢复办法记在 ops.library_failure 里。"""
 
     monkeypatch.setattr(ops, "library_failure", None)
     site, pending = await _pending_without_library(
@@ -949,16 +953,14 @@ async def test_first_restart_without_library_still_starts_and_explains(
     assert _installed_versions(site) == pending
     assert site.with_suffix(".previous").is_dir()
     assert environment.read_installation().progress.state == "applying"
-    with pytest.raises(RuntimeError) as raised:
-        mfw_parse._module("maafw_interface_absent_probe")
-    message = str(raised.value)
+    reason, remedy = ops.library_failure
     if cause == "offline":
-        assert "网络不通或镜像没有响应" in message
-        assert "联网后重启 AUTO-MAS 会自动安装" in message
+        assert "网络不通或镜像没有响应" in reason
+        assert "自动安装" in remedy
     else:
-        assert "依赖解不开，涉及 auto-mas-maafw-interface" in message
-        assert "重启 AUTO-MAS 会再尝试安装" in message
-    assert str(tmp_path) not in message
+        assert "依赖解不开，涉及 auto-mas-maafw-interface" in reason
+        assert "重启 AUTO-MAS 会再尝试安装" in remedy
+    assert str(tmp_path) not in reason + remedy
 
 
 @pytest.mark.asyncio
@@ -977,12 +979,7 @@ async def test_first_restart_skips_solving_when_pending_has_library(
     )
     with ZipFile(library) as archive:
         archive.extractall(site)
-    config_path = isolated_app_paths.config_path
-    config_path.mkdir(parents=True, exist_ok=True)
-    (config_path / "scripts.yaml").write_text(
-        "instances:\n- uid: 6f1c1d56-6a3e-4c53-9d1e-1e0f4f7f1a01\n  type: MaaEndConfig\n",
-        encoding="utf-8",
-    )
+    _add_builtin_library_requirement(isolated_app_paths, monkeypatch)
     manager = _PluginManager()
     try:
         await manager.load(registry.by_name("fam_service"))
