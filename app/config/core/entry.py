@@ -142,6 +142,7 @@ class ConfigEntry(ConfigNode):
     """L2 配置条目；文档形状 = 各 Group 字段顶层嵌套。"""
 
     # 类级规格（每子类独立）
+    ui_auto_save: ClassVar[bool] = False
     ui_steps: ClassVar[tuple[UiStep, ...]] = ()
     ui_sections: ClassVar[dict[str, UiSection]] = {}
     ui_blocks: ClassVar[tuple[UiBlock, ...] | None] = None

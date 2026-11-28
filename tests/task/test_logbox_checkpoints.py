@@ -7,12 +7,9 @@ import uuid
 import pytest
 
 from app.models.config.script import (
-    BAAHConfig,
-    BAAHUserConfig,
     OkNteConfig,
     OkNteUserConfig,
 )
-from app.task.BAAH.AutoProxy import AutoProxyTask as BAAH
 from app.task.OkNte.AutoProxy import AutoProxyTask as OkNte
 from app.task.run_flow import observe_run
 from tests.config_support import activate_config
@@ -20,21 +17,13 @@ from tests.support.scheduler import create_runtime_tree
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("adapter", [BAAH, OkNte])
-async def test_report_delivers_only_named_source_matches_once(tmp_path, adapter):
+async def test_report_delivers_only_named_source_matches_once(tmp_path):
     uid = uuid.uuid4()
     _root, script, user = await create_runtime_tree(user_id=str(uid))
-    if adapter is BAAH:
-        exe = tmp_path / "BAAH.exe"
-        exe.touch()
-        config, account = BAAHConfig(Script={"BAAHPath": exe}), BAAHUserConfig()
-        lines = "运行出错: 任务InCafe执行前条件不成立或超时\n任务Test执行前条件不成立或超时\n"
-        key, node = "baah.task_not_ready", "⏭ 跳过: Test"
-    else:
-        config, account = OkNteConfig(), OkNteUserConfig()
-        lines = "无法找到活跃度奖励领取框\nDailyRoutineTask:任务失败: 日常领取\n"
-        key, node = "oknte.no_claim_reward", "⏭ 跳过: 日常领取（当日已领取）"
-    proxy = adapter(
+    config, account = OkNteConfig(), OkNteUserConfig()
+    lines = "无法找到活跃度奖励领取框\nDailyRoutineTask:任务失败: 日常领取\n"
+    key, node = "oknte.no_claim_reward", "⏭ 跳过: 日常领取（当日已领取）"
+    proxy = OkNte(
         script,
         await activate_config(config),
         {uid: await activate_config(account)},

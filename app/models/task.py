@@ -164,6 +164,10 @@ class TaskUserItem(RuntimeEntry):
     # [兼容旧专项] 仅在完成摘要中展示格式化后的 LogBox 节点。
     _completion_details: tuple[str, ...] = PrivateAttr(default=())
 
+    def set_completion_details(self, lines: tuple[str, ...]) -> None:
+        """保存专项排版的账号节点，供本轮托管完成摘要展示。"""
+        self._completion_details = lines
+
     def __init__(self, user_id=None, name=None, status=None, **values):
         """[兼容旧专项] 旧平铺用户构造及 Default 归一；新代码使用 info 载荷和 default。"""
         info = dict(values.pop("info", {}) or {})

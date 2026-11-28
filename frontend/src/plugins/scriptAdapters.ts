@@ -2,6 +2,7 @@ import type { PluginAdapterBinding } from '@/views/plugins/pluginCenterModel'
 import m9aIcon from '@/assets/M9A.png'
 import maafwIcon from '@/assets/maafw.png'
 import mssIcon from '@/assets/mss.png'
+import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
@@ -16,6 +17,7 @@ export const SCRIPT_PLUGIN_BINDINGS: PluginAdapterBinding[] = [
   { pluginId: 'mss_adapter', scriptType: 'MSS', logo: mssIcon, planConfigType: 'MSSPlanConfig' },
   { pluginId: 'bettergi_adapter', scriptType: 'BetterGI', logo: bettergiIcon },
   { pluginId: 'maa_adapter', scriptType: 'MAA', logo: maaIcon, planConfigType: 'MaaPlanConfig' },
+  { pluginId: 'baah_adapter', scriptType: 'BAAH', logo: baahIcon },
   { pluginId: 'src_adapter', scriptType: 'SRC', logo: srcIcon },
   { pluginId: 'whimbox_adapter', scriptType: 'Whimbox', logo: whimboxIcon },
   {

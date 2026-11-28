@@ -25,7 +25,6 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .BAAH import BAAHManager as BAAHManager
     from .general import GeneralManager as GeneralManager
     from .HSR import HSRManager as HSRManager
     from .mode_worker import (
@@ -61,7 +60,6 @@ _LAZY_EXPORTS = {
     "OkNteManager": (".OkNte", "OkNteManager"),
     "HSRManager": (".HSR", "HSRManager"),
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
-    "BAAHManager": (".BAAH", "BAAHManager"),
 }
 
 

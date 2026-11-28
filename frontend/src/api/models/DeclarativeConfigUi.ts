@@ -13,6 +13,7 @@ import type { UiTablesList } from './UiTablesList';
  * 单项编辑所需的实时提示及触发器、锁使用的配置实例标识。
  */
 export type DeclarativeConfigUi = {
+    autoSave?: boolean;
     configUid: string;
     locked?: boolean;
     hints: UiHintsMap;

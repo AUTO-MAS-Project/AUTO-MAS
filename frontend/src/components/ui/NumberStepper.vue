@@ -30,6 +30,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: number | null]
   change: [value: number | null]
   blur: []
+  step: []
 }>()
 const { t } = useI18n()
 const focused = ref(false)
@@ -53,7 +54,10 @@ function stepBy(direction: -1 | 1) {
   const precision = props.precision ?? Math.max(decimalPlaces(base), decimalPlaces(props.step))
   const rounded = precision <= 100 ? Number(next.toFixed(precision)) : next
   const bounded = Math.min(props.max ?? Infinity, Math.max(props.min ?? -Infinity, rounded))
-  if (bounded !== props.modelValue) update(bounded)
+  if (bounded !== props.modelValue) {
+    update(bounded)
+    emit('step')
+  }
 }
 
 function blur() {
@@ -98,6 +102,7 @@ function blur() {
               : undefined
         "
         @update:value="update"
+        @step="emit('step')"
         @focus="focused = true"
         @blur="blur"
       />
