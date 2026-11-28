@@ -8,7 +8,7 @@
 AUTO-MAS/
 ├── app/
 ├── frontend/src/views/
-│   └── whimbox/           # 待迁出的历史静态页
+│   └── bettergi/          # 待迁出的历史静态页
 └── plugins/
     ├── auto_mas_core/     # 主仓跟踪的 SDK
     └── src_adapter/       # 本地克隆的独立插件仓（.gitignore 忽略，联调基准）

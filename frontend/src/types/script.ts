@@ -27,6 +27,7 @@ export type ScriptType = PluginProvidedScriptType['scriptKey']
 export const PLUGIN_EDITOR_SCRIPT_TYPES = [
   'SRC',
   'MAA',
+  'Whimbox',
 ] as const satisfies readonly BuiltinScriptType[]
 export type PluginEditorScriptType = (typeof PLUGIN_EDITOR_SCRIPT_TYPES)[number]
 
