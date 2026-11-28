@@ -16,6 +16,10 @@ export type PluginRegistryDocument = {
     info?: (PluginRecord_info | null);
     uid: string;
     ui: PluginConfigUi;
+    /**
+     * 已安装插件的 PNG 头像
+     */
+    iconPng?: (string | null);
     providedScript?: (PluginProvidedScriptType | null);
     frontend?: (PluginFrontendInfo | null);
     /**

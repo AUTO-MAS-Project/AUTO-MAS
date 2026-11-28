@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib
 import importlib.metadata as metadata
 import json
+import platform
 import shutil
 import sys
 from collections.abc import Collection
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from packaging.utils import canonicalize_name
@@ -45,6 +47,37 @@ def distributions(directory: Path) -> dict[str, metadata.Distribution]:
         if (name := distribution_name(dist)) is not None
         and name != canonicalize_name(CORE_DISTRIBUTION_NAME)
     }
+
+
+def environment_fingerprint(
+    target: Path, *, targets: list[str], pins: list[str]
+) -> dict[str, Any]:
+    """计算本地环境的依赖、发行包和源码声明快照。"""
+    from app.core import Config
+
+    return {
+        "core": Config.VERSION,
+        "python": platform.python_version(),
+        "platform": sys.platform,
+        "host": pins,
+        "plugins": targets,
+        "installed": {
+            name: dist.version for name, dist in distributions(target).items()
+        },
+        "sources": {
+            item: (Path(item) / "pyproject.toml").read_text(encoding="utf-8")
+            for item in targets
+            if (Path(item) / "pyproject.toml").is_file()
+        },
+    }
+
+
+def write_environment_fingerprint(target: Path, fingerprint: dict[str, Any]) -> None:
+    """原子记录已经完成依赖求解的环境，供后续启动验证。"""
+    marker = target.parent / "environment.json"
+    pending = marker.with_suffix(".tmp")
+    pending.write_text(json.dumps(fingerprint, ensure_ascii=False), encoding="utf-8")
+    pending.replace(marker)
 
 
 def distribution_name(dist: metadata.Distribution) -> str | None:
@@ -390,6 +423,7 @@ def finish_installation(held_back: Collection[str] = ()) -> None:
     from app.plugin.types import PluginState
 
     from .ops import site_dir
+    from .precheck import plugin_targets
 
     record = read_installation()
     if record is None or record.progress.state != "applying":
@@ -406,10 +440,27 @@ def finish_installation(held_back: Collection[str] = ()) -> None:
             record.progress.message = "新插件环境加载失败，下次启动将恢复原环境"
             write_installation(record)
             raise PluginError(record.progress.message)
+    target = site_dir(activate=False)
+    if Config.VERSION == record.core_version:
+        try:
+            targets = plugin_targets(
+                Config.plugin_registry.values(), installed_path=target
+            )
+            fingerprint = environment_fingerprint(
+                target, targets=targets, pins=record.host_constraints
+            )
+            current_sources = {
+                str((Path(path) / "pyproject.toml").resolve()): content
+                for path, content in fingerprint["sources"].items()
+            }
+            if current_sources == record.local_sources:
+                write_environment_fingerprint(target, fingerprint)
+        except (OSError, PluginError) as error:
+            logger.warning(f"插件环境记录暂未保存，下次启动将重新检查依赖：{error}")
     record.progress.state = "succeeded"
     record.progress.message = None
     write_installation(record)
-    previous = site_dir(activate=False).with_suffix(".previous")
+    previous = target.with_suffix(".previous")
     backup = previous.parent / f".publish-{record.progress.installationId}"
     for directory in (previous, backup):
         if not directory.exists():

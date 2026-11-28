@@ -168,38 +168,6 @@ const checkDisclosure = async (
 }
 
 test.describe('@config-mode-cards', () => {
-  test('saves OneDragon native configuration with another native account present', async ({
-    app,
-    page,
-  }) => {
-    const { scriptId } = await post(page.request, '/api/scripts/add', { type: 'ZzzOd' })
-    try {
-      const first = await post(page.request, '/api/scripts/user/add', { scriptId })
-      const second = await post(page.request, '/api/scripts/user/add', { scriptId })
-      const { userId } = second
-      await post(page.request, '/api/scripts/user/update', {
-        scriptId,
-        userId,
-        data: { Info: { Base: 'independent' } },
-      })
-      await app.goto(`/scripts/${scriptId}/users/${userId}/edit/zzzod`)
-      const group = page.locator('.config-mode-options').first()
-      await expect(group.locator('input[value=independent]')).toBeChecked()
-      await group.locator('.config-mode-option').last().click()
-      const loadAccounts = () => post(page.request, '/api/scripts/user/get', { scriptId })
-      await expect.poll(async () => (await loadAccounts()).data[userId].Info.Base).toBe('native')
-      const { data } = await loadAccounts()
-      expect(data[first.userId].Info.Base).toBe('native')
-      expect(second.data.Info).toMatchObject({ Base: 'native', IfQuickConfig: false })
-      await page.reload()
-      await expect(group.locator('input[value=native]')).toBeChecked()
-      await app.evidence('zzzod-multiple-native-accounts')
-    } finally {
-      await app.goto('/scripts')
-      await post(page.request, '/api/scripts/delete', { scriptId })
-    }
-  })
-
   test('keeps configuration choices readable and descriptions accessible in narrow containers', async ({
     app,
     page,
@@ -224,7 +192,6 @@ test.describe('@config-mode-cards', () => {
     try {
       for (const item of [
         { type: 'General', route: 'general' },
-        { type: 'MaaEnd', route: 'maaend' },
         { type: 'Whimbox', route: 'whimbox' },
       ]) {
         const { scriptId } = await post(page.request, '/api/scripts/add', { type: item.type })
@@ -245,7 +212,7 @@ test.describe('@config-mode-cards', () => {
           data: { Info: { Base: 'independent', Name: `Compact ${item.type} account` } },
         })
       }
-      const general = scripts[0]!
+      const general = scripts.find(({ type }) => type === 'General')!
       const generalRoute = `/scripts/${general.scriptId}/users/${general.userId}/edit/general`
       for (const scenario of [
         { language: 'English', key: 'en-light', dark: false },
@@ -321,46 +288,8 @@ test.describe('@config-mode-cards', () => {
       await page.setViewportSize({ width: 1512, height: 1000 })
       await app.goto('/settings')
       await chooseLanguage('English')
-      const maaEnd = scripts[1]!
-      await app.goto(`/scripts/${maaEnd.scriptId}/users/${maaEnd.userId}/edit/maaend`)
-      const groups = page.locator('.config-mode-options')
-      await expect(groups).toHaveCount(2)
-      await expect(
-        groups.first().locator('.config-mode-option').nth(1).locator('input')
-      ).toBeChecked()
-      await expect(
-        groups.first().locator('.config-mode-option').nth(1).locator('input')
-      ).toBeEnabled()
-      await app.evidence('config-mode-maaend-en-dark-wide')
-      for (const [index, count] of [3, 2].entries()) {
-        await expectReadableCards(groups.nth(index), count)
-        expect
-          .soft(await visibleDescriptions(groups.nth(index)))
-          .toEqual(Array.from({ length: count }, () => true))
-      }
       await page.setViewportSize({ width: 768, height: 1000 })
-      await app.evidence('config-mode-maaend-en-dark-narrow')
-      for (const [index, count] of [3, 2].entries()) {
-        const current = groups.nth(index)
-        await expectReadableCards(current, count)
-        await expectCompactCards(current, count)
-        await checkDisclosure(
-          page,
-          current,
-          count,
-          index === 1
-            ? () => app.evidence('config-mode-maaend-en-dark-overlay-descriptions-expanded')
-            : undefined
-        )
-      }
-      const summaries = groups.nth(1).locator('.config-mode-summary')
-      if ((await summaries.count()) === 2) {
-        expect
-          .soft(await summaries.allTextContents())
-          .toEqual(['Override for tasks, then restore', 'Keep base settings'])
-      }
-
-      const whimbox = scripts[2]!
+      const whimbox = scripts.find(({ type }) => type === 'Whimbox')!
       await app.goto(`/scripts/${whimbox.scriptId}/users/${whimbox.userId}/edit/whimbox`)
       const whimboxGroup = page.locator('.config-mode-options').first()
       const whimboxCards = whimboxGroup.locator('.config-mode-option')

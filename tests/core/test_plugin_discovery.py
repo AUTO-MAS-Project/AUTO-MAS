@@ -1,6 +1,7 @@
 """发现冲突在修改注册表和运行实现之前拒绝，源码覆盖遵守唯一来源规则。"""
 
 import importlib.metadata
+import json
 import shutil
 import sys
 from email.message import Message
@@ -91,6 +92,33 @@ async def discovery(isolated_app_paths, monkeypatch, tmp_path):
         config=config, source=source / "plugins", site=site, registry=registry
     )
     I18n.set_plugin_sources(previous)
+
+
+@pytest.mark.asyncio
+async def test_refresh_updates_readme_metadata_on_existing_plugin(discovery):
+    project = write_plugin(discovery.source / "local")
+    await discover.refresh()
+    saved = discovery.registry.by_name("discovery_probe")
+    assert saved.info.display_name_i18n == {"en": "discovery_probe"}
+    assert not saved.info.tags_i18n
+
+    with (project / "pyproject.toml").open("a", encoding="utf-8") as file:
+        file.write('readme = "README.md"\n')
+    display = {
+        "display_name_i18n": {"zh_CN": "新专项"},
+        "description_i18n": {"zh_CN": "新简介"},
+        "tags_i18n": {"zh_CN": ["专项适配", "示例"]},
+    }
+    (project / "README.md").write_text(
+        f"<!-- auto-mas:i18n\n{json.dumps(display, ensure_ascii=False)}\n-->\n",
+        encoding="utf-8",
+    )
+
+    await discover.refresh()
+    current = discovery.registry.by_name("discovery_probe")
+    assert current.uid == saved.uid
+    for field, expected in display.items():
+        assert getattr(current.info, field) == expected
 
 
 @pytest.mark.asyncio

@@ -43,7 +43,7 @@ function routeScreen(route: Pick<RouteLocationNormalizedLoaded, 'name' | 'meta' 
   const name = route.name
   if (typeof name !== 'string') return null
   if (screens[name]) return { screen: screens[name], script_type: 'none' as const }
-  const kind = route.meta.scriptPage ?? route.meta.maafwPage
+  const kind = route.meta.scriptPage
   const type = route.meta.scriptType ?? route.params.scriptType
   return kind && type
     ? { screen: scriptScreens[kind], script_type: analyticsScriptType(type) }

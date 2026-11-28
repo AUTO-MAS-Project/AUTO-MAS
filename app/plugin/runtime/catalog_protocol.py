@@ -1,5 +1,7 @@
 """插件目录 v2 线协议；宿主与生成器通过相同样例校验契约。"""
 
+import base64
+import binascii
 import hashlib
 import json
 import re
@@ -12,6 +14,8 @@ from packaging.version import Version
 from app.plugin.types import PLUGIN_ID_PATTERN
 
 MAX_BYTES = 8 * 1024 * 1024
+MAX_ICON_BYTES = 32 * 1024
+PRESENTATION_FIELDS = {"icon_png", "publisher_organization"}
 TEXT_FIELDS = (
     "package_name",
     "plugin_name",
@@ -48,15 +52,20 @@ def canonical_bytes(value: object) -> bytes:
     ).encode("utf-8")
 
 
-def validate_entries(raw: object) -> list[dict]:
+def validate_entries(raw: object, *, schema_version: int = 2) -> list[dict]:
     """校验完整展示元信息及身份唯一性，拒绝配置触发器或其他非目录字段。"""
     if not isinstance(raw, list):
         raise ValueError("plugins must be a list")
+    expected = (
+        ENTRY_FIELDS | PRESENTATION_FIELDS if schema_version == 3 else ENTRY_FIELDS
+    )
     packages, identities = set(), set()
     entries = []
     for item in raw:
-        if not isinstance(item, dict) or set(item) != ENTRY_FIELDS:
-            raise ValueError("plugin fields do not match catalog v2")
+        if not isinstance(item, dict) or set(item) != expected:
+            raise ValueError(f"plugin fields do not match catalog v{schema_version}")
+        if schema_version == 3:
+            _validate_presentation(item)
         if any(not isinstance(item[field], str) for field in TEXT_FIELDS):
             raise ValueError("plugin text fields must be strings")
         package, identity = item["package_name"], item["plugin_name"]
@@ -112,14 +121,34 @@ def validate_entries(raw: object) -> list[dict]:
     return sorted(entries, key=lambda item: package_key(item["package_name"]))
 
 
-def content_revision(entries: list[dict]) -> str:
+def _validate_presentation(item: dict) -> None:
+    organization = item["publisher_organization"]
+    if organization is not None and (
+        not isinstance(organization, str)
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,99}", organization)
+    ):
+        raise ValueError("invalid PyPI publisher organization")
+    icon = item["icon_png"]
+    if icon is None:
+        return
+    if not isinstance(icon, str) or len(icon) > ((MAX_ICON_BYTES + 2) // 3) * 4:
+        raise ValueError("invalid catalog icon size")
+    try:
+        raw = base64.b64decode(icon, validate=True)
+    except (ValueError, binascii.Error) as error:
+        raise ValueError("invalid catalog icon encoding") from error
+    if len(raw) > MAX_ICON_BYTES or not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ValueError("invalid catalog icon PNG")
+
+
+def content_revision(entries: list[dict], *, schema_version: int = 2) -> str:
     """只计算协议版本和插件业务内容的摘要，不将轮询时间作为变更。"""
     return hashlib.sha256(
-        canonical_bytes({"schema_version": 2, "plugins": entries})
+        canonical_bytes({"schema_version": schema_version, "plugins": entries})
     ).hexdigest()
 
 
-def validate_catalog(raw: object) -> dict:
+def validate_catalog(raw: object, *, expected_version: int | None = None) -> dict:
     """校验目录结构、内容摘要和带时区时间；不以发布时间判定目录过期。"""
     if not isinstance(raw, dict) or set(raw) != {
         "schema_version",
@@ -128,15 +157,20 @@ def validate_catalog(raw: object) -> dict:
         "plugins",
     }:
         raise ValueError("invalid catalog envelope")
-    if type(raw["schema_version"]) is not int or raw["schema_version"] != 2:
+    schema_version = raw["schema_version"]
+    if (
+        type(schema_version) is not int
+        or schema_version not in (2, 3)
+        or (expected_version is not None and schema_version != expected_version)
+    ):
         raise ValueError("unsupported catalog schema version")
     if not isinstance(raw["updated_at"], str):
         raise ValueError("updated_at must be a timestamp")
     stamp = datetime.fromisoformat(raw["updated_at"])
     if stamp.tzinfo is None or stamp.utcoffset() is None:
         raise ValueError("updated_at must include a timezone")
-    entries = validate_entries(raw["plugins"])
-    if raw["revision"] != content_revision(entries):
+    entries = validate_entries(raw["plugins"], schema_version=schema_version)
+    if raw["revision"] != content_revision(entries, schema_version=schema_version):
         raise ValueError("catalog revision does not match content")
     return {**raw, "plugins": entries}
 

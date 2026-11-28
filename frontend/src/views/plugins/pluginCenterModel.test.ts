@@ -142,7 +142,7 @@ describe('插件中心缺声明回落', () => {
     expect(bare.version).toBeNull()
     expect(bare.tags).toEqual([])
     expect(bare.links).toEqual([])
-    expect(detailFieldKeys(bare)).toEqual(['publisher', 'source'])
+    expect(detailFieldKeys(bare)).toEqual(['source'])
     expect(joinSegments([null, '作者', '', undefined, '  ', '标签'])).toBe('作者 · 标签')
     expect(joinSegments([null, ''])).toBe('')
     const links = installedOne({
@@ -169,10 +169,69 @@ describe('插件中心缺声明回落', () => {
     expect(
       installedOne({ plugin_name: 'x', package_name: 'auto-mas-maa-adapter', source: 'installed' })
         .official
-    ).toBe(true)
+    ).toBe(false)
     expect(
       installedOne({ plugin_name: 'x', is_local: true, package_name: 'auto-mas-maa-adapter' })
     ).toMatchObject({ official: false, local: true, category: 'local' })
+  })
+
+  it('市场头像和官方身份来自目录，本机图标来自注册表', () => {
+    const [entry] = toMarketViews(
+      catalog({
+        m1: {
+          plugin_name: 'maa_adapter',
+          icon_png: 'marketPNG',
+          publisher_organization: 'auto-mas',
+        },
+      }),
+      null,
+      context()
+    )
+    expect(entry).toMatchObject({
+      official: true,
+      icon: { kind: 'image', src: 'data:image/png;base64,marketPNG' },
+    })
+    expect(
+      installedOne({ plugin_name: 'maa_adapter', source: 'installed' }, { iconPng: 'installedPNG' })
+    ).toMatchObject({
+      official: false,
+      icon: { kind: 'image', src: 'data:image/png;base64,installedPNG' },
+    })
+  })
+
+  it('只有可信目录核对过的发行包显示发布方', () => {
+    const market = toMarketViews(
+      catalog({
+        a: {
+          plugin_name: 'maa_adapter',
+          package_name: 'auto-mas-maa-adapter',
+          publisher_organization: 'auto-mas',
+        },
+        b: {
+          plugin_name: 'other',
+          package_name: 'community-plugin',
+          publisher_organization: 'community',
+        },
+        c: { plugin_name: 'unknown', package_name: 'another-plugin' },
+      }),
+      null,
+      context()
+    )
+    expect(market.map(entry => entry.publisher)).toEqual(['official', 'thirdParty', null])
+    const installed = toInstalledViews(
+      registry({
+        a: { info: { plugin_name: 'maa_adapter', package_name: 'copied-id', source: 'installed' } },
+        b: {
+          info: { plugin_name: 'other', package_name: 'community-plugin', source: 'installed' },
+        },
+        c: {
+          info: { plugin_name: 'unknown', package_name: 'another-plugin', source: 'installed' },
+        },
+      }),
+      market,
+      context()
+    )
+    expect(installed.map(entry => entry.publisher)).toEqual([null, 'thirdParty', null])
   })
 
   it('不认识的状态显示原值、用中性颜色', () => {
@@ -335,7 +394,14 @@ describe('插件中心分组、搜索与筛选', () => {
       ext2: { info: { plugin_name: 'theme_pack' } },
     }),
     toMarketViews(
-      catalog({ m1: { plugin_name: 'theme_pack', version: '2.0', update_available: true } }),
+      catalog({
+        m1: { plugin_name: 'theme_pack', version: '2.0', update_available: true },
+        m2: {
+          plugin_name: 'maa_adapter',
+          package_name: 'auto-mas-maa-adapter',
+          publisher_organization: 'auto-mas',
+        },
+      }),
       null,
       context()
     ),

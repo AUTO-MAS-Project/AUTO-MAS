@@ -11,7 +11,6 @@ import importlib
 import importlib.metadata as importlib_metadata
 import json
 import os
-import platform
 import shutil
 import sys
 import tempfile
@@ -857,22 +856,9 @@ async def prepare_environment(
     pins = host_constraints()
     records = list(Config.plugin_registry.values())
     targets = plugin_targets(records, installed_path=target)
-    existing = {
-        name: dist.version for name, dist in environment.distributions(target).items()
-    }
-    fingerprint = {
-        "core": Config.VERSION,
-        "python": platform.python_version(),
-        "platform": sys.platform,
-        "host": pins,
-        "plugins": targets,
-        "installed": existing,
-        "sources": {
-            item: (Path(item) / "pyproject.toml").read_text(encoding="utf-8")
-            for item in targets
-            if (Path(item) / "pyproject.toml").is_file()
-        },
-    }
+    fingerprint = environment.environment_fingerprint(
+        target, targets=targets, pins=pins
+    )
     marker = target.parent / "environment.json"
     unchanged = False
     if marker.is_file():
@@ -882,6 +868,7 @@ async def prepare_environment(
             logger.warning("插件环境记录损坏，重新准备依赖")
     previous = target.with_suffix(".previous")
     # 环境没变也要求解：已装版本低于存量配置要的下限，不能被指纹短路。
+    existing = fingerprint["installed"]
     raised = _below_minimum(records, existing, minimums or {})
     # 宿主内置托管要的库：已装且满足就钉在现版本，指纹里的已装版本照常管住它。
     pinned_libraries, missing = _library_targets(libraries, existing)
@@ -1042,11 +1029,7 @@ async def prepare_environment(
         importlib.invalidate_caches()
         importlib_metadata.MetadataPathFinder.invalidate_caches()
         fingerprint["plugins"] = plugin_targets(records, installed_path=target)
-        pending_marker = marker.with_suffix(".tmp")
-        pending_marker.write_text(
-            json.dumps(fingerprint, ensure_ascii=False), encoding="utf-8"
-        )
-        pending_marker.replace(marker)
+        environment.write_environment_fingerprint(target, fingerprint)
         shutil.rmtree(previous)
     importlib.invalidate_caches()
     logger.info("插件依赖准备完成，开始加载插件")

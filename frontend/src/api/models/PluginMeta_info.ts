@@ -49,6 +49,14 @@ export type PluginMeta_info = {
     readonly display_name?: (string | null);
     readonly description?: (string | null);
     readonly tags?: (Array<string> | null);
+    /**
+     * 市场发布版本的 PNG 头像
+     */
+    readonly icon_png?: (string | null);
+    /**
+     * 官方目录核对的 PyPI 组织
+     */
+    readonly publisher_organization?: (string | null);
     readonly installed_version?: (string | null);
     readonly update_available?: (boolean | null);
     /**

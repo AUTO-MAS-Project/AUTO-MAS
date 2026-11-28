@@ -17,3 +17,8 @@ def is_development_environment() -> bool:
     """判断当前进程是否使用开发环境行为。"""
 
     return get_application_environment() == "development"
+
+
+def install_zzzod_for_development() -> bool:
+    """开发环境可要求空白配置也安装测试插件。"""
+    return is_development_environment() and os.getenv("AUTO_MAS_ZZZOD_ADAPTER") == "1"

@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
-import { parse } from 'yaml'
+import { parse as parseToml } from 'smol-toml'
+import { parse, stringify } from 'yaml'
 import { cleanupRealRun } from './real-cleanup.ts'
 import { acquireRealRunLock, seedBrowserProfile, seedRealProfile } from './run.mjs'
 
@@ -53,7 +54,7 @@ test('插件与历史种子只写普通隔离根，真实与就地模式保持�
     await seedBrowserProfile(root, { real: true, inPlace: false })
     await seedBrowserProfile(root, { real: false, inPlace: true })
     assert.deepEqual(await readdir(root), [])
-    await seedBrowserProfile(root, { real: false, inPlace: false })
+    const fixtureEnv = await seedBrowserProfile(root, { real: false, inPlace: false })
     assert.ok((await readFile(path.join(root, 'data', 'history.db'))).length > 0)
     assert.ok((await readdir(path.join(root, 'history'))).length > 0)
     const pluginRegistry = parse(
@@ -62,20 +63,48 @@ test('插件与历史种子只写普通隔离根，真实与就地模式保持�
     const enabledPlugins = Object.values(pluginRegistry.data)
       .map(({ info }) => info)
       .filter(({ enabled }) => enabled)
-    assert.ok(enabledPlugins.some(({ plugin_name }) => plugin_name === 'maa_adapter'))
-    if (process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS) {
-      for (const name of [
-        'mumu_adapter',
-        'ldplayer_adapter',
-        'mod_avd_adapter',
-        'general_emulator_adapter',
-        'win_process_adapter',
-      ]) {
-        assert.ok(
-          enabledPlugins.some(
-            ({ plugin_name, source }) => plugin_name === name && source === 'local'
+    for (const name of ['maa_adapter', 'whimbox_adapter']) {
+      assert.ok(enabledPlugins.some(({ plugin_name }) => plugin_name === name))
+    }
+    const maaEnd = enabledPlugins.find(({ plugin_name }) => plugin_name === 'maaend_adapter')
+    assert.equal(fixtureEnv.AUTO_MAS_E2E_MAAEND_READY, maaEnd ? '1' : '0')
+    if (process.env.AUTO_MAS_E2E_MAAEND_WHEEL?.trim()) {
+      assert.equal(maaEnd?.source, 'installed')
+    }
+    const sourceRoot = process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS?.trim()
+    if (sourceRoot) {
+      const entries = await readdir(sourceRoot, { withFileTypes: true })
+      const projects = entries.some(entry => entry.name === 'pyproject.toml')
+        ? [sourceRoot]
+        : entries
+            .filter(entry => entry.isDirectory() || entry.isSymbolicLink())
+            .map(entry => path.join(sourceRoot, entry.name))
+      for (const project of projects) {
+        let declaration
+        try {
+          declaration = await readFile(path.join(project, 'pyproject.toml'), 'utf8')
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error
+          continue
+        }
+        const keywords = parseToml(declaration).project?.keywords ?? []
+        const id = keywords.find(keyword => keyword.startsWith('auto-mas-id:'))
+        const name = id?.slice('auto-mas-id:'.length)
+        if (
+          [
+            'maaend_adapter',
+            'mumu_adapter',
+            'ldplayer_adapter',
+            'mod_avd_adapter',
+            'general_emulator_adapter',
+            'win_process_adapter',
+          ].includes(name)
+        ) {
+          assert.ok(
+            enabledPlugins.some(plugin => plugin.plugin_name === name && plugin.source === 'local'),
+            `${name} 应从提供的源码启用`
           )
-        )
+        }
       }
     }
   } finally {
@@ -210,6 +239,7 @@ test('真实流程按公开 MAS 配置隔离用户并允许无模拟器专项', 
         Name: `${scriptType} account`,
         Status: true,
         ...(planField && variantPlanId ? { [planField]: variantPlanId } : {}),
+        ...(scriptType === 'MaaEndConfig' ? { AutoEssenceMode: 'Native' } : {}),
       }
       const variantScript = collection(variantScriptId, scriptType, {
         Info: { Name: `${scriptType} script` },
@@ -543,3 +573,99 @@ test('MAA 现行格式把 StageMode 放在 Stage 组时也复制计划表', asyn
     await rm(root, { recursive: true, force: true })
   }
 })
+
+for (const { label, yaml, group, field } of [
+  { label: '现行 YAML users', yaml: true, group: null, field: 'users' },
+  { label: '历史 YAML UserData', yaml: true, group: null, field: 'UserData' },
+  {
+    label: '历史 JSON SubConfigsInfo.UserData',
+    yaml: false,
+    group: 'SubConfigsInfo',
+    field: 'UserData',
+  },
+]) {
+  test(`MaaEnd 真实入口按 ${label} 裁剪账号并保留两种计划引用`, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'auto-mas-e2e-maaend-'))
+    const source = path.join(root, 'source')
+    const target = path.join(root, 'target')
+    const config = path.join(source, 'config')
+    const scriptId = '00000000-0000-0000-0000-000000000031'
+    const userId = '00000000-0000-0000-0000-000000000032'
+    const otherUserId = '00000000-0000-0000-0000-000000000033'
+    const sanityPlanId = '00000000-0000-0000-0000-000000000034'
+    const essencePlanId = '00000000-0000-0000-0000-000000000035'
+    const otherPlanId = '00000000-0000-0000-0000-000000000036'
+    const webhookId = '00000000-0000-0000-0000-000000000037'
+    const scriptFile = yaml ? 'scripts.yaml' : 'ScriptConfig.json'
+    const planFile = yaml ? 'plans.yaml' : 'PlanConfig.json'
+    const serialize = yaml ? stringify : JSON.stringify
+    const deserialize = yaml ? parse : JSON.parse
+    const collection = (type, members) => {
+      const order = Object.keys(members).map(uid => ({ uid, type }))
+      return yaml ? { order, data: members } : { instances: order, ...members }
+    }
+    const info = {
+      Name: 'isolated MaaEnd test account',
+      Status: true,
+      Password: 'opaque-ciphertext',
+      SanityMode: sanityPlanId,
+      AutoEssenceMode: essencePlanId,
+    }
+    const other = { Info: { Name: 'unselected account', Status: true, Password: 'unselected' } }
+    const hooks = collection('Webhook', {
+      [webhookId]: { Info: { Name: 'test only' }, Data: { Url: 'http://127.0.0.1:1' } },
+    })
+    const users = collection('MaaEndUserConfig', {
+      [userId]: {
+        Info: info,
+        Notify: { Enabled: true, ServerChanKey: 'do-not-copy' },
+        ...(yaml
+          ? { Notify_CustomWebhooks: hooks }
+          : { SubConfigsInfo: { Notify_CustomWebhooks: hooks } }),
+      },
+      [otherUserId]: other,
+    })
+    const script = group ? { [group]: { [field]: users } } : { [field]: users }
+    if (field === 'users') {
+      // 双字段时只复制新字段中的目标，不能把旧字段里的账号和密码带入隔离根。
+      script.UserData = collection('MaaEndUserConfig', { [otherUserId]: other })
+    }
+    const original = serialize(collection('MaaEndConfig', { [scriptId]: script }))
+    const plans = {
+      [essencePlanId]: { Info: { Name: 'essence plan' } },
+      [otherPlanId]: { Info: { Name: 'unused plan' } },
+      [sanityPlanId]: { Info: { Name: 'sanity plan' } },
+    }
+    try {
+      await mkdir(config, { recursive: true })
+      await writeFile(path.join(config, scriptFile), original)
+      await writeFile(path.join(config, planFile), serialize(collection('MaaEndPlanConfig', plans)))
+
+      const selected = await seedRealProfile(source, target, {})
+      assert.equal(selected.userId, userId)
+      const targetConfig = path.join(target, 'config')
+      assert.deepEqual((await readdir(targetConfig)).sort(), [scriptFile, planFile].sort())
+      const scripts = deserialize(await readFile(path.join(targetConfig, scriptFile), 'utf8'))
+      const savedScript = (scripts.data ?? scripts)[scriptId]
+      const savedUsers = (group ? savedScript[group] : savedScript)[field]
+      assert.deepEqual(
+        savedUsers,
+        collection('MaaEndUserConfig', {
+          [userId]: yaml ? { Info: info } : { Info: info, SubConfigsInfo: {} },
+        })
+      )
+      if (field === 'users') assert.equal(savedScript.UserData, undefined)
+      const selectedPlans = deserialize(await readFile(path.join(targetConfig, planFile), 'utf8'))
+      assert.deepEqual(
+        selectedPlans,
+        collection('MaaEndPlanConfig', {
+          [essencePlanId]: plans[essencePlanId],
+          [sanityPlanId]: plans[sanityPlanId],
+        })
+      )
+      assert.equal(await readFile(path.join(config, scriptFile), 'utf8'), original)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+}
