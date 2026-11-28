@@ -73,6 +73,11 @@ beforeEach(() => {
     code: 200,
     data: [],
   })
+  vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue({
+    code: 200,
+    order: [],
+    data: {},
+  })
   vi.spyOn(Service, 'getScriptLockApiScriptsLockPost').mockResolvedValue({
     code: 200,
     locked: false,

@@ -3,7 +3,6 @@
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import httpx
 
@@ -23,7 +22,7 @@ class CatalogSnapshot:
     document: dict
 
 
-def _read_cache(path: Path, url: str) -> CatalogSnapshot | None:
+def read_cache(path: Path, url: str) -> CatalogSnapshot | None:
     """读取同一公开地址的有效缓存；缓存损坏只失去条件请求优化，不代替网络刷新。"""
     if not path.is_file():
         return None
@@ -44,34 +43,57 @@ def _read_cache(path: Path, url: str) -> CatalogSnapshot | None:
 
 
 async def fetch_catalog(
-    client: httpx.AsyncClient, url: str, cache: Path
+    client: httpx.AsyncClient,
+    url: str,
+    cache: Path,
+    *,
+    expected_version: int | None = None,
+    trusted_hosts: frozenset[str] = frozenset(),
 ) -> CatalogSnapshot:
     """短时读取并完整校验数据站目录，304 只可复用同来源的有效本地文档。"""
-    parsed = urlsplit(url)
-    if (
-        parsed.scheme != "https"
-        or not parsed.netloc
-        or parsed.username
-        or parsed.password
-    ):
+    request_url = httpx.URL(url)
+    if request_url.scheme != "https" or not request_url.host or request_url.userinfo:
         raise ValueError("插件目录地址必须是无凭据的 HTTPS URL")
-    previous = _read_cache(cache, url)
+    previous = read_cache(cache, url)
     headers = {"User-Agent": "AUTO-MAS-PluginMarket/3.0", "Accept": "application/json"}
+    if (
+        previous is not None
+        and expected_version is not None
+        and previous.document["schema_version"] != expected_version
+    ):
+        previous = None
     if previous is not None and previous.etag:
         headers["If-None-Match"] = previous.etag
-    async with client.stream("GET", url, headers=headers) as response:
-        if response.status_code == 304:
-            if previous is None:
-                raise ValueError("数据站返回 304，但没有可用目录缓存")
-            return previous
-        response.raise_for_status()
-        content = bytearray()
-        async for part in response.aiter_bytes():
-            content.extend(part)
-            if len(content) > MAX_BYTES:
-                raise ValueError("插件目录超过 8 MB")
-        document = validate_catalog(json.loads(content.decode("utf-8-sig")))
-        return CatalogSnapshot(url, response.headers.get("ETag", ""), document)
+    for _ in range(client.max_redirects + 1):
+        if trusted_hosts and (
+            request_url.scheme != "https"
+            or request_url.host not in trusted_hosts
+            or request_url.port is not None
+            or request_url.userinfo
+        ):
+            raise ValueError("官方插件目录只能访问可信 HTTPS 主机")
+        async with client.stream(
+            "GET", request_url, headers=headers, follow_redirects=not trusted_hosts
+        ) as response:
+            if response.next_request is not None:
+                request_url = response.next_request.url
+                continue
+            if response.status_code == 304:
+                if previous is None:
+                    raise ValueError("数据站返回 304，但没有可用目录缓存")
+                return previous
+            response.raise_for_status()
+            content = bytearray()
+            async for part in response.aiter_bytes():
+                content.extend(part)
+                if len(content) > MAX_BYTES:
+                    raise ValueError("插件目录超过 8 MB")
+            document = validate_catalog(
+                json.loads(content.decode("utf-8-sig")),
+                expected_version=expected_version,
+            )
+            return CatalogSnapshot(url, response.headers.get("ETag", ""), document)
+    raise ValueError("插件目录重定向次数超过上限")
 
 
 def store_cache(path: Path, snapshot: CatalogSnapshot) -> None:

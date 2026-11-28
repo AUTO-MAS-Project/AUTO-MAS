@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from PIL import Image
 from pydantic import JsonValue
 
 from app.core import Config
@@ -56,6 +57,24 @@ class PluginResourceManager:
         """登记发现阶段确认的包身份及其语言资源目录。"""
         self._package_roots = dict(roots)
         self._plugin_sources = {name: root / "i18n" for name, root in roots.items()}
+
+    async def get_plugin_icon(self, name: str) -> str | None:
+        """从发现阶段确认的包读取独立图标，插件未启用也可展示。"""
+        from app.plugin.runtime.icon import read_package_icon
+
+        package = self._package_roots.get(name)
+        if package is None:
+            return None
+        try:
+            return await asyncio.to_thread(read_package_icon, package)
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+            Image.DecompressionBombError,
+        ) as error:
+            logger.warning(f"读取插件 {name} 的图标失败：{type(error).__name__}")
+            return None
 
     async def remove_package(self, name: str) -> None:
         """卸载成功后撤下词表，并通过现有语言修订通知刷新客户端。"""

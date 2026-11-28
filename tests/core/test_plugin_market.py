@@ -89,6 +89,101 @@ async def test_data_station_conditional_request_reuses_valid_document(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mirrored", [False, True])
+async def test_official_v3_ownership_survives_only_built_in_fallback(
+    catalog, monkeypatch, mirrored
+):
+    """仅内置回退沿用同一发行包的可信组织归属，市场头像仍跟随目录。"""
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+    v2 = published_catalog()
+    v3_entries = [
+        {
+            **entry,
+            "publisher_organization": "auto-mas",
+            "icon_png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXKcAAAAASUVORK5CYII=",
+        }
+        for entry in v2["plugins"]
+    ]
+    v3 = {
+        **v2,
+        "schema_version": 3,
+        "plugins": v3_entries,
+        "revision": content_revision(v3_entries, schema_version=3),
+    }
+    fail_v3 = False
+    mirror_url = market._CATALOG_V3_URL.replace(
+        "data.auto-mas.top", "data2.auto-mas.top", 1
+    )
+
+    custom_url = "https://custom.test/plugins.json"
+    redirect_url = mirror_url if mirrored else None
+
+    def handler(request):
+        if str(request.url) == custom_url:
+            return httpx.Response(200, json=v3)
+        if str(request.url) == market._CATALOG_V3_URL:
+            if redirect_url:
+                return httpx.Response(307, headers={"Location": redirect_url})
+            return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
+        if mirrored and str(request.url) == mirror_url:
+            assert not request.headers.get("Authorization")
+            return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
+        assert str(request.url) == market._CATALOG_URL
+        return httpx.Response(200, json=v2)
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    (uid,) = catalog.keys()
+    assert catalog[uid].info.publisher_organization == "auto-mas"
+    assert catalog[uid].info.icon_png == v3_entries[0]["icon_png"]
+
+    # 自定义地址仍允许头像，显式指定内置 URL 也不能借跳转获得官方归属。
+    for override in (custom_url, market._CATALOG_V3_URL):
+        monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", override)
+        redirect_url = custom_url
+        await market.refresh()
+        assert catalog[uid].info.publisher_organization is None
+        assert catalog[uid].info.icon_png is not None
+
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+    redirect_url = mirror_url if mirrored else None
+    fail_v3 = True
+    await market.refresh()
+    assert catalog[uid].info.publisher_organization == "auto-mas"
+    assert catalog[uid].info.icon_png is None
+
+    v2["plugins"][0]["package_name"] = "other-demo"
+    v2["revision"] = content_revision(v2["plugins"])
+    await market.refresh()
+    assert next(iter(catalog.values())).info.publisher_organization is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://catalog.test/plugins.json",
+        "http://data2.auto-mas.top/plugins.json",
+        "https://data2.auto-mas.top:8443/plugins.json",
+    ],
+)
+async def test_official_v3_rejects_untrusted_redirects(catalog, monkeypatch, location):
+    """只向登记的 HTTPS 镜像请求 v3，拒绝跳转后仍可读取 v2。"""
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+
+    def handler(request):
+        if str(request.url) == market._CATALOG_V3_URL:
+            return httpx.Response(307, headers={"Location": location})
+        assert str(request.url) == market._CATALOG_URL
+        return httpx.Response(200, json=published_catalog())
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    (entry,) = catalog.values()
+    assert entry.info.publisher_organization is None
+
+
+@pytest.mark.asyncio
 async def test_refresh_preserves_install_target_when_catalog_changes(
     catalog, monkeypatch
 ):

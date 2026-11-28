@@ -5,11 +5,13 @@ import {
   type PanelBinding,
   type PluginRegistryDocument,
 } from '@/api'
+import { pluginIconSrc } from '@/utils/pluginIcon'
 
 type PluginScriptType = PluginProvidedScriptType & {
   firstAccountMode: PluginProvidedScriptType.firstAccountMode
   displayName: string
   description: string
+  iconSrc?: string
 }
 
 export function compatibleWheel(mount?: FrontendSurfaceMount | null) {
@@ -32,7 +34,7 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
 
   const settingsPanels = new Map<string, FrontendSurfaceMount>()
   const notificationPanels = new Map<string, FrontendSurfaceMount>()
-  for (const { uid, providedScript, frontend, info } of Object.values(documents)) {
+  for (const { uid, providedScript, frontend, info, iconPng } of Object.values(documents)) {
     if (frontend && info?.plugin_name && info.state === PluginState.ENABLED) {
       for (const { surface, page, scriptType, planType, channel } of frontend.bindings) {
         const artifacts = frontend.pages[page]
@@ -68,6 +70,7 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
         providedScript.firstAccountMode ?? PluginProvidedScriptType.firstAccountMode.DIRECT,
       displayName: info?.display_name || info?.plugin_name || providedScript.scriptKey,
       description: info?.description ?? '',
+      iconSrc: pluginIconSrc(iconPng),
     }
     byScriptKey.set(script.scriptKey, script)
     byScriptConfigType.set(script.scriptConfigType, script)

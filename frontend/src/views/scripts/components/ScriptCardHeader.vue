@@ -76,12 +76,13 @@ export type ScriptCardAction =
           :src="getMaaFWScriptLogo(script)"
           :alt="maafwLabel(script.type)"
           class="script-logo"
-          @error="fallbackToMaaFWLogo($event, maafwLogo(script.type))"
+          @error="fallbackToMaaFWLogo($event, script.iconSrc ?? maafwLogo(script.type))"
         />
         <img
           v-else
-          :src="getScriptLogo(script.type)"
+          :src="script.iconSrc ?? getScriptLogo(script.type)"
           :alt="getScriptLogoAlt(script.type)"
+          @error="fallbackToMaaFWLogo($event, getScriptLogo(script.type))"
           class="script-logo"
         />
       </div>

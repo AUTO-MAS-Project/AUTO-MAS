@@ -8,6 +8,7 @@ import type {
   PluginRegistryGetOut,
 } from '@/api'
 import { declarativeGroups } from '@/components/declarative/declarativeLayout'
+import { pluginIconSrc } from '@/utils/pluginIcon'
 import { pluginActionHint, pluginToggleChecked } from './configActions'
 
 /**
@@ -39,18 +40,6 @@ export const LIFECYCLE_LABEL_KEYS: Record<LifecycleAction, string> = {
   uninstall: 'core.plugins.uninstall',
 }
 
-/** 官方发行包名；只对非本地来源生效，核心插件另按 is_core 判官方。 */
-const OFFICIAL_PACKAGE_NAMES: ReadonlySet<string> = new Set([
-  'auto-mas-maa-adapter',
-  'auto-mas-whimbox-adapter',
-  'auto-mas-maafw-adapter',
-  'auto-mas-m9a-adapter',
-  'auto-mas-mss-adapter',
-  'auto-mas-maafw-agent-env',
-  'auto-mas-maafw-project-update',
-  'auto-mas-maafw-runner',
-])
-
 /** 专项前端入口声明的所属插件，用来对上托管类型、计划表类型与图标。 */
 export interface PluginAdapterBinding {
   pluginId: string
@@ -75,7 +64,10 @@ export interface PluginModelContext {
 export const PLUGIN_ICON_TONES = ['primary', 'success', 'warning', 'neutral'] as const
 export type PluginIconTone = (typeof PLUGIN_ICON_TONES)[number]
 export type PluginIcon =
-  | { kind: 'image'; src: string }
+  | { kind: 'image'; src: string; fallback?: PluginIconFallback }
+  | PluginIconFallback
+
+type PluginIconFallback =
   | { kind: 'initial'; text: string; tone: PluginIconTone }
   | { kind: 'generic'; tone: PluginIconTone }
 
@@ -265,7 +257,7 @@ function pluginInitial(displayName: unknown, pluginId: unknown): string | null {
   return Array.from(source)[0].toUpperCase()
 }
 
-/** 图标依次取专项入口 logo、核心插件应用图标、首字母色块、通用插件图标。 */
+/** 优先使用插件自己的头像，依次回退到内置 Logo、名称首字符和通用图标。 */
 export function resolvePluginIcon(input: {
   uid: string
   pluginId: string | null
@@ -273,13 +265,19 @@ export function resolvePluginIcon(input: {
   core: boolean
   binding: PluginAdapterBinding | null
   appIcon: string
+  iconPng?: string | null
 }): PluginIcon {
+  const tone = pluginIconTone(input.pluginId ?? input.uid)
+  const text = pluginInitial(input.displayName, input.pluginId)
+  const fallback: PluginIconFallback = text
+    ? { kind: 'initial', text, tone }
+    : { kind: 'generic', tone }
+  const image = pluginIconSrc(input.iconPng)
+  if (image) return { kind: 'image', src: image, fallback }
   const logo = firstText(input.binding?.logo)
   if (logo) return { kind: 'image', src: logo }
   if (input.core && firstText(input.appIcon)) return { kind: 'image', src: input.appIcon }
-  const tone = pluginIconTone(input.pluginId ?? input.uid)
-  const text = pluginInitial(input.displayName, input.pluginId)
-  return text ? { kind: 'initial', text, tone } : { kind: 'generic', tone }
+  return fallback
 }
 
 const KNOWN_TRANSITIONS = new Set(['loading', 'enabling', 'reloading', 'disabling', 'unloading'])
@@ -309,11 +307,6 @@ export function sourceLabelKey(source: string | null): string | null {
   return source && ['local', 'installed', 'market', 'package'].includes(source)
     ? `core.plugins.source.${source}`
     : null
-}
-
-function isOfficialPackage(packageName: unknown): boolean {
-  const name = firstText(packageName)
-  return name !== null && OFFICIAL_PACKAGE_NAMES.has(name)
 }
 
 /** PyPI 将大小写及连续的点、下划线、连字符视为同一发行包名。 */
@@ -361,7 +354,8 @@ export function toMarketViews(
     const pluginId = firstText(info.plugin_name)
     const binding = findBinding(pluginId, context.bindings)
     const packageName = firstText(info.package_name)
-    const official = isOfficialPackage(packageName)
+    const organization = firstText(info.publisher_organization)
+    const official = organization === 'auto-mas'
     const installedVersion = firstText(info.installed_version)
     return {
       kind: 'market',
@@ -386,7 +380,7 @@ export function toMarketViews(
       links: pluginLinks(info),
       dependencies: textList(info.requires_dist),
       official,
-      publisher: official ? 'official' : 'thirdParty',
+      publisher: official ? 'official' : organization ? 'thirdParty' : null,
       category:
         binding || (pluginId && (impactById.get(pluginId) ?? 0) > 0) ? 'specialized' : 'extension',
       icon: resolvePluginIcon({
@@ -397,6 +391,7 @@ export function toMarketViews(
           info.display_name
         ),
         core: false,
+        iconPng: info.icon_png,
         binding,
         appIcon: context.appIcon,
       }),
@@ -439,18 +434,22 @@ export function toInstalledViews(
     const local = info.is_local === true || source === 'local'
     const packageName = firstText(info.package_name)
     const disableImpact = disableScopes(document?.disableImpact)
+    const drift = codeDrift(info.code_drift)
+    const status = pluginStatus(info.state, drift)
+    const catalogEntry = pluginId ? market.find(entry => entry.pluginId === pluginId) : undefined
+    const distributionPublisher =
+      packageName &&
+      catalogEntry &&
+      packageKey(packageName) === packageKey(catalogEntry.packageName)
+        ? catalogEntry.publisher
+        : null
     const publisher: PluginPublisher | null = core
       ? 'official'
       : local
         ? 'local'
-        : !source
-          ? null
-          : isOfficialPackage(packageName)
-            ? 'official'
-            : 'thirdParty'
-    const drift = codeDrift(info.code_drift)
-    const status = pluginStatus(info.state, drift)
-    const catalogEntry = pluginId ? market.find(entry => entry.pluginId === pluginId) : undefined
+        : source === 'installed'
+          ? distributionPublisher
+          : null
     // 目录条目自己也没有名称时它的 name 就是插件标识，不算兜底。
     const catalogName = catalogEntry && catalogEntry.name !== pluginId ? catalogEntry.name : null
     const name = resolvePluginName(uid, info, context.texts, catalogName)
@@ -493,6 +492,7 @@ export function toInstalledViews(
         pluginId,
         displayName: name === pluginId || name === uid ? null : name,
         core,
+        iconPng: document?.iconPng,
         binding,
         appIcon: context.appIcon,
       }),
