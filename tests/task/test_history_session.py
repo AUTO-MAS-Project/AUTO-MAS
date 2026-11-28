@@ -116,3 +116,67 @@ async def test_capture_session_owns_each_run_until_archive_or_cancelled_cleanup(
     finally:
         await history.close()
         await registry.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_capture_session_uses_registered_failure_video_services(
+    tmp_path, monkeypatch
+):
+    """插件已登记时，失败回放由插件配置控制，旧 Replay 开关不再阻挡采集。"""
+
+    root = TaskItem()
+    await root.activate()
+    script_id = root.scripts.add(
+        TaskScriptItem, payload={"info": {"script_id": "script", "name": "Script"}}
+    )
+    await root.scripts.commit()
+    script = root.scripts[script_id]
+    user_id = script.users.add(
+        TaskUserItem, payload={"info": {"user_id": "user", "name": "User"}}
+    )
+    await script.users.commit()
+    user = script.users[user_id]
+    await user.add_log_record(datetime.now().astimezone(), LogRecord())
+    await user.set_state(status="异常")
+
+    capture_path = tmp_path / "plugin-replay.mkv"
+    capture_path.write_bytes(b"plugin replay")
+    calls: list[object] = []
+
+    async def capture(*, temporary_copy=True):
+        calls.append(temporary_copy)
+        return capture_path
+
+    async def discard(path):
+        calls.append(path)
+        path.unlink(missing_ok=True)
+        return True
+
+    providers = {
+        history_core.FAILURE_VIDEO_ENABLED: lambda: True,
+        history_core.FAILURE_VIDEO_CAPTURE: capture,
+        history_core.FAILURE_VIDEO_DISCARD: discard,
+    }
+    monkeypatch.setattr(
+        history_core,
+        "_plugin_services",
+        lambda: SimpleNamespace(get=providers.get),
+    )
+    monkeypatch.setattr(
+        history_core,
+        "Config",
+        SimpleNamespace(setting=SimpleNamespace(Replay=SimpleNamespace(Enabled=False))),
+    )
+    registry = BackgroundTaskRegistry()
+    monkeypatch.setattr(history_core, "BackgroundTaskManager", registry)
+    history = history_core.TaskHistorySession(root)
+    try:
+        history.begin_user_history_capture(script, user, failed=True)
+        attachments = await history.collect_user_history_attachments(script, user)
+        assert [item.path for item in attachments] == [capture_path]
+        await history.discard_user_history_capture(script, user)
+        assert calls == [True, capture_path]
+        assert not capture_path.exists()
+    finally:
+        await history.close()
+        await registry.shutdown()

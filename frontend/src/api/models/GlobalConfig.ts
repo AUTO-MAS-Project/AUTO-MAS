@@ -6,6 +6,7 @@ import type { GlobalConfig_DesktopSession } from './GlobalConfig_DesktopSession'
 import type { GlobalConfig_Display } from './GlobalConfig_Display';
 import type { GlobalConfig_download } from './GlobalConfig_download';
 import type { GlobalConfig_Function } from './GlobalConfig_Function';
+import type { GlobalConfig_History } from './GlobalConfig_History';
 import type { GlobalConfig_Notify } from './GlobalConfig_Notify';
 import type { GlobalConfig_plugin } from './GlobalConfig_plugin';
 import type { GlobalConfig_Replay } from './GlobalConfig_Replay';
@@ -28,6 +29,7 @@ export type GlobalConfig = {
      */
     DesktopSession?: (GlobalConfig_DesktopSession | null);
     Function?: (GlobalConfig_Function | null);
+    History?: (GlobalConfig_History | null);
     Notify?: (GlobalConfig_Notify | null);
     Replay?: (GlobalConfig_Replay | null);
     Start?: (GlobalConfig_Start | null);

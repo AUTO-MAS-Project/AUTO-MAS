@@ -112,9 +112,9 @@ class ScriptExpander(TaskBase):
         info = self.task_info
         await info.set_state(status="running")
         if info.mode == TaskMode.AUTO_PROXY:
-            from app.core.desktop_guard import ensure_desktop_available
+            from app.core.plugin.hooks import run_before_auto_proxy_hooks
 
-            await ensure_desktop_available()
+            await run_before_auto_proxy_hooks()
             from app.core.notify.task_report import receive_task_community_results
             from app.core.timer import MainTimer
 

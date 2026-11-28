@@ -8,10 +8,6 @@ export type GlobalConfig_Replay = {
      */
     Enabled?: (boolean | null);
     /**
-     * 历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。
-     */
-    VideoStorageLimitMiB?: (number | null);
-    /**
      * OBS 认证密码按现有敏感配置规则加密落盘。
      */
     Password?: (string | null);

@@ -15,7 +15,8 @@ import { useSettingPersistence } from '@/views/setting/useSettingPersistence'
 
 const { t } = useI18n()
 
-// 回放设置仍是全局设置里的 Replay 字段，读写沿用设置页同一条保存链路（串行队列、埋点）。
+// 回放连接设置仍在 Replay，历史视频容量已经迁移到独立的 History 设置组。
+// 两组设置都沿用设置页同一条保存链路（串行队列、埋点）。
 const settings = reactive<GlobalConfig>({})
 const { restartPolling } = useUpdateChecker()
 const { handleSettingChange, refreshSettings } = useSettingPersistence(settings, restartPolling)
@@ -25,9 +26,10 @@ onMounted(() => {
 })
 
 const replaySettings = computed(() => settings.Replay ?? null)
+const historySettings = computed(() => settings.History ?? null)
 const replayEnabled = computed(() => replaySettings.value?.Enabled ?? false)
 const replayPort = computed(() => replaySettings.value?.Port ?? 4455)
-const videoStorageLimit = computed(() => replaySettings.value?.VideoStorageLimitMiB ?? 1024)
+const videoStorageLimit = computed(() => historySettings.value?.VideoStorageLimitMiB ?? 1024)
 const videoStorageLimitDraft = ref<number | null>(videoStorageLimit.value)
 const capturePath = ref<string | null>(null)
 const passwordConfiguredOverride = ref<boolean | null>(null)
@@ -58,6 +60,7 @@ watch(videoStorageLimit, (value, previousValue) => {
 })
 
 type ReplayConfig = NonNullable<GlobalConfig['Replay']>
+type HistoryConfig = NonNullable<GlobalConfig['History']>
 
 const updateReplaySetting = async <Key extends keyof ReplayConfig>(
   key: Key,
@@ -73,13 +76,26 @@ const updateReplaySetting = async <Key extends keyof ReplayConfig>(
   }
 }
 
+const updateHistorySetting = async <Key extends keyof HistoryConfig>(
+  key: Key,
+  value: HistoryConfig[Key]
+) => {
+  try {
+    await handleSettingChange('History', key, value)
+    return true
+  } catch {
+    // 保存链路已经提示保存失败；保留当前输入供重试。
+    return false
+  }
+}
+
 const saveVideoStorageLimit = async () => {
   if (savingVideoStorageLimit.value || !canSaveVideoStorageLimit.value) return
 
   savingVideoStorageLimit.value = true
   try {
     // 调整容量会立即回收视频，仅在用户明确保存后提交最终值。
-    await updateReplaySetting('VideoStorageLimitMiB', videoStorageLimitDraft.value)
+    await updateHistorySetting('VideoStorageLimitMiB', videoStorageLimitDraft.value)
   } finally {
     savingVideoStorageLimit.value = false
   }
