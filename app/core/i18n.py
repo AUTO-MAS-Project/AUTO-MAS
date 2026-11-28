@@ -1,4 +1,4 @@
-"""按需提供 Weblate 单语 JSON，前端通过 Vue I18n 执行翻译与回退。"""
+"""宿主词表和插件包资源，按发现与启用生命周期分别发布。"""
 
 from __future__ import annotations
 
@@ -8,12 +8,17 @@ import json
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import JsonValue
 
 from app.core import Config
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.plugin.calls import CallGate
+    from app.plugin.frontend import MountedFrontend
+
 
 logger = get_logger("国际化资源")
 
@@ -36,18 +41,55 @@ class I18nSnapshot:
     signatures: tuple[tuple[str, int, int], ...]
 
 
-class I18nManager:
+class PluginResourceManager:
     """缓存只读资源快照；读盘失败保留旧快照，但向本次请求报告失败。"""
 
     def __init__(self, directory: Path) -> None:
         """绑定 core 语言资源目录，初始化插件资源登记、快照缓存及刷新锁。"""
         self._directory = directory
+        self._package_roots: dict[str, Path] = {}
         self._plugin_sources: dict[str, Path] = {}
         self._snapshot: I18nSnapshot | None = None
         self._lock = asyncio.Lock()
 
+    def set_package_roots(self, roots: dict[str, Path]) -> None:
+        """登记发现阶段确认的包身份及其语言资源目录。"""
+        self._package_roots = dict(roots)
+        self._plugin_sources = {name: root / "i18n" for name, root in roots.items()}
+
+    async def remove_package(self, name: str) -> None:
+        """卸载成功后撤下词表，并通过现有语言修订通知刷新客户端。"""
+        self._package_roots.pop(name, None)
+        if self._plugin_sources.pop(name, None) is not None:
+            try:
+                await self.get_locales()
+            except (OSError, ValueError) as error:
+                # 卸载已提交；其他词表读取失败时留给下一次语言请求重试。
+                logger.warning(f"卸载 {name} 后刷新词表失败：{error}")
+
+    def load_frontend(
+        self,
+        name: str,
+        *,
+        script_key: str | None,
+        plan_type: str | None,
+        gate: CallGate,
+    ) -> MountedFrontend | None:
+        """从同一已登记包读取本次启用的 UI 快照，由 HTTP 挂载持有到停用。"""
+        from app.plugin.frontend import MountedFrontend
+
+        package = self._package_roots.get(name)
+        if package is None:
+            return None
+        return MountedFrontend.load(package, name, script_key, plan_type, gate)
+
     def set_plugin_sources(self, sources: dict[str, Path]) -> None:
         """生命周期提供可读资源目录；禁用保留，卸载/来源消失时移除。"""
+        self._package_roots = {
+            name: root
+            for name, root in self._package_roots.items()
+            if sources.get(name) == root / "i18n"
+        }
         self._plugin_sources = dict(sources)
 
     async def get_locales(self) -> tuple[list[AppLocale], str]:
@@ -187,6 +229,8 @@ class I18nManager:
         return messages
 
 
-I18n = I18nManager(Config.resource_path / "i18n")
+PluginResources = PluginResourceManager(Config.resource_path / "i18n")
+I18nManager = PluginResourceManager
+I18n = PluginResources
 
-__all__ = ["I18n"]
+__all__ = ["I18n", "I18nManager", "PluginResourceManager", "PluginResources"]

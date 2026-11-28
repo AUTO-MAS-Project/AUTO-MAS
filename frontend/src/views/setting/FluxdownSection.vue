@@ -226,7 +226,7 @@ const handleMasInstall = async () => {
   <!-- 下载与安装：与更新源同属一张卡片，每项一行 -->
   <SettingRow
     :label="t('core.setting.others.downloader')"
-    :hint="t('core.setting.others.downloaderTip')"
+    :description="t('core.setting.others.downloaderTip')"
   >
     <a-segmented
       :value="settings.Update?.Downloader ?? 'builtin'"

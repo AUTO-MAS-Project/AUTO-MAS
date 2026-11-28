@@ -8,6 +8,10 @@ export type GlobalConfig_Function = {
      */
     HistoryRetentionTime?: (7 | 15 | 30 | 60 | 90 | 180 | 365 | 0 | null);
     /**
+     * 历史记录页同一天内记录条目的顺序：desc 最新在前，asc 最早在前
+     */
+    HistoryOrder?: ('desc' | 'asc' | null);
+    /**
      * 是否同意 Bilibili 协议
      */
     IfAgreeBilibili?: (boolean | null);

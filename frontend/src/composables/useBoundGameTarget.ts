@@ -7,7 +7,7 @@ export function useBoundGameTarget() {
   const route = useRoute()
   const api = useGamesApi()
   const binding = useGameBindingQuery(
-    () => String(route.params.scriptId ?? ''),
+    () => String(route.params.scriptId ?? route.params.id ?? ''),
     () => (route.params.userId ? String(route.params.userId) : undefined)
   )
   const target = computed(() => {

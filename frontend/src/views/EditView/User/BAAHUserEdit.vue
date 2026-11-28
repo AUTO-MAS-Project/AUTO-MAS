@@ -70,89 +70,6 @@
             </a-col>
           </a-row>
 
-          <!-- 关卡计划表与活动关优先：本次运行按它们改写 BAAH 的关卡与任务顺序 -->
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="stageMode">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahStageMode')"
-                    :hint="t('core.edit.baahStageModeHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="formData.Info.StageMode"
-                  :disabled="loading"
-                  :options="stageModeOptions"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleFieldSave('Info.StageMode', formData.Info.StageMode)"
-                />
-                <a-button
-                  v-if="isStagePlanMode"
-                  type="link"
-                  size="small"
-                  class="go-plan-button"
-                  @click="handleGoToPlans"
-                >
-                  <template #icon><CalendarOutlined /></template>
-                  {{ t('core.edit.goPlan') }}
-                </a-button>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item name="ifEventFirst">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahIfEventFirst')"
-                    :hint="t('core.edit.baahIfEventFirstHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="formData.Info.IfEventFirst"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
-                >
-                  <a-select-option :value="true">{{ t('core.edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('core.edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <!-- 活动排期服务器：「活动关优先」也按它判断所选服当前有没有进行中的活动 -->
-            <a-col :span="8">
-              <a-form-item name="activityLineType">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahActivityLineType')"
-                    :hint="t('core.edit.baahActivityLineTypeHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="formData.Info.ActivityLineType"
-                  :disabled="loading"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
-                >
-                  <a-select-option value="CN">
-                    {{ t('core.edit.baahActivityLineCN') }}
-                  </a-select-option>
-                  <a-select-option value="JP">
-                    {{ t('core.edit.baahActivityLineJP') }}
-                  </a-select-option>
-                  <a-select-option value="Globle">
-                    {{ t('core.edit.baahActivityLineGloble') }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
-
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -215,6 +132,39 @@
         </SectionCard>
 
         <UserNotifyConfig v-model="formData.Notify" :loading="loading" @save="handleFieldSave" />
+
+        <SectionCard variant="plain" :title="t('core.edit.baahCalendarReminder')">
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <FieldLabelWithHint
+                    :text="t('core.edit.baahActivityLineType')"
+                    :hint="t('core.edit.baahActivityLineTypeHint')"
+                    variant="form"
+                  />
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ActivityLineType"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
+                >
+                  <a-select-option value="CN">{{
+                    t('core.edit.baahActivityLineCN')
+                  }}</a-select-option>
+                  <a-select-option value="JP">{{
+                    t('core.edit.baahActivityLineJP')
+                  }}</a-select-option>
+                  <a-select-option value="Globle">{{
+                    t('core.edit.baahActivityLineGloble')
+                  }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </SectionCard>
       </a-form>
     </ConfigLockPanel>
 
@@ -284,18 +234,15 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { CalendarOutlined, HistoryOutlined } from '@ant-design/icons-vue'
+import { HistoryOutlined } from '@ant-design/icons-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
-import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { BaahService, type ComboBoxItem } from '@/api'
-import { PlanComboxIn } from '@/api/models/PlanComboxIn'
-import { navigateTo } from '@/router'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 
@@ -326,13 +273,9 @@ const getDefaultBAAHUserData = () => ({
   Info: {
     Name: '',
     Status: true,
-    Base: 'independent',
     RemainedDay: -1,
     ConfigName: '',
-    // Fixed 表示按 BAAH 自己的关卡配置运行，其余取值是关卡计划表 uid
-    StageMode: 'Fixed',
     ActivityLineType: 'CN',
-    IfEventFirst: false,
     Notes: '',
     Tag: '',
   },
@@ -375,29 +318,6 @@ const loadConfigNames = async () => {
   }
 }
 
-// 关卡计划表下拉候选：后端按消费方 baah 返回 BAAH 计划表；「固定」始终排在第一项
-// 用本地词表的固定项，保证在英文/日文界面下也是自己的语言
-const stageModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('core.edit.fixed'), value: 'Fixed' },
-])
-const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
-const loadStageModeOptions = async () => {
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
-      consumer: PlanComboxIn.consumer.BAAH,
-    })
-    if (response?.code === 200 && response.data) {
-      const planOptions = response.data
-        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
-        .filter(item => item.value !== 'Fixed')
-        .map(item => ({ label: item.label, value: item.value }))
-      stageModeOptions.value = [{ label: t('core.edit.fixed'), value: 'Fixed' }, ...planOptions]
-    }
-  } catch (error) {
-    logger.error(`加载关卡计划表失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 
@@ -431,11 +351,6 @@ watch(
     }
   }
 )
-
-// 直接跳到当前选中的关卡计划表，省去在计划管理里再找一遍
-const handleGoToPlans = () => {
-  navigateTo('/plans', { query: { planId: formData.Info.StageMode } })
-}
 
 // 即时保存单个字段变更（经实体串行队列按序落盘，不丢并发修改）
 const handleFieldSave = (key: string, value: any) => {
@@ -614,7 +529,6 @@ onMounted(async () => {
   // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
   // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
   await loadScriptInfo()
-  await loadStageModeOptions()
   await nextTick()
   void ensureBAAHBackup('native')
 })
@@ -659,9 +573,5 @@ onUnmounted(() => {
   gap: 6px;
   align-items: center;
   min-height: 40px;
-}
-
-.go-plan-button {
-  padding-inline: 0;
 }
 </style>

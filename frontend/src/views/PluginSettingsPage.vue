@@ -5,26 +5,22 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vu
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 
-import { DeclarativeForm, type DeclarativeHint } from '@/components/declarative'
+import { DeclarativeForm } from '@/components/declarative'
+import {
+  declarativeGroups,
+  declarativeTables,
+  declarativeValues,
+} from '@/components/declarative/declarativeLayout'
 import PluginAvatar from './plugins/components/PluginAvatar.vue'
 import SettingsDirtyBar from './plugins/settings/SettingsDirtyBar.vue'
 import SettingsLeaveModal from './plugins/settings/SettingsLeaveModal.vue'
 import { AppPage, PageHeader, StateView } from '@/components/ui'
-import type { PluginRegistryGetOut, TableHint } from '@/api'
+import type { PluginConfigUi, PluginRegistryGetOut } from '@/api'
 import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
 import { usePluginModelContext } from '@/views/plugins/usePluginCenterData'
-import {
-  joinSegments,
-  pluginSettingsGroups,
-  pluginSettingsTables,
-  toInstalledViews,
-  toMarketViews,
-} from '@/views/plugins/pluginCenterModel'
-import {
-  usePluginSettingsDraft,
-  type SettingsValues,
-} from '@/views/plugins/settings/usePluginSettingsDraft'
-import { useActiveTriggers } from '@/composables/useActiveTriggers'
+import { joinSegments, toInstalledViews, toMarketViews } from '@/views/plugins/pluginCenterModel'
+import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
+import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { usePluginApi } from '@/composables/usePluginApi'
 import { apiErrorMessage } from '@/utils/apiResult'
 
@@ -35,17 +31,12 @@ const api = usePluginApi()
 const modelContext = usePluginModelContext()
 const draft = usePluginSettingsDraft()
 const saving = ref(false)
-const runningKey = ref<string | null>(null)
 const configUid = ref('')
-const { data: activeTriggers } = useActiveTriggers()
-const activeFields = computed(() =>
-  activeTriggers.value
-    .filter(item => item.configUid === configUid.value)
-    .map(item => `${item.group}.${item.field}`)
-)
+const optionsInvalid = ref(false)
 const registry = shallowRef<PluginRegistryGetOut | null>(null)
-const tables = ref<TableHint[]>([])
-const groups = ref<Array<{ name: string; hints: DeclarativeHint[] }>>([])
+const configUi = shallowRef<PluginConfigUi>()
+const groups = computed(() => declarativeGroups(configUi.value))
+const tables = computed(() => declarativeTables(configUi.value))
 
 // 路由切换插件时复用页面实例。
 const pluginId = computed(() => String(route.params.pluginId || ''))
@@ -104,13 +95,22 @@ const {
   () => /* 为插件专属配置查询提供当前语言的加载失败提示。 */ t('core.plugins.settingsLoadFailed')
 )
 
+const { runningKey, activeFields, runAction } = useDeclarativeActions(
+  configUid,
+  saving,
+  fetchSettings,
+  draft
+)
+const writeBusy = computed(
+  () => loading.value || saving.value || !!runningKey.value || !!activeFields.value.length
+)
+
 watch(
   pluginId,
   () => {
     configUid.value = ''
     registry.value = null
-    groups.value = []
-    tables.value = []
+    configUi.value = undefined
     draft.reset({}, { keepDraft: false })
     return fetchSettings()
   },
@@ -124,41 +124,22 @@ watch(
     if (!result || result.requestedId !== pluginId.value || result.requestedLocale !== locale.value)
       return
     registry.value = result.registry
-    const data =
-      result.config && typeof result.config === 'object'
-        ? (result.config as Record<string, unknown>)
-        : {}
+    const data = result.config ?? {}
+    const keepDraft = data.uid === configUid.value
     configUid.value = typeof data.uid === 'string' ? data.uid : ''
-    // 自有配置与注册表是不同对象；插件没有自有配置时展示空态。
-    groups.value = pluginSettingsGroups<DeclarativeHint>(data)
-    tables.value = pluginSettingsTables(result.config?.ui)
-    const next: SettingsValues = {}
-    for (const group of groups.value) {
-      const source = data[group.name]
-      const values = source && typeof source === 'object' ? Object.entries(source) : []
-      next[group.name] = Object.fromEntries(
-        values.filter(
-          ([field]) => !group.hints.some(hint => hint.field === field && hint.state !== undefined)
-        )
-      )
-    }
-    draft.reset(next, { keepDraft: true })
+    configUi.value = data.ui
+    draft.reset(declarativeValues(groups.value, data), { keepDraft })
   },
   { immediate: true }
 )
 
 const save = async (options: { reload: boolean } = { reload: true }) => {
   // 在无在途保存或动作时提交当前配置值，成功后按需重新读取后端规范化结果。
-  if (saving.value || runningKey.value || activeFields.value.length) return false
+  if (writeBusy.value || optionsInvalid.value) return false
   saving.value = true
   try {
     const submitted = draft.snapshot()
-    const data: SettingsValues = {}
-    for (const { group, field } of draft.changes.value) {
-      const fields = (data[group] ??= {})
-      fields[field] = submitted[group]?.[field]
-    }
-    await api.updateConfig({ recordId: pluginId.value, data })
+    await api.updateConfig({ recordId: pluginId.value, data: draft.patch(submitted) })
     // 先把基线设为刚提交的值；之后重读失败也只剩失败重试条，不再显示未保存。
     draft.commit(submitted)
     message.success(t('core.plugins.saved'))
@@ -166,45 +147,11 @@ const save = async (options: { reload: boolean } = { reload: true }) => {
     return true
   } catch (error) {
     const reason = errorMessage(error)
-    draft.saveFailed(draft.dirtyCount.value === 1 ? reason : t('core.apiErrors.settingsSaveFailed'))
+    draft.saveFailed(error)
     message.error(reason)
     return false
   } finally {
     saving.value = false
-  }
-}
-
-const runAction = async (group: string, hint: DeclarativeHint, value: unknown) => {
-  // 仅提交当前按钮字段的触发值，等待后台操作结果并重新加载配置，执行期间阻止重复操作。
-  const field = hint.field
-  if (
-    !field ||
-    !configUid.value ||
-    hint.editable !== true ||
-    runningKey.value ||
-    saving.value ||
-    activeFields.value.includes(`${group}.${field}`)
-  )
-    return
-  // 触发器只接受三态命令。这里仅启动任务，false 是取消，null 是跳过。
-  if (value !== true) {
-    message.error(t('core.plugins.actionFailed'))
-    return
-  }
-  runningKey.value = `${group}.${field}`
-  try {
-    const result = await api.runCommand('config', {
-      configUid: configUid.value,
-      group,
-      field,
-      value,
-    })
-    message.success(result.message || t('core.plugins.actionComplete'))
-    await fetchSettings()
-  } catch (error) {
-    message.error(errorMessage(error))
-  } finally {
-    runningKey.value = null
   }
 }
 
@@ -261,6 +208,11 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           v-if="groups.length"
           :groups="groups"
           :tables="tables"
+          :steps="configUi?.steps"
+          :sections="configUi?.sections"
+          :plugin-name="view?.pluginId"
+          :submit-disabled="writeBusy || !draft.dirtyCount.value"
+          :submitting="saving"
           :errors="draft.errors.value"
           :uid="configUid"
           :namespace="`plugins.${view?.pluginId ?? ''}.config`"
@@ -269,22 +221,30 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
           :running-key="runningKey"
           :active-fields="activeFields"
           @update:value="draft.update"
+          @update:options-invalid="optionsInvalid = $event"
           @action="runAction"
-        />
+          @finish="save()"
+        >
+          <template #footer="{ wizard }">
+            <SettingsDirtyBar
+              v-if="draft.dirtyCount.value"
+              :count="draft.dirtyCount.value"
+              :saving="saving"
+              :disabled="writeBusy"
+              :save-disabled="optionsInvalid"
+              :wizard="wizard"
+              @discard="draft.discard"
+              @save="save()"
+            />
+          </template>
+        </DeclarativeForm>
       </StateView>
-      <SettingsDirtyBar
-        v-if="draft.dirtyCount.value"
-        :count="draft.dirtyCount.value"
-        :saving="saving"
-        :disabled="loading || runningKey !== null || activeFields.length > 0"
-        @discard="draft.discard"
-        @save="save()"
-      />
     </div>
     <SettingsLeaveModal
       :open="leaveOpen"
       :count="draft.dirtyCount.value"
       :saving="saving"
+      :save-disabled="writeBusy || optionsInvalid"
       @stay="finishLeave(false)"
       @discard="discardAndLeave"
       @save="saveAndLeave"

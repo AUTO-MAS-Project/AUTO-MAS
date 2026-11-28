@@ -1,6 +1,6 @@
 <template>
   <!-- interface 里没有对当前控制器 / 资源生效的 hotkey option 时整格不渲染 -->
-  <a-col v-if="options.length > 0" :xs="24" :md="12">
+  <a-col v-if="options.length > 0" v-bind="col">
     <a-form-item>
       <template #label>
         <span class="form-label">{{ t('core.edit.mfwHotkey') }}</span>
@@ -35,6 +35,7 @@ import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import type { MaaFWInterfacePreviewData } from '@/types/script'
+import type { ControlGridCol } from './controlGrid'
 import MaaFWHotkeyModal from './MaaFWHotkeyModal.vue'
 import { collectHotkeyImportCandidates, type MaaFWShellHotkeySource } from './hotkeyImport'
 import {
@@ -48,15 +49,20 @@ import {
   type MaaFWHotkeyMap,
 } from './hotkeyOptions'
 
-const props = defineProps<{
-  /** 脚本 ID：「从项目导入」按它读外壳配置实例 */
-  scriptId: string
-  previewData: MaaFWInterfacePreviewData | null
-  controllerName: string
-  resourceName: string
-  /** 脚本配置 Game.Hotkeys（JSON 字符串） */
-  value: string | undefined
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** 脚本 ID：「从项目导入」按它读外壳配置实例 */
+    scriptId: string
+    previewData: MaaFWInterfacePreviewData | null
+    controllerName: string
+    resourceName: string
+    /** 脚本配置 Game.Hotkeys（JSON 字符串） */
+    value: string | undefined
+    /** 这一格的栅格宽度，由所在行按格数给出 */
+    col?: ControlGridCol
+  }>(),
+  { col: () => ({ xs: 24, md: 12, xl: 12 }) }
+)
 
 const emit = defineEmits<{
   /** 保存后的 Game.Hotkeys（JSON 字符串） */

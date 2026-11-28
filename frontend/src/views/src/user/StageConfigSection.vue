@@ -5,11 +5,7 @@
       <a-col :span="12">
         <a-form-item name="Channel">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.farmType')"
-              :hint="t('core.edit.pickStageTypeFarm')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.farmType')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.Channel"
@@ -46,11 +42,7 @@
       <a-col :span="12">
         <a-form-item name="Relic">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.relicStage')"
-              :hint="t('core.edit.pickRelicStageFarm')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.relicStage')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.Relic"
@@ -72,11 +64,7 @@
       <a-col :span="12">
         <a-form-item name="Ornament">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.ornamentStage')"
-              :hint="t('core.edit.pickOrnamentStageFarm')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.ornamentStage')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.Ornament"
@@ -162,11 +150,7 @@
       <a-col :span="12">
         <a-form-item name="Materials">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.materialStage')"
-              :hint="t('core.edit.pickMaterialStageFarm')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.materialStage')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.Materials"
@@ -192,11 +176,7 @@
       <a-col :span="12">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.echoOfWar')"
-              :hint="t('core.edit.pickDivergentUniverseStage3')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.echoOfWar')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.EchoOfWar"
@@ -240,11 +220,7 @@
       <a-col :span="12">
         <a-form-item name="SimulatedUniverseWorld">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.simulatedUniverse')"
-              :hint="t('core.edit.pickSimulatedUniverseWorld2')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.simulatedUniverse')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.SimulatedUniverseWorld"
@@ -282,11 +258,7 @@
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="ExtractReservedTrailblazePower">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.useReservedTrailblazePower')"
-              :hint="t('core.edit.whetherReservedTrailblazePower')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.useReservedTrailblazePower')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.ExtractReservedTrailblazePower"
@@ -306,11 +278,7 @@
       <a-col :span="formData.Stage.UseFuel ? 8 : 12">
         <a-form-item name="UseFuel">
           <template #label>
-            <FieldLabelWithHint
-              :text="t('core.edit.useFuel')"
-              :hint="t('core.edit.whetherFuelUsed')"
-              variant="form"
-            />
+            <FieldLabelWithHint :text="t('core.edit.useFuel')" variant="form" />
           </template>
           <a-select
             v-model:value="formData.Stage.UseFuel"

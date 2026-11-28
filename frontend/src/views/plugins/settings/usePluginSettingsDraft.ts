@@ -1,4 +1,5 @@
 import { computed, reactive, ref, shallowRef } from 'vue'
+import { ApiResponseError } from '@/utils/apiResult'
 
 export type SettingsValues = Record<string, Record<string, unknown>>
 
@@ -47,6 +48,7 @@ export function usePluginSettingsDraft() {
 
   /** 用读取结果替换编辑稿；keepDraft 时把仍存在的分组里的改动放回去。 */
   const reset = (next: SettingsValues, options: { keepDraft: boolean }) => {
+    const previousErrors = errors.value
     errors.value = {}
     const kept = options.keepDraft
       ? changes.value.map(change => ({
@@ -56,8 +58,14 @@ export function usePluginSettingsDraft() {
       : []
     baseline.value = clone(next)
     assign(next)
-    for (const change of kept)
-      if (values[change.group]) values[change.group][change.field] = change.value
+    for (const { group, field, value } of kept) {
+      const fields = values[group]
+      if (!fields) continue
+      const key = `${group}.${field}`
+      if (previousErrors[key] && !sameValue(fields[field], value))
+        errors.value[key] = previousErrors[key]
+      fields[field] = value
+    }
   }
 
   const update = (group: string, field: string, value: unknown) => {
@@ -72,11 +80,18 @@ export function usePluginSettingsDraft() {
     assign(baseline.value)
   }
 
-  /** 接口按整个补丁返回结果，逐项标出本次未能保存的改动。 */
-  const saveFailed = (reason: string) => {
-    errors.value = Object.fromEntries(
-      changes.value.map(({ group, field }) => [`${group}.${field}`, reason])
-    )
+  const discardField = (group: string, field: string) =>
+    update(group, field, clone(baseline.value[group]?.[field]))
+
+  /** 只标出接口确认校验失败的字段。 */
+  const saveFailed = (error: unknown) => {
+    errors.value = error instanceof ApiResponseError ? { ...error.fieldErrors } : {}
+  }
+
+  function patch(submitted: SettingsValues, fields = changes.value) {
+    const data: SettingsValues = {}
+    for (const { group, field } of fields) (data[group] ??= {})[field] = submitted[group]?.[field]
+    return data
   }
 
   /** 提交时刻的编辑值快照，保存成功后交给 commit。 */
@@ -86,9 +101,15 @@ export function usePluginSettingsDraft() {
    * 保存成功后把基线设为刚提交的值，编辑稿里此后的改动仍算未保存。
    * 之后的重读失败也不会让已保存的内容继续显示成未保存。
    */
-  const commit = (submitted: SettingsValues) => {
+  const commit = (submitted: SettingsValues, fields?: SettingsChange[]) => {
     errors.value = {}
-    baseline.value = clone(submitted)
+    if (!fields) baseline.value = clone(submitted)
+    else {
+      const next = clone(baseline.value)
+      for (const { group, field } of fields)
+        (next[group] ??= {})[field] = clone(submitted[group]?.[field])
+      baseline.value = next
+    }
   }
 
   return {
@@ -100,7 +121,9 @@ export function usePluginSettingsDraft() {
     reset,
     update,
     discard,
+    discardField,
     snapshot,
+    patch,
     commit,
   }
 }

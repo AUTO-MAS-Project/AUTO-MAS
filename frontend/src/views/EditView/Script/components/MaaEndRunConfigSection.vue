@@ -1,6 +1,5 @@
 <template>
   <SectionCard variant="card" :title="t('core.edit.runConfiguration')" :icon="ThunderboltOutlined">
-    <ScriptExecutionSessionField />
     <a-row :gutter="24">
       <a-col :xs="24" :md="12">
         <ScriptHardTimeoutField
@@ -84,7 +83,6 @@ import { ThunderboltOutlined } from '@ant-design/icons-vue'
 import { SectionCard } from '@/components/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import type { MaaEndScriptConfig } from '@/types/script'
 import ScriptHardTimeoutField from './ScriptHardTimeoutField.vue'
 import MaaEndErrorLogBundleField from './MaaEndErrorLogBundleField.vue'

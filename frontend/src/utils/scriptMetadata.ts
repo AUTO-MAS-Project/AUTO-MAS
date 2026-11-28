@@ -1,4 +1,4 @@
-import type { ScriptType } from '@/types/script'
+import type { BuiltinScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import hsrIcon from '@/assets/hsr.png'
@@ -162,4 +162,7 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-} satisfies Record<ScriptType, ScriptMetadata>
+} satisfies Record<BuiltinScriptType, ScriptMetadata>
+
+export const isBuiltinScriptType = (type: string): type is BuiltinScriptType =>
+  Object.prototype.hasOwnProperty.call(SCRIPT_METADATA, type)

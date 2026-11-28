@@ -13,7 +13,7 @@ from app.config import CollectionOrderItem, ComponentHint, ConfigError, UiVisibi
 from app.config.fields.hints import TriggerUiState
 from app.config.wire import config_contract
 from app.core import Config, GameManager, Plugin
-from app.models.config.game import GameEntry
+from app.models.config.game import GameEntry, is_deleted_device
 from app.models.config.plugin_emulator import EmulatorDeviceEntry
 from app.models.emulator import SettingsConflictError
 from app.models.schema import ConfigSnapshotOut, OutBase
@@ -105,6 +105,7 @@ class GameBindingOption(BaseModel):
     value: UUID
     label: str
     disabledReason: str | None = None
+    warning: str | None = None
 
 
 class GameBindingOptionsOut(ConfigSnapshotOut):
@@ -151,16 +152,21 @@ async def game_binding_options(body: GameBindingOptionsIn) -> GameBindingOptions
         owner is None or capabilities.account_override_supported
     ):
         for uid, entry in Config.GameConfig.items():
+            hints: list[str] = []
             reason = await GameManager.validate_binding(
                 str(body.scriptId),
                 {"game": {"game_id": uid}},
                 owner=owner,
                 script=script,
                 capabilities=capabilities,
+                hints=hints,
             )
             options.append(
                 GameBindingOption(
-                    value=uid, label=entry.info.name, disabledReason=reason
+                    value=uid,
+                    label=entry.info.name,
+                    disabledReason=reason,
+                    warning=None if reason else "；".join(hints) or None,
                 )
             )
     return GameBindingOptionsOut(
@@ -197,6 +203,14 @@ async def game_types() -> GameTypesOut:
     )
 
 
+def _config_guard_supported(control: object) -> bool:
+    """插件覆盖了 capture_baseline 才提供配置守卫（ModAVD 适配 0.1.2 起去掉了）。"""
+    return (
+        isinstance(control, EmulatorControl)
+        and type(control).capture_baseline is not EmulatorControl.capture_baseline
+    )
+
+
 def _action_hints(entry: GameEntry) -> dict[str, list[ComponentHint]]:
     """汇集配置原生触发器与游戏页专用 API 按钮的提示。"""
     control = entry._control
@@ -214,7 +228,10 @@ def _action_hints(entry: GameEntry) -> dict[str, list[ComponentHint]]:
             ("save", True),
             ("delete", True),
             ("stable_mode", "stable_mode" in capabilities),
-            ("capture", "settings" in capabilities),
+            (
+                "capture",
+                "settings" in capabilities and _config_guard_supported(control),
+            ),
         )
         if supported
     )
@@ -280,7 +297,9 @@ async def get_games(body: GameGetIn = Body(default_factory=GameGetIn)) -> GameGe
                 if (usage := control.device_usage(d.uid)) is not None
             },
             recoveryPending=[
-                d.uid for d in entry.devices.values() if control.recovery_pending(d.uid)
+                d.uid
+                for d in entry.devices.values()
+                if not is_deleted_device(d) and control.recovery_pending(d.uid)
             ],
             maintenance=control.maintenance_snapshot,
         )

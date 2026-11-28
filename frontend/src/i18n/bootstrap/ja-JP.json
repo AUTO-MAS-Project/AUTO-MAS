@@ -221,6 +221,7 @@
     "recover": "初期化に戻る"
   },
   "apiErrors": {
-    "settingsLoadFailed": "設定の取得に失敗しました"
+    "settingsLoadFailed": "設定の取得に失敗しました",
+    "pluginPanelFallback": "プラグインのパネルを開けないため、標準エディターを表示しています。"
   }
 }

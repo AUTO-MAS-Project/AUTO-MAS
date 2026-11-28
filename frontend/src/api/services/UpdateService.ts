@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ConfigUpdateOut } from '../models/ConfigUpdateOut';
 import type { GameBatchSettingsIn } from '../models/GameBatchSettingsIn';
 import type { GameDeviceUpdateIn } from '../models/GameDeviceUpdateIn';
 import type { GameSettingsIn } from '../models/GameSettingsIn';
@@ -12,6 +13,7 @@ import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PluginCatalogUpdateIn } from '../models/PluginCatalogUpdateIn';
 import type { PluginConfigUpdateIn } from '../models/PluginConfigUpdateIn';
+import type { PluginConfigUpdateOut } from '../models/PluginConfigUpdateOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
@@ -41,7 +43,7 @@ export class UpdateService {
      */
     public static updateScriptApiScriptsUpdatePost(
         requestBody: ScriptUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/update',
@@ -79,7 +81,7 @@ export class UpdateService {
      */
     public static updateUserApiScriptsUserUpdatePost(
         requestBody: UserUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
@@ -155,7 +157,7 @@ export class UpdateService {
      */
     public static updatePlanApiPlanUpdatePost(
         requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/update',
@@ -451,7 +453,7 @@ export class UpdateService {
     public static updatePluginConfigApiPluginConfigUpdatePost(
         requestBody: PluginConfigUpdateIn,
         locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<PluginConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_config/update',

@@ -24,7 +24,7 @@ export type BAAHUserConfig_Info = {
      */
     readonly Tag?: (string | null);
     /**
-     * 活动排期按哪个服判断，供「活动关优先」使用（Kivo 时间轴的原文拼写：JP / Globle / CN）
+     * 仅用于 MAS 活动日历提醒的服务器，不参与 BAAH 扫荡或任务编排
      */
     ActivityLineType?: ('JP' | 'Globle' | 'CN' | null);
     /**
@@ -32,16 +32,8 @@ export type BAAHUserConfig_Info = {
      */
     ConfigName?: (string | null);
     /**
-     * 活动期间自动把「活动关卡」任务排到最前并打开
-     */
-    IfEventFirst?: (boolean | null);
-    /**
-     * 兼容字段；BAAH 运行不消费此开关，运行期写入由配置托管、计划表及活动优先等实际选项决定
+     * 兼容字段；BAAH 运行不消费此开关，运行期写入仅由配置托管开关决定
      */
     IfQuickConfig?: (boolean | null);
-    /**
-     * 关卡计划表；Fixed 表示沿用 BAAH 中的关卡配置
-     */
-    StageMode?: (string | null);
 };
 

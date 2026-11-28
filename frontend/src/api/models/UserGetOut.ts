@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { BAAHUserConfig } from './BAAHUserConfig';
 import type { BetterGIUserConfig } from './BetterGIUserConfig';
 import type { GeneralUserConfig } from './GeneralUserConfig';
@@ -31,6 +32,7 @@ export type UserGetOut = {
      */
     message?: string;
     uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 账号索引列表
      */

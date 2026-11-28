@@ -34,6 +34,7 @@
           :selected-type="selectedType"
           :client-type="clientType"
           :types="types"
+          :guard-supported="guardSupported"
           two-column
           @pick-path="pickPath"
         />
@@ -61,6 +62,7 @@
         :client-type="clientType"
         :types="types"
         show-adapter-select
+        creating
         @update:selected-type="value => (selectedType = value)"
         @pick-path="pickPath"
       />
@@ -77,7 +79,7 @@ import { AppModal, StatusChip } from '@/components/ui'
 import { GameCreateIn, type GameTypeItem, type GameUpdateIn } from '@/api'
 import { gameActionHint, type GameRow } from '@/types/games'
 import { useGamesApi } from '@/composables/useGamesApi'
-import { formatTargetConfigSummary } from '../gamePresentation'
+import { formatTargetConfigSummary, supportsConfigGuard } from '../gamePresentation'
 import GameConfigFormFields, { type GameConfigDraft } from './GameConfigFormFields.vue'
 
 const props = defineProps<{ open: boolean; row?: GameRow; types: GameTypeItem[] }>()
@@ -116,6 +118,7 @@ const clientType = computed(
 const locked = computed(
   () => !!props.row && gameActionHint(props.row, props.row.uid, 'save')?.editable !== true
 )
+const guardSupported = computed(() => !!props.row && supportsConfigGuard(props.row))
 const configSummary = computed(() => (props.row ? formatTargetConfigSummary(props.row, t) : ''))
 const snapshot = () => JSON.stringify({ type: selectedType.value, draft })
 const dirty = computed(() => initial.value !== snapshot())

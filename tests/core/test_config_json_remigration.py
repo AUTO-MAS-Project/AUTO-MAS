@@ -6,7 +6,13 @@ import pytest
 from pydantic import Field
 
 from app.config import ConfigCollection, ConfigEntry, ConfigGroup
-from app.core.config.upgrade import CONFIG_FILES, MIGRATION_RECORD, upgrade_json_configs
+from app.core.config.upgrade import (
+    CONFIG_FILES,
+    MIGRATION_RECORD,
+    convert_legacy,
+    retire_baah_plans,
+    upgrade_json_configs,
+)
 from app.models.config import EmulatorConfig
 from app.utils import io as config_io
 
@@ -111,3 +117,146 @@ def test_unconvertible_collection_keeps_yaml_and_archive(tmp_path):
         upgrade_json_configs(tmp_path, nodes)
 
     assert saved == {path: path.read_bytes() for path in paths}
+
+
+def test_retired_baah_plans_keep_other_plans_and_original_archive(tmp_path):
+    """已升级用户启动时移除停用计划，保留其他专项及可恢复的原文件。"""
+    from uuid import uuid4
+
+    retired, retained = str(uuid4()), str(uuid4())
+    document = {
+        "order": [
+            {"uid": retired, "type": "BAAHPlanConfig"},
+            {"uid": retained, "type": "MSSPlanConfig"},
+        ],
+        "data": {
+            retired: {"Info": {"Name": "legacy"}, "Day3": {"Key": {"Hard": [1, 2]}}},
+            retained: {"Info": {"Name": "keep"}},
+        },
+    }
+    path = tmp_path / "plans.yaml"
+    config_io.write_file(path, document)
+    original = path.read_bytes()
+
+    retire_baah_plans(tmp_path)
+    expected = {
+        "order": [document["order"][1]],
+        "data": {retained: document["data"][retained]},
+    }
+    assert config_io.read_dict_file(path) == expected
+    archives = list((tmp_path / "retired-baah-plans").glob("*/plans.yaml"))
+    assert len(archives) == 1
+    assert archives[0].read_bytes() == original
+    retire_baah_plans(tmp_path)
+    assert config_io.read_dict_file(path) == expected
+    assert archives == list((tmp_path / "retired-baah-plans").glob("*/plans.yaml"))
+
+
+def test_retired_baah_plan_backup_failure_keeps_active_file(tmp_path, monkeypatch):
+    """备份失败不能提前丢弃仍在使用的计划数据。"""
+    from uuid import uuid4
+
+    uid = str(uuid4())
+    path = tmp_path / "plans.yaml"
+    config_io.write_file(
+        path,
+        {"order": [{"uid": uid, "type": "BAAHPlanConfig"}], "data": {uid: {}}},
+    )
+    original = path.read_bytes()
+
+    def fail_backup(*args, **kwargs):
+        raise PermissionError("archive is read-only")
+
+    monkeypatch.setattr(config_io, "atomic_write", fail_backup)
+    with pytest.raises(PermissionError):
+        retire_baah_plans(tmp_path)
+    assert path.read_bytes() == original
+
+
+def test_old_json_import_skips_retired_baah_plans_without_changing_source():
+    """旧版 JSON 升级不再需要停用类型，其他计划照常导入。"""
+    from copy import deepcopy
+    from uuid import uuid4
+
+    retired, retained = str(uuid4()), str(uuid4())
+    document = {
+        "instances": [
+            {"uid": retired, "type": "BAAHPlanConfig"},
+            {"uid": retained, "type": "_Profile"},
+        ],
+        retired: {"Day3": {"Key": {"Hard": [1, 2]}}},
+        retained: {"Values": {"Revision": 7}},
+    }
+    original = deepcopy(document)
+    converted = convert_legacy(document, ConfigCollection.build([_Profile]))
+    assert converted == {
+        "order": [{"uid": retained, "type": "_Profile"}],
+        "data": {retained: {"Values": {"Revision": 7}}},
+    }
+    assert document == original
+
+
+def test_startup_resumes_prepared_plan_migration_before_retirement(tmp_path):
+    """旧迁移已换 YAML、归档 JSON 但未结账时，重启仍能完成并加载其他计划。"""
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import hashlib
+import sqlite3
+from unittest.mock import AsyncMock
+
+from app.core import Config
+from app.config import config_manager
+from app.core.config.upgrade import MIGRATION_RECORD
+from app.utils import io
+
+retired = '03051d8b-76d1-4e49-a8e1-0d63014e22e5'
+retained = 'a958557a-4a37-48f6-af9a-d0c8499f1a92'
+order = [{'uid': retired, 'type': 'BAAHPlanConfig'}, {'uid': retained, 'type': 'MaaEndPlanConfig'}]
+data = {retired: {'Info': {'Name': 'old BAAH'}}, retained: {'Info': {'Name': 'keep MaaEnd'}}}
+source = Config.config_path / 'legacy-json' / 'PlanConfig.json'
+target = Config.config_path / 'plans.yaml'
+io.write_file(source, {'instances': order, **data})
+io.write_file(target, {'order': order, 'data': data})
+original_json, original_yaml = source.read_bytes(), target.read_bytes()
+io.write_file(Config.config_path / MIGRATION_RECORD, {
+    'version': 2,
+    'files': {'PlanConfig.json': {
+        'target': 'plans.yaml',
+        'source_sha256': hashlib.sha256(original_json).hexdigest(),
+        'target_sha256': hashlib.sha256(original_yaml).hexdigest(),
+        'state': 'prepared',
+    }},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute('CREATE TABLE version(v text)')
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    assert list(map(str, Config.PlanConfig.keys())) == [retained]
+    assert Config.PlanConfig[retained].Info.Name == 'keep MaaEnd'
+    record = io.read_dict_file(Config.config_path / MIGRATION_RECORD)
+    assert record['complete'] and record['files']['PlanConfig.json']['state'] == 'complete'
+    assert source.read_bytes() == original_json
+    backups = list((Config.config_path / 'retired-baah-plans').glob('*/plans.yaml'))
+    assert len(backups) == 1 and backups[0].read_bytes() == original_yaml
+    await config_manager.flush()
+
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

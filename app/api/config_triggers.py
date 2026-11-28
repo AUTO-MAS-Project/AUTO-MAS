@@ -3,11 +3,13 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
+from app.api._config_editors import FrontendWriteGuard, require_frontend_activation
 from app.config import config_manager
 from app.config.core.manager import TriggerUnavailable
+from app.config.fields.hints import OptionValue
 from app.core.background_tasks import BackgroundTaskState
 from app.models.schema import ConfigSnapshotOut, OutBase
 
@@ -19,6 +21,9 @@ class TriggerWriteIn(BaseModel):
     group: str
     field: str
     value: StrictBool | None
+    option: OptionValue | None = Field(
+        default=None, description="下拉动作启动时传给处理器的选项值"
+    )
 
 
 class TriggerWriteOut(OutBase):
@@ -59,12 +64,28 @@ class ActiveTriggersOut(ConfigSnapshotOut):
 router = APIRouter(prefix="/api/config/triggers", tags=["配置触发器"])
 
 
-@router.post("/write", tags=["Action"], response_model=TriggerWriteOut)
-async def write_config_trigger(body: TriggerWriteIn) -> TriggerWriteOut:
+@router.post(
+    "/write",
+    tags=["Action"],
+    response_model=TriggerWriteOut,
+)
+async def write_config_trigger(
+    body: TriggerWriteIn,
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
+) -> TriggerWriteOut:
     """写入三态命令并立即返回受影响的任务 UUID。"""
     try:
-        uid = config_manager.write_trigger(
-            body.configUid, group=body.group, field=body.field, value=body.value
+        entry = config_manager.trigger_target(body.configUid)
+        if guard is not None:
+            guard(entry)
+        uid = config_manager.submit_trigger(
+            entry,
+            group=body.group,
+            field=body.field,
+            value=body.value,
+            option=body.option,
         )
     except TriggerUnavailable as error:
         return TriggerWriteOut(code=409, status="error", message=str(error))

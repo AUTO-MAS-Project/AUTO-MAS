@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from time import monotonic
 from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal, cast
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
         TaskOutcome,
     )
 
+    from ..fields.hints import OptionValue
     from .collection import ConfigCollection
     from .entry import ConfigEntry
     from .node import ConfigNode, NodeState
@@ -324,16 +326,32 @@ class ConfigManager:
         self._trigger_owner = resolve_owner
 
     def write_trigger(
-        self, config_uid: UUID, *, group: str, field: str, value: bool | None
+        self,
+        config_uid: UUID,
+        *,
+        group: str,
+        field: str,
+        value: bool | None,
+        option: OptionValue | None = None,
     ) -> UUID | None:
         """定位实时配置，写入指定触发器字段。"""
+        return self.submit_trigger(
+            self.trigger_target(config_uid),
+            group=group,
+            field=field,
+            value=value,
+            option=option,
+        )
+
+    def trigger_target(self, config_uid: UUID) -> ConfigEntry:
+        """定位触发器实际作用的配置，用于写入和面板授权。"""
         from .entry import ConfigEntry
 
         pending = list(self.iter_persist_roots())
         while pending:
             node = pending.pop()
             if node.uid == config_uid and isinstance(node, ConfigEntry):
-                return self.submit_trigger(node, group=group, field=field, value=value)
+                return node
             pending.extend(node.iter_children())
         raise TriggerUnavailable("trigger_target_not_found")
 
@@ -349,7 +367,13 @@ class ConfigManager:
             self.submit_trigger(entry, group=group, field=field, value=value)
 
     def submit_trigger(
-        self, entry: ConfigEntry, *, group: str, field: str, value: bool | None
+        self,
+        entry: ConfigEntry,
+        *,
+        group: str,
+        field: str,
+        value: bool | None,
+        option: OptionValue | None = None,
     ) -> UUID | None:
         """None 跳过，True 请求启动，False 请求取消当前字段的任务。"""
         from app.core.background_tasks import wait_until_settled
@@ -362,6 +386,8 @@ class ConfigManager:
         handler_name = type(entry)._cfg_trigger_specs.get((group, field))
         if handler_name is None:
             raise TriggerUnavailable("trigger_field_not_found")
+        if option is not None and value is not True:
+            raise TriggerUnavailable("trigger_option_requires_start")
         if value is None:
             return None
         if self.current is not None:
@@ -381,6 +407,8 @@ class ConfigManager:
                         handle.cancel()
             return uid
         if uid is not None:
+            if option is not None:
+                raise TriggerUnavailable("trigger_busy")
             return uid
 
         background = self._trigger_group
@@ -398,6 +426,26 @@ class ConfigManager:
             raise TriggerUnavailable("trigger_not_editable")
         handler = getattr(entry, handler_name)
         finish_on_cancel = bool(getattr(handler, "__trigger_finish_on_cancel__", False))
+        if option is not None:
+            hint = next(
+                (
+                    item
+                    for item in entry._get_ui_hints().get(group, [])
+                    if item.get("field") == field
+                ),
+                None,
+            )
+            if not hint or hint.get("component") != "dropdown-button":
+                raise TriggerUnavailable("trigger_invalid_option")
+            if not hint.get("endpoint") and not any(
+                choice["value"] == option
+                and isinstance(choice["value"], bool) == isinstance(option, bool)
+                for choice in hint.get("options") or ()
+            ):
+                raise TriggerUnavailable("trigger_invalid_option")
+            # 兼容原来仅用 true 启动的无参处理器。
+            if option is not True or inspect.signature(handler).parameters:
+                handler = partial(handler, option)
 
         async def invoke() -> None:
             result = (

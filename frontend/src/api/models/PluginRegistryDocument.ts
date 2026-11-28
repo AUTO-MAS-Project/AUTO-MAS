@@ -3,6 +3,8 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { PluginConfigUi } from './PluginConfigUi';
+import type { PluginFrontendInfo } from './PluginFrontendInfo';
+import type { PluginProvidedScriptType } from './PluginProvidedScriptType';
 import type { PluginRecord_info } from './PluginRecord_info';
 /**
  * 沿用配置字段投影，并显式保留命令目标身份及运行时 UI 属性。
@@ -14,6 +16,8 @@ export type PluginRegistryDocument = {
     info?: (PluginRecord_info | null);
     uid: string;
     ui: PluginConfigUi;
+    providedScript?: (PluginProvidedScriptType | null);
+    frontend?: (PluginFrontendInfo | null);
     /**
      * 停用本插件及其级联下游时暂不可用的配置领域
      */

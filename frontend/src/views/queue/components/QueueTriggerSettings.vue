@@ -111,11 +111,7 @@ function saveDelay() {
           <a-col :span="after === PowerSignal.NO_ACTION ? 24 : 14">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  variant="form"
-                  :text="t('core.queue.afterDone')"
-                  :hint="t('core.queue.afterDoneTip')"
-                />
+                <FieldLabelWithHint variant="form" :text="t('core.queue.afterDone')" />
               </template>
               <a-select
                 v-model:value="after"

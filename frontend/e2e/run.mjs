@@ -39,7 +39,6 @@ const embeddedScriptTypes = new Set(['MaaFWConfig', 'M9AConfig', 'MSSConfig'])
 const planSelectionByScriptType = {
   MaaConfig: { field: 'StageMode', type: 'MaaPlanConfig' },
   MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
-  BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
   MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
   OkNteConfig: { field: 'PlanMode', type: 'OkNtePlanConfig' },
 }

@@ -1,11 +1,5 @@
 import type { ActiveTriggerField, DeviceStatus } from '@/api'
-import {
-  gameActionHint,
-  gameDevices,
-  isDeletedDevice,
-  type GameDevice,
-  type GameRow,
-} from '@/types/games'
+import { gameActionHint, gameDevices, type GameDevice, type GameRow } from '@/types/games'
 
 export type StatusTone = 'success' | 'processing' | 'warning' | 'error' | 'neutral'
 
@@ -23,13 +17,11 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 }
 
 export function countOnlineDevices(row: GameRow): number {
-  return gameDevices(row).filter(
-    device => !isDeletedDevice(device.document) && device.document.info?.status === 0
-  ).length
+  return gameDevices(row).filter(device => device.document.info?.status === 0).length
 }
 
 export function countActiveDevices(row: GameRow): number {
-  return gameDevices(row).filter(device => !isDeletedDevice(device.document)).length
+  return gameDevices(row).length
 }
 
 /** 按游戏目标归属聚合正在执行的触发器操作（含目标本身与其下属设备）。 */
@@ -75,6 +67,11 @@ export function hasModAvdUpdate(row: GameRow): boolean {
   return Boolean(current && latest && current !== latest && !blocked)
 }
 
+/** 插件提供配置守卫时后端才下发 capture 提示。 */
+export function supportsConfigGuard(row: GameRow): boolean {
+  return !!gameActionHint(row, row.uid, 'capture')
+}
+
 export function isTargetInUse(row: GameRow): boolean {
   return (
     Object.values(row.runtime.deviceUsage ?? {}).some(Boolean) ||
@@ -96,7 +93,6 @@ export function getTargetPriorityBadge(
     }
   }
   const hasError = gameDevices(row).some(device => {
-    if (isDeletedDevice(device.document)) return false
     const status = device.document.info?.status
     return status === 4 || status === 7
   })
@@ -208,7 +204,7 @@ export function formatTargetConfigSummary(row: GameRow, t: (key: string) => stri
     if (row.type.type !== 'avd' && info && 'stable_mode' in info && info.stable_mode) {
       parts.push(t('core.games.summary.stableMode'))
     }
-    if (info && 'config_guard' in info && info.config_guard) {
+    if (supportsConfigGuard(row) && info && 'config_guard' in info && info.config_guard) {
       parts.push(t('core.games.summary.configGuard'))
     }
     if (

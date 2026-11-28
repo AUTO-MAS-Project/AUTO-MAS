@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ConfigUpdateOut } from '../models/ConfigUpdateOut';
 import type { ActiveTriggersOut } from '../models/ActiveTriggersOut';
 import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
@@ -160,6 +161,7 @@ import type { PluginCatalogUpdateIn } from '../models/PluginCatalogUpdateIn';
 import type { PluginConfigGetIn } from '../models/PluginConfigGetIn';
 import type { PluginConfigGetOut } from '../models/PluginConfigGetOut';
 import type { PluginConfigUpdateIn } from '../models/PluginConfigUpdateIn';
+import type { PluginConfigUpdateOut } from '../models/PluginConfigUpdateOut';
 import type { PluginGameDevicesIn } from '../models/PluginGameDevicesIn';
 import type { PluginInstallationGetIn } from '../models/PluginInstallationGetIn';
 import type { PluginInstallationOut } from '../models/PluginInstallationOut';
@@ -258,11 +260,11 @@ import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
 import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
 import type { UserConfigDirIn } from '../models/UserConfigDirIn';
 import type { UserConfigDirOut } from '../models/UserConfigDirOut';
+import type { UserCreateIn } from '../models/UserCreateIn';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
-import type { UserInBase } from '../models/UserInBase';
 import type { UserInfrastPlanComboxOut } from '../models/UserInfrastPlanComboxOut';
 import type { UserInfrastPlanSelectIn } from '../models/UserInfrastPlanSelectIn';
 import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
@@ -884,7 +886,7 @@ export class Service {
      */
     public static updateScriptApiScriptsUpdatePost(
         requestBody: ScriptUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/update',
@@ -1016,7 +1018,7 @@ export class Service {
      * @throws ApiError
      */
     public static addUserApiScriptsUserAddPost(
-        requestBody: UserInBase,
+        requestBody: UserCreateIn,
     ): CancelablePromise<UserCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -1036,7 +1038,7 @@ export class Service {
      */
     public static updateUserApiScriptsUserUpdatePost(
         requestBody: UserUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
@@ -2773,23 +2775,23 @@ export class Service {
      * 返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
      * 来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
-     * @param userId
      * @param target
+     * @param userId
      * @returns ConfigBackupListOut Successful Response
      * @throws ApiError
      */
     public static listConfigBackupsApiApiScriptsBackupListGet(
         scriptId: string,
-        userId: string,
         target: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupListOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/list',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'target': target,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -2843,26 +2845,26 @@ export class Service {
      * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
      * data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。
      * @param scriptId
-     * @param userId
      * @param time
      * @param target
+     * @param userId
      * @returns ConfigBackupPreviewOut Successful Response
      * @throws ApiError
      */
     public static getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
         scriptId: string,
-        userId: string,
         time: string,
         target: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupPreviewOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/preview',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'time': time,
                 'target': target,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -2873,29 +2875,29 @@ export class Service {
      * 只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）
      * 路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。
      * @param scriptId
-     * @param userId
      * @param time
      * @param target
      * @param path
+     * @param userId
      * @returns ConfigBackupFileOut Successful Response
      * @throws ApiError
      */
     public static getConfigBackupFileApiApiScriptsBackupFileGet(
         scriptId: string,
-        userId: string,
         time: string,
         target: string,
         path: string,
+        userId?: (string | null),
     ): CancelablePromise<ConfigBackupFileOut> {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/backup/file',
             query: {
                 'scriptId': scriptId,
-                'userId': userId,
                 'time': time,
                 'target': target,
                 'path': path,
+                'userId': userId,
             },
             errors: {
                 422: `Validation Error`,
@@ -2948,7 +2950,7 @@ export class Service {
      */
     public static updatePlanApiPlanUpdatePost(
         requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/update',
@@ -4826,7 +4828,7 @@ export class Service {
     public static updatePluginConfigApiPluginConfigUpdatePost(
         requestBody: PluginConfigUpdateIn,
         locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<PluginConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_config/update',

@@ -14,7 +14,6 @@ export namespace PlanComboxIn {
      */
     export enum consumer {
         MAAEND = 'maaend',
-        BAAH = 'baah',
         MSS = 'mss',
         UNIVERSAL = 'universal',
         OKNTE = 'oknte',

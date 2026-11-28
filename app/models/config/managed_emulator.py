@@ -10,6 +10,9 @@ from app.models.config.plugin_emulator import EmulatorDeviceEntry, EmulatorEntry
 
 class ManagedEmulatorDevice(EmulatorDeviceEntry):
     class Info(EmulatorDeviceEntry.Info):
+        # 删除实例后条目只置 tombstone、永久保留：slot 参与 max(slot)+1，删掉墓碑
+        # 会让同原生编号新建的实例算出旧 uid（uuid5(目标, "编号:槽位")），接走盘上
+        # 的旧绑定。宿主只隐藏，不移除。字段说明沿用旧文字，免得改动接口 schema。
         slot: Annotated[int, ui(visibility=UiVisibility.DISABLE)] = Field(
             default=0, ge=0, description="稳定显示槽位，删除后不复用"
         )
