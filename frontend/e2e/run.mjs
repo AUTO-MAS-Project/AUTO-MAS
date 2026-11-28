@@ -460,8 +460,8 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
 }
 
 export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
-  if (inPlace || real) return
-  await seedPluginProfile(dataRoot, false)
+  if (inPlace || real) return {}
+  const pluginEnv = await seedPluginProfile(dataRoot, false)
   // 宿主只在启动时加载新增的本地插件，运行中的源码监视仅登记元数据。
   await cp(
     path.join(repositoryRoot, 'examples', 'demo15'),
@@ -470,6 +470,7 @@ export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
       recursive: true,
     }
   )
+  return pluginEnv
 }
 
 async function seedPluginProfile(dataRoot, pluginsOnly) {

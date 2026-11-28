@@ -584,10 +584,12 @@ for old, new, body in (
 with sqlite3.connect(Config.database_path) as db:
     db.execute("CREATE TABLE version(v text)")
     db.execute("INSERT INTO version VALUES (?)", (version,))
+db.close()
 if legacy:
     # 旧历史库还用整数编号，正常启动时也要完成宿主自己的升级。
     with sqlite3.connect(Config.data_path / "history.db") as db:
         db.execute("CREATE TABLE records(id INTEGER PRIMARY KEY)")
+    db.close()
 
 async def install(spec, **kwargs):
     assert spec == "auto-mas-maaend-adapter", spec
@@ -606,6 +608,7 @@ async def run():
         assert [str(item.Info.ScriptId) for item in Config.QueueConfig[queue].QueueItem.values()] == [script, general]
         with sqlite3.connect(Config.database_path) as db:
             assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.1" if legacy else version)
+        db.close()
         if legacy:
             from app.core import History
 
