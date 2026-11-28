@@ -147,7 +147,7 @@ async def refresh() -> None:
                         **entry,
                         "publisher_organization": (
                             entry.get("publisher_organization")
-                            if url == _CATALOG_V3_URL
+                            if version == 3
                             else None
                         ),
                     }

@@ -115,12 +115,15 @@ async def test_official_v3_ownership_survives_only_built_in_fallback(
         "data.auto-mas.top", "data2.auto-mas.top", 1
     )
 
+    custom_url = "https://custom.test/plugins.json"
+    redirect_url = mirror_url if mirrored else None
+
     def handler(request):
-        if request.url.host == "custom.test":
+        if str(request.url) == custom_url:
             return httpx.Response(200, json=v3)
         if str(request.url) == market._CATALOG_V3_URL:
-            if mirrored:
-                return httpx.Response(307, headers={"Location": mirror_url})
+            if redirect_url:
+                return httpx.Response(307, headers={"Location": redirect_url})
             return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
         if mirrored and str(request.url) == mirror_url:
             assert not request.headers.get("Authorization")
@@ -134,12 +137,16 @@ async def test_official_v3_ownership_survives_only_built_in_fallback(
     assert catalog[uid].info.publisher_organization == "auto-mas"
     assert catalog[uid].info.icon_png == v3_entries[0]["icon_png"]
 
-    monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", "https://custom.test/plugins.json")
-    await market.refresh()
-    assert catalog[uid].info.publisher_organization is None
-    assert catalog[uid].info.icon_png is not None
+    # 自定义地址仍允许头像，显式指定内置 URL 也不能借跳转获得官方归属。
+    for override in (custom_url, market._CATALOG_V3_URL):
+        monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", override)
+        redirect_url = custom_url
+        await market.refresh()
+        assert catalog[uid].info.publisher_organization is None
+        assert catalog[uid].info.icon_png is not None
 
     monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+    redirect_url = mirror_url if mirrored else None
     fail_v3 = True
     await market.refresh()
     assert catalog[uid].info.publisher_organization == "auto-mas"
