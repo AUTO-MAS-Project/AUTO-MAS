@@ -293,7 +293,11 @@ class ScriptExpander(TaskBase):
                         # 声明了的插件在确认有可运行账号之后自己选定（同旧专项
                         # after_config_lock），没有账号就不占游戏、不排队。
                         await self._game_session.select()
-                    plugin.game_session = self._game_session
+                    # 托管级维护直接读取托管绑定，不选择账号游戏，也不启动模拟器。
+                    if not (
+                        self.maintenance and declaration.maintenance_default_user_name
+                    ):
+                        plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin

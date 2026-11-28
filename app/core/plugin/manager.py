@@ -18,9 +18,10 @@ import inspect
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
@@ -37,7 +38,11 @@ from app.mystery.gate import is_unlocked
 from app.plugin import uv as uv_tool
 from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.plugin import BasePlugin
-from app.plugin.base.script import ScriptAdapterPlugin, ScriptTypeDecl
+from app.plugin.base.script import (
+    DesktopSessionReason,
+    ScriptAdapterPlugin,
+    ScriptTypeDecl,
+)
 from app.plugin.calls import CallGate, call_context
 from app.plugin.errors import (
     PluginBusyError,
@@ -1734,8 +1739,10 @@ class _PluginManager:
             None,
         )
 
-    def desktop_session_reason(self, config, elevated: bool):
-        """在当前启用实例的调用门内查询分身能力。"""
+    def desktop_session_reason(
+        self, config, elevated: bool, *, defer_io: bool = False
+    ) -> DesktopSessionReason | Callable[[], DesktopSessionReason | None] | None:
+        """用当前实例的调用门保护能力判断与随后可能执行的资源读取。"""
         for record in self.list_plugins():
             decl = self.script_types.get(record.uid)
             if decl is None or type(config) is not decl.script_type:
@@ -1747,11 +1754,25 @@ class _PluginManager:
                 or not gate.accepting
             ):
                 break
-            try:
-                return gate.wrap(decl.desktop_session_reason)(config, elevated)
-            except Exception as error:
-                logger.opt(exception=True).warning(f"无法检查插件桌面分身能力: {error}")
-                break
+
+            def check[Result](
+                probe: Callable[[], Result],
+            ) -> Result | Literal["plugin_unavailable"]:
+                try:
+                    with gate.active_call():
+                        return probe()
+                except Exception as error:
+                    logger.opt(exception=True).warning(
+                        f"无法检查插件桌面分身能力: {error}"
+                    )
+                    return "plugin_unavailable"
+
+            reason = check(
+                partial(
+                    decl.desktop_session_reason, config, elevated, defer_io=defer_io
+                )
+            )
+            return partial(check, reason) if callable(reason) else reason
         return "plugin_unavailable"
 
     def registered_script(
@@ -1831,8 +1852,8 @@ class _PluginManager:
     def _wrap_script_hooks(handler_cls, decl, plugin, gate, overridden):
         """按旧回调签名经调用门转接插件钩子；同步实现的钩子也照样受理。"""
 
-        async def call(name, *args):
-            result = gate.wrap(getattr(plugin, name))(*args)
+        async def call(name, *args, **kwargs):
+            result = gate.wrap(getattr(plugin, name))(*args, **kwargs)
             return await result if inspect.isawaitable(result) else result
 
         async def clone_script(source, target):
@@ -1854,6 +1875,22 @@ class _PluginManager:
             # 守卫在配置执行门内执行，此时插件调用门已经放开，所以再包一层。
             return None if guard is None else gate.wrap(guard)
 
+        def validate_update(data):
+            # 宿主在保存前同步调用，不等待；插件写成协程就当配置错误报出来。
+            result = gate.wrap(plugin.validate_update)(data)
+            if inspect.isawaitable(result):
+                close = getattr(result, "close", None)
+                if close is not None:
+                    close()
+                raise RuntimeError("托管保存校验必须是同步实现")
+            return result
+
+        async def import_config(script, target_directory, *, user_id=None):
+            await call("import_config", script, target_directory, user_id=user_id)
+
+        async def initialize(script):
+            await call("initialize", script)
+
         # 旧回调字段 → (插件钩子名, 转接函数)
         hooks = {
             "clone_script": ("on_script_cloned", clone_script),
@@ -1861,6 +1898,9 @@ class _PluginManager:
             "prepare_user_read": ("prepare_user_read", prepare_user_read),
             "initialize_user": ("on_user_added", initialize_user),
             "prepare_user_update": ("prepare_user_update", prepare_user_update),
+            "validate_update": ("validate_update", validate_update),
+            "import_config": ("import_config", import_config),
+            "initialize": ("initialize", initialize),
         }
         return handler_cls(
             **{

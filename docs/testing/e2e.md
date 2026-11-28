@@ -10,13 +10,28 @@
 首次运行前，在仓库根目录安装 Python 开发依赖，再安装前端依赖与 Playwright Chromium：
 
 ```powershell
-uv sync --group dev
+uv sync --locked --group dev
+uv run --no-sync python scripts/prepare_test_plugins.py
 Set-Location frontend
 yarn install --immutable
 yarn playwright install chromium
 ```
 
 后续所有 E2E 命令均在 `frontend/` 下执行。除 MuMu 明确报 `WinError 740` 需要管理员 PowerShell 外，其余场景无需提权。
+
+### 在浏览器中验证本地 MaaEnd 适配器
+
+完成上面的准备后，设置 `AUTO_MAS_E2E_PLUGIN_PROJECTS` 指向 MaaEnd 适配器源码目录，例如主仓旁的 `AUTO-MAS-MaaEnd-Adapter`。这一变量也接受包含多个插件项目的父目录。主仓 `plugins/maaend_adapter` 下已经可被宿主发现的项目会自动启用。
+
+```powershell
+$env:AUTO_MAS_E2E_PLUGIN_PROJECTS = (Resolve-Path '../../AUTO-MAS-MaaEnd-Adapter').Path
+yarn e2e:check
+yarn e2e --grep 'MaaEnd (saves the common account fields|package mode persists)'
+```
+
+使用发行文件验证时，把 `AUTO_MAS_E2E_MAAEND_WHEEL` 设为本地 `.whl` 文件的绝对路径，清除刚设置的源码变量，再运行同样的两个命令。若主仓的 `plugins/` 已有 MaaEnd 源码，请在没有这份源码的独立工作副本中运行 wheel 验证。准备程序会把提供的 wheel 复制到本轮临时目录并自动启用。未提供 MaaEnd 时，专测 MaaEnd 的浏览器用例会标记缺少运行条件。混合用例仍会检查其他专项。
+
+适配器声明的宿主开发接口版本须与当前主程序匹配。若在发版前联调这次迁移，而主程序仍标为 `v5.10.0-beta.1`，请在包含迁移改动的临时副本里，将更新日志中的当前版本标题改为 `v5.10.0-beta.2`，再从副本根目录运行 `python scripts/changelog.py sync` 和本节的依赖准备命令。
 
 ## 隔离机制与启动入口
 
@@ -105,7 +120,7 @@ yarn playwright show-report playwright-report/real
 
 ### 目标选择
 
-默认读取种子源下的 `config/scripts.yaml`，自动选中第一个包含已启用账号的托管及该账号并在日志中列出候选。如需指定目标，可按需设置环境变量（目标不存在时会直接报错，不会静默替换）：
+默认读取种子源下的 `config/scripts.yaml`。尚未升级的数据根读取旧 `config/ScriptConfig.json`。账号集合兼容 `users`、`UserData` 和 `SubConfigsInfo.UserData`。启动器自动选中第一个包含已启用账号的托管及该账号并在日志中列出候选。也可用下列变量指定目标，目标不存在时会报错。
 
 | 环境变量 | 含义 |
 | --- | --- |
@@ -116,7 +131,7 @@ yarn playwright show-report playwright-report/real
 
 ### 隔离与锁保护
 
-- **配置裁剪**：只从种子源复制本次选中目标所需的托管、账号、计划与脚本资产，并剥离通知字段（不会触发真实推送）。原生配置留在安装目录的专项仍直接指向本机已有安装。
+- **配置裁剪**只复制目标托管、账号、引用的计划与所需的脚本资产。保留原配置的文件格式和条目顺序，移除账号通知字段。原生配置留在安装目录的专项仍指向本机已有安装。
 - **原子锁**：在机器级临时目录（Windows 为 `%SystemRoot%\Temp\AUTO-MAS`）建立排他锁，同一台电脑同时只允许跑一个真实 E2E。若进程被强杀残留锁文件，确认无运行测试后手动删除。
 - **安全清理**：收尾时先停止任务并确认运行时空闲，再只关闭本次由测试启动的模拟器（原本在线的实例保持不动）。
 

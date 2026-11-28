@@ -56,10 +56,13 @@ from app.core.config.m9a_legacy.migration import (
     repair_m9a_migration_losses,
 )
 from app.core.config.plugin_upgrade import (
+    MAAEND_ADAPTER_NAME,
     MAAFW_FAMILY_PLUGINS,
     adapter_package,
+    adapter_plugin_types,
     automatic_plugin_packages,
     backup_legacy_adapter_users,
+    backup_legacy_maaend_documents,
     backup_legacy_maafw_documents,
     backup_legacy_zzzod_users,
     install_adapter_plugin,
@@ -89,9 +92,6 @@ from app.models.config import (
     GlobalConfig,
     HSRConfig,
     HSRUserConfig,
-    MaaEndConfig,
-    MaaEndPlanConfig,
-    MaaEndUserConfig,
     OkNteConfig,
     OkNtePlanConfig,
     OkNteUserConfig,
@@ -319,7 +319,7 @@ class AppConfig:
 
         self.ToolsConfig = ToolsConfig.build()
         self.startup_notices = self.setting.startup_notices
-        self._config_nodes = {
+        self._config_nodes: dict[str, ConfigEntry | ConfigCollection] = {
             "setting": self.setting,
             "EmulatorConfig": self._legacy_emulators,
             "PlanConfig": self.PlanConfig,
@@ -337,7 +337,6 @@ class AppConfig:
         self._adapter_plugin_failures: dict[str, str] = {}
         for model in (
             *CLASS_BOOK.values(),
-            MaaEndUserConfig,
             BAAHUserConfig,
             HSRUserConfig,
             QueueItem,
@@ -612,6 +611,9 @@ class AppConfig:
                 )
         if MAAFW_FAMILY_PLUGINS & required.keys():
             await asyncio.to_thread(backup_legacy_maafw_documents, self.config_path)
+        if version == "v2.2" and MAAEND_ADAPTER_NAME in required:
+            # 已到 v2.2 的安装不会经过 pre-upgrade，首次接手前另留原件。
+            await asyncio.to_thread(backup_legacy_maaend_documents, self.config_path)
         from app.core.config.game_upgrade import (
             migrate_game_documents,
             required_game_plugins,
@@ -649,10 +651,12 @@ class AppConfig:
                 await prepare_runtime()
             for name, package in packages.items():
                 can_defer = name not in required_games and (
-                    version == "v2.2" or (version == "v2.1" and name == "zzzod_adapter")
+                    version == "v2.2"
+                    or name == MAAEND_ADAPTER_NAME
+                    or (version == "v2.1" and name == "zzzod_adapter")
                 )
                 if not can_defer:
-                    await install_adapter_plugins({name: package})
+                    await install_adapter_plugin(name, package)
                     continue
                 try:
                     await install_adapter_plugin(name, package)
@@ -750,10 +754,26 @@ class AppConfig:
             # 先保留旧设备及账号路径并转换绑定，再让当前模型转换历史 JSON。
             await install_adapter_plugins(required_game_plugins(self.config_path))
             await migrate_games()
+            migration_nodes = self._config_nodes
+            if MAAEND_ADAPTER_NAME in self._adapter_plugin_failures:
+                from app.models.config import MaaEndConfig, MaaEndPlanConfig
+
+                # 只借用旧模型转换 JSON 中的时间、密文和账号集合。运行集合不登记旧类，
+                # 缺插件的条目会按原编号及顺序旁挂，旧 JSON 原件由升级管道完整归档。
+                migration_nodes = dict(self._config_nodes)
+                for key, migration_collection, legacy_class in (
+                    ("PlanConfig", self.PlanConfig, MaaEndPlanConfig),
+                    ("ScriptConfig", self.ScriptConfig, MaaEndConfig),
+                ):
+                    entry_types = migration_collection.entry_types
+                    if legacy_class.__name__ not in entry_types:
+                        migration_nodes[key] = ConfigCollection.build(
+                            [*entry_types.values(), legacy_class]
+                        )
             await asyncio.to_thread(
                 upgrade_json_configs,
                 self.config_path,
-                self._config_nodes,
+                migration_nodes,
                 prepared_documents=prepared,
                 entry_migrations=entry_migrations,
             )
@@ -799,39 +819,56 @@ class AppConfig:
                     await activate_root(node)
                 if key == "ScriptConfig":
                     self._script_configs_loaded = True
-        if version != "v2.2" and (
-            self.ScriptConfig.unresolved() or self.PlanConfig.unresolved()
-        ):
-            # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进；
-            # 读不了的单条（已升级数据只隔离它）在升级阶段同样拒绝推进。
-            # 旁挂成员照旧原样落盘，中止不丢数据。
-            items = [
-                item
-                for collection in (self.ScriptConfig, self.PlanConfig)
-                for item in collection.unresolved()
-                if not (
-                    version == "v2.1"
-                    and collection is self.ScriptConfig
-                    and item.type_name == "ZzzOdConfig"
-                    and item.reason != "load_failed"
-                    and "zzzod_adapter" in self._adapter_plugin_failures
-                )
-            ]
-            types = sorted(
-                {item.type_name for item in items if item.reason != "load_failed"}
+        held_items = []
+        if version != "v2.2":
+            # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进。
+            # 这一轮 MaaEnd 装不上时，允许其他托管照常启动，等下次重试再推进版本。
+            maaend_types = (
+                adapter_plugin_types(MAAEND_ADAPTER_NAME)
+                if MAAEND_ADAPTER_NAME in self._adapter_plugin_failures
+                else set()
             )
-            failed = [
-                f"{item.type_name} {item.uid}（{item.detail}）"
-                for item in items
-                if item.reason == "load_failed"
-            ]
-            reasons = []
-            if types:
-                reasons.append("有类型无法识别，所属插件不可用：" + "、".join(types))
-            if failed:
-                reasons.append("有配置读不了：" + "；".join(failed))
-            if reasons:
+            # v2.2 仍会尝试补装 ZzzOd，旧托管可以先原样保留。
+            deferred_zzzod = (
+                version == "v2.1" and "zzzod_adapter" in self._adapter_plugin_failures
+            )
+            items = []
+            for config_collection in (self.ScriptConfig, self.PlanConfig):
+                for item in config_collection.unresolved():
+                    if item.reason != "load_failed":
+                        if item.type_name in maaend_types:
+                            held_items.append(item)
+                            continue
+                        if (
+                            deferred_zzzod
+                            and config_collection is self.ScriptConfig
+                            and item.type_name == "ZzzOdConfig"
+                        ):
+                            continue
+                    items.append(item)
+            if items:
+                types = sorted(
+                    {item.type_name for item in items if item.reason != "load_failed"}
+                )
+                failed = [
+                    f"{item.type_name} {item.uid}（{item.detail}）"
+                    for item in items
+                    if item.reason == "load_failed"
+                ]
+                reasons = []
+                if types:
+                    reasons.append(
+                        "有类型无法识别，所属插件不可用：" + "、".join(types)
+                    )
+                if failed:
+                    reasons.append("有配置读不了：" + "；".join(failed))
                 raise RuntimeError("配置升级时" + "；".join(reasons))
+        if held_items:
+            logger.warning(
+                "MaaEnd 插件这一轮没装上，以下配置先原样保留："
+                + "、".join(sorted({item.type_name for item in held_items}))
+                + "；专项升级待下次安装插件后完成"
+            )
         self._notice_unavailable_managed()
         with startup_stage("后端/配置/专项初始化与保存"):
             if version != "v2.2":
@@ -843,7 +880,7 @@ class AppConfig:
             await self._absorb_legacy_execution_session()
             await config_manager.flush()
         if version not in {"v2.0", "v2.1", "v2.2"}:
-            # 本次迁移、全部配置激活及最终保存均成功后，才标记 v2.0。
+            # JSON 已转换并保存；旧历史库也须在其他托管启动前完成一次切换。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.0",))
                 database.commit()
@@ -854,8 +891,9 @@ class AppConfig:
                 database.execute("UPDATE version SET v = ?", ("v2.1",))
                 database.commit()
             version = "v2.1"
-        if version == "v2.1":
+        if version == "v2.1" and not held_items:
             # v2.1→v2.2：对应插件已安装、旧配置已迁移且 flush 成功后才推进。
+            # 有托管因插件装不上被隔离时停在这里，下次启动重跑这一段。
             with closing(sqlite3.connect(self.database_path)) as database:
                 database.execute("UPDATE version SET v = ?", ("v2.2",))
                 database.commit()
@@ -1296,13 +1334,7 @@ class AppConfig:
         payload: dict[str, Any] | None = None,
     ) -> tuple[
         uuid.UUID,
-        ScriptEntry
-        | GeneralConfig
-        | MaaEndConfig
-        | OkwwConfig
-        | OkNteConfig
-        | HSRConfig
-        | BAAHConfig,
+        ScriptEntry | GeneralConfig | OkwwConfig | OkNteConfig | HSRConfig | BAAHConfig,
     ]:
         """添加托管配置"""
 
@@ -1332,10 +1364,10 @@ class AppConfig:
             ):
                 raise TypeError(f"托管配置类型不匹配: {script_id} {script}")
 
-            document = self.ScriptConfig[script_uid].model_dump(
-                context={"audience": "persist"}
-            )
-            if isinstance(self.ScriptConfig[script_uid], GeneralConfig):
+            source = self.ScriptConfig[script_uid]
+            document = source.model_dump(context={"audience": "persist"})
+            old_user_ids = list(script_users(source).keys())
+            if isinstance(source, GeneralConfig):
                 # 日配置属于原脚本和原用户，复制托管后先沿用固定配置。
                 for user in document["UserData"]["data"].values():
                     user.setdefault("Info", {})["PlanMode"] = "Fixed"
@@ -1346,15 +1378,7 @@ class AppConfig:
                 await self.ScriptConfig.commit()
                 new_config = self.ScriptConfig[new_uid]
                 await self._initialize_script_config(new_config)
-            user_ids = {
-                item["uid"]: uid
-                for item, uid in zip(
-                    document[
-                        "users" if isinstance(new_config, ScriptEntry) else "UserData"
-                    ]["order"],
-                    script_users(new_config).keys(),
-                )
-            }
+            user_ids = dict(zip(old_user_ids, script_users(new_config).keys()))
 
             # 专项副本在配置事务成功后、通用账号数据复制前准备。
             handler = self._get_script_config_handler(new_config)
@@ -1555,20 +1579,15 @@ class AppConfig:
             if decl is not None and decl.new_user_defaults is not None:
                 return decl.new_user_defaults()
 
+        # 没有自行声明默认值的插件，仅对名单内的专项保留原生配置默认值。
         plugin_defaults = isinstance(script, ScriptEntry) and type(script) in (
             self.script_classes.get("MAA"),
             self.script_classes.get("Whimbox"),
             self.script_classes.get("SRC"),
             self.script_classes.get("BetterGI"),
+            self.script_classes.get("MaaEnd"),
         )
-        if not plugin_defaults and not isinstance(
-            script,
-            (
-                MaaEndConfig,
-                OkwwConfig,
-                OkNteConfig,
-            ),
-        ):
+        if not plugin_defaults and not isinstance(script, (OkwwConfig, OkNteConfig)):
             return None
 
         return {"Info": {"Base": _utils_constants.BASE_NATIVE, "IfQuickConfig": False}}
@@ -1584,7 +1603,6 @@ class AppConfig:
         uuid.UUID,
         UserEntry
         | GeneralUserConfig
-        | MaaEndUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
         | HSRUserConfig
@@ -2071,17 +2089,14 @@ class AppConfig:
         script_id: str | None = None,
     ) -> tuple[
         uuid.UUID,
-        PlanEntry
-        | MaaEndPlanConfig
-        | UniversalPlanConfig
-        | OkNtePlanConfig
-        | OkwwPlanConfig,
+        PlanEntry | UniversalPlanConfig | OkNtePlanConfig | OkwwPlanConfig,
     ]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
 
-        plan_class = self.PlanConfig.entry_types.get(script)
+        class_name = "MaaEndPlanConfig" if script == "MaaEndPlan" else script
+        plan_class = self.PlanConfig.entry_types.get(class_name)
         if plan_class is None or not issubclass(plan_class, PlanEntry):
             # [兼容旧专项] 旧创建标识仅供尚未迁移的计划类型使用。
             plan_class = next(
@@ -2976,18 +2991,21 @@ class AppConfig:
     async def get_plan_combox(self, consumer: PlanComboxConsumer):
         """获取指定消费方的计划下拉框信息"""
 
-        consumer_config = next(
-            (item for item in PLAN_BOOK.values() if item["consumer"] == consumer),
-            None,
-        )
-        if consumer_config is None:
-            raise TypeError(f"不支持的计划表消费方类型: {consumer}")
+        if consumer == "maaend":
+            plan_class = self.PlanConfig.entry_types.get("MaaEndPlanConfig")
+        else:
+            consumer_config = next(
+                (item for item in PLAN_BOOK.values() if item["consumer"] == consumer),
+                None,
+            )
+            if consumer_config is None:
+                raise TypeError(f"不支持的计划表消费方类型: {consumer}")
+            plan_class = consumer_config["config_class"]
 
-        plan_class = consumer_config["config_class"]
         logger.info(f"开始获取 {consumer} 计划下拉框信息")
         data = [{"label": "固定", "value": "Fixed"}]
         for uid, plan in self.PlanConfig.items():
-            if isinstance(plan, plan_class):
+            if plan_class is not None and isinstance(plan, plan_class):
                 data.append(
                     {
                         "label": plan.info.name

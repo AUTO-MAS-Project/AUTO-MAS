@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from app.models.config import PluginRegistryCollection
 
 
+MAAEND_ADAPTER_NAME = "maaend_adapter"
+
 # 只列入已经完成插件化的专项；后续专项迁移随对应的数据升级段落扩展。
 _ADAPTER_PLUGINS = {
     "BetterGIConfig": ("bettergi_adapter", "auto-mas-bettergi-adapter"),
@@ -30,6 +32,9 @@ _ADAPTER_PLUGINS = {
     "M9AConfig": ("m9a_adapter", "auto-mas-m9a-adapter"),
     "MSSConfig": ("mss_adapter", "auto-mas-mss-adapter"),
     "MSSPlanConfig": ("mss_adapter", "auto-mas-mss-adapter"),
+    # MaaEnd 切换插件提供：旧档里的托管与计划表由适配器接手，缺插件要补装。
+    "MaaEndConfig": (MAAEND_ADAPTER_NAME, "auto-mas-maaend-adapter"),
+    "MaaEndPlanConfig": (MAAEND_ADAPTER_NAME, "auto-mas-maaend-adapter"),
 }
 # MFW 一族（通用 MFW、M9A、MSS）改由插件提供后，首次接手前备份的托管与计划表类型。
 MAAFW_FAMILY_TYPE_NAMES = frozenset(
@@ -39,10 +44,7 @@ MAAFW_FAMILY_PLUGINS = frozenset({"maafw_adapter", "m9a_adapter", "mss_adapter"}
 _ADAPTER_PLUGIN_NAMES = frozenset(target[0] for target in _ADAPTER_PLUGINS.values())
 # 宿主内置托管要的库：托管类型 → 需求。它们不是插件，不进注册表，只随启动前的共享环境
 # 准备装进插件环境；只写下限，和依赖同一个库的插件按各自范围共存。
-_HOST_LIBRARIES = {
-    # MaaEnd 拼游戏启动设置要用 MFW 的 interface 解析库。
-    "MaaEndConfig": "auto-mas-maafw-interface>=0.2.0",
-}
+_HOST_LIBRARIES: dict[str, str] = {}
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
@@ -75,6 +77,11 @@ def automatic_plugin_packages(
             else name not in uninstalled
         )
     }
+
+
+def adapter_plugin_types(name: str) -> set[str]:
+    """某个专项插件接手的托管与计划表类型；不是专项插件时为空集。"""
+    return {kind for kind, target in _ADAPTER_PLUGINS.items() if target[0] == name}
 
 
 def _index_types(config_path: Path) -> list[str]:
@@ -147,6 +154,11 @@ async def install_adapter_plugin(name: str, package: str) -> None:
     from app.core import Config, Plugin
     from app.models.config import PluginMeta
 
+    if name == MAAEND_ADAPTER_NAME:
+        from app.plugin.runtime import discover
+
+        # MaaEnd 开发目录可能还没进旧注册表，先发现本地插件，再决定是否下载。
+        await discover.refresh()
     record = Config.plugin_registry.by_name(name)
     minimum = _MINIMUM_ADAPTER_VERSIONS.get(name)
     needs_upgrade = (
@@ -238,6 +250,15 @@ def backup_legacy_zzzod_users(config_path: Path) -> None:
             for item in index
         ):
             backup.parent.mkdir(parents=True, exist_ok=True)
+            _utils_io.atomic_write(backup, path.read_bytes())
+
+
+def backup_legacy_maaend_documents(config_path: Path) -> None:
+    """首次接手前保留完整的 YAML 托管、计划与队列，支持退回内置 MaaEnd。"""
+    for name in ("scripts.yaml", "plans.yaml", "queues.yaml"):
+        path = config_path / name
+        backup = config_path / "legacy-maaend-plugin" / name
+        if path.is_file() and not backup.exists():
             _utils_io.atomic_write(backup, path.read_bytes())
 
 

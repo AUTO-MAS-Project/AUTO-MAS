@@ -8,7 +8,6 @@ from datetime import datetime
 from app.models.config import (
     BAAHConfig,
     GeneralConfig,
-    MaaEndConfig,
     OkNteConfig,
     OkwwConfig,
     UserConfigType,
@@ -51,9 +50,7 @@ def _running_inflight_detection(script_id: str) -> asyncio.Task | None:
     return None
 
 
-type ProxyScriptConfigType = (
-    MaaEndConfig | OkwwConfig | OkNteConfig | GeneralConfig | BAAHConfig
-)
+type ProxyScriptConfigType = OkwwConfig | OkNteConfig | GeneralConfig | BAAHConfig
 
 
 class ScriptAutoProxyBase[S: ProxyScriptConfigType, U: UserConfigType](TaskExecuteBase):

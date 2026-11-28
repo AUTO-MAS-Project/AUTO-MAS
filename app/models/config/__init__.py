@@ -39,7 +39,6 @@ from .shared import (
 from .tools import *
 
 CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
-    "MaaEnd": MaaEndConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
@@ -82,13 +81,5 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "script_class": GeneralConfig,
         "field_group": "Info",
         "field_name": "PlanMode",
-    },
-    "MaaEndPlanConfig": {
-        "create_type": "MaaEndPlan",
-        "config_class": MaaEndPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[0],
-        "script_class": MaaEndConfig,
-        "field_group": "Info",
-        "field_name": "SanityMode",
     },
 }
