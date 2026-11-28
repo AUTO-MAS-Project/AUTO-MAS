@@ -420,3 +420,101 @@ async def test_old_plan_routes_each_native_task_and_unbinds_on_delete(monkeypatc
     await plans.commit()
     assert user.Info.SanityMode == "Fixed"
     assert user.Info.AutoEssenceMode == "Fixed"
+
+
+@pytest.mark.asyncio
+async def test_same_task_failure_then_retry_completion_is_not_a_parse_failure(
+    proxy_fixture, monkeypatch
+):
+    """同名任务在一次日志里先失败、重试后完成，本轮仍应判为完成。
+
+    #1953：失败与完成都会推进固定索引，重试后的「完成」会读到配置实例列表外，
+    异常被吞成「任务执行情况解析失败」，整轮结果作废。
+    """
+    proxy, attempts = proxy_fixture
+
+    async def upstream_result(offsets):
+        lines = []
+        for task in attempts[-1][1]:
+            name = task["taskName"]
+            if name == "ProtocolSpace":
+                lines.extend(
+                    [
+                        f"任务开始: {name}\n",
+                        f"任务失败: {name}\n",
+                        f"任务开始: {name}\n",
+                        f"任务完成: {name}\n",
+                    ]
+                )
+            else:
+                lines.extend([f"任务开始: {name}\n", f"任务完成: {name}\n"])
+        await proxy.check_log(lines, datetime.now().astimezone(), if_stream_end=True)
+
+    monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
+    await proxy.main_task()
+
+    assert proxy.cur_user_log.status != "MaaEnd 任务执行情况解析失败"
+    assert proxy.cur_user_log.status == "Success!"
+
+
+@pytest.mark.asyncio
+async def test_same_name_instances_keep_their_own_results(proxy_fixture, monkeypatch):
+    """同名两个配置实例：前一个失败、后一个成功，结果不能记到前一个名下。
+
+    #2050 审查：只看名字和成功次数会把后一个的成功算到前一个失败项上，
+    下一轮就会漏补真正失败的 ID、重跑已经成功的那个。
+    """
+    proxy, attempts = proxy_fixture
+    observed: dict[str, bool] = {}
+
+    async def upstream_result(offsets):
+        proxy.task_dict = {"AutoEssence": {"idA": True, "idB": True}}
+        await proxy.check_log(
+            [
+                "任务开始: AutoEssence\n",
+                "任务失败: AutoEssence\n",
+                "任务开始: AutoEssence\n",
+                "任务完成: AutoEssence\n",
+            ],
+            datetime.now().astimezone(),
+            if_stream_end=True,
+        )
+        observed.update(proxy.task_dict["AutoEssence"])
+
+    monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
+    await proxy.main_task()
+
+    assert observed == {"idA": True, "idB": False}
+
+
+@pytest.mark.asyncio
+async def test_extra_completion_with_several_candidates_is_not_assigned(
+    proxy_fixture, monkeypatch
+):
+    """多实例时多出来的完成记录没有依据归属，不能挑一个标成成功。
+
+    #2050 审查：越界后若还剩多个未完成 ID，按「最后一个」认领等于替任务猜。
+    """
+    proxy, attempts = proxy_fixture
+    observed: dict[str, bool] = {}
+
+    async def upstream_result(offsets):
+        proxy.task_dict = {"AutoEssence": {"idA": True, "idB": True}}
+        await proxy.check_log(
+            [
+                "任务开始: AutoEssence\n",
+                "任务完成: AutoEssence\n",
+                "任务失败: AutoEssence\n",
+                "任务完成: AutoEssence\n",
+            ],
+            datetime.now().astimezone(),
+            if_stream_end=True,
+        )
+        observed.update(proxy.task_dict["AutoEssence"])
+
+    monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
+    await proxy.main_task()
+
+    # 第一条完成给 idA、失败吃掉第二个实例位；多出来的那条只剩 idB 一个候选，
+    # 但配置里有多个实例，没有依据认定它属于 idB，所以保持未完成
+    assert observed == {"idA": False, "idB": True}
