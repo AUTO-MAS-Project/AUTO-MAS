@@ -260,3 +260,165 @@ asyncio.run(run())
         timeout=60,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_startup_finishes_account_migration_written_before_archive(tmp_path):
+    """旧版写完账号 YAML 就退出时，重启按进度里的旧目标结账再改名。"""
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import hashlib
+import sqlite3
+from unittest.mock import AsyncMock
+
+from app.config import config_manager
+from app.core import Config
+from app.core.config.upgrade import MIGRATION_RECORD
+from app.utils import io
+
+uid = '6f1c9d3e-2b7a-4c58-9e21-8d4f5a6b7c80'
+legacy_target = Config.config_path / 'game_sign_accounts.yaml'
+source = Config.config_path / 'GameSignAccounts.json'
+io.write_file(legacy_target, {
+    'order': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    'data': {uid: {'GameSignAccount': {'Name': '旧账号'}}},
+})
+io.write_file(source, {
+    'instances': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    uid: {'GameSignAccount': {'Name': '旧账号'}},
+})
+io.write_file(Config.config_path / MIGRATION_RECORD, {
+    'version': 2,
+    'files': {'GameSignAccounts.json': {
+        'target': 'game_sign_accounts.yaml',
+        'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'target_sha256': hashlib.sha256(legacy_target.read_bytes()).hexdigest(),
+        'state': 'prepared',
+    }},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute('CREATE TABLE version(v text)')
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    accounts = list(Config.ToolsConfig.SignFlow_Accounts.values())
+    assert len(accounts) == 1, accounts
+    assert accounts[0].SignFlowAccount.Name == '旧账号'
+    assert (Config.config_path / 'sign_flow_accounts.yaml').is_file()
+    assert not legacy_target.exists()
+    await config_manager.flush()
+
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    # 二次启动必须复用已迁移的账号，不能按旧 JSON 重导一次。
+    # 必须另起进程：同一进程里再跑 check_data 会重复订阅 (phase, kind, group, field, sender)。
+    rerun = """
+import asyncio
+from unittest.mock import AsyncMock
+
+from app.config import config_manager
+from app.core import Config
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    accounts = list(Config.ToolsConfig.SignFlow_Accounts.values())
+    assert len(accounts) == 1, accounts
+    assert accounts[0].SignFlowAccount.Name == '旧账号'
+    await config_manager.flush()
+
+asyncio.run(run())
+"""
+    again = subprocess.run(
+        [sys.executable, "-c", rerun],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert again.returncode == 0, again.stdout + again.stderr
+
+
+def test_startup_finishes_account_migration_archived_before_version(tmp_path):
+    """账号 JSON 已归档但数据库版本未推进时，重启仍能加载原账号。"""
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import hashlib
+import sqlite3
+from unittest.mock import AsyncMock
+
+from app.config import config_manager
+from app.core import Config
+from app.core.config.upgrade import MIGRATION_RECORD
+from app.utils import io
+
+uid = '2b8e4a51-9c37-4f60-8a1d-3e5b7c9d0f21'
+legacy_target = Config.config_path / 'game_sign_accounts.yaml'
+archived = Config.config_path / 'legacy-json' / 'GameSignAccounts.json'
+io.write_file(legacy_target, {
+    'order': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    'data': {uid: {'GameSignAccount': {'Name': '归档账号'}}},
+})
+io.write_file(archived, {
+    'instances': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    uid: {'GameSignAccount': {'Name': '归档账号'}},
+})
+io.write_file(Config.config_path / MIGRATION_RECORD, {
+    'version': 2,
+    'files': {'GameSignAccounts.json': {
+        'target': 'game_sign_accounts.yaml',
+        'source_sha256': hashlib.sha256(archived.read_bytes()).hexdigest(),
+        'target_sha256': hashlib.sha256(legacy_target.read_bytes()).hexdigest(),
+        'state': 'complete',
+    }},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute('CREATE TABLE version(v text)')
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    accounts = list(Config.ToolsConfig.SignFlow_Accounts.values())
+    assert len(accounts) == 1, accounts
+    assert accounts[0].SignFlowAccount.Name == '归档账号'
+    assert (Config.config_path / 'sign_flow_accounts.yaml').is_file()
+    assert not legacy_target.exists()
+    await config_manager.flush()
+
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

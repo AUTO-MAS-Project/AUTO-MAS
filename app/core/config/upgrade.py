@@ -416,6 +416,21 @@ def upgrade_json_configs(
         target = config_path / new_name
         archived = backup_dir / old_name
         progress = files.get(old_name)
+        if progress:
+            # 旧版把这一份写到了改名前的目标名（GameSignAccounts.json →
+            # game_sign_accounts.yaml）。断在那里时进度记的仍是旧目标，而本版
+            # 只认新目标名：照新名判定会认为目标缺失，在被迁移文件还躺在旧名下
+            # 的情况下直接拒绝启动（已迁移文件缺失）。旧目标文件在就按它结账，
+            # 改名与成员类型标签归一化仍留给 migrate_sign_flow_documents。
+            recorded = progress.get("target")
+            legacy_target = config_path / str(recorded) if recorded else target
+            if (
+                recorded
+                and recorded != new_name
+                and not target.exists()
+                and legacy_target.is_file()
+            ):
+                target = legacy_target
         reset_target = record.get("reset_targets") and (
             not progress or (progress["state"] == "prepared" and source.is_file())
         )
@@ -447,7 +462,7 @@ def upgrade_json_configs(
                 _utils_io.write_file(record_path, record)
                 continue
             if target.exists():
-                raise ValueError(f"迁移目标发生变化，已保留现有文件：{new_name}")
+                raise ValueError(f"迁移目标发生变化，已保留现有文件：{target.name}")
             if progress["state"] == "complete":
                 raise ValueError(f"已迁移文件缺失：{new_name}")
         elif target.exists():
