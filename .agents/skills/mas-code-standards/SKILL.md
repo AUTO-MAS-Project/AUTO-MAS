@@ -12,5 +12,6 @@ description: Use when implementing, fixing, refactoring, or reviewing non-genera
 - **提交信息**：Conventional Commits `<type>(<scope>): <subject>`（`feat`/`fix`/`docs`/`style`/`refactor`/`perf`/`test`/`chore`/`build`/`ci`），单文件改动用文件名作 scope，多文件用父目录名。
 - **日志与注释**：使用 `getLogger('中文名')` 与简短中文操作日志；后端需要说明的函数写 Google-style docstring；配置字段用精确 Pydantic 类型与中文 `Field(description=...)`。
 - **显式直白**：保持主流程自上而下可读，不抽只用一次的 `builder`/`loader` 壳；有限分支优先小字典/注册表映射；禁止把别的专项的特殊日志/超时/绕过分支盲抄到新模块。
+- **协议边界原样透传（Parse, Don't Coerce）**：跨前后端与插件边界的数据禁止用 `str(v)`、`as any`、`or`（吞掉 `0`/`False`）静默强转掩盖类型不匹配；不支持的值直接抛错，重复的类型分发分支收口到单一函数。
 - **保留有用注释（红线）**：清理或重构时**禁止顺手删掉**解释业务意图、配置字段含义、步骤顺序（如「第一步/第二步」）、兼容性决策或非显而易见不变量的注释；仅删除或改写确已过时、误导或随代码一并删除的注释。
 - **不顺手乱改无关代码**：不因风格洁癖扩大 diff；后端 schema 变更须重生成 OpenAPI 客户端（禁手改 `frontend/src/api/**`）；用户可见改动带 1 条 `changelog.d/` 碎片。

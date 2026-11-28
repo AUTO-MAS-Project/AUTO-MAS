@@ -4,18 +4,26 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import type { MaaEndEssenceTargetGroup } from '@/utils/maaEndProtocolSpace'
 
 export const useMaaEndPlanOptions = () => {
-  const { getScripts, getMaaEndOptions } = useScriptApi()
+  const { getScripts, getMaaEndOptions, error } = useScriptApi()
   const crisisDrillsOptions = ref<ComboBoxItem[]>([])
   const essenceLocationOptions = ref<ComboBoxItem[]>([])
   const essenceMenuOptions = ref<ComboBoxItem[]>([])
   const essenceTargetWeaponGroups = ref<MaaEndEssenceTargetGroup[]>([])
   const essenceOptionsLoading = ref(false)
   const essenceOptionsLoaded = ref(false)
+  const essenceOptionsError = ref<string | null>(null)
 
   const loadOptions = async () => {
+    if (essenceOptionsLoading.value) return
     essenceOptionsLoading.value = true
+    essenceOptionsError.value = null
+    essenceOptionsLoaded.value = false
     try {
       const scripts = await getScripts(false)
+      if (error.value) {
+        essenceOptionsError.value = error.value
+        return
+      }
       const configuredMaaEndScripts = scripts.filter(script => {
         if (script.type !== 'MaaEnd') return false
         const config = script.config as MaaEndConfig
@@ -62,13 +70,17 @@ export const useMaaEndPlanOptions = () => {
         ? [...menusByValue.values()]
         : [{ label: '指定地点', value: 'Location' }]
       essenceTargetWeaponGroups.value = [...groupsByValue.values()]
+      essenceOptionsError.value = error.value
+      essenceOptionsLoaded.value = essenceOptionsError.value === null
     } finally {
       essenceOptionsLoading.value = false
-      essenceOptionsLoaded.value = true
     }
   }
 
-  onMounted(loadOptions)
+  onMounted(async () => {
+    await loadOptions()
+    if (essenceOptionsError.value) await loadOptions()
+  })
 
   return {
     crisisDrillsOptions,
@@ -77,5 +89,7 @@ export const useMaaEndPlanOptions = () => {
     essenceTargetWeaponGroups,
     essenceOptionsLoading,
     essenceOptionsLoaded,
+    essenceOptionsError,
+    retryOptions: loadOptions,
   }
 }
