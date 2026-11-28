@@ -3,12 +3,34 @@
 import base64
 import io
 from pathlib import Path
+from struct import unpack_from
 
 from PIL import Image
 
 from .catalog_protocol import MAX_ICON_BYTES
 
 _MAX_SOURCE_BYTES = 256 * 1024
+
+
+def _check_static_png(raw: bytes) -> None:
+    """解码前检查画布尺寸并拒绝动画块。"""
+    if (
+        len(raw) < 33
+        or raw[:16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR"
+        or not all(0 < edge <= 1024 for edge in unpack_from(">II", raw, 16))
+    ):
+        raise ValueError("invalid PNG signature or canvas size")
+    offset = 8
+    while offset + 12 <= len(raw):
+        length, chunk = unpack_from(">I4s", raw, offset)
+        offset += length + 12
+        if offset > len(raw):
+            break
+        if chunk in {b"acTL", b"fcTL", b"fdAT"}:
+            raise ValueError("animated icons are unsupported")
+        if chunk == b"IEND" and length == 0 and offset == len(raw):
+            return
+    raise ValueError("incomplete PNG")
 
 
 def read_package_icon(package: Path) -> str | None:
@@ -27,6 +49,7 @@ def read_package_icon(package: Path) -> str | None:
         raw = stream.read(_MAX_SOURCE_BYTES + 1)
     if len(raw) > _MAX_SOURCE_BYTES:
         raise ValueError("插件图标文件过大")
+    _check_static_png(raw)
     with Image.open(io.BytesIO(raw), formats=("PNG",)) as image:
         if max(image.size) > 1024 or getattr(image, "is_animated", False):
             raise ValueError("头像尺寸过大或包含动画")

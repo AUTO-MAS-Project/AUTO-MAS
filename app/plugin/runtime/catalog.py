@@ -23,7 +23,7 @@ class CatalogSnapshot:
     document: dict
 
 
-def _read_cache(path: Path, url: str) -> CatalogSnapshot | None:
+def read_cache(path: Path, url: str) -> CatalogSnapshot | None:
     """读取同一公开地址的有效缓存；缓存损坏只失去条件请求优化，不代替网络刷新。"""
     if not path.is_file():
         return None
@@ -60,7 +60,7 @@ async def fetch_catalog(
         or parsed.password
     ):
         raise ValueError("插件目录地址必须是无凭据的 HTTPS URL")
-    previous = _read_cache(cache, url)
+    previous = read_cache(cache, url)
     headers = {"User-Agent": "AUTO-MAS-PluginMarket/3.0", "Accept": "application/json"}
     if (
         previous is not None

@@ -89,8 +89,10 @@ async def test_data_station_conditional_request_reuses_valid_document(
 
 
 @pytest.mark.asyncio
-async def test_official_v3_presentation_does_not_survive_fallback(catalog, monkeypatch):
-    """同一安装目标切回 v2 后，已有头像和组织标识都随新目录清除。"""
+async def test_official_v3_ownership_survives_only_built_in_fallback(
+    catalog, monkeypatch
+):
+    """仅内置回退沿用同一发行包的可信组织归属，市场头像仍跟随目录。"""
     monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
     v2 = published_catalog()
     v3_entries = [
@@ -131,8 +133,13 @@ async def test_official_v3_presentation_does_not_survive_fallback(catalog, monke
     monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
     fail_v3 = True
     await market.refresh()
-    assert catalog[uid].info.publisher_organization is None
+    assert catalog[uid].info.publisher_organization == "auto-mas"
     assert catalog[uid].info.icon_png is None
+
+    v2["plugins"][0]["package_name"] = "other-demo"
+    v2["revision"] = content_revision(v2["plugins"])
+    await market.refresh()
+    assert next(iter(catalog.values())).info.publisher_organization is None
 
 
 @pytest.mark.asyncio

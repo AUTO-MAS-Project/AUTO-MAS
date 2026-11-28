@@ -354,7 +354,8 @@ export function toMarketViews(
     const pluginId = firstText(info.plugin_name)
     const binding = findBinding(pluginId, context.bindings)
     const packageName = firstText(info.package_name)
-    const official = info.publisher_organization === 'auto-mas'
+    const organization = firstText(info.publisher_organization)
+    const official = organization === 'auto-mas'
     const installedVersion = firstText(info.installed_version)
     return {
       kind: 'market',
@@ -379,7 +380,7 @@ export function toMarketViews(
       links: pluginLinks(info),
       dependencies: textList(info.requires_dist),
       official,
-      publisher: official ? 'official' : 'thirdParty',
+      publisher: official ? 'official' : organization ? 'thirdParty' : null,
       category:
         binding || (pluginId && (impactById.get(pluginId) ?? 0) > 0) ? 'specialized' : 'extension',
       icon: resolvePluginIcon({
@@ -436,19 +437,19 @@ export function toInstalledViews(
     const drift = codeDrift(info.code_drift)
     const status = pluginStatus(info.state, drift)
     const catalogEntry = pluginId ? market.find(entry => entry.pluginId === pluginId) : undefined
-    const officialDistribution =
+    const distributionPublisher =
       packageName &&
-      catalogEntry?.official &&
+      catalogEntry &&
       packageKey(packageName) === packageKey(catalogEntry.packageName)
+        ? catalogEntry.publisher
+        : null
     const publisher: PluginPublisher | null = core
       ? 'official'
       : local
         ? 'local'
-        : !source
-          ? null
-          : officialDistribution
-            ? 'official'
-            : 'thirdParty'
+        : source === 'installed'
+          ? distributionPublisher
+          : null
     // 目录条目自己也没有名称时它的 name 就是插件标识，不算兜底。
     const catalogName = catalogEntry && catalogEntry.name !== pluginId ? catalogEntry.name : null
     const name = resolvePluginName(uid, info, context.texts, catalogName)
