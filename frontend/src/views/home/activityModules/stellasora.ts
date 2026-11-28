@@ -23,8 +23,8 @@ export const buildStellaActivityPresentation = (
     ...stellaActivityBanner(overview),
   }
   presentation.activities.source = {
-    label: t('core.home.sra.poweredBy', { name: t('core.home.stella.sourceName') }),
-    url: 'https://stellasora.yostar.cn/news',
+    label: t('core.home.sra.poweredBy', { name: overview.sourceName ?? 'StellaBase' }),
+    url: overview.sourceUrl ?? 'https://stella.ennead.cc/events',
   }
   presentation.activities.items = runningActivities(overview.activities, now)
     .filter(item => item.kind !== PERMANENT_KIND)

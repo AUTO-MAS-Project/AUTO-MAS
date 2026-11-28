@@ -3282,7 +3282,6 @@
   "core.home.sra.staleMessage": "前回取得したイベント情報を表示しています",
   "core.home.sra.unavailable": "{name}のイベント情報を一時的に取得できません",
   "core.home.stella.permanent": "常設イベント",
-  "core.home.stella.sourceName": "公式サイト",
   "core.home.viewNotice": "お知らせ",
   "core.maaCopilot.adjustSettings": "分析設定を変更",
   "core.maaCopilot.analysisContext": "{scope} · 目標カバー率 {coverage}%",

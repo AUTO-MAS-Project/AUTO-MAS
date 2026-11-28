@@ -1048,19 +1048,15 @@ async def get_arknights_activity() -> InfoOut:
 @router.post(
     "/stella/activity",
     tags=["Get"],
-    summary="获取星塔旅人活动数据（官网公告）",
+    summary="获取星塔旅人活动数据（StellaBase）",
     response_model=InfoOut,
     status_code=200,
 )
 async def get_stella_activity() -> InfoOut:
     """取回星塔旅人的活动一览。
 
-    数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
-    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
-
-    官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
-    对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
-    分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
+    使用 StellaBase 中文日历中的活动时间和对应封面；取不到时使用 SRA 备用数据。
+    同时返回实际来源名称与链接，供主页标注。
 
     Returns:
         InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
@@ -1084,9 +1080,13 @@ async def get_stella_activity() -> InfoOut:
                 data={},
             )
         for item in fallback["activities"]:
-            item["kind"] = _tool_stella_official.classify_activity_name(
-                str(item["name"])
+            item["kind"] = (
+                _tool_stella_official.VERSION_KIND
+                if item.get("kind") in ("区域探索活动", "版本活动")
+                else _tool_stella_official.classify_activity_name(str(item["name"]))
             )
+        fallback["sourceName"] = "SRA"
+        fallback["sourceUrl"] = "https://starrailassistant.top"
         logger.info("星塔旅人活动数据改用 SRA 兜底")
         data = fallback
 
