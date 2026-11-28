@@ -1,4 +1,4 @@
-import { getOptionalMaaStageOverview } from '@maa/composables/useMaaStageApi'
+import { getOptionalMaaStageOverview } from '@/composables/useMaaStageApi'
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
 import { Service } from '@/api/services/Service'

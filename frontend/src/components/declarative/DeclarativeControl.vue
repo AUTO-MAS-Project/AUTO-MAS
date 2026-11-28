@@ -31,6 +31,8 @@ const props = withDefaults(
     secret?: boolean
     masked?: boolean
     format?: string | null
+    nullable?: boolean
+    required?: boolean
     widget?: string | null
     ordered?: boolean
   }>(),
@@ -53,6 +55,7 @@ const props = withDefaults(
     secret: false,
     masked: false,
     format: null,
+    nullable: true,
     widget: null,
     ordered: false,
   }
@@ -62,6 +65,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: unknown]; pick: []; blur
 const { t } = useI18n()
 
 const size = computed(() => (props.compact ? 'middle' : 'large'))
+const allowClear = computed(() => props.nullable && !props.required)
 const maskedValue = computed(
   () => (props.masked || props.secret) && props.modelValue === '__AUTO_MAS_CONFIG_MASKED__'
 )
@@ -88,8 +92,6 @@ const update = (value: unknown) =>
     'update:modelValue',
     props.component === 'path' && value === '' ? null : value
   )
-const updateDate = (value: unknown) =>
-  /* 将日期清空事件规范化为空串后提交控件值变更。 */ update(value ?? '')
 const dateValue = computed(() => (typeof props.modelValue === 'string' ? props.modelValue : ''))
 const timeValue = computed(() =>
   dateValue.value.includes('T')
@@ -226,10 +228,10 @@ const updateTime = (value: string | null) => {
       :size="size"
       :value="typeof modelValue === 'string' && modelValue ? modelValue : undefined"
       value-format="YYYY-MM-DD"
-      allow-clear
+      :allow-clear="allowClear"
       :disabled="disabled"
       :bordered="bordered"
-      @change="updateDate"
+      @change="update"
     />
     <a-time-picker
       v-else-if="kind === 'time'"
@@ -237,6 +239,7 @@ const updateTime = (value: string | null) => {
       :value="timeValue"
       format="HH:mm"
       value-format="HH:mm"
+      :allow-clear="allowClear"
       :disabled="disabled"
       :bordered="bordered"
       @change="updateTime"
@@ -246,6 +249,7 @@ const updateTime = (value: string | null) => {
       :size="size"
       show-time
       :value="parseConfigTime(dateValue)"
+      :allow-clear="allowClear"
       :disabled="disabled"
       :bordered="bordered"
       @change="

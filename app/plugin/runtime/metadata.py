@@ -125,10 +125,12 @@ def _view(
         )
 
     # Keywords 只承载普通关键词与插件身份门禁，不再编码语言映射。
-    if isinstance(raw_kw, list):
-        kw_text = ", ".join(str(item).strip() for item in raw_kw if str(item).strip())
+    if isinstance(raw_kw, list) and all(isinstance(item, str) for item in raw_kw):
+        kw_text = ", ".join(item.strip() for item in raw_kw if item.strip())
+    elif isinstance(raw_kw, str) or raw_kw is None:
+        kw_text = (raw_kw or "").strip()
     else:
-        kw_text = str(raw_kw or "").strip()
+        raise ValueError(f"{name}: keywords 必须是字符串或字符串列表")
     if "," in kw_text:
         tokens = [item.strip() for item in kw_text.split(",") if item.strip()]
     else:
