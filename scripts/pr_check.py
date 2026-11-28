@@ -143,7 +143,9 @@ def plan_gates(
 
     need_ruff = run_all or _any_match(
         changed_files,
-        lambda p: p.endswith((".py", ".md")),
+        lambda p: (
+            p.endswith((".py", ".md")) or p == ".github/workflows/format-check.yml"
+        ),
     )
     if need_ruff:
         gates.append(
@@ -154,6 +156,27 @@ def plan_gates(
                 cwd=repo_root,
                 forbid="禁止使用系统全局 ruff（版本须与 uv.lock 一致），禁止顺手格式化无关文件。",
                 fix="运行 uv run --no-sync ruff format <改动文件> 后重跑。",
+            )
+        )
+
+    if need_ruff:
+        gates.append(
+            Gate(
+                id="RUFF-F821",
+                title="Python 未定义名称检查（uv.lock 锁定版本）",
+                command=(
+                    "uv",
+                    "run",
+                    "--no-sync",
+                    "ruff",
+                    "check",
+                    "--select",
+                    "F821",
+                    ".",
+                ),
+                cwd=repo_root,
+                forbid="禁止通过忽略 F821 绕过未定义名称检查。",
+                fix="修正报错处的名称引用或缺失导入后重跑。",
             )
         )
 
