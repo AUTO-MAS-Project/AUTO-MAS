@@ -60,6 +60,10 @@ class CommunitySignInProgressError(RuntimeError):
     """游戏社区签到已在执行。"""
 
 
+class CommunitySignPluginUnavailableError(RuntimeError):
+    """签到执行插件未启用：需要用户安装并启用插件后才能签到。"""
+
+
 @dataclass(frozen=True)
 class CredentialStatus:
     """凭据本地校验摘要，不包含凭据值。"""

@@ -1675,6 +1675,7 @@
   "core.signflow.toast.signError": "Check-in failed: {error}",
   "core.signflow.toast.signFailed": "Check-in failed",
   "core.signflow.toast.signPartialNotify": "Check-in finished, but some notifications did not send",
+  "core.signflow.toast.signPluginMissing": "The check-in plugin is not enabled",
   "core.signflow.toast.tokenSaved": "Token saved",
   "core.signflow.toast.userAdded": "Account added",
   "core.signflow.token.empty": "This account has no credential to check yet",

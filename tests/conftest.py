@@ -50,10 +50,15 @@ def isolated_app_paths(tmp_path, monkeypatch):
     checkout_plugins = (root / "plugins").resolve()
 
     def isolated_projects():
+        # _source_projects() 返回的是 resolve() 后的真实路径：本机 plugins/ 下用
+        # junction 挂的其它仓库工程会解析到仓库外，旧的「父目录不等于 checkout 的
+        # plugins/」判据认不出来，会把它们当成本机工程带进用例。这里改成先解析出
+        # checkout 的 plugins/ 直属子工程再比对。
+        checkout_children = {child.resolve() for child in checkout_plugins.iterdir()}
         return {
             project
             for project in source_projects()
-            if project.parent != checkout_plugins or project.name == "auto_mas_core"
+            if project not in checkout_children or project.name == "auto_mas_core"
         }
 
     monkeypatch.setattr(discover, "_source_projects", isolated_projects)
