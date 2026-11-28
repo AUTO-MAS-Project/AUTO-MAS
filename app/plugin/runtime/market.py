@@ -23,7 +23,12 @@ from app.plugin.uv.ops import candidates
 from app.utils import get_logger
 
 from . import catalog, market_index
-from .catalog_protocol import ENTRY_FIELDS, package_key, validate_entries
+from .catalog_protocol import (
+    ENTRY_FIELDS,
+    PRESENTATION_FIELDS,
+    package_key,
+    validate_entries,
+)
 
 logger = get_logger("插件市场")
 
@@ -33,6 +38,9 @@ _FETCH_CONCURRENCY = 8
 _SIMPLE_TIMEOUT = 45.0
 _PYPI = "https://pypi.org"
 _CATALOG_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download"
+_CATALOG_V3_URL = (
+    "https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins-v3/download"
+)
 _ATTEMPTS = 3
 # 开发用：刚发到 PyPI 的插件，数据站目录和 PyPI 总索引都可能还没收录。默认不设（不补）；
 # 设为逗号分隔的发行包名时，刷新目录逐个读 PyPI 单包元数据补进目录，插件中心才能看到并安装。
@@ -91,21 +99,46 @@ async def _extra_drafts(present: set[str]) -> list[PluginMeta]:
 
 async def refresh() -> None:
     """依次读取数据站、官方源和镜像源，首个完整结果作为本次目录的唯一依据。"""
-    url = os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL", _CATALOG_URL).strip()
-    if url:
-        cache = Config.data_path / "plugin-market-cache.json"
+    sources: tuple[tuple[str, int | None, str], ...] = (
+        (_CATALOG_V3_URL, 3, "plugin-market-v3-cache.json"),
+        (_CATALOG_URL, 2, "plugin-market-cache.json"),
+    )
+    if (override := os.environ.get("AUTO_MAS_PLUGIN_INDEX_URL")) is not None:
+        sources = (
+            ((override.strip(), None, "plugin-market-cache.json"),)
+            if override.strip()
+            else ()
+        )
+    for url, version, cache_name in sources:
+        cache = Config.data_path / cache_name
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(5.0), follow_redirects=True, proxy=Config.proxy
             ) as client:
-                snapshot = await catalog.fetch_catalog(client, url, cache)
+                snapshot = await catalog.fetch_catalog(
+                    client,
+                    url,
+                    cache,
+                    expected_version=version,
+                    same_origin=url == _CATALOG_V3_URL,
+                )
         except (httpx.HTTPError, OSError, ValueError) as error:
             logger.warning(
-                f"数据站插件目录不可用，改用发行源检索：{type(error).__name__}"
+                f"插件目录 v{version or '自定义'} 不可用：{type(error).__name__}"
             )
         else:
             drafts = [
-                PluginMeta.build(info=entry) for entry in snapshot.document["plugins"]
+                PluginMeta.build(
+                    info={
+                        **entry,
+                        "publisher_organization": (
+                            entry.get("publisher_organization")
+                            if url == _CATALOG_V3_URL
+                            else None
+                        ),
+                    }
+                )
+                for entry in snapshot.document["plugins"]
             ]
             drafts += await _extra_drafts(
                 {package_key(item.info.package_name) for item in drafts}
@@ -131,12 +164,19 @@ async def _replace_catalog(drafts: list[PluginMeta]) -> None:
         order = []
         for draft in sorted(drafts, key=_install_target):
             entry = current.get(_install_target(draft))
-            info = draft.info.model_dump(mode="python", include=ENTRY_FIELDS)
+            info = draft.info.model_dump(
+                mode="python", include=ENTRY_FIELDS | PRESENTATION_FIELDS
+            )
             if entry is None:
                 order.append(col.add(PluginMeta, payload={"info": info}))
                 continue
-            if entry.info.model_dump(mode="python", include=ENTRY_FIELDS) != info:
-                await entry.update(draft, check_visibility=False)
+            if (
+                entry.info.model_dump(
+                    mode="python", include=ENTRY_FIELDS | PRESENTATION_FIELDS
+                )
+                != info
+            ):
+                await entry.update(PluginMeta.build(info=info), check_visibility=False)
             order.append(entry.uid)
 
         previous_order = list(col.keys())

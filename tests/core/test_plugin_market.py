@@ -89,6 +89,53 @@ async def test_data_station_conditional_request_reuses_valid_document(
 
 
 @pytest.mark.asyncio
+async def test_official_v3_presentation_does_not_survive_fallback(catalog, monkeypatch):
+    """同一安装目标切回 v2 后，已有头像和组织标识都随新目录清除。"""
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+    v2 = published_catalog()
+    v3_entries = [
+        {
+            **entry,
+            "publisher_organization": "auto-mas",
+            "icon_png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXKcAAAAASUVORK5CYII=",
+        }
+        for entry in v2["plugins"]
+    ]
+    v3 = {
+        **v2,
+        "schema_version": 3,
+        "plugins": v3_entries,
+        "revision": content_revision(v3_entries, schema_version=3),
+    }
+    fail_v3 = False
+
+    def handler(request):
+        if request.url.host == "custom.test":
+            return httpx.Response(200, json=v3)
+        if str(request.url) == market._CATALOG_V3_URL:
+            return httpx.Response(404) if fail_v3 else httpx.Response(200, json=v3)
+        assert str(request.url) == market._CATALOG_URL
+        return httpx.Response(200, json=v2)
+
+    serve(monkeypatch, handler)
+    await market.refresh()
+    (uid,) = catalog.keys()
+    assert catalog[uid].info.publisher_organization == "auto-mas"
+    assert catalog[uid].info.icon_png == v3_entries[0]["icon_png"]
+
+    monkeypatch.setenv("AUTO_MAS_PLUGIN_INDEX_URL", "https://custom.test/plugins.json")
+    await market.refresh()
+    assert catalog[uid].info.publisher_organization is None
+    assert catalog[uid].info.icon_png is not None
+
+    monkeypatch.delenv("AUTO_MAS_PLUGIN_INDEX_URL")
+    fail_v3 = True
+    await market.refresh()
+    assert catalog[uid].info.publisher_organization is None
+    assert catalog[uid].info.icon_png is None
+
+
+@pytest.mark.asyncio
 async def test_refresh_preserves_install_target_when_catalog_changes(
     catalog, monkeypatch
 ):

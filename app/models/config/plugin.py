@@ -344,6 +344,12 @@ class PluginMeta(ConfigEntry):
         )
         description: Annotated[Virtual[str], ui(visibility=UiVisibility.DISABLE)] = None
         tags: Annotated[Virtual[list[str]], ui(visibility=UiVisibility.DISABLE)] = None
+        icon_png: Annotated[str | None, ui(visibility=UiVisibility.DISABLE)] = Field(
+            default=None, description="市场发布版本的 PNG 头像"
+        )
+        publisher_organization: Annotated[
+            str | None, ui(visibility=UiVisibility.DISABLE)
+        ] = Field(default=None, description="官方目录核对的 PyPI 组织")
         # 从当前注册记录投影安装版本，随安装结果回读，不写入市场目录。
         installed_version: Annotated[
             Virtual[str | None], ui(visibility=UiVisibility.DISABLE)

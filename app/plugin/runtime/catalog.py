@@ -44,7 +44,12 @@ def _read_cache(path: Path, url: str) -> CatalogSnapshot | None:
 
 
 async def fetch_catalog(
-    client: httpx.AsyncClient, url: str, cache: Path
+    client: httpx.AsyncClient,
+    url: str,
+    cache: Path,
+    *,
+    expected_version: int | None = None,
+    same_origin: bool = False,
 ) -> CatalogSnapshot:
     """短时读取并完整校验数据站目录，304 只可复用同来源的有效本地文档。"""
     parsed = urlsplit(url)
@@ -57,9 +62,20 @@ async def fetch_catalog(
         raise ValueError("插件目录地址必须是无凭据的 HTTPS URL")
     previous = _read_cache(cache, url)
     headers = {"User-Agent": "AUTO-MAS-PluginMarket/3.0", "Accept": "application/json"}
+    if (
+        previous is not None
+        and expected_version is not None
+        and previous.document["schema_version"] != expected_version
+    ):
+        previous = None
     if previous is not None and previous.etag:
         headers["If-None-Match"] = previous.etag
     async with client.stream("GET", url, headers=headers) as response:
+        if same_origin and (
+            response.url.scheme != "https"
+            or response.url.netloc.decode() != parsed.netloc
+        ):
+            raise ValueError("官方插件目录不能跨域重定向")
         if response.status_code == 304:
             if previous is None:
                 raise ValueError("数据站返回 304，但没有可用目录缓存")
@@ -70,7 +86,9 @@ async def fetch_catalog(
             content.extend(part)
             if len(content) > MAX_BYTES:
                 raise ValueError("插件目录超过 8 MB")
-        document = validate_catalog(json.loads(content.decode("utf-8-sig")))
+        document = validate_catalog(
+            json.loads(content.decode("utf-8-sig")), expected_version=expected_version
+        )
         return CatalogSnapshot(url, response.headers.get("ETag", ""), document)
 
 

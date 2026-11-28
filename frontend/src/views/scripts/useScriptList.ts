@@ -97,7 +97,10 @@ export function useScriptList() {
           .filter(script => !disabled.has(script.uid))
           .map(async script => {
             const result = await getScriptUsers(script.uid, plugins)
-            return toScriptListItem(script, result.users, result.error)
+            return {
+              ...toScriptListItem(script, result.users, result.error),
+              iconSrc: plugins.byScriptKey.get(script.type)?.iconSrc,
+            }
           })
       )
     } finally {
