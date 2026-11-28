@@ -104,10 +104,7 @@ const toggleCollapsed = () => {
 }
 
 html:not(.dark):not(.appearance-custom) .ui-section-card--card {
-  border-color: var(--ant-color-border-secondary);
-  box-shadow:
-    0 1px 2px rgba(16, 24, 40, 0.04),
-    0 4px 12px -4px rgba(16, 24, 40, 0.06);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
 }
 
 .ui-section-card--plain {
@@ -308,7 +305,7 @@ html:not(.dark):not(.appearance-custom) .ui-section-card--card {
   font-size: 12px;
 }
 
-/* 只加强默认浅色外观的静止控件，外观包保留自身边框与选中态。 */
+/* 只统一默认浅色外观的静止控件边框，保留交互态。 */
 html:not(.dark):not(.appearance-custom)
   .ui-section-card--card
   :deep(
@@ -321,7 +318,7 @@ html:not(.dark):not(.appearance-custom)
         .ant-btn-default
       ):not(:hover):not(:focus-within)
   ) {
-  border-color: var(--ant-color-text-tertiary);
+  border-color: var(--ant-color-border);
 }
 
 html:not(.dark):not(.appearance-custom) .ui-section-card--card :deep(.ant-segmented-item-selected) {

@@ -100,10 +100,15 @@ async function finishEditName() {
       @start-edit-plan-name="startEditName"
       @finish-edit-plan-name="finishEditName"
     >
-      <EditorTable v-if="descriptor && (!hasPanel || viewMode === 'simple')" />
-      <ConfigEditor v-else ref="pluginEditor" mode="plan" :plan-id="planId">
+      <ConfigEditor
+        v-if="!descriptor || (hasPanel && viewMode === 'config')"
+        ref="pluginEditor"
+        mode="plan"
+        :plan-id="planId"
+      >
         <template v-if="descriptor" #fallback><EditorTable /></template>
       </ConfigEditor>
+      <EditorTable v-else />
     </PlanConfig>
   </div>
 </template>

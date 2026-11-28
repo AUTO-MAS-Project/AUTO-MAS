@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { defineComponent, h, nextTick, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { TriggerUiState } from '@/api'
+import { i18nRevision } from '@/i18n'
 import type {
   PluginUiEditor,
   PluginUiSaveResult,
@@ -26,6 +27,8 @@ vi.mock('@/services/websocket/subscriptions', () => ({
   subscribe: socket.capabilities,
   unsubscribe: vi.fn(),
 }))
+const confirm = vi.hoisted(() => vi.fn())
+vi.mock('@/composables/useConfirm', () => ({ useConfirm: () => ({ confirm }) }))
 const lightTheme = { mode: 'light', tokens: { '--mas-bg-base': '#fff' } } as const
 
 afterEach(() => vi.unstubAllGlobals())
@@ -51,7 +54,7 @@ function mountWheel() {
         hints: [
           { field: 'Count', editable: true },
           { field: 'Password', editable: true, secret: true },
-          { field: 'Masked', masked: true },
+          { field: 'Masked', editable: true, masked: true },
           { field: 'Run', editable: true, component: 'button', state: TriggerUiState.IDLE },
         ],
       },
@@ -77,7 +80,19 @@ function mountWheel() {
     )
   )
   view.stub({ ASpin: 'div', AAlert: 'aside' })
-  view.app.use(createI18n({ legacy: false, locale: 'en', missingWarn: false }))
+  view.app.use(
+    createI18n({
+      legacy: false,
+      locale: 'en-US',
+      missingWarn: false,
+      messages: {
+        'en-US': {
+          'plugins.demo15.panel.welcome': 'Hello, {name}',
+          'plugins.demo15.plan.config.Stage.Relic.options.rare': 'Rare relic',
+        },
+      },
+    })
+  )
   view.mount()
   return { view, target, editor, refresh }
 }
@@ -90,7 +105,7 @@ describe('wheel iframe', () => {
     const child = pluginUiFrame(frame)
     try {
       expect(frame.props).toMatchObject({
-        sandbox: 'allow-scripts',
+        sandbox: 'allow-scripts allow-forms',
         referrerpolicy: 'no-referrer',
       })
       expect(child.url.pathname).toBe('/api/plugin/demo15/ui/rev/plans/main.html')
@@ -118,10 +133,12 @@ describe('wheel iframe', () => {
             target: target.value,
             surface: 'plan',
             locale: 'en-US',
+            i18nRevision: i18nRevision.value,
             locked: false,
             busy: false,
             theme: lightTheme,
             config: { Second: { Count: 3 } },
+            configuredSecrets: ['Second.Password', 'Second.Masked'],
           })
         )
         expect([...active.replies.keys()]).toEqual([good])
@@ -140,6 +157,116 @@ describe('wheel iframe', () => {
     }
   })
 
+  it('translates panel and scoped config keys in one read-only request', async () => {
+    const { view, editor } = mountWheel()
+    editor.value = { ...editor.value, locked: true, busy: true }
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const revision = i18nRevision.value
+      const id = child.request('translate', {
+        keys: [
+          { key: 'panel.welcome', params: { name: 'Ada' } },
+          'Stage.Relic.options.rare',
+          'Stage.Untranslated.label',
+        ],
+      })
+      await vi.waitFor(() =>
+        expect(child.replies.get(id)?.result).toEqual({
+          locale: 'en-US',
+          revision,
+          messages: { 'panel.welcome': 'Hello, Ada', 'Stage.Relic.options.rare': 'Rare relic' },
+        })
+      )
+      i18nRevision.value++
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'en-US',
+            i18nRevision: revision + 1,
+            theme: lightTheme,
+          },
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it.each(['settings', 'notification'] as const)(
+    'binds dialogs to the active %s target',
+    async kind => {
+      const { view, target, editor } = mountWheel()
+      target.value = {
+        kind,
+        scriptId: null,
+        userId: null,
+        planId: null,
+        configUid: 'uid',
+        ...(kind === 'settings' ? { pluginId: 'record' } : { channelId: 'mail' }),
+      }
+      await nextTick()
+      const child = pluginUiFrame(view.find('iframe')!)
+      try {
+        child.ready()
+        const ask = async (action: string, params: object) => {
+          const id = child.request(action, params)
+          await vi.waitFor(() => expect(child.replies.has(id)).toBe(true))
+          return child.replies.get(id)
+        }
+        const foreign = child.request(
+          'getContext',
+          {},
+          { target: { ...target.value, extra: true } }
+        )
+        expect((await ask('getContext', {}))?.result).toMatchObject({
+          surface: kind,
+          target: target.value,
+        })
+        expect(child.replies.has(foreign)).toBe(false)
+        expect((await ask('pickPath', { mode: 'file' }))?.result).toEqual({
+          ok: false,
+          code: 'unavailable',
+        })
+        const selectFile = vi.fn().mockResolvedValue(['chosen'])
+        Object.assign(window, {
+          electronAPI: { selectFile, selectFolder: vi.fn().mockResolvedValue(null) },
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', title: 'Pick', defaultPath: 'here' }))?.result
+        ).toEqual({ cancelled: false, path: 'chosen' })
+        expect(selectFile).toHaveBeenCalledWith(undefined, { title: 'Pick', defaultPath: 'here' })
+        expect((await ask('pickPath', { mode: 'folder' }))?.result).toEqual({
+          cancelled: true,
+          path: null,
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', filters: [{ name: 'File', extensions: [42] }] }))
+            ?.error
+        ).toBe('invalid_params')
+        confirm.mockResolvedValueOnce(false)
+        expect((await ask('confirm', { message: 'Continue?', danger: true }))?.result).toEqual({
+          confirmed: false,
+        })
+        expect(confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ description: 'Continue?', tone: 'danger' })
+        )
+        expect((await ask('confirm', { message: ' '.repeat(501) }))?.error).toBe('invalid_params')
+        editor.value = { ...editor.value, locked: true }
+        expect((await ask('pickPath', { mode: 'file' }))?.error).toBe('read_only')
+        expect((await ask('confirm', { message: 'Continue?' }))?.error).toBe('read_only')
+      } finally {
+        child.close()
+        view.app.unmount()
+      }
+    }
+  )
+
   it('pushes lock, busy, locale, theme and projected config changes without a new request', async () => {
     const { view, editor } = mountWheel()
     await nextTick()
@@ -152,21 +279,98 @@ describe('wheel iframe', () => {
       await vi.waitFor(() =>
         expect(child.events).toContainEqual({
           event: 'stateChanged',
-          payload: { locked: true, busy: true, locale: 'ja-JP', theme },
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+          },
         })
       )
       editor.value = {
         ...editor.value,
         configRevision: 1,
-        values: { Second: { Count: 7, Masked: 'updated secret' } },
+        values: { Second: { Count: 7, Password: '' } },
       }
       await vi.waitFor(() =>
         expect(child.events.at(-1)).toEqual({
           event: 'configReloaded',
-          payload: { config: { Second: { Count: 7 } } },
+          payload: { config: { Second: { Count: 7 } }, configuredSecrets: ['Second.Masked'] },
         })
       )
       expect(child.replies.size).toBe(0)
+      const fieldErrors = { 'Second.Count': 'Use a lower count' }
+      editor.value = { ...editor.value, fieldErrors }
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+            fieldErrors,
+          },
+        })
+      )
+      const context = child.request('getContext')
+      const config = child.request('readConfig')
+      await vi.waitFor(() => {
+        expect(child.replies.get(context)?.result).toMatchObject({ fieldErrors })
+        expect(child.replies.get(config)?.result).toMatchObject({ fieldErrors })
+      })
+      editor.value = { ...editor.value, fieldErrors: {} }
+      await vi.waitFor(() =>
+        expect(child.events.at(-1)).toEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+            fieldErrors: {},
+          },
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('accepts string replacements and explicit clears for write-only secrets', async () => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const save = (field: string, value: unknown) =>
+        child.request('saveConfig', {
+          phase: 'commit',
+          changes: [{ group: 'Second', field, value }],
+        })
+      const replaced = save('Password', 'replacement')
+      const cleared = save('Password', '')
+      const invalid = save('Password', 123)
+      const masked = save('Masked', 'replacement')
+      const context = child.request('getContext')
+      await vi.waitFor(() => expect(child.replies.has(context)).toBe(true))
+      expect(child.replies.get(replaced)?.result).toEqual({ ok: true })
+      expect(child.replies.get(cleared)?.result).toEqual({ ok: true })
+      expect(child.replies.get(invalid)?.error).toBe('invalid_changes')
+      expect(child.replies.get(masked)?.error).toBe('invalid_changes')
+      expect(vi.mocked(editor.value.save).mock.calls).toEqual(
+        ['replacement', ''].map(value => [[{ group: 'Second', field: 'Password', value }], true])
+      )
+      expect(child.replies.get(context)?.result).toEqual(
+        expect.objectContaining({
+          config: { Second: { Count: 3 } },
+          configuredSecrets: ['Second.Password', 'Second.Masked'],
+        })
+      )
     } finally {
       child.close()
       view.app.unmount()

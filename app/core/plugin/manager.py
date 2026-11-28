@@ -18,7 +18,7 @@ import inspect
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Iterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -30,7 +30,7 @@ from blinker import Namespace
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from app.config import NodeState, config_manager
+from app.config import NodeState, PluginBlock, config_manager
 from app.core.ws import Publisher
 from app.core.ws.protocol import ID_PLUGIN, PLUGIN_CAPABILITIES_UPDATED
 from app.mystery.gate import is_unlocked
@@ -79,7 +79,7 @@ if TYPE_CHECKING:
     from app.config import ConfigEntry, ConfigNode
     from app.models.config import PluginMeta, PluginRecord
     from app.models.config.game import GameEntry
-    from app.models.schema import FrontendSurfaceMount
+    from app.models.schema import FrontendSurfaceMount, PanelBinding
     from app.plugin.frontend import MountedFrontend
 
 logger = get_logger("插件管理")
@@ -798,6 +798,17 @@ class _PluginManager:
             from app.core.i18n import PluginResources
 
             decl = self.script_types.get(record.uid)
+            block_pages = (
+                {
+                    block.page_id
+                    for entry_type in (decl.script_type, decl.user_type, decl.plan_type)
+                    if entry_type is not None
+                    for block in entry_type.ui_blocks or ()
+                    if isinstance(block, PluginBlock)
+                }
+                if decl is not None
+                else set()
+            )
             frontend = PluginResources.load_frontend(
                 name,
                 script_key=plugin.script_type_key
@@ -805,6 +816,7 @@ class _PluginManager:
                 else None,
                 plan_type=decl.plan_type.__name__ if decl and decl.plan_type else None,
                 gate=gate,
+                block_pages=block_pages,
             )
             if routes or plugin.api_router is not None or frontend is not None:
                 self.http.mount(
@@ -1620,22 +1632,24 @@ class _PluginManager:
             return mount.frontend
         return None
 
-    def frontend_bindings(self, entry: ConfigEntry):
-        """按实际配置及其所属托管解析面板，详情投影与写入鉴权使用同一结果。"""
+    def _frontend_target(
+        self, entry: ConfigEntry
+    ) -> tuple[str, MountedFrontend, tuple[str, ...]] | None:
+        """按实际配置类型和所属托管解析当前启用的面板。"""
         from app.core.config import Config
 
         owner = self.trigger_owner(entry)
         if owner is None:
-            return
+            return None
         record = Config.plugin_registry.get(owner)
         if record is None or (frontend := self.mounted_frontend(record)) is None:
-            return
+            return None
         decl = self.script_types.get(owner)
         parent = entry.parent
         if entry is record._config:
             surfaces = ("settings", "notification")
         elif decl is None:
-            return
+            return None
         elif parent is Config.PlanConfig and type(entry) is decl.plan_type:
             surfaces = ("plan",)
         elif parent is Config.ScriptConfig and type(entry) is decl.script_type:
@@ -1647,10 +1661,20 @@ class _PluginManager:
                 or script.parent is not Config.ScriptConfig
                 or script.users is not parent
             ):
-                return
+                return None
             surfaces = ("user",)
         else:
+            return None
+        return record.info.plugin_name, frontend, surfaces
+
+    def frontend_bindings(
+        self, entry: ConfigEntry
+    ) -> Iterator[tuple[str, MountedFrontend, PanelBinding]]:
+        """解析实际配置允许使用的兼容入口。"""
+        target = self._frontend_target(entry)
+        if target is None:
             return
+        name, frontend, surfaces = target
 
         for binding in frontend.bindings:
             extra = binding.surface == "extra" and (
@@ -1660,24 +1684,30 @@ class _PluginManager:
                 and surfaces[0] in ("script", "user")
             )
             if binding.surface in surfaces or extra:
-                yield record.info.plugin_name, frontend, binding
+                yield name, frontend, binding
 
     def resolve_frontend_surfaces(
         self, entry: ConfigEntry
     ) -> dict[str, FrontendSurfaceMount]:
         """编辑器按入口提供该页的全部客户端产物。"""
-        from app.models.schema import FrontendSurfaceMount
-
         return {
-            binding.surface: FrontendSurfaceMount(
-                pluginName=name,
-                pageId=binding.page,
-                revision=frontend.revision,
-                activationId=frontend.activation_id,
-                artifacts=frontend.pages[binding.page],
-            )
+            binding.surface: frontend.surface_mount(name=name, page=binding.page)
             for name, frontend, binding in self.frontend_bindings(entry)
             if binding.surface != "extra"
+        }
+
+    def frontend_block_pages(
+        self, entry: ConfigEntry
+    ) -> dict[str, FrontendSurfaceMount]:
+        """返回当前配置类型声明且已通过清单校验的区块页面。"""
+        blocks = type(entry).ui_blocks
+        if blocks is None or (target := self._frontend_target(entry)) is None:
+            return {}
+        name, frontend, _ = target
+        return {
+            block.page_id: frontend.surface_mount(name=name, page=block.page_id)
+            for block in blocks
+            if isinstance(block, PluginBlock) and block.page_id in frontend.block_pages
         }
 
     def validate_frontend_activation(

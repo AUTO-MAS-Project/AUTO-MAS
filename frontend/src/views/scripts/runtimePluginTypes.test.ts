@@ -102,6 +102,8 @@ describe('运行时专项', () => {
     openEditor('General', 'user', { scriptId: 's', userId: 'u' })
     expect(resolve().name).toBe('GeneralUserEdit')
     expect(openEditor('Demo15', 'userAdd', { scriptId: 's' })).toBe(false)
+    expect(openEditor('SRC', 'userAdd', { scriptId: 's' })).toBe(true)
+    expect(resolve().path).toBe('/scripts/s/users/add/plugin/SRC')
     openEditor('General', 'userAdd', { scriptId: 's' })
     expect(resolve().name).toBe('GeneralUserAdd')
   })

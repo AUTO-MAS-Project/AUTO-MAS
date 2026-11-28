@@ -34,7 +34,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import (
     BaseModel,
@@ -44,6 +44,7 @@ from starlette.background import BackgroundTask
 
 import app.core.notify.bootstrap as notify_channels
 import app.models.config as _config_models
+from app.api._config_editors import FrontendSession, frontend_session
 from app.api._error_codes import config_error_code
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, Notify
@@ -437,13 +438,44 @@ async def get_scripts() -> SettingGetOut:
     response_model=OutBase,
     status_code=200,
 )
-async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
+async def update_script(
+    script: SettingUpdateIn = Body(...),
+    session: FrontendSession | None = Depends(frontend_session, scope="function"),
+) -> OutBase:
     """更新配置"""
 
     try:
         data = script.data.model_dump(exclude_unset=True)
+        if isinstance(session, tuple):
+            frontend, provider, page = session
+            channel = next(
+                (
+                    ch
+                    for ch in notify_channels.get_notify_channels()
+                    if ch.key == provider
+                ),
+                None,
+            )
+            if channel is None or not any(
+                b.surface == "notification" and b.channel == provider and b.page == page
+                for b in frontend.bindings
+            ):
+                raise HTTPException(status_code=403, detail="页面未绑定到此通知渠道")
+            allowed = {
+                (field.group, field.name)
+                for field in channel.fields.get("global", ())
+                if field.control != "password"
+            }
+            if any(
+                not isinstance(fields, dict)
+                or not fields
+                or any((group, key) not in allowed for key in fields)
+                for group, fields in data.items()
+            ):
+                raise HTTPException(status_code=403, detail="字段不属于此通知渠道")
         await Config.update_setting(data)
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"

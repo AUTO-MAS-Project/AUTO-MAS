@@ -80,7 +80,7 @@
 | 更新备份目录迁移 | 后端指标 `auto_mas.upgrade_backup.directory_moves`，仅记录迁移结果 | 由确认后的目录迁移入口记录，选择路径或取消不计 |
 | T069 | `replay_tool_finished`：失败录屏连接、保存与回放 | 已接入 |
 | T070 | `help_link_requested`：应用内帮助文档入口 | 已接入 |
-| T071–T084 | `adapter_setup_finished`：14 类专项配置引导与独有操作 | 已接入：MAA、SRC、MaaEnd、HSR、General、BAAH、MaaFW、M9A、MSS、BetterGI、OK-WW、OK-NTE、ZZZ-OD、Whimbox 各自实际存在的独有引导与保存入口，其余通用读写复用 `config_write_finished` / 任务观察 |
+| T071–T084 | `adapter_setup_finished`：14 类专项配置引导与独有操作 | 已接入：MAA、SRC、MaaEnd、HSR、General、BAAH（含推荐配置生成）、MaaFW、M9A、MSS、BetterGI、OK-WW、OK-NTE、ZZZ-OD、Whimbox 各自实际存在的独有引导与保存入口，其余通用读写复用 `config_write_finished` / 任务观察 |
 
 ## 扩展场景（T084 之外）
 

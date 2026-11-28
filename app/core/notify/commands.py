@@ -79,16 +79,29 @@ async def execute_notification_command(
     if len(matches) > 1:
         return f"存在同名{label}，请先在 MAS 中改为不同名称后重试。"
     uid = matches[0]
-    from app.core import TaskManager
+    from app.core import Publisher, TaskManager
+    from app.core.desktop_session.lifecycle import (
+        DesktopSessionDisconnected,
+        DesktopSessionLifecycle,
+    )
+    from app.core.ws import protocol
     from app.models.task import TaskMode
 
-    selection = (
-        {"uid": str(uid)}
-        if action == "start_queue"
-        else {"uid": "-", "children": {0: {"uid": str(uid)}}}
-    )
     try:
-        await TaskManager.start(TaskMode.AUTO_PROXY, {0: selection})
+        if action == "start_queue":
+            from app.models.schema import TaskSelectionNode
+
+            await DesktopSessionLifecycle.start_configured_task(
+                TaskSelectionNode(uid=str(uid))
+            )
+        else:
+            selection = {"uid": "-", "children": {0: {"uid": str(uid)}}}
+            await TaskManager.start(TaskMode.AUTO_PROXY, {0: selection})
+    except DesktopSessionDisconnected:
+        await Publisher.send(
+            id=protocol.ID_MAIN, type=protocol.DESKTOP_SESSION_LOGIN_NEEDED
+        )
+        return "桌面分身未连接，请前往 MAS 设置连接后重试。"
     except (ValueError, RuntimeError):
         return f"暂时无法启动，请在 MAS 中检查{label}状态或等待当前任务结束。"
     if action == "retry_script":

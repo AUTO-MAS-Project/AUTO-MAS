@@ -1,3 +1,4 @@
+import { connectDesktopForTask } from './useDesktopSessionLogin'
 import { translate as t } from '@/i18n'
 import { configSessionRequest } from './useTaskOptions'
 import { TaskMode } from '@/api'
@@ -113,7 +114,7 @@ export async function requestTaskStart(
       response.reason === 'desktop_session_disconnected' &&
       window.electronAPI.desktopSessionConnectForTask
     ) {
-      const connection = await window.electronAPI.desktopSessionConnectForTask()
+      const connection = await connectDesktopForTask()
       if (connection === 'preview_unavailable') {
         throw new Error(t('bootstrap.desktopSession.errors.preview_unavailable'))
       }

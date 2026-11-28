@@ -205,6 +205,10 @@ class QueueConfig(DomainEntry):
             description="是否启用队列循环触发，可与定时和软件启动触发同时启用",
         )
 
+        ExecutionSession: Literal["main", "desktop"] = Field(
+            default="main", description="调度此队列时的启动位置"
+        )
+
         IfScriptAfterTask: bool = Field(
             default_factory=lambda: False,
             description="队列级运行后脚本: 运行结束后执行一次, 先于「完成后操作」",

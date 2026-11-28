@@ -9,6 +9,8 @@ from time import monotonic
 from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
+from app.models.task import TaskTriggerReason
+
 if TYPE_CHECKING:
     from app.models.schema import TaskSelectionNode
     from app.plugin.base.script import DesktopSessionReason
@@ -259,37 +261,49 @@ class _DesktopSessionLifecycle:
             raise DesktopSessionDisconnected("桌面分身连接已断开")
         return DesktopProcessTarget(session_id, Config.source_path, Config.work_path)
 
-    async def start_configured_script(self, node: "TaskSelectionNode") -> UUID | None:
-        """手动启动单个托管时，托管在单独启动清单（Targets）里就选用桌面分身。
-
-        队列、多个托管和不在单独启动清单里的托管返回 ``None``，由调用方在主会话启动。
-        一并启动清单（StartOnOpen）只给卡片派发用，这里不读。
-        """
-        if node.uid != "-" or len(node.children) != 1:
-            return None
-
+    async def start_configured_task(
+        self,
+        node: "TaskSelectionNode",
+        *,
+        trigger: TaskTriggerReason = TaskTriggerReason.MANUAL,
+        require_desktop: bool = False,
+    ) -> UUID:
+        """队列按自身设置派发；单独启动一个托管时才读取其执行会话。"""
         from app.core import Config, TaskManager
         from app.models.task import TaskMode
         from app.utils.common.process.session import desktop_process_target
 
         async with self.lock:
-            uid = str(node.children[0].uid).lower()
-            if uid not in Config.setting.DesktopSession.Targets:
-                return None
-            script = Config.ScriptConfig.get(uid)
-            if script is None:
-                return None
-            require_task_support(script)
-            target = self._connected_target()
-            self.prune_and_list_tasks()
-            token = desktop_process_target.set(target)
-            try:
-                task_id = await TaskManager.start(TaskMode.AUTO_PROXY, {0: node})
-            finally:
-                desktop_process_target.reset(token)
-            self.task_ids.add(task_id)
-            self.admitted += 1
-            return task_id
+            use_desktop = False
+            if node.uid != "-":
+                queue = Config.QueueConfig.get(node.uid)
+                use_desktop = (
+                    queue is not None and queue.Info.ExecutionSession == "desktop"
+                )
+            elif len(node.children) == 1:
+                uid = str(node.children[0].uid).lower()
+                if uid in Config.setting.DesktopSession.Targets:
+                    script = Config.ScriptConfig.get(uid)
+                    if script is not None:
+                        require_task_support(script)
+                        use_desktop = True
+            if use_desktop:
+                target = self._connected_target()
+                self.prune_and_list_tasks()
+                token = desktop_process_target.set(target)
+                try:
+                    task_id = await TaskManager.start(
+                        TaskMode.AUTO_PROXY, {0: node}, trigger=trigger
+                    )
+                finally:
+                    desktop_process_target.reset(token)
+                self.task_ids.add(task_id)
+                self.admitted += 1
+                return task_id
+
+        if require_desktop:
+            raise DesktopSessionConflict("本次任务已不再配置为在桌面分身执行")
+        return await TaskManager.start(TaskMode.AUTO_PROXY, {0: node}, trigger=trigger)
 
     async def dispatch_queues(
         self,

@@ -10,6 +10,7 @@ import Antd, { message } from 'ant-design-vue'
 import {
   BackgroundTaskState,
   BackupTargetHint,
+  HostBlockName,
   Service,
   TriggerUiState,
   type DeclarativeConfigUi,
@@ -39,7 +40,9 @@ vi.hoisted(() => {
 })
 vi.mock('@/composables/useAudioPlayer', () => ({ useAudioPlayer: () => ({ playSound: vi.fn() }) }))
 vi.mock('@/components/DocLink.vue', () => ({ default: { render: () => null } }))
-vi.mock('@/components/GameBindingSection.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/components/GameBindingSection.vue', () => ({
+  default: { render: () => h('section', 'game_binding') },
+}))
 vi.mock('@/services/websocket/subscriptions', () => ({ subscribe: vi.fn(), unsubscribe: vi.fn() }))
 vi.mock('@/services/websocket/connection', () => ({
   reconnectNow: vi.fn(),
@@ -170,6 +173,288 @@ describe('Demo15 配置编辑器', () => {
     },
   }
 
+  it('按声明顺序组合宿主与表单区块，整页只有一组保存操作', async () => {
+    const state = detail(
+      's',
+      { Info: { Name: 'demo' }, Run: { Retries: 3 }, Update: { Channel: 'stable' } },
+      {
+        Info: [{ field: 'Name', editable: true }],
+        Run: [{ field: 'Retries', component: 'number' }],
+        Update: [{ field: 'Channel' }],
+      }
+    )
+    vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
+      ...state,
+      ui: {
+        ...state.ui,
+        frontendSurfaces: { script: wheel },
+        blocks: [
+          { kind: 'declarative', groups: ['Info', 'Hidden'] },
+          { kind: 'host', name: HostBlockName.GAME_BINDING },
+          { kind: 'declarative', groups: ['Run', 'Update'] },
+        ],
+      },
+    })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('button', 'core.plugins.save')).toBeDefined())
+      const text = view.text()
+      expect(text).toMatch(/Info[\s\S]*game_binding[\s\S]*Run[\s\S]*Update[\s\S]*core.plugins.save/)
+      expect(text.match(/game_binding/g)).toHaveLength(1)
+      expect(text.match(/core\.plugins\.save/g)).toHaveLength(1)
+      expect(text.match(/core\.plugins\.reload/g)).toHaveLength(1)
+      expect(text).not.toContain('Hidden')
+      expect(view.find('iframe')).toBeUndefined()
+    } finally {
+      view.app.unmount()
+    }
+  })
+
+  it('跨区块更新联动选项，其中一个字段失效时禁用整页保存', async () => {
+    const state = detail(
+      's',
+      { Info: { Region: 'cn' }, Run: { Profile: 'cn-profile' }, Update: { Channel: 'stable' } },
+      {
+        Info: [{ field: 'Region' }],
+        Run: [
+          {
+            field: 'Profile',
+            component: 'select',
+            option_source: 'profiles',
+            depends_on: { region: 'Info.Region' },
+          },
+        ],
+        Update: [{ field: 'Channel', component: 'select', option_source: 'channels' }],
+      }
+    )
+    vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
+      ...state,
+      ui: {
+        ...state.ui,
+        pluginName: 'demo15',
+        blocks: [
+          { kind: 'declarative', groups: ['Info'] },
+          { kind: 'declarative', groups: ['Run'] },
+          { kind: 'declarative', groups: ['Update'] },
+        ],
+      },
+    })
+    vi.spyOn(axios, 'request').mockImplementation(async config => {
+      const url = new URL(config.url!, 'http://mas.test')
+      const value = url.pathname.endsWith('/profiles')
+        ? `${url.searchParams.get('region')}-profile`
+        : 'stable'
+      return { status: 200, data: { code: 200, data: [{ value }] } }
+    })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    const select = (value: string) =>
+      view.all().find(node => node.tag === 'select' && node.props.value === value)!
+    try {
+      await vi.waitFor(() => {
+        expect(select('cn-profile')?.props.options).toMatchObject([{ value: 'cn-profile' }])
+        expect(select('stable')?.props.options).toMatchObject([{ value: 'stable' }])
+      })
+      await fire(view.find('input')!, 'onUpdate:value', 'jp')
+      await vi.waitFor(() =>
+        expect(select('cn-profile').props.options).toMatchObject([{ value: 'jp-profile' }])
+      )
+      expect(view.find('p', 'core.plugins.optionUnavailable')).toBeDefined()
+      expect(view.find('button', 'core.plugins.save')?.props.disabled).toBe(true)
+      await fire(select('cn-profile'), 'onUpdate:value', 'jp-profile')
+      expect(view.find('button', 'core.plugins.save')?.props.disabled).toBe(false)
+    } finally {
+      view.app.unmount()
+    }
+  })
+
+  function mockBlockScript(mount: FrontendSurfaceMount | null) {
+    const state = detail(
+      's',
+      { Info: { Name: 'before' }, Run: { Name: 'run', Password: masked } },
+      {
+        Info: [{ field: 'Name', editable: true }],
+        Run: [
+          { field: 'Name', editable: true },
+          { field: 'Password', editable: true, secret: true, masked: true },
+        ],
+      }
+    )
+    return vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
+      ...state,
+      ui: {
+        ...state.ui,
+        blocks: [
+          { kind: 'declarative', groups: ['Info'] },
+          { kind: 'plugin', pageId: 'stage', fallbackGroups: ['Run'], mount },
+        ],
+      },
+    })
+  }
+
+  const stageMount = {
+    ...wheel,
+    pageId: 'stage',
+    artifacts: { web: { entry: 'stage.html', panelApi: 1 } },
+  }
+
+  it.each(['host', 'card'] as const)('%s 保存使用对应的补丁和插件页标识', async owner => {
+    mockBlockScript(stageMount)
+    const write = vi.spyOn(axios, 'request').mockResolvedValue({ status: 200, data: { code: 200 } })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    await vi.waitFor(() => expect(view.find('iframe')).toBeDefined())
+    const child = pluginUiFrame(view.find('iframe')!)
+    const ask = async (action: string, params?: object) => {
+      const id = child.request(action, params)
+      return vi.waitFor(() => {
+        expect(child.replies.has(id)).toBe(true)
+        return child.replies.get(id)
+      })
+    }
+    try {
+      child.ready()
+      const context = (await ask('getContext'))?.result as {
+        config: SettingsValues
+        configuredSecrets: string[]
+      }
+      expect(context.config).toEqual({ Run: { Name: 'run' } })
+      expect(context.configuredSecrets).toEqual(['Run.Password'])
+      await fire(view.find('input')!, 'onUpdate:value', 'renamed')
+      const changes = [{ group: 'Run', field: 'Name', value: 'edited in card' }]
+      if (owner === 'host') {
+        expect(await ask('saveConfig', { phase: 'draft', changes })).toMatchObject({
+          result: { ok: true },
+        })
+        expect(write).not.toHaveBeenCalled()
+        await view.click('core.plugins.save')
+      } else {
+        expect(
+          await ask('saveConfig', {
+            phase: 'commit',
+            changes: [{ group: 'Info', field: 'Name', value: 'outside the card' }],
+          })
+        ).toMatchObject({ error: 'invalid_changes' })
+        expect(await ask('saveConfig', { phase: 'commit', changes })).toMatchObject({
+          result: { ok: true },
+        })
+      }
+      await vi.waitFor(() => expect(message.success).toHaveBeenCalled())
+      expect(write).toHaveBeenCalledTimes(1)
+      const [request] = write.mock.calls[0]
+      expect(new URL(request.url!, 'http://mas.test').pathname).toBe('/api/scripts/update')
+      expect(request.data).toEqual({
+        scriptId: 's',
+        data: {
+          ...(owner === 'host' && { Info: { Name: 'renamed' } }),
+          Run: { Name: 'edited in card' },
+        },
+      })
+      const headers = {
+        'X-Plugin-Ui-Page': 'stage',
+        'X-Plugin-Ui-Provider': 'demo15',
+        'X-Plugin-Ui-Activation': 'activation',
+      }
+      if (owner === 'card') {
+        expect(request.headers).toMatchObject(headers)
+        expect(view.find('button', 'core.plugins.save')?.props.disabled).toBe(false)
+      } else {
+        for (const header of Object.keys(headers)) expect(request.headers?.[header]).toBeUndefined()
+      }
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('宿主保存的校验错误只推给对应插件卡，卡片失效后在原处用草稿回退', async () => {
+    mockBlockScript(stageMount)
+    vi.spyOn(Service, 'updateScriptApiScriptsUpdatePost').mockResolvedValue({
+      code: 422,
+      fieldErrors: { 'Info.Name': 'Invalid script name', 'Run.Name': 'Invalid run name' },
+    })
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    await vi.waitFor(() => expect(view.find('iframe')).toBeDefined())
+    const frame = view.find('iframe')!
+    const child = pluginUiFrame(frame)
+    try {
+      child.ready()
+      await fire(view.find('input')!, 'onUpdate:value', 'draft script name')
+      const draft = child.request('saveConfig', {
+        phase: 'draft',
+        changes: [{ group: 'Run', field: 'Name', value: 'draft run name' }],
+      })
+      await vi.waitFor(() => expect(child.replies.get(draft)?.result).toEqual({ ok: true }))
+      await view.click('core.plugins.save')
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: expect.objectContaining({ fieldErrors: { 'Run.Name': 'Invalid run name' } }),
+        })
+      )
+      await fire(frame, 'onError')
+      expect(view.find('iframe')).toBeUndefined()
+      expect(view.find('aside')?.props.message).toBe('插件界面不可用，已切换到内置编辑器。')
+      expect(view.text()).toMatch(
+        /Info[\s\S]*Invalid script name[\s\S]*Run[\s\S]*Invalid run name[\s\S]*core.plugins.save/
+      )
+      expect(
+        view
+          .all()
+          .filter(node => node.tag === 'input')
+          .map(node => node.props.value)
+      ).toEqual(expect.arrayContaining(['draft script name', 'draft run name']))
+      expect(view.find('button', 'core.plugins.save')?.props.disabled).toBe(false)
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('插件卡没有兼容挂载时直接显示原位回退表单', async () => {
+    mockBlockScript(null)
+    const view = await editorView(scriptPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('button', 'core.plugins.save')).toBeDefined())
+      expect(view.find('iframe')).toBeUndefined()
+      expect(view.find('aside')?.props.message).toBe('插件界面不可用，已切换到内置编辑器。')
+      expect(view.text()).toMatch(/Info[\s\S]*Run[\s\S]*core.plugins.save/)
+    } finally {
+      view.app.unmount()
+    }
+  })
+
+  it('账号面板和回退表单共用当前账号的 Webhook 管理器', async () => {
+    const state = detail('u', { Notify_CustomWebhooks: {} }, {})
+    const read = vi.spyOn(Service, 'getUserApiScriptsUserGetPost').mockResolvedValue({
+      ...state,
+      ui: { ...state.ui, frontendSurfaces: { user: wheel } },
+    })
+    const hooks = vi.spyOn(Service, 'getWebhookApiScriptsWebhookGetPost').mockResolvedValue({
+      code: 200,
+      index: [],
+      data: {},
+    })
+    const view = await editorView(userPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('iframe')).toBeDefined())
+      expect(hooks).toHaveBeenCalledWith({ scriptId: 's', userId: 'u', webhookId: null })
+      expect(view.find('button', 'core.comp.addWebhook')).toBeDefined()
+      await fire(view.find('iframe')!, 'onError')
+      expect(view.find('button', 'core.comp.addWebhook')).toBeDefined()
+      read.mockResolvedValue(detail('next', { Notify: { Enabled: true } }, {}))
+      await view.router.push('/scripts/s/users/next/edit/plugin/Demo15')
+      await vi.waitFor(() => expect(read).toHaveBeenCalledWith({ scriptId: 's', userId: 'next' }))
+      expect(view.find('button', 'core.comp.addWebhook')).toBeUndefined()
+    } finally {
+      view.app.unmount()
+    }
+  })
+
   it('没有声明式字段的托管仍挂载 wheel 界面', async () => {
     const state = detail('s', {}, {})
     vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
@@ -181,7 +466,7 @@ describe('Demo15 配置编辑器', () => {
     try {
       await vi.waitFor(() =>
         expect(view.find('iframe')?.props).toMatchObject({
-          sandbox: 'allow-scripts',
+          sandbox: 'allow-scripts allow-forms',
           referrerpolicy: 'no-referrer',
         })
       )
@@ -237,11 +522,12 @@ describe('Demo15 配置编辑器', () => {
   it('Demo15 计划用当前激活标识保存单字段，保留失败草稿并阻止锁定写入', async () => {
     const state = detail(
       'p',
-      { First: { Count: 1 }, Second: { Count: 2 }, Third: { Count: 3 } },
+      { First: { Count: 1 }, Second: { Count: 2, Password: 'old' }, Third: { Count: 3 } },
       {
         First: [{ field: 'Count', editable: true }],
         Second: [
           { field: 'Count', editable: true },
+          { field: 'Password', secret: true, editable: true },
           { field: 'Run', component: 'button', state: TriggerUiState.IDLE, editable: true },
         ],
         Third: [{ field: 'Count', editable: true }],
@@ -273,7 +559,7 @@ describe('Demo15 配置编辑器', () => {
           data: { code: 422, message: 'Invalid count', fieldErrors: { 'Second.Count': 'invalid' } },
         }
       const body = request.data as { data: SettingsValues }
-      config.data.p.Second.Count = body.data.Second.Count
+      Object.assign(config.data.p.Second, body.data.Second)
       read.mockResolvedValue(structuredClone(config))
       return { status: 200, data: { code: 200 } }
     })
@@ -299,11 +585,27 @@ describe('Demo15 配置编辑器', () => {
       ).toMatchObject({ result: { ok: true } })
       expect(network).not.toHaveBeenCalled()
       expect(
-        await rpc('saveConfig', { phase: 'commit', changes: [change('Second', 5)] })
+        await rpc('saveConfig', {
+          phase: 'commit',
+          changes: [
+            change('Second', 5),
+            { group: 'Second', field: 'Password', value: 'replacement' },
+          ],
+        })
       ).toMatchObject({ result: { ok: true } })
       expect(writes).toEqual([
-        { path: '/api/plan/update', body: { planId: 'p', data: { Second: { Count: 5 } } } },
+        {
+          path: '/api/plan/update',
+          body: { planId: 'p', data: { Second: { Count: 5, Password: 'replacement' } } },
+        },
       ])
+      expect(frame.events).toContainEqual({
+        event: 'configReloaded',
+        payload: {
+          config: { First: { Count: 4 }, Second: { Count: 5 }, Third: { Count: 3 } },
+          configuredSecrets: ['Second.Password'],
+        },
+      })
       fail = true
       expect(
         await rpc('saveConfig', { phase: 'commit', changes: [change('Second', 6)] })
@@ -338,7 +640,10 @@ describe('Demo15 配置编辑器', () => {
       await vi.waitFor(() => {
         expect(frame.events).toContainEqual({
           event: 'configReloaded',
-          payload: { config: { First: { Count: 4 }, Second: { Count: 6 }, Third: { Count: 8 } } },
+          payload: {
+            config: { First: { Count: 4 }, Second: { Count: 6 }, Third: { Count: 8 } },
+            configuredSecrets: ['Second.Password'],
+          },
         })
         expect(frame.events).toContainEqual({
           event: 'stateChanged',
@@ -551,11 +856,15 @@ describe('Demo15 配置编辑器', () => {
     }
   })
 
-  it('只有归档池的配置仍有恢复入口', async () => {
+  it.each([false, true])('只有归档池的配置仍有恢复入口（区块模式：%s）', async blockMode => {
     const state = detail('s', {}, {})
     vi.spyOn(Service, 'getScriptApiScriptsGetPost').mockResolvedValue({
       ...state,
-      ui: { ...state.ui, backupTargets: [{ key: 'archive', kind: BackupTargetHint.kind.SCRIPT }] },
+      ui: {
+        ...state.ui,
+        backupTargets: [{ key: 'archive', kind: BackupTargetHint.kind.SCRIPT }],
+        blocks: blockMode ? [{ kind: 'host', name: HostBlockName.CONFIG_RESTORE }] : undefined,
+      },
     })
     vi.spyOn(Service, 'ensureConfigBackupApiApiScriptsBackupEnsurePost').mockResolvedValue({
       code: 200,
@@ -564,7 +873,9 @@ describe('Demo15 配置编辑器', () => {
     })
     const { html } = await render(scriptPath)
     const buttons = html.match(/<button\b[^>]*>[\s\S]*?<\/button>/g) ?? []
-    expect(buttons.some(button => button.includes('core.edit.configRestoreTitle'))).toBe(true)
+    expect(buttons.filter(button => button.includes('core.edit.configRestoreTitle'))).toHaveLength(
+      1
+    )
     expect(html).not.toContain('core.plugins.noConfigFields')
   })
 

@@ -39,36 +39,12 @@
         </SectionCard>
 
         <SectionCard variant="plain">
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item name="configName">
-                <template #label>
-                  <FieldLabelWithHint
-                    :text="t('core.edit.baahConfigName')"
-                    :hint="t('core.edit.baahConfigNameHint')"
-                    variant="form"
-                  />
-                </template>
-                <a-select
-                  v-model:value="formData.Info.ConfigName"
-                  :placeholder="t('core.edit.baahConfigNamePlaceholder')"
-                  :disabled="loading"
-                  :loading="configNamesLoading"
-                  :options="configNameOptions"
-                  size="large"
-                  show-search
-                  option-filter-prop="label"
-                  style="width: 100%"
-                  @dropdown-visible-change="
-                    (open: boolean) => {
-                      if (open) void loadConfigNames()
-                    }
-                  "
-                  @change="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <BAAHConfigSelector
+            v-model="formData.Info.ConfigName"
+            :script-id="scriptId"
+            :disabled="loading || isInitializing || configLocked"
+            :save-selection="name => handleFieldSave('Info.ConfigName', name)"
+          />
 
           <a-row :gutter="24">
             <a-col :span="8">
@@ -242,7 +218,7 @@ import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import { BaahService, type ComboBoxItem } from '@/api'
+import BAAHConfigSelector from './components/BAAHConfigSelector.vue'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 
@@ -301,23 +277,6 @@ const formData = reactive({
   ...getDefaultBAAHUserData(),
 })
 
-// 配置名下拉候选：由后端按主程序路径实时读取 BAAH_CONFIGS，两份配置名共用
-const configNameOptions = ref<{ label: string; value: string }[]>([])
-const configNamesLoading = ref(false)
-const loadConfigNames = async () => {
-  configNamesLoading.value = true
-  try {
-    const resp = await BaahService.getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(scriptId)
-    configNameOptions.value = (resp.data || [])
-      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
-      .map(item => ({ label: item.label, value: item.value }))
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    configNamesLoading.value = false
-  }
-}
-
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 
@@ -353,15 +312,17 @@ watch(
 )
 
 // 即时保存单个字段变更（经实体串行队列按序落盘，不丢并发修改）
-const handleFieldSave = (key: string, value: any) => {
-  if (isInitializing.value || !userId) return
-  void enqueueSave(async () => {
+const handleFieldSave = (key: string, value: any): Promise<boolean> => {
+  if (isInitializing.value || !userId) return Promise.resolve(false)
+  return enqueueSave(async () => {
     try {
       const userData = key === 'userName' ? { Info: { Name: value } } : buildFieldPatch(key, value)
-      if (!(await updateUser(scriptId, userId, userData))) return
+      if (!(await updateUser(scriptId, userId, userData))) return false
       logger.info(`用户配置已保存: ${key}`)
+      return true
     } catch (error) {
       logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+      return false
     }
   }, key)
 }
