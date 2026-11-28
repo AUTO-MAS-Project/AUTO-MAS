@@ -106,6 +106,23 @@ class ConfigRoundtripTest(unittest.IsolatedAsyncioTestCase):
     def _on_disk(self) -> dict:
         return _utils_io.read_dict_file(self.config_file)
 
+    async def test_history_order_defaults_to_newest_first_and_persists(self) -> None:
+        data = await self._get()
+        self.assertEqual(data["Function"]["HistoryOrder"], "desc")
+
+        await self._update({"Function": {"HistoryOrder": "asc"}})
+        data = await self._get()
+        self.assertEqual(data["Function"]["HistoryOrder"], "asc")
+        self.assertEqual(data["Function"]["HistoryRetentionTime"], 30)
+        self.assertEqual(self._on_disk()["Function"]["HistoryOrder"], "asc")
+
+        response = await self.client.post(
+            "/api/setting/update",
+            json={"data": {"Function": {"HistoryOrder": "random"}}},
+        )
+        self.assertNotEqual(response.json().get("code"), 200)
+        self.assertEqual((await self._get())["Function"]["HistoryOrder"], "asc")
+
     async def test_partial_updates_keep_saved_settings_and_password(self) -> None:
         before = await self._get()
 

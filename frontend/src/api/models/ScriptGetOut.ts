@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { BAAHConfig } from './BAAHConfig';
 import type { BetterGIConfig } from './BetterGIConfig';
 import type { GeneralConfig } from './GeneralConfig';
@@ -32,6 +33,7 @@ export type ScriptGetOut = {
      */
     message?: string;
     uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 托管索引列表
      */

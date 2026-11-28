@@ -1,0 +1,83 @@
+:root {
+  font: var(--mas-font-size, 14px) / 1.55 var(--mas-font-family, system-ui, sans-serif);
+  color: var(--mas-text-primary, CanvasText);
+  background: var(--mas-bg-base, Canvas);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+}
+
+fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.task {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  align-items: start;
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mas-border, GrayText);
+}
+
+h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+input[type='number'],
+button {
+  padding: 4px 8px;
+  border: 1px solid var(--mas-border, GrayText);
+  border-radius: var(--mas-radius, 6px);
+  color: inherit;
+  font: inherit;
+}
+
+input[type='number'] {
+  width: 4rem;
+  background: var(--mas-bg-elevated, Canvas);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--mas-primary, Highlight);
+}
+
+button {
+  margin-top: 12px;
+  color: var(--mas-text-on-primary, HighlightText);
+  background: var(--mas-primary, Highlight);
+}
+
+fieldset:disabled button {
+  color: var(--mas-text-secondary, GrayText);
+  background: var(--mas-disabled-bg, Canvas);
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--mas-primary, Highlight);
+  outline-offset: 2px;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--mas-danger, #b3261e);
+}
+
+.field-error {
+  display: block;
+  color: var(--mas-danger, #b3261e);
+}
+
+[role='status'] {
+  margin: 8px 0 0;
+  color: var(--mas-text-secondary, GrayText);
+}

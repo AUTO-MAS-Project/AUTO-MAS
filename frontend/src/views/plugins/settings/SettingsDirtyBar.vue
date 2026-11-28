@@ -2,7 +2,13 @@
 import { useI18n } from 'vue-i18n'
 
 /** 设置页底部的未保存提示栏：几项未保存、放弃、保存。 */
-defineProps<{ count: number; saving: boolean; disabled: boolean }>()
+defineProps<{
+  count: number
+  saving: boolean
+  disabled: boolean
+  saveDisabled?: boolean
+  wizard?: boolean
+}>()
 const emit = defineEmits<{ discard: []; save: [] }>()
 const { t } = useI18n()
 </script>
@@ -13,9 +19,14 @@ const { t } = useI18n()
     <a-button :disabled="saving || disabled" @click="emit('discard')">{{
       t('core.plugins.discardChanges')
     }}</a-button>
-    <a-button type="primary" :loading="saving" :disabled="disabled" @click="emit('save')">{{
-      t('core.plugins.save')
-    }}</a-button>
+    <a-button
+      v-if="!wizard"
+      type="primary"
+      :loading="saving"
+      :disabled="disabled || saveDisabled"
+      @click="emit('save')"
+      >{{ t('core.plugins.save') }}</a-button
+    >
   </div>
 </template>
 

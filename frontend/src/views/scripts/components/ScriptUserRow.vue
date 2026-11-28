@@ -144,9 +144,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             </a-tag>
           </template>
 
-          <!-- 账号标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.showAccount"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handleUserIdClick(user)"
@@ -154,9 +153,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             {{ getUserIdDisplayText(user) }}
           </a-tag>
 
-          <!-- 密码标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.Info.Password !== undefined"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handlePasswordClick(user)"
@@ -213,36 +211,32 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
       </div>
 
       <div class="user-actions">
-        <a-tooltip :title="t('core.comp.editUserConfiguration')">
-          <a-button
-            type="default"
-            size="middle"
-            class="user-action-btn"
-            @click="handleEditUser(user)"
-          >
-            <template #icon>
-              <EditOutlined />
-            </template>
-            {{ t('core.comp.edit') }}
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="t('core.comp.deleteUser')">
-          <ConfirmActionButton
-            :title="t('core.comp.deleteThisUser')"
-            :description="t('core.comp.thisCannotBeUndone')"
-            :ok-text="t('core.comp.ok')"
-            :cancel-text="t('core.comp.cancel')"
-            :confirm="() => handleDeleteUser(user)"
-            tone="danger"
-            size="middle"
-            class="user-action-btn"
-          >
-            <template #icon>
-              <DeleteOutlined />
-            </template>
-            {{ t('core.comp.delete') }}
-          </ConfirmActionButton>
-        </a-tooltip>
+        <a-button
+          type="default"
+          size="middle"
+          class="user-action-btn"
+          @click="handleEditUser(user)"
+        >
+          <template #icon>
+            <EditOutlined />
+          </template>
+          {{ t('core.comp.edit') }}
+        </a-button>
+        <ConfirmActionButton
+          :title="t('core.comp.deleteThisUser')"
+          :description="t('core.comp.thisCannotBeUndone')"
+          :ok-text="t('core.comp.ok')"
+          :cancel-text="t('core.comp.cancel')"
+          :confirm="() => handleDeleteUser(user)"
+          tone="danger"
+          size="middle"
+          class="user-action-btn"
+        >
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.comp.delete') }}
+        </ConfirmActionButton>
       </div>
     </div>
   </div>

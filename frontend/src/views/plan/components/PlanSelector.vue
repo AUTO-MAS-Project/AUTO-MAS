@@ -55,7 +55,7 @@
             <span v-else class="plan-name">{{ plan.name }}</span>
 
             <a-tag v-if="hasMixedPlanTypes()" size="small" color="blue" class="plan-type-tag">
-              {{ getPlanTypeLabel(plan.type) }}
+              {{ plan.typeLabel }}
             </a-tag>
 
             <a-button
@@ -84,18 +84,12 @@ import { useI18n } from 'vue-i18n'
 import { EditOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { SectionCard } from '@/components/ui'
-import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
+import type { PlanListItem } from '../planList'
 
 const { t } = useI18n()
 
-interface Plan {
-  id: string
-  name: string
-  type: PlanConfigType
-}
-
 interface Props {
-  planList: Plan[]
+  planList: PlanListItem[]
   activePlanId: string
 }
 
@@ -115,14 +109,14 @@ const handlePlanClick = (planId: string) => {
   emit('plan-change', planId)
 }
 
-const onReorder = (plans: Plan[]) => {
+const onReorder = (plans: PlanListItem[]) => {
   emit(
     'reorder',
     plans.map(plan => plan.id)
   )
 }
 
-const startRename = async (plan: Plan) => {
+const startRename = async (plan: PlanListItem) => {
   editingPlanId.value = plan.id
   editingName.value = plan.name
   await nextTick()
@@ -157,8 +151,6 @@ const hasMixedPlanTypes = () => {
   const firstType = props.planList[0].type
   return !props.planList.every(plan => plan.type === firstType)
 }
-
-const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planType].selectorTag
 </script>
 
 <style scoped>

@@ -1,9 +1,13 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <div>
-    <!-- 按启动方式展示所需配置；交给脚本启动和关闭时无需填写两个 exe -->
+    <!-- 按启动方式压成一行排，格宽按格数给（controlGrid.ts），最后一行不留单格：
+         让 MAS 启动：启动方式、游戏目标、[设备]、Unity 分辨率、启动参数、等待时间、[键位映射]
+         通过链接启动：启动方式、启动链接、游戏目标、[设备]、Unity 分辨率、等待时间、[键位映射]
+         由脚本控制：启动方式、结束后关闭游戏、游戏目标（可选）、[设备]、[键位映射]
+         游戏目标写托管的游戏绑定；「设备」只在目标有多台设备或所绑设备已删除时出现 -->
     <a-row :gutter="24" class="control-detail-row">
-      <a-col :xs="24" :md="12">
+      <a-col v-bind="col('launchMode')">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.howPcGameLaunched') }}</span>
@@ -29,73 +33,60 @@
           </a-select>
         </a-form-item>
       </a-col>
-      <a-col v-if="launchMode === 'DirectExe'" :xs="24" :md="12">
+      <a-col v-if="launchMode === 'URL'" v-bind="col('url')">
         <a-form-item>
           <template #label>
-            <span class="form-label">{{ t('core.edit.gameExecutable') }}</span>
+            <a-tooltip :title="t('core.edit.mfwLaunchLinkTip')">
+              <span class="form-label">
+                {{ t('core.edit.mfwLaunchLink') }}
+                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+              </span>
+            </a-tooltip>
           </template>
-          <BoundGamePathField />
+          <a-input
+            v-model:value="maafwConfig.Game.URL"
+            placeholder="steam://rungameid/<appid>"
+            class="modern-input"
+            @blur="emit('change', 'Game', 'URL', maafwConfig.Game.URL)"
+          />
         </a-form-item>
       </a-col>
-      <template v-else-if="launchMode === 'URL'">
-        <a-col :xs="24" :md="12">
-          <a-form-item>
-            <template #label>
-              <a-tooltip :title="t('core.edit.mfwLaunchLinkTip')">
-                <span class="form-label">
-                  {{ t('core.edit.mfwLaunchLink') }}
-                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-input
-              v-model:value="maafwConfig.Game.URL"
-              placeholder="steam://rungameid/<appid>"
-              class="modern-input"
-              @blur="emit('change', 'Game', 'URL', maafwConfig.Game.URL)"
-            />
-          </a-form-item>
+      <a-col v-if="launchMode === 'AttachOnly'" v-bind="col('closeMode')">
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="t('core.edit.mfwCloseGameTip')">
+              <span class="form-label">
+                {{ t('core.edit.mfwCloseGameAfterRun') }}
+                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="maafwConfig.Game.CloseMode"
+            style="width: 100%"
+            :options="closeModeOptions"
+            @change="(value: string | number) => emit('change', 'Game', 'CloseMode', value)"
+          />
+        </a-form-item>
+      </a-col>
+      <template v-if="gameBinding.available">
+        <a-col v-bind="col('target')">
+          <MaaFWGameTargetSelect
+            :binding="gameBinding"
+            :label="targetLabel"
+            :placeholder="t('core.games.selectTarget')"
+          />
         </a-col>
-        <a-col :xs="24" :md="12">
-          <a-form-item>
-            <template #label>
-              <span class="form-label">{{ t('core.edit.mfwGameExeForDetect') }}</span>
-            </template>
-            <BoundGamePathField />
-          </a-form-item>
+        <a-col v-if="gameBinding.desktopDeviceVisible" v-bind="col('device')">
+          <MaaFWGameDeviceSelect
+            :binding="gameBinding"
+            :label="t('core.games.device')"
+            :empty-placeholder="t('core.games.selectTarget')"
+          />
         </a-col>
-      </template>
-      <template v-else>
-        <a-col :xs="24" :md="12">
-          <a-form-item>
-            <template #label>
-              <a-tooltip :title="t('core.edit.mfwCloseGameTip')">
-                <span class="form-label">
-                  {{ t('core.edit.mfwCloseGameAfterRun') }}
-                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                </span>
-              </a-tooltip>
-            </template>
-            <a-select
-              v-model:value="maafwConfig.Game.CloseMode"
-              style="width: 100%"
-              :options="closeModeOptions"
-              @change="(value: string | number) => emit('change', 'Game', 'CloseMode', value)"
-            />
-          </a-form-item>
-        </a-col>
-        <MaaFWHotkeyField
-          v-if="closeMode === 'Script'"
-          :script-id="scriptId"
-          :preview-data="previewData"
-          :controller-name="effectiveControllerName"
-          :resource-name="effectiveResourceName"
-          :value="maafwConfig.Game.Hotkeys"
-          @save="handleHotkeysSave"
-        />
       </template>
       <template v-if="launchMode !== 'AttachOnly'">
-        <a-col :xs="24" :md="12">
+        <a-col v-bind="col('unity')">
           <a-form-item>
             <template #label>
               <a-tooltip :title="t('core.edit.mfwUnityResolutionTip')">
@@ -114,7 +105,7 @@
           </a-form-item>
         </a-col>
         <!-- 通过链接启动时不要启动参数：参数写进链接 -->
-        <a-col v-if="launchMode === 'DirectExe'" :xs="24" :md="12">
+        <a-col v-if="launchMode === 'DirectExe'" v-bind="col('arguments')">
           <a-form-item>
             <template #label>
               <span class="form-label">{{ t('core.edit.launchArguments') }}</span>
@@ -127,7 +118,7 @@
             />
           </a-form-item>
         </a-col>
-        <a-col :xs="24" :md="12">
+        <a-col v-bind="col('waitTime')">
           <a-form-item>
             <template #label>
               <a-tooltip :title="t('core.edit.mfwWaitTimeTip')">
@@ -146,47 +137,20 @@
             />
           </a-form-item>
         </a-col>
-        <MaaFWHotkeyField
-          :script-id="scriptId"
-          :preview-data="previewData"
-          :controller-name="effectiveControllerName"
-          :resource-name="effectiveResourceName"
-          :value="maafwConfig.Game.Hotkeys"
-          @save="handleHotkeysSave"
-        />
       </template>
-      <template v-else-if="closeMode !== 'Script'">
-        <a-col :xs="24" :md="12">
-          <a-form-item>
-            <template #label>
-              <span class="form-label">{{ t('core.edit.mfwGameExeOptional') }}</span>
-            </template>
-            <BoundGamePathField />
-          </a-form-item>
-        </a-col>
-        <a-col :xs="24" :md="12">
-          <a-form-item>
-            <template #label>
-              <span class="form-label">{{ t('core.edit.mfwLauncherExeOptional') }}</span>
-            </template>
-            <BoundGamePathField launcher />
-          </a-form-item>
-        </a-col>
-        <MaaFWHotkeyField
-          :script-id="scriptId"
-          :preview-data="previewData"
-          :controller-name="effectiveControllerName"
-          :resource-name="effectiveResourceName"
-          :value="maafwConfig.Game.Hotkeys"
-          @save="handleHotkeysSave"
-        />
-      </template>
+      <MaaFWHotkeyField
+        :col="col('hotkey')"
+        :script-id="scriptId"
+        :preview-data="previewData"
+        :controller-name="effectiveControllerName"
+        :resource-name="effectiveResourceName"
+        :value="maafwConfig.Game.Hotkeys"
+        @save="handleHotkeysSave"
+      />
     </a-row>
   </div>
 </template>
-
 <script setup lang="ts">
-import BoundGamePathField from '@/components/BoundGamePathField.vue'
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
@@ -197,7 +161,12 @@ import type {
   MaaFWScriptConfig,
   MaaFWUnityResolution,
 } from '@/types/script'
+import MaaFWGameDeviceSelect from './MaaFWGameDeviceSelect.vue'
+import MaaFWGameTargetSelect from './MaaFWGameTargetSelect.vue'
 import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
+import { fieldCols } from './controlGrid'
+import { collectHotkeyOptions } from './hotkeyOptions'
+import type { MaaFWInlineGameBinding } from './useMaaFWInlineGameBinding'
 
 const props = defineProps<{
   /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
@@ -206,6 +175,8 @@ const props = defineProps<{
   previewData: MaaFWInterfacePreviewData | null
   effectiveControllerName: string
   effectiveResourceName: string
+  /** 控制配置分节建的游戏绑定（目标 / 设备选择与提示共用一份） */
+  gameBinding: MaaFWInlineGameBinding
 }>()
 
 const emit = defineEmits<{
@@ -217,7 +188,52 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
-const closeMode = computed<MaaFWCloseMode>(() => props.maafwConfig.Game.CloseMode ?? 'OnFailure')
+
+type DesktopField =
+  | 'launchMode'
+  | 'url'
+  | 'closeMode'
+  | 'target'
+  | 'device'
+  | 'unity'
+  | 'arguments'
+  | 'waitTime'
+  | 'hotkey'
+
+// interface 里没有对当前控制器 / 资源生效的 hotkey option 时键位映射整格不渲染，格数里也不算它
+const hotkeyVisible = computed(
+  () =>
+    collectHotkeyOptions(
+      props.previewData,
+      props.effectiveControllerName,
+      props.effectiveResourceName
+    ).length > 0
+)
+
+const fields = computed<DesktopField[]>(() => {
+  const binding: DesktopField[] = props.gameBinding.available
+    ? ['target', ...(props.gameBinding.desktopDeviceVisible ? (['device'] as const) : [])]
+    : []
+  const hotkey: DesktopField[] = hotkeyVisible.value ? ['hotkey'] : []
+  switch (launchMode.value) {
+    case 'URL':
+      return ['launchMode', 'url', ...binding, 'unity', 'waitTime', ...hotkey]
+    case 'AttachOnly':
+      return ['launchMode', 'closeMode', ...binding, ...hotkey]
+    default:
+      return ['launchMode', ...binding, 'unity', 'arguments', 'waitTime', ...hotkey]
+  }
+})
+const col = computed(() => fieldCols(fields.value))
+
+// 游戏目标那一格沿用各启动方式原来的叫法
+const targetLabel = computed(() =>
+  launchMode.value === 'URL'
+    ? t('core.edit.mfwGameExeForDetect')
+    : launchMode.value === 'AttachOnly'
+      ? t('core.edit.mfwGameExeOptional')
+      : t('core.edit.gameExecutable')
+)
 
 const launchModeOptions = computed<Array<{ value: MaaFWLaunchMode; title: string; hint: string }>>(
   () => [

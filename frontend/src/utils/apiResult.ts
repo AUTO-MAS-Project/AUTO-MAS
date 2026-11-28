@@ -1,7 +1,19 @@
-type ResponseWithCode = { code?: number; message?: string | null }
+type ResponseWithCode = {
+  code?: number
+  message?: string | null
+  fieldErrors?: Record<string, string>
+}
 
 /** 后端已明确拒绝的业务结果，与传输中断导致的未知结果区分。 */
-export class ApiResponseError extends Error {}
+export class ApiResponseError extends Error {
+  constructor(
+    message: string,
+    readonly fieldErrors?: Record<string, string>,
+    readonly code?: number
+  ) {
+    super(message)
+  }
+}
 
 /** 只显示后端错误文案及校验位置，不泄露请求中的密码和密钥。 */
 export { getApiErrorMessage as apiErrorMessage } from '@/utils/apiError'
@@ -11,7 +23,7 @@ import { getApiErrorMessage as apiErrorMessage } from '@/utils/apiError'
 export const responseError = (response: ResponseWithCode, fallback: string): Error | null =>
   /* 把非成功业务响应转换为错误，成功响应返回空值供调用方继续读取数据。 */ response.code === 200
     ? null
-    : new ApiResponseError(response.message || fallback)
+    : new ApiResponseError(response.message || fallback, response.fieldErrors, response.code)
 
 /** 生成客户端请求统一校验结果，失败时保留安全的后端原因。 */
 export const requestApi = async <T extends ResponseWithCode>(

@@ -1,9 +1,11 @@
-import type { RouteRecordRaw } from 'vue-router'
-import type { ScriptType } from '@/types/script'
+import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
+import { maafwRouteName } from './maafwRoutes'
+import { isMaaFWFamily } from '@/plugins/maafwFamily'
+import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<ScriptType, MaaFWFamilyType>
+type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -48,10 +50,13 @@ const PAGE_ROUTES = {
 }
 
 export type ScriptEditorKind = keyof typeof PAGE_ROUTES
-const routeNameOf = (type: ScriptType, kind: ScriptEditorKind) => `${type}${PAGE_ROUTES[kind].name}`
+const routeNameOf = (type: string, kind: ScriptEditorKind | 'user') =>
+  `${type}${PAGE_ROUTES[kind === 'user' ? 'userEdit' : kind].name}`
 type ScriptEditorParams = {
+  setup: { id: string }
   script: { id: string }
   userAdd: { scriptId: string }
+  user: { scriptId: string; userId: string }
   userEdit: { scriptId: string; userId: string }
 }
 
@@ -62,15 +67,65 @@ declare module 'vue-router' {
   }
 }
 
-/** 普通专项与 MFW 共用已有的路由名，跳转无需再维护类型分支。 */
-export const scriptEditorLocation = <K extends ScriptEditorKind>(
-  type: ScriptType,
-  kind: K,
-  params: ScriptEditorParams[K]
-): { name: string; params: ScriptEditorParams[K] } => ({
-  name: routeNameOf(type, kind),
-  params: { ...params },
-})
+const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
+
+export const genericEditorRoutes: RouteRecordRaw[] = [
+  {
+    path: '/scripts/:scriptId/setup/plugin/:scriptType',
+    name: 'GenericScriptSetup',
+    component: genericEditor,
+    props: { mode: 'script', setup: true },
+    meta: { title: 'core.comp.editScript', scriptPage: 'script' },
+  },
+  {
+    path: '/scripts/:scriptId/edit/plugin/:scriptType',
+    name: 'GenericScriptEdit',
+    component: genericEditor,
+    props: { mode: 'script' },
+    meta: { title: 'core.comp.editScript', scriptPage: 'script' },
+  },
+  {
+    path: PAGE_ROUTES.userEdit.path('plugin/:scriptType'),
+    name: 'GenericUserEdit',
+    component: genericEditor,
+    props: { mode: 'user' },
+    meta: { title: 'core.comp.editUser', scriptPage: 'userEdit' },
+  },
+]
+
+/** 优先进入已注册的专用页面，运行时专项从详情接口读取表单。 */
+export function useScriptEditorNavigation() {
+  const router = useRouter()
+  return <K extends keyof ScriptEditorParams>(
+    type: string,
+    kind: K,
+    params: ScriptEditorParams[K],
+    state?: HistoryState
+  ) => {
+    if (kind === 'setup' && !isMaaFWFamily(type) && 'id' in params) {
+      void router.push({
+        name: 'GenericScriptSetup',
+        params: { scriptId: params.id, scriptType: type },
+      })
+      return true
+    }
+    const custom = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
+    const generic =
+      kind === 'script'
+        ? 'GenericScriptEdit'
+        : kind === 'userEdit' || kind === 'user'
+          ? 'GenericUserEdit'
+          : null
+    if (custom !== generic && router.hasRoute(custom)) {
+      void router.push({ name: custom, params, state })
+      return true
+    }
+    if (!generic) return false
+    const ids = 'id' in params ? { scriptId: params.id } : params
+    void router.push({ name: generic, params: { ...ids, scriptType: type } })
+    return true
+  }
+}
 
 /** 只装配页面入口；专项运行、保存和引导仍由所属模块持有。 */
 export const buildScriptEditorRoutes = (): RouteRecordRaw[] =>

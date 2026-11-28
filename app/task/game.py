@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from app.models.config.game import DEVICE_DELETED_REASON, is_deleted_device
 from app.models.config.game_binding import GameBindingOwner
 from app.plugin.base.client import ClientControl
 from app.plugin.base.emulator import EmulatorControl
@@ -232,16 +233,23 @@ class GameSession:
         await self.release()
         if uid is None:
             return
+        hints: list[str] = []
         refusal = await GameManager.validate_binding(
             str(self.config.uid),
             {"game": {"game_id": uid}},
             owner=owner if self._account_override else None,
             script=self.config,
             capabilities=capabilities,
+            hints=hints,
         )
         if refusal:
             raise ValueError(refusal)
         game_name = Config.GameConfig[uid].info.name
+        for hint in hints:
+            self.script.current.log += (
+                f"提示：已选「{game_name}」，{hint}，仍会继续执行。\n"
+            )
+            logger.warning(f"已选「{game_name}」，{hint}，仍会继续执行")
         self.script.current.log += f"等待获取游戏实例「{game_name}」。\n"
         logger.info(f"等待获取游戏实例「{game_name}」")
         await self.script.set_state(status="等待")
@@ -258,6 +266,8 @@ class GameSession:
             device = game.devices.get(device_uid)
             if device is None:
                 raise ValueError("所选设备已失效")
+            if is_deleted_device(device):
+                raise ValueError(DEVICE_DELETED_REASON)
             device_name = device.info.name
             last_usage = None
             while True:

@@ -1,7 +1,6 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
   <MaaFWFormSection :title="t('core.edit.runConfiguration')" :icon="ThunderboltOutlined">
-    <ScriptExecutionSessionField />
     <a-row :gutter="24">
       <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.maafwRunsPerDayLimit')">
@@ -121,7 +120,6 @@
 <script setup lang="ts">
 import { ThunderboltOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import ScriptExecutionSessionField from '../components/ScriptExecutionSessionField.vue'
 import type { MaaFWScriptRunSectionEmits, MaaFWScriptRunSectionProps } from './sectionProps'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'

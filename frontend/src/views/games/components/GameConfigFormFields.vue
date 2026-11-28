@@ -124,12 +124,12 @@
           <a-switch v-model:checked="draft.forceClose" />
         </label>
       </template>
-      <template v-else-if="selectedType && selectedType !== 'general_emulator'">
+      <template v-else-if="!creating && selectedType && selectedType !== 'general_emulator'">
         <label v-if="selectedType !== 'avd'" class="switch-item">
           <span>{{ t('core.games.stableMode') }}</span>
           <a-switch v-model:checked="draft.stable" />
         </label>
-        <label class="switch-item">
+        <label v-if="guardSupported" class="switch-item">
           <span>{{ t('core.games.configGuard') }}</span>
           <a-switch v-model:checked="draft.guard" />
         </label>
@@ -137,10 +137,15 @@
           <span>{{ t('core.games.forceBeforeLaunch') }}</span>
           <a-switch v-model:checked="draft.forceBefore" />
         </label>
-        <label class="switch-item">
-          <span>{{ t('core.games.forceClose') }}</span>
-          <a-switch v-model:checked="draft.forceClose" />
-        </label>
+        <span class="switch-group">
+          <label class="switch-item">
+            <span>{{ t('core.games.forceClose') }}</span>
+            <a-switch v-model:checked="draft.forceClose" />
+          </label>
+          <span v-if="selectedType === 'avd'" class="switch-warning">
+            {{ t('core.games.forceCloseDataLossWarning') }}
+          </span>
+        </span>
       </template>
     </div>
   </a-form>
@@ -175,6 +180,8 @@ defineProps<{
   types: GameTypeItem[]
   showAdapterSelect?: boolean
   twoColumn?: boolean
+  creating?: boolean
+  guardSupported?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -190,6 +197,12 @@ function handleAdapterChange(value: SelectValue): void {
 </script>
 
 <style scoped>
+/* 栅格行的负外边距会比表单宽出半个间距，放进对话框时底部多出一条横向滚动条；
+   超出的部分只有列的内边距，裁掉即可 */
+.config-grid-form {
+  overflow-x: clip;
+}
+
 .config-grid-form :deep(.ant-form-item) {
   margin-bottom: 12px;
 }
@@ -213,5 +226,18 @@ function handleAdapterChange(value: SelectValue): void {
   gap: 8px;
   font-size: 13px;
   color: var(--ant-color-text);
+}
+
+.switch-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.switch-warning {
+  font-size: 12px;
+  color: var(--ant-color-error);
 }
 </style>

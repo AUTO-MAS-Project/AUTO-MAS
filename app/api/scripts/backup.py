@@ -44,7 +44,7 @@ logger = get_logger("托管管理 API")
     status_code=200,
 )
 async def list_config_backups_api(
-    scriptId: str, userId: str, target: str
+    scriptId: str, target: str, userId: str | None = None
 ) -> ConfigBackupListOut:
     """返回 ``items``（``time`` + 备份时点来源标注 ``base``，倒序）与当前
     来源 ``base``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
@@ -167,7 +167,7 @@ async def restore_config_backup_api(
     status_code=200,
 )
 async def get_config_backup_preview_api(
-    scriptId: str, userId: str, time: str, target: str
+    scriptId: str, time: str, target: str, userId: str | None = None
 ) -> ConfigBackupPreviewOut:
     """data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。"""
 
@@ -201,7 +201,7 @@ async def get_config_backup_preview_api(
     status_code=200,
 )
 async def get_config_backup_file_api(
-    scriptId: str, userId: str, time: str, target: str, path: str
+    scriptId: str, time: str, target: str, path: str, userId: str | None = None
 ) -> ConfigBackupFileOut:
     """路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。"""
 

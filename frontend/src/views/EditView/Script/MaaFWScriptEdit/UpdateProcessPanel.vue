@@ -1,6 +1,6 @@
 <!-- 项目更新的过程面板：标题行（包类型 + 检查 / 更新按钮）和下面的日志框，进度与结论都写在日志框里 -->
 <template>
-  <div class="update-process" :class="{ 'update-process--idle': updateProgress.phase === 'idle' }">
+  <div class="update-process">
     <div class="update-process-header">
       <span class="update-process-title">{{ t('core.edit.updateProcess') }}</span>
       <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
@@ -32,12 +32,9 @@
         </a-button>
       </div>
     </div>
-    <!-- 空闲时只留标题行与按钮；检查 / 更新开始后才出现日志框，结论作为最后一行用强调色写出来 -->
-    <div
-      v-if="updateProgress.phase !== 'idle'"
-      ref="logBoxRef"
-      class="update-log-box maafw-log-box"
-    >
+    <!-- 任何状态都是「标题行 + 日志框」同一个布局：空闲时日志框是空的，检查 / 更新开始后往里写，
+         结论作为最后一行用强调色写出来 -->
+    <div ref="logBoxRef" class="update-log-box maafw-log-box">
       <div
         v-for="(line, index) in updateProgress.logs"
         :key="index"
@@ -46,7 +43,11 @@
       >
         {{ line.text }}
       </div>
-      <div class="update-log-status maafw-log-status" :class="`maafw-log-status--${summaryTone}`">
+      <div
+        v-if="updateProgress.phase !== 'idle'"
+        class="update-log-status maafw-log-status"
+        :class="`maafw-log-status--${summaryTone}`"
+      >
         <LoadingOutlined v-if="summaryTone === 'running'" spin class="update-log-status-icon" />
         <CheckCircleOutlined v-else-if="summaryTone === 'success'" class="update-log-status-icon" />
         <CloseCircleOutlined v-else class="update-log-status-icon" />
@@ -193,21 +194,11 @@ watch(
 <style scoped src="./maafwSection.css"></style>
 
 <style scoped>
-/* 检查 / 更新进行中面板本身不画框、不铺底色：标题 + 日志框就够了 */
+/* 面板本身不画框、不铺底色：标题 + 日志框就够了，空闲时也是这个样子 */
 .update-process {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-/* 空闲时只有标题行：画成与左列信息小框同样的卡片，标题行在卡片里竖直居中，
-   免得被拉到与左列同高后下面空出一大块 */
-.update-process--idle {
-  justify-content: center;
-  padding: 12px 16px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
 }
 
 .update-process-header {
@@ -215,10 +206,6 @@ watch(
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
-}
-
-.update-process--idle .update-process-header {
-  margin-bottom: 0;
 }
 
 /* 与基础信息区「运行环境」面板标题同一字号字重 */

@@ -67,6 +67,7 @@ vi.mock('../services/initializationAnalytics', () => ({
 }))
 beforeAll(async () => {
   vi.stubGlobal('window', { addEventListener: vi.fn() })
+  vi.stubGlobal('process', Object.create(process, { isMainFrame: { value: true } }))
   await import('../preload')
   registerInitializationHandlers({} as BrowserWindow)
 })

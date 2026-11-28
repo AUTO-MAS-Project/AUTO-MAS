@@ -26,8 +26,5 @@ const selectId = useId()
       ]"
       @change="(value: 'full' | 'incremental') => emit('change', value)"
     />
-    <a-typography-text v-if="mode === 'incremental'" type="warning">
-      {{ t('core.edit.updatePackageRisk') }}
-    </a-typography-text>
   </a-form-item>
 </template>

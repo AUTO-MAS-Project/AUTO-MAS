@@ -13,22 +13,7 @@ import type {
   DesktopMascotTaskMenu,
 } from '../src/types/desktopMascot'
 
-// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
-contextBridge.exposeInMainWorld(
-  'appEnvironment',
-  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
-)
-contextBridge.exposeInMainWorld(
-  'backendOwnership',
-  process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
-)
-
-window.addEventListener('DOMContentLoaded', () => {
-  // 预加载脚本已加载
-})
-
-// 暴露安全的 API 给渲染进程
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI = {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
     beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
@@ -331,6 +316,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('appearance:inspect-local', zipPath, category),
   inspectAppearanceCover: (imagePath: string) =>
     ipcRenderer.invoke('appearance:inspect-cover', imagePath),
+  onOnlineAppearancePrepareProgress: (callback: (progress: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('appearance:online-prepare-progress', listener)
+    return () => ipcRenderer.removeListener('appearance:online-prepare-progress', listener)
+  },
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)
@@ -489,4 +479,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeBackendStatusListener: () => {
     ipcRenderer.removeAllListeners('backend-status')
   },
-})
+}
+
+if (process.isMainFrame) {
+  // 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+  contextBridge.exposeInMainWorld(
+    'appEnvironment',
+    process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+  )
+  contextBridge.exposeInMainWorld(
+    'backendOwnership',
+    process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
+  )
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI)
+}

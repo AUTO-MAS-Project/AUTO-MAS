@@ -54,6 +54,29 @@ def contains_legacy_type(path: Path, entry_type: str) -> bool:
         return False
 
 
+def retire_baah_plans(config_path: Path) -> None:
+    """归档并移除已停用的 MAS 计划，不接触 BAAH 原生配置。"""
+    path = config_path / "plans.yaml"
+    if not path.is_file() or is_blank_file(path):
+        return
+    document = _utils_io.read_dict_file(path)
+    order = document.get("order", [])
+    retired = {item["uid"] for item in order if item["type"] == "BAAHPlanConfig"}
+    if not retired:
+        return
+
+    # 先保留完整原文件；备份失败就不改有效配置，重试也不覆盖已有备份。
+    original = path.read_bytes()
+    backup = config_path / "retired-baah-plans" / hashlib.sha256(original).hexdigest()
+    target = backup / path.name
+    if not target.exists():
+        _utils_io.atomic_write(target, original)
+    document["order"] = [item for item in order if item["uid"] not in retired]
+    for uid in retired:
+        document["data"].pop(uid, None)
+    _utils_io.write_file(path, document)
+
+
 def convert_legacy(
     document: dict[str, Any],
     node: ConfigEntry | ConfigCollection,
@@ -70,6 +93,9 @@ def convert_legacy(
         order = []
         data = {}
         for item in instances:
+            # 旧 JSON 会由升级管道完整归档；不再导入重复的 BAAH 计划。
+            if item["type"] == "BAAHPlanConfig":
+                continue
             uid = str(UUID(item["uid"]))
             type_name = LEGACY_ENTRY_TYPE_NAMES.get(item["type"], item["type"])
             entry_type = node._entry_types.get(type_name)

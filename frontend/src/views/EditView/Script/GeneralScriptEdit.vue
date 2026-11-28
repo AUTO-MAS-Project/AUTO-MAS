@@ -14,7 +14,6 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.giveScriptNameYou')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #path>
@@ -50,11 +49,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item name="scriptPath" :rules="rules.scriptPath">
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.mainProgramPath')"
-                  :hint="t('core.edit.pathScriptSMain')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.mainProgramPath')" variant="form" />
               </template>
               <PathPickerField
                 v-model="formData.scriptPath"
@@ -122,11 +117,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.configurationFileType')"
-                  :hint="t('core.edit.scriptConfigurationFileType')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.configurationFileType')" variant="form" />
               </template>
               <a-select
                 v-model:value="generalConfig.Script.ConfigPathMode"
@@ -142,7 +133,6 @@
               <template #label>
                 <FieldLabelWithHint
                   :text="t('core.edit.whenConfigurationFileUpdated')"
-                  :hint="t('core.edit.updateScriptConfigurationFile')"
                   variant="form"
                 />
               </template>
@@ -251,11 +241,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item name="logPath" :rules="rules.logPath">
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.logFilePath')"
-                  :hint="t('core.edit.pathFileScriptWrites')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.logFilePath')" variant="form" />
               </template>
               <PathPickerField
                 v-model="formData.logPath"
@@ -301,11 +287,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item name="logTimeFormat" :rules="rules.logTimeFormat">
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.logTimestampFormat')"
-                  :hint="t('core.edit.timestampFormatUsedScript')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.logTimestampFormat')" variant="form" />
               </template>
               <a-input
                 v-model:value="formData.logTimeFormat"
@@ -413,11 +395,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.launchMode')"
-                  :hint="t('core.edit.whichPlatformGameRuns')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.launchMode')" variant="form" />
               </template>
               <a-select v-model:value="generalConfig.Game.Type" @change="handleGameTypeChange">
                 <a-select-option value="Emulator">{{ t('core.edit.emulator2') }}</a-select-option>
@@ -430,11 +408,7 @@
           <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.gamePath')"
-                  :hint="t('core.edit.pathGameExecutable')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.gamePath')" variant="form" />
               </template>
               <BoundGamePathField />
             </a-form-item>
@@ -442,11 +416,7 @@
           <a-col v-if="generalConfig.Game.Type === 'URL'" :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.url')"
-                  :hint="t('core.edit.urlCustomProtocol')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.url')" variant="form" />
               </template>
               <a-input-group class="path-input-group">
                 <a-input
@@ -461,11 +431,7 @@
           <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.launchArguments')"
-                  :hint="t('core.edit.commandLineArgumentsUsed')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.launchArguments')" variant="form" />
               </template>
               <a-input
                 v-model:value="generalConfig.Game.Arguments"
@@ -478,11 +444,7 @@
           <a-col v-if="generalConfig.Game.Type === 'Client'" :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.waitAfterLaunchSeconds')"
-                  :hint="t('core.edit.howLongWaitAfter2')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.waitAfterLaunchSeconds')" variant="form" />
               </template>
               <a-input-number
                 v-model:value="generalConfig.Game.WaitTime"
@@ -526,7 +488,6 @@
             <SwitchTile
               v-model:checked="generalConfig.Game.IfForceClose"
               :title="t('core.edit.forceGameClose')"
-              :description="t('core.edit.whetherGameProcessForce')"
               @change="handleChange('Game', 'IfForceClose', $event)"
             />
           </a-col>

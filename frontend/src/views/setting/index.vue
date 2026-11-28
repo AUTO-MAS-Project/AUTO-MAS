@@ -25,7 +25,6 @@ const logger = window.electronAPI.getLogger('设置')
 // 引入拆分后的 Tab 组件
 import TabBasic from './TabBasic.vue'
 import TabFunction from './TabFunction.vue'
-import DesktopSessionSettings from '../desktopSession/DesktopSessionSettings.vue'
 import TabNotify from './TabNotify.vue'
 import TabAdvanced from './TabAdvanced.vue'
 import TabOthers from './TabOthers.vue'
@@ -81,8 +80,13 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 
 // 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去；
 // 保存链路已抽到 useSettingPersistence，这里只留页面装配
-const { loading, handleSettingChange, handleDynamicSettingChange, refreshSettings } =
-  useSettingPersistence(settings, restartPolling)
+const {
+  loading,
+  handleSettingChange,
+  handleDynamicSettingChange,
+  handleSettingGroupChange,
+  refreshSettings,
+} = useSettingPersistence(settings, restartPolling)
 
 const confirmFluidCursor = () =>
   openConfirm({
@@ -245,10 +249,11 @@ onMounted(() => {
         />
       </template>
       <template #function>
-        <TabFunction :settings="settings" :handle-setting-change="handleSettingChange" />
-      </template>
-      <template #desktop-session>
-        <DesktopSessionSettings />
+        <TabFunction
+          :settings="settings"
+          :handle-setting-change="handleSettingChange"
+          :handle-setting-group-change="handleSettingGroupChange"
+        />
       </template>
       <template #notify>
         <TabNotify

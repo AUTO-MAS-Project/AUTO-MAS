@@ -29,6 +29,7 @@ import type {
   OnlineAppearanceDetailResult,
   OnlineAppearanceInstallResult,
   OnlineAppearanceListResult,
+  OnlineAppearancePrepareProgress,
   OnlineAppearancePrepareResult,
   OnlineAppearanceQuery,
 } from '@/types/appearance'
@@ -537,9 +538,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath: string,
     category?: AppearanceCategory
   ) => Promise<LocalAppearanceInspectResult>
-  inspectAppearanceCover?: (
-    imagePath: string
-  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  inspectAppearanceCover?: (imagePath: string) => Promise<{
+    success: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    error?: string
+  }>
+  onOnlineAppearancePrepareProgress?: (
+    callback: (progress: OnlineAppearancePrepareProgress) => void
+  ) => () => void
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 

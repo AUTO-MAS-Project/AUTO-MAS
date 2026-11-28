@@ -22,8 +22,15 @@ const props = withDefaults(
     tile?: boolean
     tableCell?: boolean
     retry?: () => void
+    inlineAction?: {
+      group: string
+      hint: DeclarativeHint
+      options: Required<DeclarativeOption>[]
+      loading: boolean
+      run: (value: unknown) => void
+    }
   }>(),
-  { error: undefined, disabledReason: undefined, retry: undefined }
+  { error: undefined, disabledReason: undefined, retry: undefined, inlineAction: undefined }
 )
 const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
 const { t, te } = useI18n()
@@ -31,11 +38,12 @@ const key = computed(
   () =>
     /* 由插件命名空间、配置分组与字段名生成当前控件的语言资源键。 */ `${props.namespace}.${props.group}.${props.hint.field}`
 )
-const label = computed(() =>
-  /* 读取当前控件的翻译标签，缺失时展示声明字段名。 */ te(`${key.value}.label`)
-    ? t(`${key.value}.label`)
-    : props.hint.field || ''
-)
+// 字段和行内动作分别使用所属分组的翻译，缺失时展示声明字段名。
+function fieldLabel(group: string, hint: DeclarativeHint) {
+  const labelKey = `${props.namespace}.${group}.${hint.field}.label`
+  return te(labelKey) ? t(labelKey) : hint.field || ''
+}
+const label = computed(() => fieldLabel(props.group, props.hint))
 const tip = computed(() =>
   /* 读取当前控件的翻译说明，无对应资源时不显示说明。 */ te(`${key.value}.tip`)
     ? t(`${key.value}.tip`)
@@ -78,18 +86,19 @@ const pick = async () => {
     :aria-label="label"
     :title="tableCell ? tip || undefined : undefined"
   >
-    <SwitchTile
-      v-if="tile && !tableCell"
-      :title="label"
-      :description="tip || undefined"
-      :checked="Boolean(value)"
-      :disabled="disabled || hint.editable === false || loading"
-      :loading="loading"
-      @change="update"
-    />
-    <div v-else class="declarative-field-body">
-      <FieldLabelWithHint v-if="!tableCell" :text="label" :hint="tip" variant="form" />
+    <FieldLabelWithHint v-if="!tableCell && !tile" :text="label" :hint="tip" variant="form" />
+    <div class="declarative-field-body" :class="{ 'with-action': inlineAction }">
+      <SwitchTile
+        v-if="tile && !tableCell"
+        :title="label"
+        :description="tip || undefined"
+        :checked="Boolean(value)"
+        :disabled="disabled || hint.editable === false || loading"
+        :loading="loading"
+        @change="update"
+      />
       <DeclarativeControl
+        v-else
         :compact="tableCell"
         :component="hint.component"
         :label="label"
@@ -104,11 +113,23 @@ const pick = async () => {
         :path-kind="hint.path_kind"
         :min="hint.min"
         :max="hint.max"
+        :precision="hint.precision"
+        :step="hint.step"
         :multiple="hint.multiple"
         :options="options"
         @update:model-value="update"
         @pick="pick"
         @blur="emit('blur')"
+      />
+      <DeclarativeControl
+        v-if="inlineAction"
+        :compact="tableCell"
+        :component="inlineAction.hint.component"
+        :label="fieldLabel(inlineAction.group, inlineAction.hint)"
+        :options="inlineAction.options"
+        :loading="inlineAction.loading"
+        :disabled="disabled || inlineAction.loading || inlineAction.hint.editable !== true"
+        @update:model-value="inlineAction.run"
       />
     </div>
     <p v-if="error" class="field-error" role="alert">{{ error }}</p>
@@ -131,6 +152,10 @@ const pick = async () => {
 }
 .declarative-field > .ant-btn {
   justify-self: start;
+}
+.declarative-field-body.with-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 .field-error,
 .field-reason {

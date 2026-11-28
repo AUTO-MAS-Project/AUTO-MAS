@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from unittest.mock import Mock
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -68,7 +69,7 @@ async def binding_options(client, script_id, *, user_id=None):
         "decl_patch",
         "supported",
         "overrides",
-        "native_allowed",
+        "native_matches",
     ),
     [
         (MaaPlugin, "maa_adapter", {}, True, True, False),
@@ -101,7 +102,7 @@ async def test_plugin_binding_capabilities(
     decl_patch,
     supported,
     overrides,
-    native_allowed,
+    native_matches,
 ):
     client, scripts, emulator, native = binding_host
     if decl_patch:
@@ -126,15 +127,24 @@ async def test_plugin_binding_capabilities(
         assert response["supported"] is supported
         assert response["accountOverrideSupported"] is overrides
         allowed = supported and (owner is None or overrides)
-        options = {item["value"]: item["disabledReason"] for item in response["data"]}
+        options = {item["value"]: item for item in response["data"]}
         assert set(options) == ({emulator, native} if allowed else set())
-        for target, compatible in ((emulator, True), (native, native_allowed)):
+        for target, matches in ((emulator, True), (native, native_matches)):
+            # 类型与控制方式不一致只提示，不拒绝；是否拒绝只取决于专项是否允许绑定
+            hints: list[str] = []
+            patch = {"game": {"game_id": target}}
             refusal = await GameManager.validate_binding(
-                str(script_id), {"game": {"game_id": target}}, owner=owner
+                str(script_id), patch, owner=owner, hints=hints
             )
-            assert (refusal is None) is (allowed and compatible)
+            assert (refusal is None) is allowed
+            assert bool(hints) is (allowed and not matches)
+            assert (
+                await GameManager.validate_binding(str(script_id), patch, owner=owner)
+                == refusal
+            )
             if allowed:
-                assert options[target] == refusal
+                assert options[target]["disabledReason"] is None
+                assert bool(options[target]["warning"]) is not matches
 
 
 @pytest.mark.asyncio
@@ -156,9 +166,11 @@ async def test_disabling_game_management_keeps_existing_bindings_clearable(
     body = {"scriptId": str(script_id), "userId": str(user_id)}
     before = await binding_options(client, script_id, user_id=user_id)
     assert before["supported"] and before["accountOverrideSupported"]
-    options = {item["value"]: item["disabledReason"] for item in before["data"]}
-    assert options[emulator] is None
-    assert options[native]
+    options = {item["value"]: item for item in before["data"]}
+    assert options[emulator]["disabledReason"] is None
+    assert not options[emulator]["warning"]
+    assert options[native]["disabledReason"] is None
+    assert options[native]["warning"]
     assert await GameManager.validate_binding(
         str(script_id), {"Game": {"Enabled": False}, "game": {"game_id": emulator}}
     )
@@ -199,8 +211,8 @@ async def test_disabling_game_management_keeps_existing_bindings_clearable(
 
 
 @pytest.mark.asyncio
-async def test_plugin_game_kind_narrows_binding_targets(binding_host, monkeypatch):
-    """插件按当前配置判定的游戏类型（ScriptTypeDecl.game_kind）收窄候选与保存校验。"""
+async def test_plugin_game_kind_mismatch_only_hints(binding_host, monkeypatch):
+    """插件按当前配置判定的游戏类型（ScriptTypeDecl.game_kind）不一致时只提示不拒绝。"""
     client, scripts, emulator, native = binding_host
     monkeypatch.setattr(
         MaaPlugin,
@@ -220,15 +232,43 @@ async def test_plugin_game_kind_narrows_binding_targets(binding_host, monkeypatc
     await scripts.commit()
 
     response = await binding_options(client, script_id)
-    options = {item["value"]: item["disabledReason"] for item in response["data"]}
-    assert options[emulator] is None
-    assert options[native]
-    assert await GameManager.validate_binding(
-        str(script_id), {"game": {"game_id": native}}
-    )
-    assert (
-        await GameManager.validate_binding(
-            str(script_id), {"game": {"game_id": emulator}}
+    options = {item["value"]: item for item in response["data"]}
+    assert options[emulator]["disabledReason"] is None
+    assert not options[emulator]["warning"]
+    assert options[native]["disabledReason"] is None
+    assert options[native]["warning"]
+
+    for target, mismatched in ((native, True), (emulator, False)):
+        hints: list[str] = []
+        patch = {"game": {"game_id": target}}
+        assert (
+            await GameManager.validate_binding(str(script_id), patch, hints=hints)
+            is None
         )
-        is None
+        assert bool(hints) is mismatched
+        assert await GameManager.validate_binding(str(script_id), patch) is None
+
+    # 其余拒绝原因仍是硬限制：目标不存在照旧拒绝，也不当作提示
+    hints = []
+    assert await GameManager.validate_binding(
+        str(script_id), {"game": {"game_id": str(uuid4())}}, hints=hints
     )
+    assert hints == []
+
+    # 运行时选到类型不一致的目标：任务日志写明提示，照常取得目标继续运行
+    script = scripts[script_id]
+    await script.update(
+        type(script).model_validate({"game": {"game_id": native}}),
+        check_visibility=False,
+    )
+    expected: list[str] = []
+    await GameManager.validate_binding(
+        str(script_id), {"game": {"game_id": native}}, hints=expected
+    )
+    session = GameSession(TaskScriptItem.build(), script)
+    await session.select()
+    try:
+        assert str(session.game_uid) == native
+        assert expected and all(hint in session.script.current.log for hint in expected)
+    finally:
+        await session.release()

@@ -1,10 +1,6 @@
 {
   "zh-CN": {
     "title": "桌面分身",
-    "executionSession": "执行会话",
-    "executionSessionHint": "仅用于单独启动此托管。",
-    "chooseExecutionSession": "请选择执行会话",
-    "executionSessionUnavailable": "原先保存的桌面分身当前不可用，请改选主会话。",
     "experimental": "风险提示：该功能为实验功能",
     "unsupported": "请在 Windows x64 桌面版中打开此功能。",
     "selectTasks": "选择要在桌面分身运行的队列或托管任务",
@@ -14,13 +10,15 @@
     "minimizeMode": "最小化模式",
     "proxy": "后台最小化（推荐）",
     "native": "原生最小化",
-    "emptySelection": "留空时只打开分身桌面。",
     "openWithTasks": "打开分身并启动任务",
     "open": "打开桌面分身",
+    "removeTarget": "移除",
+    "runStartOnOpen": "随分身启动",
+    "runStandalone": "单独启动",
+    "runBoth": "两者",
+    "launchMode": "启动方式",
     "loadTasksFailed": "读取桌面分身任务失败，请重试。",
-    "saveFailed": "保存桌面分身队列选择失败。",
     "openFailed": "无法打开桌面分身。",
-    "loadSelectionFailed": "无法读取已保存的分身队列选择。",
     "closing": "关闭中",
     "checking": "环境检测中",
     "blocked": "环境检测异常",
@@ -64,7 +62,6 @@
     "takeoverConfirm": "当前已存在未有MAS接管的桌面分身，可能是由其他应用（如BGI）启动的，是否确认接管？",
     "takeoverContinue": "确认接管",
     "disconnectOnly": "仅断开连接",
-    "logoffDesktopSession": "关闭桌面分身",
     "mainFallbackTitle": "确认任务分发",
     "mainFallbackConfirm": "确认后将按下列会话运行所选托管和队列。",
     "mainFallbackContinue": "确认",
@@ -169,16 +166,11 @@
     "reasons": {
       "admin_required": "以管理员身份启动 AUTO-MAS 即可使用桌面分身。",
       "unsupported_config": "当前托管配置不支持桌面分身。",
-      "plugin_unavailable": "托管插件当前不可用。",
-      "environment_unavailable": "请使用 Windows x64 桌面版，并由桌面应用管理后端。"
+      "plugin_unavailable": "托管插件当前不可用。"
     }
   },
   "en-US": {
     "title": "Desktop Session",
-    "executionSession": "Execution session",
-    "executionSessionHint": "Only applies when starting this script on its own.",
-    "chooseExecutionSession": "Select an execution session",
-    "executionSessionUnavailable": "The saved desktop session is unavailable. Select Main session to continue.",
     "experimental": "This feature is experimental.",
     "unsupported": "Use this feature in the Windows x64 desktop app.",
     "selectTasks": "Select queues or managed tasks to run in the desktop session",
@@ -188,13 +180,15 @@
     "minimizeMode": "Minimize mode",
     "proxy": "Minimize to background (recommended)",
     "native": "Native minimize",
-    "emptySelection": "Leave empty to open the desktop without starting tasks.",
     "openWithTasks": "Open session and start tasks",
     "open": "Open desktop session",
+    "removeTarget": "Remove",
+    "runStartOnOpen": "With session",
+    "runStandalone": "Standalone",
+    "runBoth": "Both",
+    "launchMode": "Launch mode",
     "loadTasksFailed": "Could not load tasks. Try again.",
-    "saveFailed": "Could not save the task selection.",
     "openFailed": "Could not open the desktop session.",
-    "loadSelectionFailed": "Could not load the saved task selection.",
     "closing": "Closing",
     "checking": "Checking environment",
     "blocked": "Environment check failed",
@@ -238,7 +232,6 @@
     "takeoverConfirm": "A desktop session not managed by MAS already exists. It may have been started by another app, such as BGI. Do you want to take it over?",
     "takeoverContinue": "Take over",
     "disconnectOnly": "Disconnect only",
-    "logoffDesktopSession": "Close Desktop Session",
     "mainFallbackTitle": "Confirm task dispatch",
     "mainFallbackConfirm": "Confirm to run the selected scripts and queues in the sessions listed below.",
     "mainFallbackContinue": "Confirm",
@@ -343,16 +336,11 @@
     "reasons": {
       "admin_required": "Run AUTO-MAS as administrator to use Desktop Session.",
       "unsupported_config": "This script configuration does not support Desktop Session.",
-      "plugin_unavailable": "The script adapter is currently unavailable.",
-      "environment_unavailable": "Use the Windows x64 desktop app with its app-managed backend."
+      "plugin_unavailable": "The script adapter is currently unavailable."
     }
   },
   "ja-JP": {
     "title": "デスクトップセッション",
-    "executionSession": "実行セッション",
-    "executionSessionHint": "このスクリプトを単独で起動する場合に適用されます。",
-    "chooseExecutionSession": "実行セッションを選択",
-    "executionSessionUnavailable": "保存済みのデスクトップセッションは利用できません。メインセッションを選択してください。",
     "experimental": "この機能は試験的です。",
     "unsupported": "Windows x64 版のデスクトップアプリで利用してください。",
     "selectTasks": "セッションで実行するキューまたは管理タスクを選択",
@@ -362,13 +350,15 @@
     "minimizeMode": "最小化モード",
     "proxy": "バックグラウンドに最小化（推奨）",
     "native": "通常の最小化",
-    "emptySelection": "空欄のままにすると、タスクを開始せずデスクトップだけを開きます。",
     "openWithTasks": "セッションを開いてタスクを開始",
     "open": "デスクトップセッションを開く",
+    "removeTarget": "削除",
+    "runStartOnOpen": "分身と同時",
+    "runStandalone": "単独起動",
+    "runBoth": "両方",
+    "launchMode": "起動方法",
     "loadTasksFailed": "タスクを読み込めませんでした。再試行してください。",
-    "saveFailed": "タスクの選択を保存できませんでした。",
     "openFailed": "デスクトップセッションを開けませんでした。",
-    "loadSelectionFailed": "保存したタスクの選択を読み込めませんでした。",
     "closing": "終了中",
     "checking": "環境を確認中",
     "blocked": "環境チェックに失敗",
@@ -412,7 +402,6 @@
     "takeoverConfirm": "MAS が管理していないデスクトップ分身がすでに存在します。BGI などの別のアプリが起動した可能性があります。このセッションを引き継ぎますか？",
     "takeoverContinue": "引き継ぐ",
     "disconnectOnly": "接続のみ切断",
-    "logoffDesktopSession": "デスクトップ分身を閉じる",
     "mainFallbackTitle": "タスクの実行先を確認",
     "mainFallbackConfirm": "確認すると、選択したスクリプトとキューが以下のセッションで実行されます。",
     "mainFallbackContinue": "確認",
@@ -517,8 +506,7 @@
     "reasons": {
       "admin_required": "デスクトップ分身を使用するには AUTO-MAS を管理者として起動してください。",
       "unsupported_config": "現在のスクリプト設定ではデスクトップ分身を使用できません。",
-      "plugin_unavailable": "現在、スクリプトプラグインを利用できません。",
-      "environment_unavailable": "Windows x64 デスクトップ版で、アプリが管理するバックエンドを使用してください。"
+      "plugin_unavailable": "現在、スクリプトプラグインを利用できません。"
     }
   }
 }

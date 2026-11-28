@@ -10,7 +10,6 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.baahScriptNameHint')"
         @save-name="handleChange('Info', 'Name', $event)"
       />
     </template>
@@ -81,7 +80,6 @@
           v-model:hard-time-limit="baahConfig.Run.HardTimeLimit"
           v-model:retry-limit="baahConfig.Run.RunTimesLimit"
           v-model:timeout="baahConfig.Run.RunTimeLimit"
-          hide-execution-session
           hide-daily
           :retry-hint="t('core.edit.baahRunTimesLimitHint')"
           :timeout-hint="t('core.edit.baahRunTimeLimitHint')"

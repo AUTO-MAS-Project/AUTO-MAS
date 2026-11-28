@@ -20,7 +20,6 @@
     <template #basic>
       <ScriptBasicInfoCard
         v-model:name="formData.name"
-        :name-hint="t('core.edit.giveScriptNameYou')"
         @save-name="handleChange('Info', 'Name', $event)"
       >
         <template #path>
@@ -64,11 +63,7 @@
           <a-col :xs="24" :md="12">
             <a-form-item>
               <template #label>
-                <FieldLabelWithHint
-                  :text="t('core.edit.accountSwitchingMethod')"
-                  :hint="t('core.edit.whatDoWhenSwitching')"
-                  variant="form"
-                />
+                <FieldLabelWithHint :text="t('core.edit.accountSwitchingMethod')" variant="form" />
               </template>
               <a-segmented
                 :value="maaConfig.Run.TaskTransitionMethod"

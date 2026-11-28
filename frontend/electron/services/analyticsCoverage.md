@@ -44,7 +44,7 @@
 | T034 | `queue_manage_finished`：队列增删改与排序 | 已接入 |
 | T035 | `queue_schedule_changed`：启动、定时、循环与星期配置 | 已接入 |
 | T036 | `queue_time_set_changed`：时间集合管理 | 已接入 |
-| T037 | `plan_manage_finished`：各类计划创建、重命名、删除与排序 | 已接入（含 `UniversalPlanConfig`） |
+| T037 | `plan_manage_finished`：各类计划创建、重命名、删除与排序 | 已接入（含 `UniversalPlanConfig`）；BAAH 使用原生轮换，不再提供 MAS 计划入口 |
 | T038 | `plan_edit_finished`：简单/复杂视图与轮换计划编辑 | 已接入（整批汇总记录） |
 | T039 | `update_check_finished`：手动/首次自动检查更新 | 已接入 |
 | T040 | `update_download_started`：用户选择更新后的下载进入率 | 已接入 |
