@@ -54,13 +54,16 @@ describe('应用路由', () => {
   }, 15000)
 
   it.each([
-    ['SRC', 'src', ['edit/src']],
-    ['MAA', 'maa', ['edit/maa', 'cultivate/maa']],
-    ['Whimbox', 'whimbox', ['edit/whimbox']],
-    ['BetterGI', 'bettergi', ['edit/bettergi']],
+    ['SRC', 'src', ['edit/src'], false],
+    ['MAA', 'maa', ['edit/maa', 'cultivate/maa'], false],
+    ['Whimbox', 'whimbox', ['edit/whimbox'], false],
+    ['BetterGI', 'bettergi', ['edit/bettergi'], false],
+    ['MaaFW', 'maafw', ['edit/maafw'], true],
+    ['M9A', 'm9a', ['edit/m9a'], true],
+    ['MSS', 'mss', ['edit/mss'], true],
   ] as const)(
     '%s 旧地址进入插件编辑器并保留参数、查询与锚点',
-    async (scriptType, suffix, userPaths) => {
+    async (scriptType, suffix, userPaths, setup) => {
       const { default: router } = await import('./index')
       vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
         code: 200,
@@ -73,6 +76,15 @@ describe('应用路由', () => {
           `/scripts/s/users/add/plugin/${scriptType}`,
           'GenericUserAdd',
         ],
+        ...(setup
+          ? [
+              [
+                '/scripts/s/setup/' + suffix,
+                '/scripts/s/setup/plugin/' + scriptType,
+                'GenericScriptSetup',
+              ] as const,
+            ]
+          : []),
         ...userPaths.map(
           path =>
             [
@@ -143,52 +155,6 @@ describe('应用路由', () => {
       name: 'WhimboxScriptEdit',
       params: { id: 'id' },
     })
-  })
-
-  it.each([
-    ['script', 'MaaFWScriptEdit', 'GenericScriptEdit'],
-    ['setup', 'MaaFWSetupWizard', 'GenericScriptSetup'],
-    ['userEdit', 'MaaFWUserEdit', 'GenericUserEdit'],
-  ] as const)('已启用的 %s 区块优先于专项静态页', async (page, legacy, generic) => {
-    const { default: router } = await import('./index')
-    const user = page === 'userEdit'
-    const component = { render: () => null }
-    router.addRoute({
-      path: user ? '/blocks/:scriptId/user/:userId' : '/blocks/:id/' + page,
-      name: legacy,
-      component,
-      meta: { skipGuard: true, maafwPage: page, scriptType: 'MaaFW' },
-    })
-    router.addRoute({
-      path: '/blocks/:scriptType/:scriptId/' + page + (user ? '/:userId' : ''),
-      name: generic,
-      component,
-      meta: { skipGuard: true, scriptPage: page === 'setup' ? 'script' : page },
-    })
-    const record = pluginRecord('MaaFW')
-    record.frontend.bindings = []
-    vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue({
-      code: 200,
-      data: { record },
-    })
-    const params = user ? { scriptId: 's', userId: 'u' } : { id: 's' }
-    record.providedScript.blockSurfaces = ['plan']
-    await router.push({ name: legacy, params })
-    expect(router.currentRoute.value.name).toBe(legacy)
-    record.providedScript.blockSurfaces = [user ? 'user' : page]
-    await router.push({ name: legacy, params, query: { from: legacy } })
-    expect(router.currentRoute.value).toMatchObject({
-      name: generic,
-      params: { scriptType: 'MaaFW', scriptId: 's', ...(user && { userId: 'u' }) },
-      query: { from: legacy },
-    })
-    record.info.state = PluginState.DISABLED
-    await router.push({
-      name: generic,
-      params: router.currentRoute.value.params,
-      hash: '#disabled',
-    })
-    expect(router.currentRoute.value).toMatchObject({ name: legacy, params, hash: '#disabled' })
   })
 
   it.each(['wheel', 'blocks'] as const)(
