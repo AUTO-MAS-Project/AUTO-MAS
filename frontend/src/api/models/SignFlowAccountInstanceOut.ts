@@ -5,7 +5,7 @@
 /**
  * 游戏社区账号组顺序项。
  */
-export type GameSignAccountInstanceOut = {
+export type SignFlowAccountInstanceOut = {
     /**
      * 账号组 UUID
      */

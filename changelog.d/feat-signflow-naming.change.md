@@ -1,0 +1,2 @@
+project: tools
+游戏社区内部标识统一为 SignFlow，旧配置与中断的更新都能自动迁移

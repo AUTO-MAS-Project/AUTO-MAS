@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { ToolsConfig_GameSignInput } from './ToolsConfig_GameSignInput';
+import type { ToolsConfig_SignFlowInput } from './ToolsConfig_SignFlowInput';
 export type ToolsConfigInput = {
-    GameSign?: (ToolsConfig_GameSignInput | null);
+    SignFlow?: (ToolsConfig_SignFlowInput | null);
 };
 

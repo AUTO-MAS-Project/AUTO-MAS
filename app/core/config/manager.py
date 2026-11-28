@@ -77,6 +77,7 @@ from app.core.config.upgrade import (
     contains_legacy_type,
     convert_legacy,
     is_blank_file,
+    migrate_sign_flow_documents,
     preserve_pre_upgrade,
     retire_baah_plans,
     upgrade_json_configs,
@@ -86,7 +87,7 @@ from app.models.config import (
     PLAN_BOOK,
     BAAHConfig,
     EmulatorConfig,
-    GameSignAccountGroup,
+    SignFlowAccountGroup,
     GeneralConfig,
     GeneralUserConfig,
     GlobalConfig,
@@ -139,10 +140,10 @@ _PROCESS_STARTED_AT = time.time()
 
 logger = get_logger("配置管理")
 
-GAME_SIGN_RESULT_FILENAME = "GameSignResult.json"
+SIGN_FLOW_RESULT_FILENAME = "SignFlowResult.json"
 
 
-def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
+def _load_sign_flow_result_snapshot(path: Path, *, result_date: str) -> dict[str, Any]:
     """读取当天的游戏社区结果快照。"""
 
     if not path.exists():
@@ -164,7 +165,7 @@ def _load_game_sign_result_snapshot(path: Path, *, result_date: str) -> dict[str
     return result
 
 
-def _save_game_sign_result_snapshot(
+def _save_sign_flow_result_snapshot(
     path: Path | None, result: dict[str, Any], *, result_date: str
 ) -> None:
     """原子保存游戏社区结果快照（走 ``app.utils.common.io.write_file``）。"""
@@ -326,7 +327,7 @@ class AppConfig:
             "ScriptConfig": self.ScriptConfig,
             "QueueConfig": self.QueueConfig,
             "ToolsConfig": self.ToolsConfig,
-            "GameSignAccounts": self.ToolsConfig.GameSign_Accounts,
+            "SignFlowAccounts": self.ToolsConfig.SignFlow_Accounts,
         }
         self._m9a_migration = None
         self._m9a_repair = None
@@ -356,7 +357,7 @@ class AppConfig:
 
         self.server: Optional["uvicorn.Server"] = None
         self.temp_task: List[asyncio.Task] = []
-        self._game_sign_result_date = ""
+        self._sign_flow_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
 
         self._inject_truststore()
@@ -462,11 +463,11 @@ class AppConfig:
         # 游戏社区：恢复当天的结果快照，跨日结果不继续展示
         with startup_stage("后端/配置/签到结果恢复"):
             today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
-            self.ToolsConfig._game_sign_result_data = _load_game_sign_result_snapshot(
-                self.config_path / GAME_SIGN_RESULT_FILENAME,
+            self.ToolsConfig._sign_flow_result_data = _load_sign_flow_result_snapshot(
+                self.config_path / SIGN_FLOW_RESULT_FILENAME,
                 result_date=today,
             )
-            self._game_sign_result_date = today
+            self._sign_flow_result_date = today
 
         with startup_stage("后端/配置/系统服务导入"):
             from app.services import telemetry as _service_telemetry
@@ -792,6 +793,10 @@ class AppConfig:
             )
         # 先让中断的 JSON→YAML 迁移按原摘要结账，再停用旧计划；必须早于计划集合激活。
         await asyncio.to_thread(retire_baah_plans, self.config_path)
+        # 改名只波及文档名与成员类型标签；v2.2 用户不进 JSON 迁移分支，
+        # 所以必须赶在 register_root 之前把旧文档搬到新名下，否则 activate
+        # 会按新文件名读到空文档、账号与签到结果全部退回默认值。
+        await asyncio.to_thread(migrate_sign_flow_documents, self.config_path)
         for _old, new, key in CONFIG_FILES:
             if key == "EmulatorConfig":
                 continue
@@ -2553,9 +2558,9 @@ class AppConfig:
         logger.debug("获取工具设置")
 
         today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
-        if self._game_sign_result_date != today:
-            self.ToolsConfig._game_sign_result_data = {}
-            self._game_sign_result_date = today
+        if self._sign_flow_result_date != today:
+            self.ToolsConfig._sign_flow_result_data = {}
+            self._sign_flow_result_date = today
 
         return self.ToolsConfig.model_dump(context={"audience": "api"})
 
@@ -2573,17 +2578,17 @@ class AppConfig:
 
         today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
         existing = (
-            self.ToolsConfig._game_sign_result_data
-            if self._game_sign_result_date == today
+            self.ToolsConfig._sign_flow_result_data
+            if self._sign_flow_result_date == today
             else {}
         )
         result = _tool_community_sign_provider.merge_community_sign_results(
             existing, formatted, replace=replace
         )
-        self.ToolsConfig._game_sign_result_data = result
-        self._game_sign_result_date = today
-        _save_game_sign_result_snapshot(
-            self.config_path / GAME_SIGN_RESULT_FILENAME,
+        self.ToolsConfig._sign_flow_result_data = result
+        self._sign_flow_result_date = today
+        _save_sign_flow_result_snapshot(
+            self.config_path / SIGN_FLOW_RESULT_FILENAME,
             result,
             result_date=today,
         )
@@ -2591,12 +2596,12 @@ class AppConfig:
         try:
             from app.core import Publisher
             from app.core.ws import protocol
-            from app.models.schema import WSGameSignResultData
+            from app.models.schema import WSSignFlowResultData
 
             await Publisher.send(
-                id=protocol.ID_GAME_SIGN,
-                type=protocol.GAMESIGN_RESULT_UPDATED,
-                data=WSGameSignResultData(
+                id=protocol.ID_SIGN_FLOW,
+                type=protocol.SIGN_FLOW_RESULT_UPDATED,
+                data=WSSignFlowResultData(
                     result=json.dumps(result, ensure_ascii=False)
                 ),
             )
@@ -2614,18 +2619,18 @@ class AppConfig:
 
     # ==================== 游戏社区账号组 CRUD ====================
 
-    async def get_game_sign_accounts(
+    async def get_sign_flow_accounts(
         self, *, if_decrypt: bool = True
     ) -> Dict[str, Any]:
         """获取所有游戏社区账号组"""
 
         logger.debug("获取所有游戏社区账号组")
 
-        return self.ToolsConfig.GameSign_Accounts.model_dump(
+        return self.ToolsConfig.SignFlow_Accounts.model_dump(
             context={"audience": "api" if if_decrypt else "persist"}
         )
 
-    async def add_game_sign_account(self) -> tuple[uuid.UUID, Any]:
+    async def add_sign_flow_account(self) -> tuple[uuid.UUID, Any]:
         """添加游戏社区账号组"""
 
         logger.info("添加游戏社区账号组")
@@ -2634,31 +2639,31 @@ class AppConfig:
             from app.tools.common.community.accounts import next_community_account_name
 
             existing_names = []
-            for account in self.ToolsConfig.GameSign_Accounts.values():
+            for account in self.ToolsConfig.SignFlow_Accounts.values():
                 try:
-                    existing_names.append(account.GameSignAccount.Name)
+                    existing_names.append(account.SignFlowAccount.Name)
                 except (AttributeError, KeyError):
                     continue
             account_name = next_community_account_name(existing_names)
-            uid = self.ToolsConfig.GameSign_Accounts.add(GameSignAccountGroup)
-            await self.ToolsConfig.GameSign_Accounts.commit()
-            config = self.ToolsConfig.GameSign_Accounts[uid]
+            uid = self.ToolsConfig.SignFlow_Accounts.add(SignFlowAccountGroup)
+            await self.ToolsConfig.SignFlow_Accounts.commit()
+            config = self.ToolsConfig.SignFlow_Accounts[uid]
             await config.update(
                 type(config).model_validate(
-                    {"GameSignAccount": {"Name": account_name}}
+                    {"SignFlowAccount": {"Name": account_name}}
                 ),
                 check_visibility=False,
             )
             return uid, config
 
-    def _clear_game_sign_account_results(self, account_id: str) -> None:
+    def _clear_sign_flow_account_results(self, account_id: str) -> None:
         """清除指定游戏社区账号的结果。"""
 
         today = datetime.now(tz=_utils_constants.UTC8).strftime("%Y-%m-%d")
-        result = self.ToolsConfig._game_sign_result_data
-        if getattr(self, "_game_sign_result_date", today) != today:
+        result = self.ToolsConfig._sign_flow_result_data
+        if getattr(self, "_sign_flow_result_date", today) != today:
             result.clear()
-            self._game_sign_result_date = today
+            self._sign_flow_result_date = today
 
         for platform in list(result):
             result[platform] = [
@@ -2671,17 +2676,17 @@ class AppConfig:
 
         tools_file = self.ToolsConfig.persist_path
         snapshot_path = (
-            tools_file.with_name(GAME_SIGN_RESULT_FILENAME)
+            tools_file.with_name(SIGN_FLOW_RESULT_FILENAME)
             if isinstance(tools_file, Path)
             else None
         )
-        _save_game_sign_result_snapshot(
+        _save_sign_flow_result_snapshot(
             snapshot_path,
             result,
             result_date=today,
         )
 
-    async def update_game_sign_account(
+    async def update_sign_flow_account(
         self, account_id: str, data: Dict[str, Dict[str, Any]]
     ) -> None:
         """更新游戏社区账号组配置"""
@@ -2689,7 +2694,7 @@ class AppConfig:
         logger.info(f"更新游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
-        account = self.ToolsConfig.GameSign_Accounts[account_uid]
+        account = self.ToolsConfig.SignFlow_Accounts[account_uid]
         from app.tools.common.community import sign as _tool_community_sign_provider
 
         credential_fields = set(_tool_community_sign_provider.COMMUNITY_TOKEN_FIELDS)
@@ -2698,7 +2703,7 @@ class AppConfig:
         for group, items in data.items():
             for name, value in items.items():
                 if (
-                    group == "GameSignAccount"
+                    group == "SignFlowAccount"
                     and name in credential_fields
                     and getattr(getattr(account, group), name) != value
                 ):
@@ -2712,7 +2717,7 @@ class AppConfig:
             await account.update(
                 type(account).model_validate(
                     {
-                        "GameSignAccount": {
+                        "SignFlowAccount": {
                             "LastSignDate": datetime(
                                 2000, 1, 1, tzinfo=_utils_constants.UTC8
                             )
@@ -2721,25 +2726,25 @@ class AppConfig:
                 ),
                 check_visibility=False,
             )
-            self._clear_game_sign_account_results(account_id)
+            self._clear_sign_flow_account_results(account_id)
 
-    async def delete_game_sign_account(self, account_id: str) -> None:
+    async def delete_sign_flow_account(self, account_id: str) -> None:
         """删除游戏社区账号组"""
 
         logger.info(f"删除游戏社区账号组: {account_id}")
 
         account_uid = uuid.UUID(account_id)
-        self.ToolsConfig.GameSign_Accounts.remove(account_uid)
-        await self.ToolsConfig.GameSign_Accounts.commit()
-        self._clear_game_sign_account_results(account_id)
+        self.ToolsConfig.SignFlow_Accounts.remove(account_uid)
+        await self.ToolsConfig.SignFlow_Accounts.commit()
+        self._clear_sign_flow_account_results(account_id)
 
-    async def reorder_game_sign_accounts(self, order: list[str]) -> None:
+    async def reorder_sign_flow_accounts(self, order: list[str]) -> None:
         """调整游戏社区账号组顺序"""
 
         logger.info("调整游戏社区账号组顺序")
 
-        self.ToolsConfig.GameSign_Accounts.set_order([uuid.UUID(_) for _ in order])
-        await self.ToolsConfig.GameSign_Accounts.commit()
+        self.ToolsConfig.SignFlow_Accounts.set_order([uuid.UUID(_) for _ in order])
+        await self.ToolsConfig.SignFlow_Accounts.commit()
 
     def obs_replay_options(self):
         """读取 OBS 连接与保留策略，服务层不依赖全局配置。"""

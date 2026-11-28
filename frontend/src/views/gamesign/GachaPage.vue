@@ -49,11 +49,11 @@ const pool = ref('')
  * 已知游戏标识 → 词条键。
  *
  * 不能拼 `t(\`...${value}\`)`：插件以后接通新游戏时，词表里没有对应键，
- * 拼出来的 key 会被 vue-i18n 原样渲染成「core.gamesign.gacha.gameNames.xxx」。
+ * 拼出来的 key 会被 vue-i18n 原样渲染成「core.signflow.gacha.gameNames.xxx」。
  * 未收录的标识回退显示插件给的原始值，至少不会露出内部键名。
  */
 const GAME_LABEL_KEYS: Record<string, string> = {
-  arknights: 'core.gamesign.gacha.gameNames.arknights',
+  arknights: 'core.signflow.gacha.gameNames.arknights',
 }
 
 const gameLabel = (value: string) => {
@@ -79,7 +79,7 @@ const accountOptions = computed(() =>
 const hasSklandAccount = computed(() => accountOptions.value.length > 0)
 
 const poolOptions = computed(() => [
-  { value: '', label: t('core.gamesign.gacha.poolAll') },
+  { value: '', label: t('core.signflow.gacha.poolAll') },
   ...pools.value.map(item => ({ value: item.poolType, label: item.poolName })),
 ])
 
@@ -105,10 +105,10 @@ const rarityTone = (rarity: number): 'warning' | 'success' | 'processing' | 'neu
 }
 
 const columns = computed(() => [
-  { title: t('core.gamesign.gacha.columnTime'), key: 'time', dataIndex: 'time', width: 180 },
-  { title: t('core.gamesign.gacha.columnPool'), key: 'poolName', dataIndex: 'poolName' },
-  { title: t('core.gamesign.gacha.columnName'), key: 'name', dataIndex: 'name' },
-  { title: t('core.gamesign.gacha.columnRarity'), key: 'rarity', dataIndex: 'rarity', width: 96 },
+  { title: t('core.signflow.gacha.columnTime'), key: 'time', dataIndex: 'time', width: 180 },
+  { title: t('core.signflow.gacha.columnPool'), key: 'poolName', dataIndex: 'poolName' },
+  { title: t('core.signflow.gacha.columnName'), key: 'name', dataIndex: 'name' },
+  { title: t('core.signflow.gacha.columnRarity'), key: 'rarity', dataIndex: 'rarity', width: 96 },
 ])
 
 const pagination = computed(() => ({
@@ -121,7 +121,7 @@ const pagination = computed(() => ({
 
 const runQuery = async () => {
   if (!playerUid.value.trim()) {
-    message.warning(t('core.gamesign.gacha.needPlayerUid'))
+    message.warning(t('core.signflow.gacha.needPlayerUid'))
     return
   }
   await query({ game: game.value, playerUid: playerUid.value.trim(), pool: pool.value })
@@ -129,7 +129,7 @@ const runQuery = async () => {
 
 const runFetch = async () => {
   if (!accountUid.value || !playerUid.value.trim()) {
-    message.warning(t('core.gamesign.gacha.needPlayerUid'))
+    message.warning(t('core.signflow.gacha.needPlayerUid'))
     return
   }
   await fetchRecords({
@@ -183,8 +183,8 @@ onMounted(async () => {
   <div class="gacha-page">
     <header class="gacha-header">
       <div class="gacha-heading">
-        <h3 class="gacha-title">{{ t('core.gamesign.gacha.title') }}</h3>
-        <p class="gacha-sub">{{ t('core.gamesign.gacha.description') }}</p>
+        <h3 class="gacha-title">{{ t('core.signflow.gacha.title') }}</h3>
+        <p class="gacha-sub">{{ t('core.signflow.gacha.description') }}</p>
       </div>
     </header>
 
@@ -194,19 +194,19 @@ onMounted(async () => {
       type="info"
       show-icon
       :message="unavailable"
-      :description="t('core.gamesign.gacha.pluginMissingDesc')"
+      :description="t('core.signflow.gacha.pluginMissingDesc')"
     />
     <a-alert
       v-else-if="!hasSklandAccount"
       class="gacha-alert"
       type="warning"
       show-icon
-      :message="t('core.gamesign.gacha.noAccount')"
-      :description="t('core.gamesign.gacha.noAccountDesc')"
+      :message="t('core.signflow.gacha.noAccount')"
+      :description="t('core.signflow.gacha.noAccountDesc')"
     >
       <template #action>
         <a-button size="small" @click="emit('manage')">
-          {{ t('core.gamesign.home.manage') }}
+          {{ t('core.signflow.home.manage') }}
         </a-button>
       </template>
     </a-alert>
@@ -215,7 +215,7 @@ onMounted(async () => {
     <section class="gacha-filter">
       <div class="filter-item">
         <span id="gacha-filter-game" class="filter-label">
-          {{ t('core.gamesign.gacha.gameLabel') }}
+          {{ t('core.signflow.gacha.gameLabel') }}
         </span>
         <a-select
           v-model:value="game"
@@ -227,7 +227,7 @@ onMounted(async () => {
       </div>
       <div class="filter-item">
         <span id="gacha-filter-account" class="filter-label">
-          {{ t('core.gamesign.gacha.account') }}
+          {{ t('core.signflow.gacha.account') }}
         </span>
         <a-select
           v-model:value="accountUid"
@@ -235,12 +235,12 @@ onMounted(async () => {
           aria-labelledby="gacha-filter-account"
           :options="accountOptions"
           :disabled="unavailable !== '' || !hasSklandAccount"
-          :placeholder="t('core.gamesign.gacha.selectAccount')"
+          :placeholder="t('core.signflow.gacha.selectAccount')"
         />
       </div>
       <div class="filter-item">
         <span id="gacha-filter-uid" class="filter-label">
-          {{ t('core.gamesign.gacha.playerUid') }}
+          {{ t('core.signflow.gacha.playerUid') }}
         </span>
         <a-input
           v-model:value="playerUid"
@@ -248,17 +248,17 @@ onMounted(async () => {
           aria-labelledby="gacha-filter-uid"
           allow-clear
           :disabled="unavailable !== ''"
-          :placeholder="t('core.gamesign.gacha.playerUidPlaceholder')"
+          :placeholder="t('core.signflow.gacha.playerUidPlaceholder')"
         />
       </div>
       <div class="filter-actions">
         <a-button :disabled="!canQuery" :loading="querying" @click="runQuery">
           <template #icon><SearchOutlined /></template>
-          {{ t('core.gamesign.gacha.query') }}
+          {{ t('core.signflow.gacha.query') }}
         </a-button>
         <a-button type="primary" :disabled="!canFetch" :loading="fetching" @click="runFetch">
           <template #icon><ReloadOutlined /></template>
-          {{ t('core.gamesign.gacha.fetch') }}
+          {{ t('core.signflow.gacha.fetch') }}
         </a-button>
       </div>
     </section>
@@ -273,7 +273,7 @@ onMounted(async () => {
 
     <section v-if="pools.length" class="gacha-pools">
       <span id="gacha-pools-hint" class="pool-hint">
-        {{ t('core.gamesign.gacha.poolsTitle') }}
+        {{ t('core.signflow.gacha.poolsTitle') }}
       </span>
       <div class="pool-chips" role="toolbar" aria-labelledby="gacha-pools-hint">
         <button
@@ -310,7 +310,7 @@ onMounted(async () => {
         <template v-else-if="column.key === 'name'">
           <span class="cell-name">{{ record.name }}</span>
           <StatusChip v-if="record.isFree" tone="neutral">{{
-            t('core.gamesign.gacha.free')
+            t('core.signflow.gacha.free')
           }}</StatusChip>
         </template>
         <template v-else-if="column.key === 'rarity'">
@@ -322,7 +322,7 @@ onMounted(async () => {
     <NoData
       v-if="!querying && records.length === 0 && unavailable === ''"
       class="gacha-empty"
-      :description="t('core.gamesign.gacha.emptyGuide')"
+      :description="t('core.signflow.gacha.emptyGuide')"
     />
   </div>
 </template>

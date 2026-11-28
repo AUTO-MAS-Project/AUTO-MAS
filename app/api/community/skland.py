@@ -153,7 +153,7 @@ async def qr_save(body: SklandQrSaveIn = Body(...)) -> OutBase:
             proxy=Config.proxy,
         )
         parsed = _tool_skland.validate_skland_credential(serialized)
-        accounts = Config.ToolsConfig.GameSign_Accounts
+        accounts = Config.ToolsConfig.SignFlow_Accounts
         if not is_known_community_account(accounts.keys(), body.account_uid):
             return OutBase(
                 code=400,
@@ -165,9 +165,9 @@ async def qr_save(body: SklandQrSaveIn = Body(...)) -> OutBase:
             for field in ("oauthToken", "token", "cred")
         ):
             raise ValueError("森空岛扫码登录未返回完整凭据")
-        await Config.update_game_sign_account(
+        await Config.update_sign_flow_account(
             body.account_uid,
-            {"GameSignAccount": {"SklandToken": serialized}},
+            {"SignFlowAccount": {"SklandToken": serialized}},
         )
     except ValueError as e:
         _log_qr_error("保存森空岛 Token 校验失败", e)

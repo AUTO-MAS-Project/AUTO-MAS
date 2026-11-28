@@ -5,7 +5,7 @@
 /**
  * 游戏社区账号组排序请求
  */
-export type GameSignAccountReorderIn = {
+export type SignFlowAccountReorderIn = {
     /**
      * 账号组 UUID 顺序列表
      */

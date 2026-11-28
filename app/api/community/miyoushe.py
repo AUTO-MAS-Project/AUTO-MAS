@@ -171,15 +171,15 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
         # 全量 Cookie 可能包含服务端兼容字段，保存路径不得重建或裁剪。
         cookie = body.cookie
         _tool_miyoushe.validate_miyoushe_cookie(cookie)
-        accounts = Config.ToolsConfig.GameSign_Accounts
+        accounts = Config.ToolsConfig.SignFlow_Accounts
         if not is_known_community_account(accounts.keys(), body.account_uid):
             return OutBase(
                 code=400,
                 status="error",
                 message="账号组不存在，请刷新页面后重试",
             )
-        data = {"GameSignAccount": {"MiyousheToken": cookie}}
-        await Config.update_game_sign_account(body.account_uid, data)
+        data = {"SignFlowAccount": {"MiyousheToken": cookie}}
+        await Config.update_sign_flow_account(body.account_uid, data)
     except ValueError as e:
         _log_qr_error("保存米游社 Token 校验失败", e)
         return OutBase(

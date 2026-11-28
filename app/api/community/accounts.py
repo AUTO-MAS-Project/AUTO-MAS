@@ -53,19 +53,19 @@ ToolsConfig = ConfigPayload[_config_models.ToolsConfig]
 ToolsConfigInput = ConfigInput[_config_models.ToolsConfig]
 
 
-class GameSignAccountGroupConfig(
+class SignFlowAccountGroupConfig(
     config_group_contract(
-        _config_models.GameSignAccountGroup.GameSignAccountFields,
-        name="GameSignAccountGroupConfig",
+        _config_models.SignFlowAccountGroup.SignFlowAccountFields,
+        name="SignFlowAccountGroupConfig",
     )
 ):
     """账号组的纯接口投影。"""
 
 
-class GameSignAccountGroupConfigInput(
+class SignFlowAccountGroupConfigInput(
     config_group_contract(
-        _config_models.GameSignAccountGroup.GameSignAccountFields,
-        name="GameSignAccountGroupConfigInput",
+        _config_models.SignFlowAccountGroup.SignFlowAccountFields,
+        name="SignFlowAccountGroupConfigInput",
         mode="input",
     )
 ):
@@ -80,57 +80,57 @@ class TaygedoLoginIn(BaseModel):
     password: SecretStr = Field(..., min_length=1, description="塔吉多账号密码")
 
 
-class GameSignAccountCreateOut(OutBase):
+class SignFlowAccountCreateOut(OutBase):
     """游戏社区账号组创建响应"""
 
     accountId: str = Field(default="", description="账号组 UUID")
-    data: GameSignAccountGroupConfig = Field(
-        default_factory=GameSignAccountGroupConfig, description="账号组配置"
+    data: SignFlowAccountGroupConfig = Field(
+        default_factory=SignFlowAccountGroupConfig, description="账号组配置"
     )
 
 
-class GameSignAccountInstanceOut(BaseModel):
+class SignFlowAccountInstanceOut(BaseModel):
     """游戏社区账号组顺序项。"""
 
     uid: str = Field(..., description="账号组 UUID")
     type: str = Field(..., description="账号组配置类型")
 
 
-class GameSignAccountDataOut(BaseModel):
+class SignFlowAccountDataOut(BaseModel):
     """动态 UUID 键对应的游戏社区账号组数据。"""
 
-    GameSignAccount: GameSignAccountGroupConfig = Field(..., description="账号组配置")
+    SignFlowAccount: SignFlowAccountGroupConfig = Field(..., description="账号组配置")
 
 
-class GameSignAccountCollectionOut(BaseModel):
+class SignFlowAccountCollectionOut(BaseModel):
     """新配置集合的索引和成员文档。"""
 
-    order: list[GameSignAccountInstanceOut] = Field(default_factory=list)
-    data: Dict[str, GameSignAccountDataOut] = Field(default_factory=dict)
+    order: list[SignFlowAccountInstanceOut] = Field(default_factory=list)
+    data: Dict[str, SignFlowAccountDataOut] = Field(default_factory=dict)
 
 
-class GameSignAccountsListOut(OutBase):
+class SignFlowAccountsListOut(OutBase):
     """游戏社区账号组列表响应"""
 
-    data: GameSignAccountCollectionOut = Field(
-        default_factory=GameSignAccountCollectionOut, description="账号组列表"
+    data: SignFlowAccountCollectionOut = Field(
+        default_factory=SignFlowAccountCollectionOut, description="账号组列表"
     )
 
 
-class GameSignAccountUpdateIn(BaseModel):
+class SignFlowAccountUpdateIn(BaseModel):
     """游戏社区账号组更新请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
-    data: GameSignAccountGroupConfigInput = Field(..., description="账号组配置")
+    data: SignFlowAccountGroupConfigInput = Field(..., description="账号组配置")
 
 
-class GameSignAccountDeleteIn(BaseModel):
+class SignFlowAccountDeleteIn(BaseModel):
     """游戏社区账号组删除请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
 
 
-class GameSignAccountReorderIn(BaseModel):
+class SignFlowAccountReorderIn(BaseModel):
     """游戏社区账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
@@ -240,7 +240,7 @@ def _get_community_account_field(account: object, field: str, default=None):
     """读取社区账号字段时兼容未包含新增字段的旧账号对象。"""
 
     try:
-        return getattr(account.GameSignAccount, field)  # type: ignore[attr-defined]
+        return getattr(account.SignFlowAccount, field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return default
 
@@ -299,7 +299,7 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
     response_model=OutBase,
     status_code=200,
 )
-async def manual_game_sign() -> OutBase:
+async def manual_sign_flow() -> OutBase:
     """手动触发游戏社区签到"""
 
     try:
@@ -320,11 +320,11 @@ async def manual_game_sign() -> OutBase:
             # 标记今天已签到（仅当所有启用的账号都已签到时标记全局）
             today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
             all_signed = True
-            for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+            for uid, account in Config.ToolsConfig.SignFlow_Accounts.items():
                 has_credentials = _tool_community.has_community_credentials(account)
                 if _get_community_account_field(account, "Enabled") and has_credentials:
                     if (
-                        account.GameSignAccount.LastSignDate.strftime("%Y-%m-%d")
+                        account.SignFlowAccount.LastSignDate.strftime("%Y-%m-%d")
                         != today
                     ):
                         all_signed = False
@@ -332,7 +332,7 @@ async def manual_game_sign() -> OutBase:
             if all_signed:
                 await Config.ToolsConfig.update(
                     type(Config.ToolsConfig).model_validate(
-                        {"GameSign": {"LastSignDate": datetime.now(tz=UTC8)}}
+                        {"SignFlow": {"LastSignDate": datetime.now(tz=UTC8)}}
                     ),
                     check_visibility=False,
                 )
@@ -379,7 +379,7 @@ async def query_community_activity(
 ) -> CommunityActivityOut:
     """查询游戏社区日常活动，不占用签到流程锁。"""
 
-    if Config.ToolsConfig.GameSign.ActivityEnabled is False:
+    if Config.ToolsConfig.SignFlow.ActivityEnabled is False:
         return CommunityActivityOut(status="success", data=[])
 
     snapshots = ()
@@ -446,67 +446,67 @@ async def query_community_activity(
 
 @router.post(
     "/sign/account/list",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="获取所有游戏社区账号组",
-    response_model=GameSignAccountsListOut,
+    response_model=SignFlowAccountsListOut,
     status_code=200,
 )
-async def list_game_sign_accounts() -> GameSignAccountsListOut:
+async def list_sign_flow_accounts() -> SignFlowAccountsListOut:
     """获取所有游戏社区账号组"""
 
     try:
-        data = await Config.get_game_sign_accounts()
+        data = await Config.get_sign_flow_accounts()
     except Exception as e:
         _log_community_api_error("获取游戏社区账号组失败", e)
-        return GameSignAccountsListOut(
+        return SignFlowAccountsListOut(
             code=500,
             status="error",
             message="获取游戏社区账号组失败，请稍后重试",
-            data=GameSignAccountCollectionOut(),
+            data=SignFlowAccountCollectionOut(),
         )
-    return GameSignAccountsListOut(
-        data=GameSignAccountCollectionOut.model_validate(data)
+    return SignFlowAccountsListOut(
+        data=SignFlowAccountCollectionOut.model_validate(data)
     )
 
 
 @router.post(
     "/sign/account/add",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="添加游戏社区账号组",
-    response_model=GameSignAccountCreateOut,
+    response_model=SignFlowAccountCreateOut,
     status_code=200,
 )
-async def add_game_sign_account() -> GameSignAccountCreateOut:
+async def add_sign_flow_account() -> SignFlowAccountCreateOut:
     """添加游戏社区账号组"""
 
     try:
-        uid, config = await Config.add_game_sign_account()
+        uid, config = await Config.add_sign_flow_account()
         # 配置导出按组组织，账号接口继续使用原有扁平载荷。
         raw = config.model_dump(context={"audience": "api"})
-        flat = raw.get("GameSignAccount", raw)
-        data = GameSignAccountGroupConfig(**flat)
+        flat = raw.get("SignFlowAccount", raw)
+        data = SignFlowAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
     except Exception as e:
         _log_community_api_error("添加游戏社区账号组失败", e)
-        return GameSignAccountCreateOut(
+        return SignFlowAccountCreateOut(
             code=500,
             status="error",
             message="添加游戏社区账号组失败，请稍后重试",
             accountId="",
-            data=GameSignAccountGroupConfig(**{}),
+            data=SignFlowAccountGroupConfig(**{}),
         )
-    return GameSignAccountCreateOut(accountId=str(uid), data=data)
+    return SignFlowAccountCreateOut(accountId=str(uid), data=data)
 
 
 @router.post(
     "/sign/account/update",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="更新游戏社区账号组配置",
     response_model=OutBase,
     status_code=200,
 )
-async def update_game_sign_account(
-    account: GameSignAccountUpdateIn = Body(...),
+async def update_sign_flow_account(
+    account: SignFlowAccountUpdateIn = Body(...),
 ) -> OutBase:
     """更新游戏社区账号组配置"""
 
@@ -546,8 +546,8 @@ async def update_game_sign_account(
                     status="error",
                     message="云原神 combo token 格式无效，请检查后重试",
                 )
-        data = {"GameSignAccount": flat_data}
-        await Config.update_game_sign_account(account.accountId, data)
+        data = {"SignFlowAccount": flat_data}
+        await Config.update_sign_flow_account(account.accountId, data)
     except Exception as e:
         _log_community_api_error("更新游戏社区账号组失败", e)
         return OutBase(
@@ -560,18 +560,18 @@ async def update_game_sign_account(
 
 @router.post(
     "/sign/account/delete",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="删除游戏社区账号组",
     response_model=OutBase,
     status_code=200,
 )
-async def delete_game_sign_account(
-    account: GameSignAccountDeleteIn = Body(...),
+async def delete_sign_flow_account(
+    account: SignFlowAccountDeleteIn = Body(...),
 ) -> OutBase:
     """删除游戏社区账号组"""
 
     try:
-        await Config.delete_game_sign_account(account.accountId)
+        await Config.delete_sign_flow_account(account.accountId)
     except Exception as e:
         _log_community_api_error("删除游戏社区账号组失败", e)
         return OutBase(
@@ -584,18 +584,18 @@ async def delete_game_sign_account(
 
 @router.post(
     "/sign/account/reorder",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="调整游戏社区账号组顺序",
     response_model=OutBase,
     status_code=200,
 )
-async def reorder_game_sign_accounts(
-    account: GameSignAccountReorderIn = Body(...),
+async def reorder_sign_flow_accounts(
+    account: SignFlowAccountReorderIn = Body(...),
 ) -> OutBase:
     """调整游戏社区账号组顺序"""
 
     try:
-        await Config.reorder_game_sign_accounts(account.order)
+        await Config.reorder_sign_flow_accounts(account.order)
     except Exception as e:
         _log_community_api_error("调整游戏社区账号组顺序失败", e)
         return OutBase(
@@ -608,7 +608,7 @@ async def reorder_game_sign_accounts(
 
 @router.post(
     "/sign/account/taygedo/login",
-    tags=["GameSign"],
+    tags=["SignFlow"],
     summary="塔吉多账号密码登录",
     response_model=OutBase,
     status_code=200,
@@ -621,8 +621,8 @@ async def login_taygedo(
     try:
         from app.tools.common.community.providers import taygedo as _tool_taygedo
 
-        account = Config.ToolsConfig.GameSign_Accounts[UUID(credential.accountId)]
-        existing_token = str(account.GameSignAccount.TaygedoToken or "").strip()
+        account = Config.ToolsConfig.SignFlow_Accounts[UUID(credential.accountId)]
+        existing_token = str(account.SignFlowAccount.TaygedoToken or "").strip()
         refreshed = await _tool_taygedo.login_taygedo_with_password(
             credential.phone.strip(),
             credential.password.get_secret_value(),
@@ -636,10 +636,10 @@ async def login_taygedo(
             for field in ("accessToken", "refreshToken", "uid")
         ):
             raise ValueError("塔吉多登录未返回完整 Token")
-        await Config.update_game_sign_account(
+        await Config.update_sign_flow_account(
             credential.accountId,
             {
-                "GameSignAccount": {
+                "SignFlowAccount": {
                     "TaygedoToken": serialized,
                 }
             },

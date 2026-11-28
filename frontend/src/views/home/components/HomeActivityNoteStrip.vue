@@ -50,8 +50,8 @@ const formatTime = (value: string) => {
 }
 
 const platformLabel = (platform: string) => {
-  if (platform === '森空岛') return t('core.gamesign.activity.platform.skland')
-  if (platform === '米游社') return t('core.gamesign.activity.platform.miyoushe')
+  if (platform === '森空岛') return t('core.signflow.activity.platform.skland')
+  if (platform === '米游社') return t('core.signflow.activity.platform.miyoushe')
   return platform
 }
 
@@ -64,7 +64,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 const statusMeta = (snapshot: ActivitySnapshot) => ({
-  label: t(`core.gamesign.activity.status.${snapshot.status}`),
+  label: t(`core.signflow.activity.status.${snapshot.status}`),
   color: STATUS_COLORS[snapshot.status] ?? 'default',
 })
 
@@ -104,13 +104,13 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       <a-tag :color="statusMeta(snapshot).color">
         {{ statusMeta(snapshot).label }}
       </a-tag>
-      <a-tooltip :title="t('core.gamesign.activity.refresh')">
+      <a-tooltip :title="t('core.signflow.activity.refresh')">
         <a-button
           type="text"
           size="small"
           shape="circle"
           :loading="loading"
-          :aria-label="t('core.gamesign.activity.refresh')"
+          :aria-label="t('core.signflow.activity.refresh')"
           @click="$emit('refresh')"
         >
           <ReloadOutlined />
@@ -151,7 +151,7 @@ const stripStyle = (snapshot: ActivitySnapshot): CSSProperties => ({
       class="note-strip-reason"
     />
     <footer v-if="formatTime(snapshot.updatedAt)" class="note-strip-footer">
-      {{ t('core.gamesign.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
+      {{ t('core.signflow.activity.queriedAt', { time: formatTime(snapshot.updatedAt) }) }}
     </footer>
   </article>
 </template>

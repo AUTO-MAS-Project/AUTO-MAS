@@ -43,10 +43,10 @@ const fetchAccountList = async (): Promise<AccountInstance[] | null> => {
   for (const entry of entries) {
     const uid = asString(entry.uid)
     if (!uid) continue
-    const raw = asRecord(asRecord(data?.data?.[uid]).GameSignAccount)
+    const raw = asRecord(asRecord(data?.data?.[uid]).SignFlowAccount)
     next.push({
       uid,
-      Name: asString(raw.Name) || t('core.gamesign.defaultUserName'),
+      Name: asString(raw.Name) || t('core.signflow.defaultUserName'),
       Enabled: typeof raw.Enabled === 'boolean' ? raw.Enabled : true,
       MiyousheToken: asString(raw.MiyousheToken),
       MiyousheDeviceId: asString(raw.MiyousheDeviceId),
@@ -75,13 +75,13 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       const next = await fetchAccountList()
       if (!next) {
         // 业务码非 200 时不抛异常，只返回 null；完全静默会让页面留着上一次的帐号
-        message.error(t('core.gamesign.toast.loadAccountsFailed'))
+        message.error(t('core.signflow.toast.loadAccountsFailed'))
         return
       }
       accounts.value = next
     } catch (error) {
       logger.error(`加载账号列表失败: ${error instanceof Error ? error.message : String(error)}`)
-      message.error(t('core.gamesign.toast.loadAccountsFailed'))
+      message.error(t('core.signflow.toast.loadAccountsFailed'))
     } finally {
       loading.value = false
     }
@@ -103,7 +103,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       logger.error(`回读账号失败: ${error instanceof Error ? error.message : String(error)}`)
       // 扫码 / 账密 / 短信都已经在后端落库，回读失败只影响界面显示，
       // 但用户会以为绑定没生效，因此这里必须给一句可见提示。
-      message.error(t('core.gamesign.toast.loadAccountsFailed'))
+      message.error(t('core.signflow.toast.loadAccountsFailed'))
       return null
     }
   }
@@ -120,7 +120,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
     const data = created.data
     const account: AccountInstance = {
       uid: created.accountId,
-      Name: data.Name || t('core.gamesign.newUserName', { n: accounts.value.length + 1 }),
+      Name: data.Name || t('core.signflow.newUserName', { n: accounts.value.length + 1 }),
       Enabled: data.Enabled ?? true,
       MiyousheToken: data.MiyousheToken || '',
       MiyousheDeviceId: data.MiyousheDeviceId || '',
@@ -131,7 +131,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       TaygedoToken: data.TaygedoToken || '',
     }
     accounts.value = [...accounts.value, account]
-    message.success(t('core.gamesign.toast.userAdded'))
+    message.success(t('core.signflow.toast.userAdded'))
     return account
   }
 
@@ -146,7 +146,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       Object.assign(account, patch)
       return true
     } catch {
-      message.error(t('core.gamesign.toast.saveFailed'))
+      message.error(t('core.signflow.toast.saveFailed'))
       return false
     }
   }
@@ -167,7 +167,7 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
       await updateAccount(account.uid, { Enabled: enabled })
     } catch {
       account.Enabled = previous
-      message.error(t('core.gamesign.toast.saveFailed'))
+      message.error(t('core.signflow.toast.saveFailed'))
     }
   }
 
@@ -188,12 +188,12 @@ export function useGameSignAccounts(resultSource: () => string | null | undefine
     try {
       const response = await reorderAccounts(nextOrder)
       if (response.code !== 200) {
-        throw new Error(response.message || t('core.gamesign.toast.reorderFailed'))
+        throw new Error(response.message || t('core.signflow.toast.reorderFailed'))
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
       logger.error(`保存账号排序失败: ${errorMessage}`)
-      message.error(t('core.gamesign.toast.reorderError', { error: errorMessage }))
+      message.error(t('core.signflow.toast.reorderError', { error: errorMessage }))
       await load()
     } finally {
       reordering.value = false

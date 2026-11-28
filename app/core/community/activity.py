@@ -79,31 +79,31 @@ class CommunityActivityOperations:
     ) -> None:
         """订阅账号、便笺开关和代理设置，覆盖编辑与后台凭据更新。"""
 
-        from app.models.config import GameSignAccountGroup
+        from app.models.config import SignFlowAccountGroup
 
         # 初始化重试时复用同一接收者，避免重复订阅使启动失败。
-        GameSignAccountGroup.disconnect(
-            self._invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+        SignFlowAccountGroup.disconnect(
+            self._invalidate_activity_cache, phase="runtime", group="SignFlowAccount"
         )
-        GameSignAccountGroup.connect(
-            self._invalidate_activity_cache, phase="runtime", group="GameSignAccount"
+        SignFlowAccountGroup.connect(
+            self._invalidate_activity_cache, phase="runtime", group="SignFlowAccount"
         )
-        tools_config.GameSign_Accounts.disconnect(
+        tools_config.SignFlow_Accounts.disconnect(
             self._invalidate_activity_cache, phase="runtime"
         )
-        tools_config.GameSign_Accounts.connect(
+        tools_config.SignFlow_Accounts.connect(
             self._invalidate_activity_cache, phase="runtime"
         )
         tools_config.disconnect(
             self._invalidate_activity_cache,
             phase="runtime",
-            group="GameSign",
+            group="SignFlow",
             field="ActivityEnabled",
         )
         tools_config.connect(
             self._invalidate_activity_cache,
             phase="runtime",
-            group="GameSign",
+            group="SignFlow",
             field="ActivityEnabled",
         )
         setting.disconnect(
@@ -132,7 +132,7 @@ class CommunityActivityOperations:
 
         async with self.community_activity_flow():
             while True:
-                if Config.ToolsConfig.GameSign.ActivityEnabled is False:
+                if Config.ToolsConfig.SignFlow.ActivityEnabled is False:
                     return ()
                 config_id = id(Config.ToolsConfig)
                 selected_ids = tuple(
@@ -211,7 +211,7 @@ class CommunityActivityOperations:
         self, account: object, name: str, default: object = ""
     ) -> object:
         try:
-            return getattr(account.GameSignAccount, name)  # type: ignore[attr-defined]
+            return getattr(account.SignFlowAccount, name)  # type: ignore[attr-defined]
         except (AttributeError, KeyError):
             return default
 
@@ -292,7 +292,7 @@ class CommunityActivityOperations:
         }
         selected: list[tuple[str, object]] = []
         matched_ids: set[str] = set()
-        for raw_uid, account in Config.ToolsConfig.GameSign_Accounts.items():
+        for raw_uid, account in Config.ToolsConfig.SignFlow_Accounts.items():
             account_uid = str(raw_uid)
             if requested_ids and account_uid not in requested_ids:
                 continue

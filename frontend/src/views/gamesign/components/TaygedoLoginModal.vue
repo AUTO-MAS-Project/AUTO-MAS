@@ -82,7 +82,7 @@ const submit = async () => {
       return
     }
     finishLogin('saved')
-    message.success(t('core.gamesign.toast.tokenSaved'))
+    message.success(t('core.signflow.toast.tokenSaved'))
     close()
     emit('saved')
   } catch (error) {
@@ -103,7 +103,7 @@ const submit = async () => {
 <template>
   <AppModal
     :open="props.open"
-    :title="t('core.gamesign.login.taygedoTitle')"
+    :title="t('core.signflow.login.taygedoTitle')"
     :width="380"
     footer="none"
     @cancel="close"
@@ -112,12 +112,12 @@ const submit = async () => {
       <a-input
         v-model:value="form.phone"
         size="large"
-        :placeholder="t('core.gamesign.login.taygedoAccountPlaceholder')"
+        :placeholder="t('core.signflow.login.taygedoAccountPlaceholder')"
       />
       <a-input-password
         v-model:value="form.password"
         size="large"
-        :placeholder="t('core.gamesign.login.taygedoPasswordPlaceholder')"
+        :placeholder="t('core.signflow.login.taygedoPasswordPlaceholder')"
       />
       <a-button
         type="primary"
@@ -126,7 +126,7 @@ const submit = async () => {
         :disabled="!form.phone.trim() || !form.password"
         @click="submit"
       >
-        {{ t('core.gamesign.login.submit') }}
+        {{ t('core.signflow.login.submit') }}
       </a-button>
     </div>
   </AppModal>

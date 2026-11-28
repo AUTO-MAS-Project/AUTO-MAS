@@ -29,7 +29,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 const form = computed(() => toAccountForm(props.account))
-const displayName = computed(() => props.account.Name || t('core.gamesign.defaultUserName'))
+const displayName = computed(() => props.account.Name || t('core.signflow.defaultUserName'))
 const mark = computed(() => displayName.value.slice(0, 1).toUpperCase())
 const boundCount = computed(() => credentialCount(form.value))
 const rows = computed(() =>
@@ -44,19 +44,19 @@ const rows = computed(() =>
 <template>
   <article class="account-card">
     <header class="card-head">
-      <span class="card-mark" :title="t('core.gamesign.list.drag')">{{ mark }}</span>
+      <span class="card-mark" :title="t('core.signflow.list.drag')">{{ mark }}</span>
       <div class="card-head-main">
         <div class="card-name-line">
           <span class="card-name">{{ displayName }}</span>
           <a-tag v-if="account.Enabled === false" class="card-tag">
-            {{ t('core.gamesign.account.disabledTag') }}
+            {{ t('core.signflow.account.disabledTag') }}
           </a-tag>
         </div>
         <p class="card-meta">
           {{
             boundCount > 0
-              ? t('core.gamesign.account.credentialCount', { n: boundCount })
-              : t('core.gamesign.account.noCredential')
+              ? t('core.signflow.account.credentialCount', { n: boundCount })
+              : t('core.signflow.account.noCredential')
           }}
         </p>
       </div>
@@ -64,7 +64,7 @@ const rows = computed(() =>
         size="small"
         :checked="account.Enabled !== false"
         :disabled="disabled"
-        :aria-label="t('core.gamesign.account.enabled')"
+        :aria-label="t('core.signflow.account.enabled')"
         @change="emit('toggle', Boolean($event))"
       />
     </header>
@@ -73,7 +73,7 @@ const rows = computed(() =>
       <li v-for="row in rows" :key="row.field" class="cred-row">
         <span class="cred-label">{{ row.label }}</span>
         <span :class="['cred-value', row.bound ? 'is-bound' : '']">
-          {{ row.bound ? t('core.gamesign.account.bound') : t('core.gamesign.account.unbound') }}
+          {{ row.bound ? t('core.signflow.account.bound') : t('core.signflow.account.unbound') }}
         </span>
         <a-button
           type="link"
@@ -82,21 +82,21 @@ const rows = computed(() =>
           :disabled="disabled"
           @click="emit('edit')"
         >
-          {{ t('core.gamesign.account.edit') }}
+          {{ t('core.signflow.account.edit') }}
         </a-button>
       </li>
     </ul>
 
     <footer class="card-foot">
-      <span class="card-local">{{ t('core.gamesign.account.localOnly') }}</span>
+      <span class="card-local">{{ t('core.signflow.account.localOnly') }}</span>
       <a-space :size="4">
         <a-button type="text" size="small" :disabled="disabled" @click="emit('edit')">
           <template #icon><EditOutlined /></template>
-          {{ t('core.gamesign.list.edit') }}
+          {{ t('core.signflow.list.edit') }}
         </a-button>
         <a-button type="text" danger size="small" :disabled="disabled" @click="emit('remove')">
           <template #icon><DeleteOutlined /></template>
-          {{ t('core.gamesign.account.remove') }}
+          {{ t('core.signflow.account.remove') }}
         </a-button>
       </a-space>
     </footer>

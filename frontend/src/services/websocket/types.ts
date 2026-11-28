@@ -35,7 +35,7 @@ export const WS_ID_I18N = 'I18n'
 export const WS_I18N_UPDATED = 'i18n.updated'
 export const WS_ID_TASK_MANAGER = 'TaskManager'
 export const WS_ID_UPDATE = 'Update'
-export const WS_ID_GAME_SIGN = 'GameSign'
+export const WS_ID_SIGN_FLOW = 'SignFlow'
 export const WS_ID_EMULATOR_MANAGER = 'EmulatorManager'
 
 // ==================== 消息类别 ====================
@@ -74,8 +74,8 @@ export const WS_UPDATE_CANCELLED = 'update.cancelled'
 export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
 // MFW 项目手动更新过程：检查 / 下载 / 覆盖 / 校验与逐行日志（id=<scriptId>）
 
-// 游戏签到结果（id=GameSign）
-export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
+// 游戏社区签到结果（id=SignFlow）
+export const WS_SIGN_FLOW_RESULT_UPDATED = 'signflow.result.updated'
 
 // 通用错误提示（id=EmulatorManager）
 export const WS_EMULATOR_NOTICE = 'emulator.notice'
@@ -224,8 +224,8 @@ interface WSUpdateFailedData {
   message: string
 }
 
-/** 游戏签到结果广播数据 (id=GameSign, type=gamesign.result.updated) */
-export interface WSGameSignResultData {
+/** 游戏社区签到结果广播数据 (id=SignFlow, type=signflow.result.updated) */
+export interface WSSignFlowResultData {
   /** JSON 序列化的签到结果数据，与 GET 快照接口返回一致 */
   result: string
 }
@@ -320,7 +320,7 @@ interface WSMessageDataMap {
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
   [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
-  [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
+  [WS_SIGN_FLOW_RESULT_UPDATED]: WSSignFlowResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_AVD_UPDATE_PROGRESS]: WSAvdUpdateProgressData

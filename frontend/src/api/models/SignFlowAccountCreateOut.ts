@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GameSignAccountGroupConfig } from './GameSignAccountGroupConfig';
+import type { SignFlowAccountGroupConfig } from './SignFlowAccountGroupConfig';
 /**
  * 游戏社区账号组创建响应
  */
-export type GameSignAccountCreateOut = {
+export type SignFlowAccountCreateOut = {
     /**
      * 状态码
      */
@@ -26,6 +26,6 @@ export type GameSignAccountCreateOut = {
     /**
      * 账号组配置
      */
-    data?: GameSignAccountGroupConfig;
+    data?: SignFlowAccountGroupConfig;
 };
 

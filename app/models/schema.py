@@ -998,8 +998,8 @@ class WSDisplayDetachPromptData(BaseModel):
     )
 
 
-class WSGameSignResultData(BaseModel):
-    """游戏签到结果广播数据 (id=GameSign, type=gamesign.result.updated)
+class WSSignFlowResultData(BaseModel):
+    """游戏签到结果广播数据 (id=SignFlow, type=signflow.result.updated)
 
     result 为 JSON 序列化后的签到结果合并数据, 与 GET 快照接口返回一致。
     """
@@ -1941,7 +1941,7 @@ __all__ = [
     "WSPowerSignData",
     "WSDisplayMonitorRectData",
     "WSDisplayDetachPromptData",
-    "WSGameSignResultData",
+    "WSSignFlowResultData",
     "WSUpdateProgressData",
     "WSMaaFWEnvPrepareProgressData",
     "WSMaaFWProjectUpdateProgressData",

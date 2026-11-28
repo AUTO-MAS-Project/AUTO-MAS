@@ -3,7 +3,7 @@ import { communityAccountAction } from '@/utils/communityAnalytics'
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type GameSignAccountGroupConfig } from '@/api'
+import { Service, type SignFlowAccountGroupConfig } from '@/api'
 
 export function useGameSignAccountApi() {
   const loading = ref(false)
@@ -14,14 +14,14 @@ export function useGameSignAccountApi() {
    */
   const addAccount = async (): Promise<{
     accountId: string
-    data: GameSignAccountGroupConfig
+    data: SignFlowAccountGroupConfig
   } | null> => {
     loading.value = true
     try {
       const response = await observeFeature(
         'community_account_manage_finished',
         { action: 'create' },
-        () => Service.addGameSignAccountApiToolsSignAccountAddPost(),
+        () => Service.addSignFlowAccountApiToolsSignAccountAddPost(),
         result => (result.code === 200 && result.accountId && result.data ? 'success' : 'failure')
       )
       if (response.code !== 200) {
@@ -47,7 +47,7 @@ export function useGameSignAccountApi() {
    */
   const updateAccount = async (
     accountId: string,
-    data: Partial<GameSignAccountGroupConfig>
+    data: Partial<SignFlowAccountGroupConfig>
   ): Promise<void> => {
     // 只提交改动字段：账号组里的凭据是页面加载时的快照，全量回写会把
     // 后台在这期间轮换出的新凭据覆盖回旧值（一次性 refreshToken 尤其致命）。
@@ -58,7 +58,7 @@ export function useGameSignAccountApi() {
           action: communityAccountAction(data),
         },
         () =>
-          Service.updateGameSignAccountApiToolsSignAccountUpdatePost({
+          Service.updateSignFlowAccountApiToolsSignAccountUpdatePost({
             accountId,
             data,
           }),
@@ -85,7 +85,7 @@ export function useGameSignAccountApi() {
         'community_account_manage_finished',
         { action: 'delete' },
         () =>
-          Service.deleteGameSignAccountApiToolsSignAccountDeletePost({
+          Service.deleteSignFlowAccountApiToolsSignAccountDeletePost({
             accountId,
           }),
         apiOutcome

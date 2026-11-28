@@ -171,7 +171,7 @@ export function useCommunityActivityApi() {
     if (response.code !== 200) {
       throw new Error(response.message || '读取签到结果失败')
     }
-    return parseSignResult(response.data?.GameSign?.Result)
+    return parseSignResult(response.data?.SignFlow?.Result)
   }
 
   return { queryActivity, querySignResult }

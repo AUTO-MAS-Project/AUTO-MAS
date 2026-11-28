@@ -2,11 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GameSignAccountCollectionOut } from './GameSignAccountCollectionOut';
+import type { SignFlowAccountCollectionOut } from './SignFlowAccountCollectionOut';
 /**
  * 游戏社区账号组列表响应
  */
-export type GameSignAccountsListOut = {
+export type SignFlowAccountsListOut = {
     /**
      * 状态码
      */
@@ -22,6 +22,6 @@ export type GameSignAccountsListOut = {
     /**
      * 账号组列表
      */
-    data?: GameSignAccountCollectionOut;
+    data?: SignFlowAccountCollectionOut;
 };
 

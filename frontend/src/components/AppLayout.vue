@@ -188,7 +188,7 @@ const devMenuItems = computed(() => [
 
 const bottomMenuItems = computed(() => [
   { key: '/tools', label: t('core.tools.title'), icon: icon('tools', ToolOutlined) },
-  { key: '/gamesign', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
+  { key: '/signflow', label: t('core.comp.checkIns'), icon: icon('gameSign', CarryOutOutlined) },
   { key: '/history', label: t('core.comp.history'), icon: icon('history', HistoryOutlined) },
   { key: '/theme-store', label: t('core.comp.themeStore'), icon: icon('themeStore', SkinOutlined) },
   { key: '/plugins', label: t('core.plugins.title'), icon: icon('plugins', ControlOutlined) },

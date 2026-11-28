@@ -412,7 +412,7 @@ def read_community_token(account: object, field: str) -> str:
     """读取凭据字段，兼容旧版本尚未包含新增字段的账号对象。"""
 
     try:
-        value = getattr(account.GameSignAccount, field)  # type: ignore[attr-defined]
+        value = getattr(account.SignFlowAccount, field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return ""
     return value.strip() if isinstance(value, str) else str(value or "").strip()
@@ -605,12 +605,12 @@ def merge_community_sign_results(
     """将新签到结果合并到已有结果中
 
     Args:
-        existing: 已有的 _game_sign_result_data
+        existing: 已有的 _sign_flow_result_data
         formatted: 本次 format_community_sign_results 的新结果
         replace: 保留该参数以兼容现有调用；受影响账号均按 account_uid 替换旧数据。
 
     Returns:
-        合并后的 _game_sign_result_data
+        合并后的 _sign_flow_result_data
     """
     if not existing:
         return formatted

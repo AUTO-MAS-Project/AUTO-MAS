@@ -47,7 +47,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/arknights-background.webp?v=6a23195b201d`,
     icon: AimOutlined,
     image: arknightsNoteImage,
-    labelKey: 'core.gamesign.activity.game.arknights',
+    labelKey: 'core.signflow.activity.game.arknights',
     uiClass: 'activity-card--arknights',
   },
   终末地: {
@@ -55,7 +55,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/endfield-background.webp?v=9d3a6fee469e`,
     icon: ApiOutlined,
     image: endfieldNoteImage,
-    labelKey: 'core.gamesign.activity.game.endfield',
+    labelKey: 'core.signflow.activity.game.endfield',
     uiClass: 'activity-card--endfield',
   },
   原神: {
@@ -63,7 +63,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/genshin-background.webp?v=f06788a6cb81`,
     icon: CompassOutlined,
     image: genshinNoteImage,
-    labelKey: 'core.gamesign.activity.game.genshin',
+    labelKey: 'core.signflow.activity.game.genshin',
     uiClass: 'activity-card--genshin',
   },
   星穹铁道: {
@@ -71,7 +71,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/star-rail-background.webp?v=1048d29ea88f`,
     icon: RocketOutlined,
     image: starRailNoteImage,
-    labelKey: 'core.gamesign.activity.game.starrail',
+    labelKey: 'core.signflow.activity.game.starrail',
     uiClass: 'activity-card--star-rail',
   },
   绝区零: {
@@ -79,7 +79,7 @@ const GAME_VISUALS: Record<string, GameVisual> = {
     backgroundImage: `${NOTE_BACKGROUND_BASE}/zenless-background.webp?v=e4f8798de02c`,
     icon: ThunderboltOutlined,
     image: zenlessNoteImage,
-    labelKey: 'core.gamesign.activity.game.zenless',
+    labelKey: 'core.signflow.activity.game.zenless',
     uiClass: 'activity-card--zenless',
   },
 }
@@ -102,7 +102,7 @@ const statusMeta = computed(() => {
     failed: 'error',
   }
   return {
-    label: t(`core.gamesign.activity.status.${props.snapshot.status}`),
+    label: t(`core.signflow.activity.status.${props.snapshot.status}`),
     color: colors[props.snapshot.status],
   }
 })
@@ -112,8 +112,8 @@ const alertType = computed(() => {
   return 'info'
 })
 const platform = computed(() => {
-  if (props.snapshot.platform === '森空岛') return t('core.gamesign.activity.platform.skland')
-  if (props.snapshot.platform === '米游社') return t('core.gamesign.activity.platform.miyoushe')
+  if (props.snapshot.platform === '森空岛') return t('core.signflow.activity.platform.skland')
+  if (props.snapshot.platform === '米游社') return t('core.signflow.activity.platform.miyoushe')
   return props.snapshot.platform
 })
 const updatedAt = computed(() => {
@@ -153,8 +153,8 @@ watch(
     <header class="activity-card-header">
       <span
         class="activity-drag-handle"
-        :title="t('core.gamesign.activity.drag')"
-        :aria-label="t('core.gamesign.activity.drag')"
+        :title="t('core.signflow.activity.drag')"
+        :aria-label="t('core.signflow.activity.drag')"
         ><HolderOutlined
       /></span>
       <span class="activity-game-mark">
@@ -217,9 +217,9 @@ watch(
     />
     <footer class="activity-card-footer">
       <span v-if="snapshot.roleUid">{{
-        t('core.gamesign.activity.roleUid', { uid: snapshot.roleUid })
+        t('core.signflow.activity.roleUid', { uid: snapshot.roleUid })
       }}</span>
-      <span v-else>{{ t('core.gamesign.activity.noRole') }}</span>
+      <span v-else>{{ t('core.signflow.activity.noRole') }}</span>
       <span v-if="updatedAt">{{ updatedAt }}</span>
     </footer>
   </a-card>

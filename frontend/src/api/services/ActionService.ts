@@ -268,7 +268,7 @@ export class ActionService {
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static manualGameSignApiToolsSignPost(): CancelablePromise<OutBase> {
+    public static manualSignFlowApiToolsSignPost(): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign',

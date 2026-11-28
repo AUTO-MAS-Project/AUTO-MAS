@@ -109,15 +109,15 @@ const send = async () => {
     const result = await signflowApi.sendTokenLoginCode(session.sessionId, null, true)
     if (current !== generation) return
     if (result.sent) {
-      message.success(result.message || t('core.gamesign.sms.sent'))
+      message.success(result.message || t('core.signflow.sms.sent'))
       return
     }
-    notice.value = result.message || t('core.gamesign.sms.manualRequired')
+    notice.value = result.message || t('core.signflow.sms.manualRequired')
   } catch (error) {
     if (current !== generation) return
     logger.error(`库街区短信发送失败: ${errorText(error)}`)
     notice.value = isPluginUnavailable(error)
-      ? t('core.gamesign.sms.pluginUnavailable')
+      ? t('core.signflow.sms.pluginUnavailable')
       : errorText(error)
     if (isPluginUnavailable(error)) finishLogin('unsupported')
   } finally {
@@ -133,7 +133,7 @@ const submit = async () => {
     const result = await signflowApi.submitTokenLoginCode(sessionId.value, code.value.trim())
     if (current !== generation) return
     finishLogin('saved')
-    message.success(result.message || t('core.gamesign.toast.tokenSaved'))
+    message.success(result.message || t('core.signflow.toast.tokenSaved'))
     emit('saved')
     emit('close')
     reset()
@@ -142,7 +142,7 @@ const submit = async () => {
     // 插件未启用时给出可读原因，而不是「登录失败」；
     // 判定统一走 services 里的 isPluginUnavailable，不在各处比对业务码
     const unsupported = isPluginUnavailable(error)
-    notice.value = unsupported ? t('core.gamesign.sms.pluginUnavailable') : errorText(error)
+    notice.value = unsupported ? t('core.signflow.sms.pluginUnavailable') : errorText(error)
     finishLogin(unsupported ? 'unsupported' : 'failure')
   } finally {
     if (current === generation) submitting.value = false
@@ -153,18 +153,18 @@ const submit = async () => {
 <template>
   <AppModal
     :open="props.open"
-    :title="t('core.gamesign.sms.title')"
+    :title="t('core.signflow.sms.title')"
     :width="400"
     footer="none"
     @cancel="emit('close')"
   >
     <div class="sms-form">
-      <a-alert type="info" show-icon :message="t('core.gamesign.sms.hint')" />
+      <a-alert type="info" show-icon :message="t('core.signflow.sms.hint')" />
       <a-input
         v-model:value="phone"
         size="large"
         :maxlength="11"
-        :placeholder="t('core.gamesign.sms.phonePlaceholder')"
+        :placeholder="t('core.signflow.sms.phonePlaceholder')"
       />
       <a-button
         type="primary"
@@ -173,13 +173,13 @@ const submit = async () => {
         :disabled="!phoneValid || submitting"
         @click="send"
       >
-        {{ sessionId ? t('core.gamesign.sms.resend') : t('core.gamesign.sms.send') }}
+        {{ sessionId ? t('core.signflow.sms.resend') : t('core.signflow.sms.send') }}
       </a-button>
       <a-input
         v-model:value="code"
         size="large"
         :maxlength="6"
-        :placeholder="t('core.gamesign.sms.codePlaceholder')"
+        :placeholder="t('core.signflow.sms.codePlaceholder')"
       />
       <a-button
         type="primary"
@@ -188,7 +188,7 @@ const submit = async () => {
         :disabled="!canSubmit || sending"
         @click="submit"
       >
-        {{ t('core.gamesign.login.submit') }}
+        {{ t('core.signflow.login.submit') }}
       </a-button>
       <a-alert v-if="notice" type="warning" show-icon :message="notice" />
     </div>

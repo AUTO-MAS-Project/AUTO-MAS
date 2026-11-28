@@ -63,7 +63,7 @@ const renderUser = (user: GameSignUser) => {
         type="text"
         size="small"
         :loading="loading"
-        :aria-label="t('core.gamesign.activity.refresh')"
+        :aria-label="t('core.signflow.activity.refresh')"
         @click="$emit('refresh')"
         ><ReloadOutlined
       /></a-button>

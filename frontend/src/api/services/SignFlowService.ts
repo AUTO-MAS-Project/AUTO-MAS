@@ -2,24 +2,24 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
-import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
-import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
-import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
-import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
+import type { SignFlowAccountCreateOut } from '../models/SignFlowAccountCreateOut';
+import type { SignFlowAccountDeleteIn } from '../models/SignFlowAccountDeleteIn';
+import type { SignFlowAccountReorderIn } from '../models/SignFlowAccountReorderIn';
+import type { SignFlowAccountsListOut } from '../models/SignFlowAccountsListOut';
+import type { SignFlowAccountUpdateIn } from '../models/SignFlowAccountUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
-export class GameSignService {
+export class SignFlowService {
     /**
      * 获取所有游戏社区账号组
      * 获取所有游戏社区账号组
-     * @returns GameSignAccountsListOut Successful Response
+     * @returns SignFlowAccountsListOut Successful Response
      * @throws ApiError
      */
-    public static listGameSignAccountsApiToolsSignAccountListPost(): CancelablePromise<GameSignAccountsListOut> {
+    public static listSignFlowAccountsApiToolsSignAccountListPost(): CancelablePromise<SignFlowAccountsListOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/list',
@@ -28,10 +28,10 @@ export class GameSignService {
     /**
      * 添加游戏社区账号组
      * 添加游戏社区账号组
-     * @returns GameSignAccountCreateOut Successful Response
+     * @returns SignFlowAccountCreateOut Successful Response
      * @throws ApiError
      */
-    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
+    public static addSignFlowAccountApiToolsSignAccountAddPost(): CancelablePromise<SignFlowAccountCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/add',
@@ -44,8 +44,8 @@ export class GameSignService {
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static updateGameSignAccountApiToolsSignAccountUpdatePost(
-        requestBody: GameSignAccountUpdateIn,
+    public static updateSignFlowAccountApiToolsSignAccountUpdatePost(
+        requestBody: SignFlowAccountUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -64,8 +64,8 @@ export class GameSignService {
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static deleteGameSignAccountApiToolsSignAccountDeletePost(
-        requestBody: GameSignAccountDeleteIn,
+    public static deleteSignFlowAccountApiToolsSignAccountDeletePost(
+        requestBody: SignFlowAccountDeleteIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -84,8 +84,8 @@ export class GameSignService {
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static reorderGameSignAccountsApiToolsSignAccountReorderPost(
-        requestBody: GameSignAccountReorderIn,
+    public static reorderSignFlowAccountsApiToolsSignAccountReorderPost(
+        requestBody: SignFlowAccountReorderIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',

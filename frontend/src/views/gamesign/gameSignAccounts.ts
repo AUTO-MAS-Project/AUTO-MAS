@@ -5,7 +5,7 @@
  * 提交只用 diffAccountForm：账号组里的凭据是页面加载时的快照，
  * 全量回写会把后台在这期间轮换出的新凭据覆盖回旧值（一次性 refreshToken 尤其致命）。
  */
-import type { GameSignAccountGroupConfig } from '@/api'
+import type { SignFlowAccountGroupConfig } from '@/api'
 
 /** 账号列表里一个账号组的本地形态：字段全部归一成字符串，便于输入框双向绑定 */
 export interface AccountInstance {
@@ -32,7 +32,7 @@ export interface AccountForm {
   TaygedoToken: string
 }
 
-export type AccountPatch = Partial<GameSignAccountGroupConfig>
+export type AccountPatch = Partial<SignFlowAccountGroupConfig>
 
 export const asRecord = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
@@ -43,28 +43,28 @@ export const asString = (value: unknown): string => (typeof value === 'string' ?
 export const CREDENTIAL_ROWS = [
   {
     field: 'SklandToken',
-    label: 'core.gamesign.edit.skland',
-    placeholder: 'core.gamesign.edit.sklandPlaceholder',
+    label: 'core.signflow.edit.skland',
+    placeholder: 'core.signflow.edit.sklandPlaceholder',
   },
   {
     field: 'MiyousheToken',
-    label: 'core.gamesign.edit.miyoushe',
-    placeholder: 'core.gamesign.edit.miyoushePlaceholder',
+    label: 'core.signflow.edit.miyoushe',
+    placeholder: 'core.signflow.edit.miyoushePlaceholder',
   },
   {
     field: 'CloudGenshinToken',
-    label: 'core.gamesign.cred.cloudGenshin',
-    placeholder: 'core.gamesign.edit.miyoushePlaceholder',
+    label: 'core.signflow.cred.cloudGenshin',
+    placeholder: 'core.signflow.edit.miyoushePlaceholder',
   },
   {
     field: 'TaygedoToken',
-    label: 'core.gamesign.edit.taygedo',
-    placeholder: 'core.gamesign.edit.taygedoPlaceholder',
+    label: 'core.signflow.edit.taygedo',
+    placeholder: 'core.signflow.edit.taygedoPlaceholder',
   },
   {
     field: 'KuroToken',
-    label: 'core.gamesign.edit.kuro',
-    placeholder: 'core.gamesign.edit.kuroPlaceholder',
+    label: 'core.signflow.edit.kuro',
+    placeholder: 'core.signflow.edit.kuroPlaceholder',
   },
 ] as const
 

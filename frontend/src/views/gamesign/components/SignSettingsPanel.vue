@@ -1,13 +1,13 @@
 <!--
   游戏社区：签到设置区。
-  只负责把本体 ToolsConfig.GameSign 的布尔开关渲染成配置行，
+  只负责把本体 ToolsConfig.SignFlow 的布尔开关渲染成配置行，
   写回仍走父级传入的 onFieldChange，避免在子组件里直接操作配置对象。
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import type { ToolsConfig_GameSign } from '@/api'
+import type { ToolsConfig_SignFlow } from '@/api'
 import { SettingRow } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -15,11 +15,11 @@ import { getConfig, saveConfig } from '@/utils/config'
 import { formatConfigDate } from '@/utils/configDateTime'
 
 const props = defineProps<{
-  config: ToolsConfig_GameSign
+  config: ToolsConfig_SignFlow
   disabled?: boolean
-  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+  onFieldChange?: <K extends keyof ToolsConfig_SignFlow>(
     key: K,
-    value: ToolsConfig_GameSign[K]
+    value: ToolsConfig_SignFlow[K]
   ) => void | Promise<void>
 }>()
 
@@ -34,12 +34,12 @@ const lastSignDate = computed(() => {
   const formatted = formatConfigDate(props.config.LastSignDate, 8 * 60)
   return formatted && formatted !== '2000-01-01'
     ? formatted
-    : t('core.gamesign.section.neverSigned')
+    : t('core.signflow.section.neverSigned')
 })
 
-const handleChange = async <K extends keyof ToolsConfig_GameSign>(
+const handleChange = async <K extends keyof ToolsConfig_SignFlow>(
   key: K,
-  value: ToolsConfig_GameSign[K]
+  value: ToolsConfig_SignFlow[K]
 ) => {
   if (!props.onFieldChange) return
   try {
@@ -82,7 +82,7 @@ const handleHomeActivityNotesChange = async (value: boolean) => {
   } catch (error) {
     homeActivityNotesVisible.value = previous
     logger.error(`保存首页便笺开关失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error(t('core.gamesign.toast.homeActivityEnableSaveFailed'))
+    message.error(t('core.signflow.toast.homeActivityEnableSaveFailed'))
   } finally {
     homeActivityNotesSaving.value = false
   }
@@ -96,14 +96,14 @@ onMounted(() => {
 <template>
   <section class="sign-settings">
     <div class="settings-header">
-      <h3>{{ t('core.gamesign.section.settings') }}</h3>
+      <h3>{{ t('core.signflow.section.settings') }}</h3>
       <DocLink :url="MAS_DOC_URLS.gameSign" />
     </div>
-    <p class="settings-hint">{{ t('core.gamesign.section.settingsHint') }}</p>
+    <p class="settings-hint">{{ t('core.signflow.section.settingsHint') }}</p>
 
     <SettingRow
-      :label="t('core.gamesign.section.enable')"
-      :description="t('core.gamesign.section.enableDesc')"
+      :label="t('core.signflow.section.enable')"
+      :description="t('core.signflow.section.enableDesc')"
     >
       <a-switch
         :checked="config.Enabled === true"
@@ -113,8 +113,8 @@ onMounted(() => {
     </SettingRow>
 
     <SettingRow
-      :label="t('core.gamesign.section.activityEnable')"
-      :description="t('core.gamesign.section.activityEnableDesc')"
+      :label="t('core.signflow.section.activityEnable')"
+      :description="t('core.signflow.section.activityEnableDesc')"
     >
       <a-switch
         :checked="config.ActivityEnabled !== false"
@@ -124,8 +124,8 @@ onMounted(() => {
     </SettingRow>
 
     <SettingRow
-      :label="t('core.gamesign.section.homeActivityEnable')"
-      :description="t('core.gamesign.section.homeActivityEnableDesc')"
+      :label="t('core.signflow.section.homeActivityEnable')"
+      :description="t('core.signflow.section.homeActivityEnableDesc')"
     >
       <a-switch
         :checked="homeActivityNotesVisible"
@@ -136,8 +136,8 @@ onMounted(() => {
     </SettingRow>
 
     <SettingRow
-      :label="t('core.gamesign.section.notify')"
-      :description="t('core.gamesign.section.notifyDesc')"
+      :label="t('core.signflow.section.notify')"
+      :description="t('core.signflow.section.notifyDesc')"
     >
       <a-switch
         :checked="config.NotifyEnabled === true"
@@ -148,8 +148,8 @@ onMounted(() => {
     </SettingRow>
 
     <SettingRow
-      :label="t('core.gamesign.section.runOnStartup')"
-      :description="t('core.gamesign.section.runOnStartupDesc')"
+      :label="t('core.signflow.section.runOnStartup')"
+      :description="t('core.signflow.section.runOnStartupDesc')"
     >
       <a-switch
         :checked="config.RunOnStartup === true"
@@ -158,11 +158,11 @@ onMounted(() => {
       />
     </SettingRow>
 
-    <p class="settings-footnote">{{ t('core.gamesign.section.privacyNotice') }}</p>
+    <p class="settings-footnote">{{ t('core.signflow.section.privacyNotice') }}</p>
 
     <SettingRow
-      :label="t('core.gamesign.section.lastSign')"
-      :description="t('core.gamesign.section.lastSignDesc')"
+      :label="t('core.signflow.section.lastSign')"
+      :description="t('core.signflow.section.lastSignDesc')"
     >
       <span class="last-sign-value">{{ lastSignDate }}</span>
     </SettingRow>
