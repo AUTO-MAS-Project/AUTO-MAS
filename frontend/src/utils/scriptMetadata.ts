@@ -3,7 +3,9 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
-import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
+import m9aIcon from '@/assets/M9A.png'
+import maafwIcon from '@/assets/maafw.png'
+import mssIcon from '@/assets/mss.png'
 import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import okNteIcon from '@/assets/ok-nte.ico'
@@ -31,7 +33,6 @@ export interface ScriptMetadata {
 
 // 这里只放静态资料，不引入页面，供页面与列表共同读取而不形成依赖环。
 // 枚举顺序沿用原图标表；新建卡片（含 MaaFW 家族）一律按 createOrder 排列。
-// 已登记为适配条目（plugins/scriptAdapters.ts，含 MaaFW、M9A、MSS）的类型从条目取。
 export const SCRIPT_METADATA = {
   BAAH: {
     logo: baahIcon,
@@ -100,7 +101,19 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  M9A: SCRIPT_ADAPTER_METADATA.M9A,
+  M9A: {
+    logo: m9aIcon,
+    label: 'M9A',
+    typeTagColor: 'cyan',
+    routeSuffix: 'm9a',
+    createOrder: 5,
+    create: {
+      titleKey: 'core.scripts.type.M9A',
+      descriptionKey: 'core.scripts.create.typeDesc.M9A',
+      keywords: ['m9a', '1999', '重返未来'],
+      group: 'specialized',
+    },
+  },
   MAA: {
     logo: maaIcon,
     label: 'MAA',
@@ -158,8 +171,33 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  MaaFW: SCRIPT_ADAPTER_METADATA.MaaFW,
-  MSS: SCRIPT_ADAPTER_METADATA.MSS,
+  MaaFW: {
+    logo: maafwIcon,
+    label: 'MFW',
+    typeTagColor: 'geekblue',
+    routeSuffix: 'maafw',
+    createOrder: 1,
+    create: {
+      // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。
+      titleKey: 'core.scripts.type.MaaFW',
+      descriptionKey: 'core.scripts.create.typeDesc.MaaFW',
+      keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
+      group: 'general',
+    },
+  },
+  MSS: {
+    logo: mssIcon,
+    label: 'MSS',
+    typeTagColor: 'orange',
+    routeSuffix: 'mss',
+    createOrder: 13,
+    create: {
+      titleKey: 'core.scripts.type.MSS',
+      descriptionKey: 'core.scripts.create.typeDesc.MSS',
+      keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
+      group: 'specialized',
+    },
+  },
   OkNte: {
     logo: okNteIcon,
     label: 'OK-NTE',

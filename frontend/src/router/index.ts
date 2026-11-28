@@ -3,7 +3,6 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-r
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
-import { buildMaaFWRoutes } from './maafwRoutes'
 import {
   buildScriptEditorRoutes,
   genericEditorRoutes,
@@ -11,23 +10,12 @@ import {
   resolveScriptPanelRoute,
 } from './scriptEditorRoutes'
 import { isBuiltinScriptType } from '@/utils/scriptMetadata'
-import {
-  MAAFW_FAMILY_ADAPTERS,
-  SCRIPT_PLUGIN_BINDINGS,
-  SCRIPT_PLUGIN_ROUTES,
-} from '@/plugins/scriptAdapters'
+import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
-
-// MaaFW 家族的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按适配条目生成；
-// 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
-const maafwRoutes = buildMaaFWRoutes(
-  MAAFW_FAMILY_ADAPTERS,
-  () => import('../views/EditView/MaaFW/MaaFWPageHost.vue')
-)
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -128,11 +116,6 @@ const routes = [
   ...buildScriptEditorRoutes(),
   ...genericEditorRoutes,
   ...pluginEditorRedirects,
-  ...maafwRoutes.script,
-  ...maafwRoutes.setup,
-  ...maafwRoutes.userAdd,
-  ...maafwRoutes.userEdit,
-  ...SCRIPT_PLUGIN_ROUTES,
   {
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',
@@ -357,7 +340,7 @@ router.beforeEach(async to => {
   } catch (error) {
     logger.warn(`读取 ${type} 插件面板失败: ${String(error)}`)
   }
-  // 随宿主提供的编辑器可以直接打开；静态插件入口和新插件路由都检查实际能力。
+  // 随宿主提供的编辑器可以直接打开；独立插件路由检查当前能力。
   if (
     isBuiltinScriptType(type) &&
     !SCRIPT_PLUGIN_BINDINGS.some(binding => binding.scriptType === type)

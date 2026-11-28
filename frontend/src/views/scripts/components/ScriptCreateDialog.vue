@@ -234,7 +234,7 @@ import {
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import { resolveMaaFWAdapter } from '@/plugins/maafwFamily'
+import { maafwTypeOrDefault } from '@/plugins/maafwFamily'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -340,7 +340,7 @@ const selectedTemplate = computed(() =>
 )
 const isMfwStep = computed(() => currentStep.value === 'config' && isMfwFamily(selectedType.value))
 // MFW 家族第二步：只列与选中的类型卡片同类型的项目
-const createMfwType = computed(() => resolveMaaFWAdapter(selectedType.value).type)
+const createMfwType = computed(() => maafwTypeOrDefault(selectedType.value))
 const nextDisabled = computed(() => {
   if (
     props.submitting ||
