@@ -15,6 +15,7 @@ import { apiErrorMessage, requestApi } from '@/utils/apiResult'
 
 export type DeclarativeOption = OptionHint
 export type DeclarativeHint = ComponentHint
+export type DeclarativeOptions = ReturnType<typeof useDeclarativeOptions>
 
 interface OptionsTarget {
   uid: string
@@ -29,7 +30,7 @@ function dependency(target: OptionsTarget, path: string) {
   if (!hint || hint.secret || hint.masked) return undefined
   return (target[group] as Record<string, unknown> | undefined)?.[field]
 }
-const missing = (value: unknown) => value == null || value === ''
+const missing = (value: unknown) => value == null
 
 /** 查询按配置、来源和草稿依赖隔离，旧请求只能更新自己的缓存。 */
 export function useDeclarativeOptions(target: ComputedRef<OptionsTarget>) {
@@ -150,7 +151,9 @@ export function useDeclarativeOptions(target: ComputedRef<OptionsTarget>) {
     declarations.value.forEach(({ group, hint, key, ready }, index) => {
       if (!ready || hint.editable === false) return
       const value = (target.value[group] as Record<string, unknown> | undefined)?.[hint.field!]
-      const selected = (Array.isArray(value) ? value : [value]).filter(item => !missing(item))
+      const selected = (Array.isArray(value) ? value : [value]).filter(
+        item => !missing(item) && item !== ''
+      )
       if (!selected.length) return
       const query = queries.value[index]
       if (!query?.data) {

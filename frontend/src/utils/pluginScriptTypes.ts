@@ -1,5 +1,6 @@
 import {
   PluginProvidedScriptType,
+  PluginState,
   type FrontendSurfaceMount,
   type PanelBinding,
   type PluginRegistryDocument,
@@ -9,6 +10,11 @@ type PluginScriptType = PluginProvidedScriptType & {
   firstAccountMode: PluginProvidedScriptType.firstAccountMode
   displayName: string
   description: string
+}
+
+export function compatibleWheel(mount?: FrontendSurfaceMount | null) {
+  const web = mount?.artifacts.web
+  if (mount && web?.panelApi === 1) return { ...mount, entry: web.entry }
 }
 
 export function indexPluginScriptTypes(documents: Record<string, PluginRegistryDocument> = {}) {
@@ -21,10 +27,14 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
     Partial<Record<PanelBinding['surface'], FrontendSurfaceMount>>
   >()
   const frontendByPlanConfigType = new Map<string, FrontendSurfaceMount>()
+  const blockSurfacesByScriptKey = new Map<string, Set<string>>()
+  const blockPlanConfigTypes = new Set<string>()
 
-  for (const { providedScript, frontend, info } of Object.values(documents)) {
-    if (frontend && info?.plugin_name) {
-      for (const { surface, page, scriptType, planType } of frontend.bindings) {
+  const settingsPanels = new Map<string, FrontendSurfaceMount>()
+  const notificationPanels = new Map<string, FrontendSurfaceMount>()
+  for (const { uid, providedScript, frontend, info } of Object.values(documents)) {
+    if (frontend && info?.plugin_name && info.state === PluginState.ENABLED) {
+      for (const { surface, page, scriptType, planType, channel } of frontend.bindings) {
         const artifacts = frontend.pages[page]
         if (!artifacts || surface === 'extra') continue
         const mount = {
@@ -34,7 +44,10 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
           activationId: frontend.activationId,
           artifacts,
         }
-        if (scriptType) {
+        if (surface === 'settings') settingsPanels.set(uid, mount)
+        if (surface === 'notification' && channel === info.plugin_name)
+          notificationPanels.set(channel, mount)
+        if (scriptType && scriptType === providedScript?.scriptKey) {
           const surfaces = frontendByScriptKey.get(scriptType) ?? {}
           surfaces[surface] = mount
           frontendByScriptKey.set(scriptType, surfaces)
@@ -43,6 +56,12 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
       }
     }
     if (!providedScript) continue
+    if (info?.state === PluginState.ENABLED && providedScript.blockSurfaces?.length) {
+      const surfaces = new Set(providedScript.blockSurfaces)
+      blockSurfacesByScriptKey.set(providedScript.scriptKey, surfaces)
+      if (surfaces.has('plan') && providedScript.planConfigType)
+        blockPlanConfigTypes.add(providedScript.planConfigType)
+    }
     const script = {
       ...providedScript,
       firstAccountMode:
@@ -60,8 +79,12 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
     byScriptConfigType,
     byUserConfigType,
     byPlanConfigType,
+    settingsPanels,
+    notificationPanels,
     frontendByScriptKey,
     frontendByPlanConfigType,
+    blockSurfacesByScriptKey,
+    blockPlanConfigTypes,
   }
 }
 

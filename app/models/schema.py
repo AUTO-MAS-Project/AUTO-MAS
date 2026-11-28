@@ -32,7 +32,13 @@ from pydantic import (
 )
 
 from app.config.errors import ConfigAggregateError
-from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
+from app.config.fields.hints import (
+    HostBlockName,
+    UiHintsMap,
+    UiSection,
+    UiStep,
+    UiTablesList,
+)
 from app.config.wire import config_contract
 from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
@@ -432,6 +438,29 @@ class FrontendSurfaceMount(BaseModel):
     artifacts: dict[str, PanelArtifactInfo]
 
 
+class HostBlockOut(BaseModel):
+    kind: Literal["host"] = "host"
+    name: HostBlockName
+
+
+class DeclarativeBlockOut(BaseModel):
+    kind: Literal["declarative"] = "declarative"
+    groups: list[str]
+
+
+class PluginBlockOut(BaseModel):
+    kind: Literal["plugin"] = "plugin"
+    pageId: str
+    fallbackGroups: list[str]
+    mount: FrontendSurfaceMount | None = None
+
+
+ConfigBlockOut = Annotated[
+    HostBlockOut | DeclarativeBlockOut | PluginBlockOut,
+    Field(discriminator="kind"),
+]
+
+
 class DeclarativeConfigUi(BaseModel):
     """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
 
@@ -446,6 +475,7 @@ class DeclarativeConfigUi(BaseModel):
     backupTargets: list[BackupTargetHint] = Field(default_factory=list)
     nativeSession: Literal["view", "config"] | None = None
     frontendSurfaces: dict[str, FrontendSurfaceMount] = Field(default_factory=dict)
+    blocks: list[ConfigBlockOut] | None = None
 
 
 class ConfigSnapshotOut(OutBase):

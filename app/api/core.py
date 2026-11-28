@@ -39,7 +39,9 @@ from app.core import (
     MCP,
     Commands,
     Config,
+    Dispatcher,
     MainConnection,
+    MainTimer,
     Notify,
     Power,
     Publisher,
@@ -201,6 +203,12 @@ async def get_ws_meta() -> WebSocketMetaOut:
 
 # 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
 MainConnection.on_connect(Notify.flush_startup_notices)
+MainConnection.on_connect(MainTimer.send_pending_desktop_login)
+Dispatcher.register(
+    protocol.ID_MAIN,
+    protocol.DESKTOP_SESSION_LOGIN_FINISHED,
+    MainTimer.finish_desktop_login,
+)
 
 
 @router.websocket("/ws")

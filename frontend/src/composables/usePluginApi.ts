@@ -250,10 +250,13 @@ export function usePluginApi() {
         () => Service.getPluginConfigApiPluginConfigGetPost({ recordId }, locale()),
         t('core.plugins.settingsLoadFailed')
       ),
-    updateConfig: (body: PluginConfigUpdateIn) =>
+    updateConfig: (body: PluginConfigUpdateIn, activation?: PluginUiActivation) =>
       perform('config', () =>
         /* 保存普通配置字段；按钮动作通过 runCommand 独立提交。 */ requestApi(
-          () => Service.updatePluginConfigApiPluginConfigUpdatePost(body, locale()),
+          () =>
+            activation
+              ? pluginUiPost<OutBase>('/api/plugin_config/update', body, activation)
+              : Service.updatePluginConfigApiPluginConfigUpdatePost(body, locale()),
           t('core.plugins.actionFailed')
         )
       ),

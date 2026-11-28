@@ -35,12 +35,18 @@ from typing import Any, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api._config_editors import FrontendWriteGuard, require_frontend_activation
+from app.api._config_editors import (
+    FrontendWriteGuard,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
@@ -130,6 +136,9 @@ class PluginProvidedScriptType(BaseModel):
     hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
     hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
     firstAccountMode: FirstAccountMode = "direct"
+    blockSurfaces: list[Literal["script", "setup", "user", "plan"]] = Field(
+        default_factory=list
+    )
 
 
 class PluginFrontendInfo(BaseModel):
@@ -266,6 +275,13 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
     script_key, decl = registration
     info = decl.user_type.model_fields.get("Info")
     info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
+    block_surfaces: list[Literal["script", "setup", "user", "plan"]] = []
+    if decl.script_type.ui_blocks:
+        block_surfaces.extend(("script", "setup"))
+    if decl.user_type.ui_blocks:
+        block_surfaces.append("user")
+    if decl.plan_type and decl.plan_type.ui_blocks:
+        block_surfaces.append("plan")
     return PluginProvidedScriptType(
         scriptKey=script_key,
         firstAccountMode=decl.first_account_mode,
@@ -279,6 +295,7 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
         ),
         hasAccountField="Id" in info_fields,
         hasPasswordField="Password" in info_fields,
+        blockSurfaces=block_surfaces,
     )
 
 
@@ -457,6 +474,7 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
             data=PluginConfigDocument.model_validate(
                 {
                     "uid": cfg.uid,
+                    "locked": cfg.is_locked,
                     **cfg.model_dump(mode="json", context={"audience": "api"}),
                 }
             ),
@@ -496,8 +514,10 @@ async def update_plugin_config(
             )
         if guard is not None:
             guard(cfg)
-        patch = type(cfg).model_validate(body.data)
-        await cfg.update(patch)
+        data = config_update_data(cfg, body.data, extra="forbid")
+        patch = type(cfg).model_validate(data)
+        async with config_manager.transaction():
+            await cfg.update(patch)
     except HTTPException:
         raise
     except KeyError:
@@ -694,9 +714,9 @@ async def dispatch_plugin_http(
             result = await result
         if isinstance(result, Response):
             return result
-        if isinstance(result, (dict, list)) or result is None:
-            return JSONResponse(content=result)
-        return PlainTextResponse(content=str(result))
+        return JSONResponse(content=jsonable_encoder(result))
+    except StarletteHTTPException:
+        raise
     except PluginBusyError:
         return JSONResponse(
             status_code=503,

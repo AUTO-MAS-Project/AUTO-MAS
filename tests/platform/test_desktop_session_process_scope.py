@@ -565,6 +565,7 @@ async def test_window_operations_run_in_the_selected_session(monkeypatch, tmp_pa
         "desktop",
         "disconnected",
         "queue",
+        "queue_desktop",
         "selection_changed",
         "legacy_field",
         "unsupported",
@@ -578,11 +579,18 @@ async def test_manual_start_follows_desktop_session_targets(monkeypatch, case):
 
     from app.api.dispatch import TaskCreateIn, add_task
     from app.core import Config, TaskManager
-    from app.models.config import GeneralConfig
+    from app.models.config import GeneralConfig, QueueConfig
     from app.utils.windows.desktop_session import native
 
     sid, qid, task_id = uuid4(), uuid4(), uuid4()
     listed = case in {"desktop", "disconnected", "unsupported", "missing"}
+    queue = QueueConfig.build(
+        payload={"Info": {"ExecutionSession": "desktop"}}
+        if case == "queue_desktop"
+        else {}
+    )
+    await queue.activate()
+    monkeypatch.setattr(Config, "QueueConfig", {str(qid): queue})
     entry = GeneralConfig.build(
         payload={
             "Game": {"Enabled": case == "unsupported", "Type": "Emulator"},
@@ -612,14 +620,14 @@ async def test_manual_start_follows_desktop_session_targets(monkeypatch, case):
     monkeypatch.setattr(native, "session_state", lambda _: 0)
     seen = []
 
-    async def start(mode, tasks):
+    async def start(mode, tasks, *, trigger):
         seen.append(session.desktop_process_target.get())
         return task_id
 
     monkeypatch.setattr(TaskManager, "start", start)
     root = (
         {"uid": str(qid)}
-        if case == "queue"
+        if case.startswith("queue")
         else {
             "uid": "-",
             "children": {0: {"uid": str(sid), "children": {0: {"uid": str(uuid4())}}}},
@@ -648,9 +656,11 @@ async def test_manual_start_follows_desktop_session_targets(monkeypatch, case):
     else:
         assert result.taskId == str(task_id)
         assert [target.session_id if target else None for target in seen] == [
-            7 if case == "desktop" else None
+            7 if case in {"desktop", "queue_desktop"} else None
         ]
-        assert service.task_ids == ({task_id} if case == "desktop" else set())
+        assert service.task_ids == (
+            {task_id} if case in {"desktop", "queue_desktop"} else set()
+        )
     assert session.desktop_process_target.get() is None
 
 
@@ -700,7 +710,7 @@ async def _upgraded_entry_points(
     seen = []
     task_ids = iter([uuid4(), uuid4()])
 
-    async def start(mode, tasks):
+    async def start(mode, tasks, *, trigger=None):
         seen.append(session.desktop_process_target.get())
         return next(task_ids)
 
@@ -821,7 +831,7 @@ async def test_manual_start_routes_plugin_script_by_targets(monkeypatch, listed)
     monkeypatch.setattr(native, "session_state", lambda _: 0)
     seen = []
 
-    async def start(mode, tasks):
+    async def start(mode, tasks, *, trigger):
         seen.append(session.desktop_process_target.get())
         return task_id
 

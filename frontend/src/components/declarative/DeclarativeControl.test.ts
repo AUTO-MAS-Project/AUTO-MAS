@@ -66,6 +66,27 @@ describe('声明式控件的读写契约', () => {
     )
   })
 
+  it.each([
+    { component: 'date', picker: 'a-date-picker', modelValue: '2026-06-01', nullable: false },
+    {
+      component: 'datetime',
+      picker: 'a-date-picker',
+      modelValue: '2026-06-01T09:10:11',
+      required: true,
+    },
+    { component: 'time', picker: 'a-time-picker', modelValue: '09:10', nullable: false },
+  ])(
+    '$component 清空提交 null，必填或非空字段禁用清空',
+    async ({ picker, component, modelValue, ...constraint }) => {
+      const { inputs, update } = await render({ component, modelValue }, picker)
+      inputs[picker]![0]!.emit('change', null)
+      expect(update).toHaveBeenCalledWith(null)
+
+      const constrained = await render({ component, modelValue, ...constraint }, picker)
+      expect(constrained.inputs[picker]![0]!.attrs['allow-clear']).toBe(false)
+    }
+  )
+
   it('表格开关提交布尔值，数字框按所在布局选择尺寸', async () => {
     const toggle = await render(
       { component: 'switch', compact: true, modelValue: true },

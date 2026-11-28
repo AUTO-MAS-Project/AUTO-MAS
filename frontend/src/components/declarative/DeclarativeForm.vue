@@ -2,12 +2,17 @@
 import { computed, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { UiSection, UiStep } from '@/api'
-import { useDeclarativeOptions, type DeclarativeHint } from '@/composables/useDeclarativeOptions'
+import {
+  useDeclarativeOptions,
+  type DeclarativeHint,
+  type DeclarativeOptions,
+} from '@/composables/useDeclarativeOptions'
 import DeclarativeTable, { type DeclarativeTableHint } from './DeclarativeTable.vue'
 import { declarativeLayout, isWideField, useDeclarativeSteps } from './declarativeLayout'
 import { SectionCard } from '@/components/ui'
 import type { SettingsChange } from '@/views/plugins/settings/usePluginSettingsDraft'
 import DeclarativeField from './DeclarativeField.vue'
+import { createDeclarativeI18n, type DeclarativeI18nScope } from './declarativeI18n'
 
 const props = withDefaults(
   defineProps<{
@@ -16,6 +21,8 @@ const props = withDefaults(
     steps?: UiStep[]
     sections?: Record<string, UiSection>
     pluginName?: string | null
+    options?: DeclarativeOptions
+    blockMode?: boolean
     setupMode?: boolean
     submitDisabled?: boolean
     submitting?: boolean
@@ -25,6 +32,7 @@ const props = withDefaults(
     activeFields?: string[]
     uid: string
     namespace: string
+    scope: DeclarativeI18nScope
     disabled?: boolean
   }>(),
   {
@@ -32,13 +40,17 @@ const props = withDefaults(
     steps: () => [],
     sections: () => ({}),
     pluginName: null,
+    options: undefined,
     errors: () => ({}),
     runningKey: null,
     activeFields: () => [],
   }
 )
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
+const i18n = computed(() =>
+  createDeclarativeI18n(t, te, locale.value, props.namespace, props.scope)
+)
 const emit = defineEmits<{
   'update:value': [group: string, field: string, value: unknown]
   'update:optionsInvalid': [invalid: boolean]
@@ -52,16 +64,16 @@ const target = computed(() => ({
   pluginName: props.pluginName,
   ui: { hints: Object.fromEntries(props.groups.map(group => [group.name, group.hints])) },
 }))
-const { optionsFor, stateFor, validationErrors, optionsInvalid } = useDeclarativeOptions(target)
-watch(optionsInvalid, invalid => emit('update:optionsInvalid', invalid), { immediate: true })
-const options = (group: string, hint: DeclarativeHint) =>
-  /* 取得字段静态或动态选项，并应用插件命名空间中的选项翻译。 */ optionsFor(group, hint).map(
-    option => {
-      // 为单个选项选择翻译标签，未提供词条时保留后端声明名称。
-      const key = `${props.namespace}.${group}.${hint.field}.options.${option.value}`
-      return { ...option, label: te(key) ? t(key) : option.label }
-    }
-  )
+const { optionsFor, stateFor, validationErrors, optionsInvalid } =
+  props.options ?? useDeclarativeOptions(target)
+if (!props.options)
+  watch(optionsInvalid, invalid => emit('update:optionsInvalid', invalid), { immediate: true })
+const translatedOptions = (group: string, hint: DeclarativeHint) =>
+  optionsFor(group, hint).map(option => ({
+    ...option,
+    // 缺少词条时保留动态选项的后端名称。
+    label: i18n.value.config(`${group}.${hint.field}.options.${option.value}`) ?? option.label,
+  }))
 
 const layout = computed(() =>
   declarativeLayout(props.groups, props.tables, props.steps, props.sections)
@@ -72,30 +84,31 @@ const { current, collapsed } = useDeclarativeSteps(
   () => props.errors
 )
 const stepItems = computed(() =>
-  layout.value.steps.map(step => {
-    const label = `${props.namespace}.steps.${step.key}.label`
-    return { title: te(label) ? t(label) : step.title || step.key, disabled: props.disabled }
-  })
+  layout.value.steps.map(step => ({
+    title: i18n.value.config(`steps.${step.key}.label`) ?? (step.title || step.key),
+    disabled: props.disabled,
+  }))
 )
-const wizard = computed(() => props.setupMode || stepItems.value.length > 1)
+const wizard = computed(() => !props.blockMode && (props.setupMode || stepItems.value.length > 1))
 
 const form = useTemplateRef<HTMLElement>('form')
 const formId = useId()
 const getContainer = () => form.value?.closest<HTMLElement>('.plugin-settings-content') ?? window
 function sectionTitle(name: string) {
-  const key = `${props.namespace}.${name}`
-  return te(`${key}.label`) ? t(`${key}.label`) : te(key) ? t(key) : name
+  return i18n.value.config(`${name}.label`) ?? name
 }
 const cards = computed(() =>
-  (layout.value.steps[current.value]?.cards ?? []).map((card, index) => {
-    const name = 'group' in card ? card.group.name : card.table.key
-    return {
-      ...card,
-      id: `${formId}-section-${index}`,
-      title: name ? sectionTitle(name) : t('core.plugins.table'),
-      badge: 'group' in card ? card.group.hints.length : t('core.plugins.table'),
+  (props.blockMode ? layout.value.cards : (layout.value.steps[current.value]?.cards ?? [])).map(
+    (card, index) => {
+      const name = 'group' in card ? card.group.name : card.table.key
+      return {
+        ...card,
+        id: `${formId}-section-${index}`,
+        title: name ? sectionTitle(name) : t('core.plugins.table'),
+        badge: 'group' in card ? card.group.hints.length : t('core.plugins.table'),
+      }
     }
-  })
+  )
 )
 const navItems = computed(() =>
   cards.value.map(({ id, title, badge }) => ({
@@ -120,8 +133,9 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
     group,
     hint,
     namespace: props.namespace,
+    scope: props.scope,
     value: props.values[group]?.[field],
-    options: options(group, hint),
+    options: translatedOptions(group, hint),
     disabled: props.disabled,
     disabledReason: hint.editable === false ? t('core.plugins.readOnly') : undefined,
     loading: actionBusy(group, hint) || state?.loading.value,
@@ -130,7 +144,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
     onAction: (value: unknown) => emit('action', group, hint, value),
     inlineAction: action && {
       ...action,
-      options: options(action.group, action.hint),
+      options: translatedOptions(action.group, action.hint),
       loading: actionBusy(action.group, action.hint),
       run: (value: unknown) => emit('action', action.group, action.hint, value, { group, field }),
     },
@@ -142,7 +156,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   <section
     ref="form"
     class="plugin-form"
-    :class="{ 'with-nav': cards.length >= 3 }"
+    :class="{ 'with-nav': cards.length >= 3, 'block-mode': blockMode }"
     :aria-label="t('core.plugins.settingsForm')"
   >
     <nav
@@ -168,7 +182,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
     </nav>
     <div class="section-list">
       <a-steps
-        v-if="stepItems.length > 1"
+        v-if="!blockMode && stepItems.length > 1"
         v-model:current="current"
         :items="stepItems"
         size="small"
@@ -183,6 +197,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           :column-types="section.columnTypes"
           :title="section.title"
           :namespace="namespace"
+          :scope="scope"
           @update:value="(group, field, value) => emit('update:value', group, field, value)"
         >
           <template #cell="{ group, field, update }">
@@ -202,26 +217,23 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           :title="section.title"
           :collapsible="section.collapsible"
         >
-          <div
-            v-for="run in section.runs"
-            :key="run.hints[0]?.field"
-            :class="run.tiles ? 'declarative-switch-grid' : 'declarative-field-grid'"
-          >
+          <div class="declarative-field-grid">
             <DeclarativeField
-              v-for="hint in run.hints"
+              v-for="hint in section.group.hints"
               :key="hint.field"
               v-bind="fieldBindings(section.group.name, hint)"
-              :tile="run.tiles"
-              :class="{
-                wide: isWideField(hint),
-                'full-width': section.group.hints.length === 1 && isWideField(hint),
-              }"
+              :class="{ wide: isWideField(hint) }"
               @update:value="emit('update:value', section.group.name, hint.field ?? '', $event)"
             />
           </div>
         </SectionCard>
       </template>
-      <a-flex v-if="wizard || $slots.actions" justify="end" align="center" gap="small">
+      <a-flex
+        v-if="!blockMode && (wizard || $slots.actions)"
+        justify="end"
+        align="center"
+        gap="small"
+      >
         <slot name="actions" :wizard="wizard" />
         <template v-if="wizard">
           <a-button
@@ -250,7 +262,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           </a-button>
         </template>
       </a-flex>
-      <slot name="footer" :wizard="wizard" />
+      <slot v-if="!blockMode" name="footer" :wizard="wizard" />
     </div>
   </section>
 </template>
@@ -266,6 +278,9 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   grid-template-columns: 188px minmax(0, 1fr);
   align-items: start;
   gap: 20px;
+}
+.plugin-form.with-nav,
+.plugin-form.block-mode {
   max-width: none;
 }
 .section-nav {
@@ -293,38 +308,28 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   background: var(--ant-color-fill-quaternary);
 }
 .section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   min-width: 0;
 }
-.section-list > .ant-steps {
-  margin-bottom: 16px;
+.section-list > :deep(.ui-section-card) {
+  margin-bottom: 0;
 }
-.declarative-switch-grid,
 .declarative-field-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 12px;
-  padding-bottom: 12px;
-}
-.declarative-switch-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-.declarative-field-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 32px;
+  row-gap: 20px;
+  padding: 4px 0 12px;
 }
 .declarative-field-grid .wide {
-  grid-column: span 2;
-}
-.declarative-field-grid .full-width {
   grid-column: 1 / -1;
 }
-@media (max-width: 1100px) {
-  .declarative-switch-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1024px) {
+@container (max-width: 640px) {
   .declarative-field-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 960px) {
@@ -333,15 +338,6 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   }
   .section-nav {
     display: none;
-  }
-}
-@media (max-width: 640px) {
-  .declarative-switch-grid,
-  .declarative-field-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .declarative-field-grid .wide {
-    grid-column: 1 / -1;
   }
 }
 </style>

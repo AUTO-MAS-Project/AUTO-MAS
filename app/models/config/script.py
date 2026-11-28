@@ -84,6 +84,7 @@ from .shared import (
     migrate_maaend_sanity_tasks,
     none_as,
     normalize_maaend_plan_key,
+    parse_legacy_bool,
 )
 
 
@@ -1758,7 +1759,7 @@ class OkwwConfig(DomainEntry):
             legacy(
                 group="Game",
                 name="AccountSwitch",
-                convert=lambda value: "MAS" if value else "NONE",
+                convert=lambda value: "MAS" if parse_legacy_bool(value) else "NONE",
             ),
         ] = Field(
             default="MAS",

@@ -109,15 +109,14 @@ onBeforeRouteUpdate((to, from) => to.query.planId === from.query.planId || canCh
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
 )
-const currentPlanData = computed<PlanConfigData | null>(
-  () => planDataMap.value[activePlanId.value] ?? null
-)
+const currentPlanData = computed(() => planDataMap.value[activePlanId.value] ?? null)
 const registry = usePluginRegistry()
-const planClaims = computed(
-  () => indexPluginScriptTypes(registry.data.value?.data).frontendByPlanConfigType
-)
+const currentPlanHasPanel = computed(() => {
+  const type = currentPlan.value?.type ?? ''
+  const index = indexPluginScriptTypes(registry.data.value?.data)
+  return index.blockPlanConfigTypes.has(type) || index.frontendByPlanConfigType.has(type)
+})
 const currentPlanDescriptor = computed(() => getPlanTypeDescriptor(currentPlan.value?.type))
-const currentPlanHasPanel = computed(() => planClaims.value.has(currentPlan.value?.type ?? ''))
 const currentPlanSupportsSchedule = computed(
   () => !!currentPlanDescriptor.value || currentPlanData.value?.Info?.Mode != null
 )
@@ -172,7 +171,6 @@ const handleAddPlan = async (plan: PlanTypeOption, owner?: { scriptId: string })
   planOperationPending.value = true
   try {
     const response = await createPlan(plan, owner)
-    if (response.code !== 200) throw new Error(response.message)
     const uniqueName = generateUniquePlanName(
       plan.defaultName,
       planList.value.map(item => item.name)
@@ -308,32 +306,24 @@ const onPlanChange = async (planId: string) => {
   if (planId !== activePlanId.value && (await canChangePlan())) await selectPlan(planId)
 }
 
-/** 排序请求串行化：并发请求会按完成顺序落盘，与界面上的拖拽顺序不一致 */
-let reorderTask: Promise<unknown> = Promise.resolve()
-
-/** 拖拽排序结果落盘：界面先就位，保存失败再退回 */
+/** 确认落盘后更新顺序，失败时重新读取服务端顺序。 */
 const handlePlanReorder = async (planIds: string[]) => {
-  const planById = new Map(planList.value.map(plan => [plan.id, plan]))
-  const nextPlanList: PlanListItem[] = []
+  if (planOperationPending.value) return
+  const order = new Map(planIds.map((id, index) => [id, index]))
+  // 顺序列表必须是全部计划的完整顺序，缺项说明计划列表已变化，放弃本次排序
+  if (order.size !== planList.value.length || planList.value.some(plan => !order.has(plan.id)))
+    return
 
-  for (const planId of planIds) {
-    const plan = planById.get(planId)
-    // 顺序列表必须是全部计划的完整顺序，缺项说明计划列表已变化，放弃本次排序
-    if (!plan) return
-    nextPlanList.push(plan)
-  }
-  if (nextPlanList.length !== planList.value.length) return
-
-  const previousPlanList = planList.value
-  planList.value = nextPlanList
-
-  reorderTask = reorderTask.catch(() => undefined).then(() => reorderPlans(planIds))
-
+  planOperationPending.value = true
   try {
-    await reorderTask
+    await reorderPlans(planIds)
+    planList.value = [...planList.value].sort(
+      (a, b) => (order.get(a.id) ?? planIds.length) - (order.get(b.id) ?? planIds.length)
+    )
   } catch {
-    // 接口层已提示失败原因，这里只把界面顺序退回去
-    planList.value = previousPlanList
+    await initPlans()
+  } finally {
+    planOperationPending.value = false
   }
 }
 
