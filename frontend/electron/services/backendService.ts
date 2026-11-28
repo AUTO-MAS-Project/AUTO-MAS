@@ -36,6 +36,13 @@ import { analyticsService, refreshAnalyticsPreference } from './analyticsService
 import { analyticsDuration } from './analyticsPolicy'
 import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
+import {
+  HEALTH_POLL_INTERVAL_MS,
+  readStartupHealth,
+  StartupHealthTimeout,
+  waitForHealthPoll,
+  type StartupHealth,
+} from './startupHealth'
 const logger = getLogger('后端服务')
 
 export function resolveUpgradeBackupVersion(mode: RuntimeLaunchConfig['mode']): string | undefined {
@@ -152,12 +159,12 @@ export class BackendService {
   private activationPending = false
   private runtimeBaseUrl: string | null = null
   private startingRuntimeHandle: RuntimeSuperviseHandle | null = null
+  private startupHealthAbort: AbortController | null = null
   private runtimeStopping = false
   private runtimeUpdateFlight: Promise<RuntimeBackendUpdateCheck> | null = null
   private runtimeUpdateReady: RuntimeBackendUpdateCheck | null = null
   private readonly runtimeClients = new Set<RuntimeClient>()
 
-  private readonly startupHealthPath = '/api/core/health'
   private analyticsRuntimeMode: AnalyticsRuntimeMode = 'unknown'
   constructor(private readonly appRoot: string) {}
 
@@ -487,69 +494,56 @@ export class BackendService {
     }
 
     if (outcome !== 'timeout' && 'baseUrl' in outcome) {
-      // 发行链路确认后端版本（issue #30）。显式复用环境时，Runtime 已监督指定源码的进程，
-      // 这份源码自报的版本可能与发行通道为 bootstrap 选择的版本标识不同。
+      const healthCheck = new AbortController()
+      this.startupHealthAbort = healthCheck
+      void handle.closed.then(() => healthCheck.abort())
+      if (this.runtimeStopping) healthCheck.abort()
       try {
+        let health: StartupHealth | undefined
+        // 发行链路确认后端版本（issue #30）。显式复用环境时，Runtime 已监督指定源码的进程，
+        // 这份源码自报的版本可能与发行通道为 bootstrap 选择的版本标识不同。
         if (!config.reuseManagedEnvironment) {
-          this.assertBackendVersionMatches(
-            await this.fetchRunningBackendVersion(outcome.baseUrl, 5000)
+          health = await readStartupHealth(outcome.baseUrl, healthCheck.signal)
+          this.assertBackendVersionMatches(health.version)
+        }
+        if (outcome.deferred) {
+          await this.waitForStartupBusiness(outcome.baseUrl, health, healthCheck.signal, options)
+        }
+        healthCheck.signal.throwIfAborted()
+      } catch (error) {
+        if (healthCheck.signal.aborted) {
+          const stopped = await ended
+          return this.buildRuntimeStartFailure(
+            'result' in stopped ? stopped.result : stopped.error,
+            stdoutLines,
+            stderrLines
           )
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        logger.error(`后端版本校验失败，关闭 Runtime: ${message}`)
-        try {
-          await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
-        } catch (shutdownError) {
-          const shutdownMessage =
-            shutdownError instanceof Error ? shutdownError.message : String(shutdownError)
-          logger.warn(`关闭版本不匹配的 Runtime 未确认完成: ${shutdownMessage}`)
+        if (error instanceof StartupHealthTimeout) {
+          const lastFailure = error.cause
+          const detail =
+            lastFailure instanceof Error ? (lastFailure.cause ?? lastFailure) : lastFailure
+          logger.warn(`后端健康检查最后一次请求失败: ${String(detail)}`)
         }
-        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
-      }
-      if (this.runtimeStopping) {
-        const stopped = await ended
-        return this.buildRuntimeStartFailure(
-          'result' in stopped ? stopped.result : stopped.error,
-          stdoutLines,
-          stderrLines
-        )
+        const stopped = await this.stopBackendViaRuntime(handle)
+        const failure = this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+        if (error instanceof StartupHealthTimeout) {
+          return {
+            ...failure,
+            code: 'BACKEND_HEALTH_TIMEOUT',
+            retryable: stopped.success,
+            remediation: stopped.success ? ['retry', 'open-log'] : ['open-log'],
+          }
+        }
+        return failure
+      } finally {
+        this.startupHealthAbort = null
       }
       releaseStartup()
       this.adoptRuntimeHandle(handle, outcome.baseUrl)
       if (outcome.deferred) {
         this.activationPending = true
         try {
-          const deadline = Date.now() + BUSINESS_READY_TIMEOUT_MS
-          let previousMessage: string | null = null
-          while (true) {
-            if (this.runtimeStopping || this.runtimeHandle !== handle)
-              throw new Error('后端正在关闭')
-            if (Date.now() >= deadline) throw new Error('等待插件与业务初始化超时')
-            const response = await this.fetchWithTimeout(
-              `${outcome.baseUrl}${this.startupHealthPath}`,
-              { method: 'GET' },
-              5000
-            )
-            if (!response.ok) throw new Error(`读取业务初始化状态失败 (${response.status})`)
-            const health = (await response.json()) as {
-              businessStatus?: string
-              backgroundStatus: string
-              backgroundError?: string
-              businessMessage?: string | null
-            }
-            const status = health.businessStatus ?? health.backgroundStatus
-            if (status === 'failed' || status === 'cancelled')
-              throw new Error(health.backgroundError || '插件或业务初始化失败')
-            if (status === 'ready') break
-            if (status !== 'starting' && status !== 'running') throw new Error('业务初始化状态无效')
-            if (health.businessMessage && health.businessMessage !== previousMessage) {
-              logger.info(health.businessMessage)
-              options?.onProgress?.(health.businessMessage)
-              previousMessage = health.businessMessage
-            }
-            await new Promise(resolve => setTimeout(resolve, 500))
-          }
           await this.confirmAutomaticWork(handle, 'activate')
           this.activationPending = false
         } catch (error) {
@@ -579,6 +573,32 @@ export class BackendService {
     // 就绪前拿到终态或调用侧异常：后端没起来，按失败展示。
     const reason = 'result' in outcome ? outcome.result : outcome.error
     return this.buildRuntimeStartFailure(reason, stdoutLines, stderrLines)
+  }
+
+  private async waitForStartupBusiness(
+    baseUrl: string,
+    health: StartupHealth | undefined,
+    signal: AbortSignal,
+    options?: BackendStartOptions
+  ): Promise<void> {
+    const deadline = Date.now() + BUSINESS_READY_TIMEOUT_MS
+    let previousMessage: string | null = null
+    while (Date.now() < deadline) {
+      health ??= await readStartupHealth(baseUrl, signal, deadline)
+      const status = health.businessStatus ?? health.backgroundStatus
+      if (status === 'failed' || status === 'cancelled')
+        throw new Error(health.backgroundError || '插件或业务初始化失败')
+      if (status === 'ready') return
+      if (status !== 'starting' && status !== 'running') throw new Error('业务初始化状态无效')
+      if (health.businessMessage && health.businessMessage !== previousMessage) {
+        logger.info(health.businessMessage)
+        options?.onProgress?.(health.businessMessage)
+        previousMessage = health.businessMessage
+      }
+      health = undefined
+      await waitForHealthPoll(HEALTH_POLL_INTERVAL_MS, signal)
+    }
+    throw new Error('等待插件与业务初始化超时')
   }
 
   /** 确认同一实例；人工重试先查询，pending 时才重发幂等放行。 */
@@ -884,24 +904,6 @@ export class BackendService {
     }
   }
 
-  private async fetchWithTimeout(
-    url: string,
-    init: RequestInit,
-    timeoutMs: number
-  ): Promise<Response> {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
-
-    try {
-      return await fetch(url, {
-        ...init,
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeout)
-    }
-  }
-
   /**
    * 停止后端服务
    * 通过 Runtime shutdown 关闭后端
@@ -982,41 +984,17 @@ export class BackendService {
     return operation
   }
 
-  /** 从健康检查响应里提取后端版本；未上报或格式异常时返回 null。 */
-  private extractHealthVersion(payload: unknown): string | null {
-    if (!payload || typeof payload !== 'object') return null
-    const version = (payload as { version?: unknown }).version
-    return typeof version === 'string' && version.trim() !== '' ? version : null
-  }
-
-  /**
-   * 读取目标地址上正在运行的后端版本。
-   * 返回 null 表示「无法确认版本」（不可达、响应异常或协议过旧未上报），由调用方 fail-closed。
-   */
-  private async fetchRunningBackendVersion(
-    apiEndpoint: string,
-    timeoutMs: number
-  ): Promise<string | null> {
-    try {
-      const healthUrl = `${apiEndpoint}${this.startupHealthPath}`
-      const response = await this.fetchWithTimeout(healthUrl, { method: 'GET' }, timeoutMs)
-      if (!response.ok) return null
-      return this.extractHealthVersion(await response.json())
-    } catch {
-      return null
-    }
-  }
-
   /**
    * 前后端版本一致性闸门（issue #30）：启动服务必须保证前后端版本匹配，
    * 不匹配或无法确认版本都要显式报错，绝不静默复用旧版本后端。
    */
-  private assertBackendVersionMatches(actual: string | null): void {
+  private assertBackendVersionMatches(actual: string | undefined): void {
+    if (typeof actual !== 'string' || !actual.trim())
+      throw new Error('后端健康检查未返回版本，无法确认后端版本')
     const expected = resolveRuntimeTargetVersion()
-    if (actual !== null && toRuntimeVersion(actual) === expected) return
-    const actualText = actual ?? '未上报（后端不可达或健康检查协议过旧）'
+    if (toRuntimeVersion(actual) === expected) return
     throw new Error(
-      `后端版本不匹配：期望 ${expected}，实际 ${actualText}；请更新后端或关闭旧后端后重试`
+      `后端版本不匹配：期望 ${expected}，实际 ${actual}；请更新后端或关闭旧后端后重试`
     )
   }
   getStatus(): BackendStatus {
@@ -1157,6 +1135,7 @@ export class BackendService {
 
   private async cancelRuntimePreparations(): Promise<void> {
     this.runtimeStopping = true
+    this.startupHealthAbort?.abort()
     await Promise.all([...this.runtimeClients].map(client => client.stop()))
     this.runtimeClients.clear()
   }
