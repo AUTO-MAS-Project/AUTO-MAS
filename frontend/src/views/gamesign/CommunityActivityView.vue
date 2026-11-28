@@ -8,12 +8,13 @@ import { usePerformanceStore } from '@/stores/performance'
 import type { ActivitySnapshot } from './useCommunityActivityApi'
 import { COMMUNITY_GAMES } from './communityGames'
 import { useCommunityActivityStore } from '@/stores/communityActivity'
+import { navigateTo } from '@/router'
 import CommunityActivityCard from './components/CommunityActivityCard.vue'
 
 const { t, locale } = useI18n()
 const performanceStore = usePerformanceStore()
 const activityStore = useCommunityActivityStore()
-const { snapshots, loading, hasLoaded, errorMessage } = storeToRefs(activityStore)
+const { snapshots, loading, hasLoaded, errorMessage, pluginMissing } = storeToRefs(activityStore)
 const lastUpdated = computed(
   () =>
     snapshots.value
@@ -163,8 +164,22 @@ onMounted(() => {
       </div>
     </header>
 
+    <!-- 便笺改由附属插件提供后，没装插件的用户看到的不该只是一行报错，得给出安装入口 -->
     <a-alert
-      v-if="errorMessage"
+      v-if="pluginMissing"
+      type="warning"
+      show-icon
+      :message="t('core.signflow.activity.pluginMissing')"
+      class="activity-alert"
+    >
+      <template #action>
+        <a-button size="small" @click="navigateTo('/plugins/market')">
+          {{ t('core.unavailableConfig.installPlugin') }}
+        </a-button>
+      </template>
+    </a-alert>
+    <a-alert
+      v-else-if="errorMessage"
       type="error"
       show-icon
       :message="errorMessage"
