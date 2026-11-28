@@ -150,6 +150,57 @@ async def test_exchange_business_error_does_not_expose_upstream_message(
     assert "上游业务错误" in message
 
 
+def test_error_code_accepts_only_integers_or_short_decimal_strings() -> None:
+    assert miyoushe._normalize_error_code(-100) == "-100"
+    assert miyoushe._normalize_error_code("+7") == "+7"
+    assert miyoushe._normalize_error_code("00123") == "00123"
+    assert miyoushe._normalize_error_code("FABRICATED_CODE") == ""
+    assert miyoushe._normalize_error_code("1" * 11) == ""
+    assert miyoushe._normalize_error_code("１２３") == ""
+    assert miyoushe._normalize_error_code(3.14) == ""
+    assert miyoushe._normalize_error_code(True) == ""
+
+
+@pytest.mark.asyncio
+async def test_exchange_non_numeric_retcode_is_omitted_from_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "FABRICATED_NON_NUMERIC_RETCODE"
+    client = _Client({"retcode": marker, "message": "ignored"})
+    monkeypatch.setattr(
+        miyoushe,
+        "create_community_client",
+        lambda proxy=None: client,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await miyoushe._exchange_passport_token(
+            "v2_stoken",
+            "mid-value",
+            miyoushe.TOKEN_TYPE_COOKIE_TOKEN,
+            "device-id",
+        )
+
+    message = str(exc.value)
+    assert marker not in message
+    assert "错误码" not in message
+    assert "上游业务错误" in message
+
+
+def test_cookie_token_fallback_omits_non_numeric_retcode() -> None:
+    marker = "FABRICATED_FALLBACK_RETCODE"
+    with pytest.raises(ValueError) as exc:
+        miyoushe._cookie_token_from_response(
+            {"retcode": marker, "data": {}},
+            "派生 cookie_token",
+        )
+
+    message = str(exc.value)
+    assert marker not in message
+    assert "错误码" not in message
+    assert "上游业务错误" in message
+
+
 @pytest.mark.asyncio
 async def test_exchange_non_json_error_does_not_expose_upstream_body(
     monkeypatch: pytest.MonkeyPatch,

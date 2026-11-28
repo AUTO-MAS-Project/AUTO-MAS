@@ -534,11 +534,38 @@ class _TokenExchangeError(ValueError):
     ) -> None:
         self.stage = stage
         self.category = category
-        self.retcode = "" if retcode is None else str(retcode).strip()
+        self.retcode = _normalize_error_code(retcode)
         message = f"{stage}失败: {category}"
         if self.retcode:
             message += f"（错误码 {self.retcode}）"
         super().__init__(message)
+
+
+_MAX_ERROR_CODE_DIGITS = 10
+
+
+def _normalize_error_code(value: object) -> str:
+    """只保留合法整数或约定长度内的十进制数字字符串，其余错误码一律省略。"""
+
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        text = str(value)
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        return ""
+
+    sign = text[:1] if text[:1] in ("+", "-") else ""
+    digits = text[len(sign) :]
+    if (
+        not digits
+        or len(digits) > _MAX_ERROR_CODE_DIGITS
+        or not digits.isascii()
+        or not digits.isdigit()
+    ):
+        return ""
+    return text
 
 
 def _as_token_exchange_error(stage: str, error: Exception) -> _TokenExchangeError:
@@ -558,9 +585,9 @@ def _as_token_exchange_error(stage: str, error: Exception) -> _TokenExchangeErro
 def _cookie_token_from_response(rsp: dict[str, object], stage: str) -> tuple[str, str]:
     """从派生响应里取出 cookie_token 和 uid，字段缺失按失败处理。"""
 
-    retcode = str(rsp.get("retcode")).strip()
+    retcode = _normalize_error_code(rsp.get("retcode"))
     if retcode != "0":
-        raise _TokenExchangeError(stage, "上游业务错误", retcode)
+        raise _TokenExchangeError(stage, "上游业务错误", retcode or None)
     data = rsp.get("data")
     if not isinstance(data, dict):
         # data 为 null 是上游表示"该凭据不可派生"的常见形态，按派生失败处理，
@@ -606,9 +633,9 @@ async def _exchange_passport_token(
     except Exception as e:
         raise _as_token_exchange_error("通行证换票", e) from None
 
-    retcode = str(rsp.get("retcode")).strip()
+    retcode = _normalize_error_code(rsp.get("retcode"))
     if retcode != "0":
-        raise _TokenExchangeError("通行证换票", "上游业务错误", retcode)
+        raise _TokenExchangeError("通行证换票", "上游业务错误", retcode or None)
     data = rsp.get("data")
     token = data.get("token") if isinstance(data, dict) else None
     value = str(token.get("token") or "").strip() if isinstance(token, dict) else ""
