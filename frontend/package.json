@@ -87,6 +87,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "electron/resources/worktree-profile-isolation.json",
+        "to": "worktree-profile-isolation.json"
       }
     ],
     "win": {

@@ -2,13 +2,15 @@
 
 ## 本地开发环境诊断与辅助（`dev_doctor.py`）
 
-检查依赖就绪状态、开发端口（默认 `36164`，与正式版 `36163` 隔离）和当前仓库残留的开发后端进程，支持按需清理开发后端或生成可选的 `.vscode/launch.json` 模板：
+检查依赖就绪状态、开发端口（默认 `36164`；不探测正式版 `36163`）和当前仓库残留的开发后端进程，支持按需清理开发后端或生成可选的 `.vscode/launch.json` 模板：
 
 ```powershell
-uv run --no-sync python scripts/dev_doctor.py                # 诊断依赖、端口与当前仓库开发后端
-uv run --no-sync python scripts/dev_doctor.py --kill-dev     # 仅清理当前仓库的 main.py 开发后端（绝不触碰正式版）
-uv run --no-sync python scripts/dev_doctor.py --init-vscode  # 按需生成极简 .vscode/launch.json（不覆盖已有文件）
+python scripts/dev_doctor.py                # 诊断依赖、端口与当前仓库开发后端
+python scripts/dev_doctor.py --kill-dev     # 仅清理当前仓库的 main.py 开发后端（绝不触碰正式版）
+python scripts/dev_doctor.py --init-vscode  # 按需生成极简 .vscode/launch.json（不覆盖已有文件）
 ```
+
+设置 `AUTO_MAS_DEV_ENV_ROOT` 后，诊断与 VS Code 配置共用 [worktree 预检](../docs/developer-backend.md#精简-worktree可选)。只有通过预检的共享解释器才会写入 `launch.json`；该模板只提供后端断点入口，不使用可能创建工作树 `.venv` 的 `yarn dev`。未使用共享池时保持独立开发模板。
 
 ## 本地 PR 一键预检（`pr_check.py`）
 

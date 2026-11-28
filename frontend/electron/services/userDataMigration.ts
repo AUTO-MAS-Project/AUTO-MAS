@@ -11,7 +11,8 @@ const REGENERABLE_DIRECTORIES = new Set([
 ])
 
 /** 首次选择的单实例锁路径写入标记，避免后续启动因旧目录变化换锁。 */
-export function selectUserDataLock(legacyPath: string, targetPath: string): string {
+export function selectUserDataLock(legacyPath: string | undefined, targetPath: string): string {
+  if (legacyPath === undefined) return targetPath
   const marker = path.join(targetPath, MARKER_NAME)
   if (fs.existsSync(marker)) {
     const kind = fs.readFileSync(marker, 'utf8').trim()
@@ -23,7 +24,7 @@ export function selectUserDataLock(legacyPath: string, targetPath: string): stri
 
 /** 完整复制旧资料；目标目录就绪后才切换，失败时继续使用旧资料。 */
 export function migrateUserData(
-  legacyPath: string,
+  legacyPath: string | undefined,
   target: string,
   lockPath: string,
   platform: NodeJS.Platform = process.platform
@@ -31,6 +32,7 @@ export function migrateUserData(
   path: string
   error?: string
 } {
+  if (legacyPath === undefined) return { path: target }
   const marker = path.join(target, MARKER_NAME)
   const lockFiles =
     platform === 'win32'

@@ -14,6 +14,7 @@ list/
 # 本地环境变量文件；应用环境由启动方显式传入
 .env
 /developer-backend.ps1
+/.automas-dev-electron/
 
 # IDE and editors
 .idea/

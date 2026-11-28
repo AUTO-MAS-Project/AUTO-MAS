@@ -124,7 +124,7 @@ import { migrateUserData, selectUserDataLock } from './services/userDataMigratio
 import { recordDesktopStartup } from './services/startupTiming'
 
 // 开发版目录必须在 app ready 之前确定。
-applyInstanceIdentity()
+const hasExplicitDeveloperHome = applyInstanceIdentity()
 
 // 初始化日志系统（必须在创建 logger 之前）
 initializeLogger()
@@ -132,10 +132,10 @@ recordDesktopStartup('主进程模块加载')
 const logger = getLogger('主进程')
 
 const targetUserDataPath = app.getPath('userData')
-const legacyUserDataPath = path.join(
-  app.getPath('appData'),
-  isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend'
-)
+// 工作树显式隔离的 profile 不获取公共旧锁，也不导入旧数据。
+const legacyUserDataPath = hasExplicitDeveloperHome
+  ? undefined
+  : path.join(app.getPath('appData'), isDevelopmentEnvironment() ? 'frontend-dev' : 'frontend')
 let lockPath: string
 try {
   lockPath = selectUserDataLock(legacyUserDataPath, targetUserDataPath)

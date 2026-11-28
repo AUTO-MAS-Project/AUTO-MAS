@@ -76,16 +76,96 @@ def find_repo_dev_backends(repo_root: Path = REPO_ROOT) -> list[tuple[int, str]]
     ]
 
 
-def build_vscode_launch_config(dev_port: int) -> dict[str, object]:
+def registered_windows_pool() -> bool:
+    """发现当前终端尚未继承的共享池，避免回退成工作树 .venv。"""
+    if os.name != "nt":
+        return False
+    import winreg
+
+    locations = (
+        (winreg.HKEY_CURRENT_USER, r"Environment"),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        ),
+    )
+    for hive, location in locations:
+        try:
+            with winreg.OpenKey(hive, location) as key:
+                value, _ = winreg.QueryValueEx(key, "AUTO_MAS_DEV_ENV_ROOT")
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise ValueError(f"无法检查 Windows 共享池登记：{error}") from error
+        if str(value).strip():
+            return True
+    return False
+
+
+def verified_shared_python() -> Path | None:
+    """按共享池的同一预检入口解析已验证的解释器，不安装或回退。"""
+    if not os.getenv("AUTO_MAS_DEV_ENV_ROOT", "").strip():
+        if registered_windows_pool():
+            raise ValueError(
+                "Windows 已登记 AUTO_MAS_DEV_ENV_ROOT，但当前终端未继承；"
+                "请核对用户与系统设置，再在新终端或本次进程中选定共享池。"
+            )
+        return None
+    pwsh = shutil.which("pwsh")
+    if not pwsh:
+        raise ValueError("共享测试环境需要 PowerShell 7（pwsh）。")
+    try:
+        result = subprocess.run(
+            [
+                pwsh,
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                str(REPO_ROOT / "scripts/dev-backend.ps1"),
+                "Check",
+                "-Target",
+                "Test",
+                "-PythonPathOnly",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            check=False,
+        )
+    except OSError as error:
+        raise ValueError(f"无法启动共享环境预检：{error}") from error
+    if result.returncode:
+        # 诊断可能混有原生工具的本地编码；替换只用于渲染，不用于路径。
+        detail = (result.stderr.strip() or result.stdout.strip()).decode(
+            "utf-8", errors="replace"
+        )
+        raise ValueError(detail or f"共享环境预检退出码为 {result.returncode}。")
+    try:
+        output = result.stdout.decode("utf-8").rstrip("\r\n")
+    except UnicodeDecodeError as error:
+        raise ValueError("共享环境预检返回的解释器路径不是有效的 UTF-8。") from error
+    python = Path(output)
+    if not python.is_absolute() or not python.is_file():
+        raise ValueError("共享环境预检未返回可用的 Python 解释器路径。")
+    return python
+
+
+def build_vscode_launch_config(
+    dev_port: int, *, shared_python: Path | None = None
+) -> dict[str, object]:
     port = str(dev_port)
     python_path = (
-        "${workspaceFolder}/.venv/Scripts/python.exe"
-        if os.name == "nt"
-        else "${workspaceFolder}/.venv/bin/python"
+        str(shared_python)
+        if shared_python
+        else (
+            "${workspaceFolder}/.venv/Scripts/python.exe"
+            if os.name == "nt"
+            else "${workspaceFolder}/.venv/bin/python"
+        )
     )
-    return {
-        "version": "0.2.0",
-        "configurations": [
+    configurations = []
+    # 源码 Electron 入口可能为独立模式准备 .venv，不能用于承诺只复用共享池的配置。
+    if shared_python is None:
+        configurations.append(
             {
                 "name": "Dev: 全栈启动（Electron + Runtime）",
                 "type": "node-terminal",
@@ -97,37 +177,51 @@ def build_vscode_launch_config(dev_port: int) -> dict[str, object]:
                     "AUTO_MAS_HTTP_PORT": port,
                 },
                 "autoAttachChildProcesses": False,
+            }
+        )
+    configurations.append(
+        {
+            "name": "Dev: 后端断点调试（独立后端）",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "python": python_path,
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "AUTO_MAS_ENV": "development",
+                "AUTO_MAS_HTTP_PORT": port,
+                "PYTHONIOENCODING": "utf-8",
+                "PYTHONUNBUFFERED": "1",
             },
-            {
-                "name": "Dev: 后端断点调试（独立后端）",
-                "type": "debugpy",
-                "request": "launch",
-                "program": "${workspaceFolder}/main.py",
-                "python": python_path,
-                "console": "integratedTerminal",
-                "cwd": "${workspaceFolder}",
-                "env": {
-                    "AUTO_MAS_ENV": "development",
-                    "AUTO_MAS_HTTP_PORT": port,
-                    "PYTHONIOENCODING": "utf-8",
-                    "PYTHONUNBUFFERED": "1",
-                },
-            },
-        ],
-    }
+        }
+    )
+    return {"version": "0.2.0", "configurations": configurations}
 
 
 def run_doctor(dev_port: int) -> int:
     print(f"[dev-doctor] 仓库根目录: {REPO_ROOT}")
+    shared = True
+    try:
+        python = verified_shared_python()
+    except ValueError as error:
+        python_check = ("共享测试 Python", False, str(error))
+    else:
+        shared = python is not None
+        python_check = (
+            (f"共享测试 Python：{python}", True, "")
+            if shared
+            else (
+                "Python .venv",
+                (REPO_ROOT / ".venv").exists(),
+                "独立开发：uv sync --locked --group dev；worktree：先核对共享测试池",
+            )
+        )
     checks = [
-        ("uv", shutil.which("uv") is not None, "uv sync --locked --group dev"),
+        ("uv", shutil.which("uv") is not None, "安装 uv 或确认其在 PATH 中"),
         ("node", shutil.which("node") is not None, "安装 Node 24+"),
         ("yarn", shutil.which("yarn") is not None, "启用 Corepack / Yarn 4"),
-        (
-            "Python .venv",
-            (REPO_ROOT / ".venv").exists(),
-            "uv sync --locked --group dev",
-        ),
+        python_check,
         (
             "frontend/node_modules",
             (FRONTEND_DIR / "node_modules").exists(),
@@ -141,9 +235,13 @@ def run_doctor(dev_port: int) -> int:
             missing += 1
 
     print("\n[dev-doctor] 端口隔离状态:")
-    print(
-        f"  正式版 {PROD_HTTP_PORT}: {'运行中（与开发端隔离）' if is_port_open(PROD_HTTP_PORT) else '未监听'}"
-    )
+    if shared:
+        print(f"  正式版 {PROD_HTTP_PORT}: 保留，不探测")
+    else:
+        active = is_port_open(PROD_HTTP_PORT)
+        print(
+            f"  正式版 {PROD_HTTP_PORT}: {'运行中（与开发端隔离）' if active else '未监听'}"
+        )
     print(f"  开发端 {dev_port}: {'已监听' if is_port_open(dev_port) else '空闲'}")
     print(
         f"  Vite   {DEFAULT_VITE_PORT}: {'已监听' if is_port_open(DEFAULT_VITE_PORT) else '空闲'}"
@@ -154,7 +252,7 @@ def run_doctor(dev_port: int) -> int:
     for pid, cmdline in procs:
         print(f"  PID {pid}: {cmdline[:120]}")
     if procs:
-        print("  清理命令: uv run --no-sync python scripts/dev_doctor.py --kill-dev")
+        print("  清理命令: python scripts/dev_doctor.py --kill-dev")
     return 1 if missing else 0
 
 
@@ -189,9 +287,23 @@ def init_vscode_launch(dev_port: int, *, force: bool) -> int:
     if target.exists() and not force:
         print(f"[dev-doctor] {target} 已存在，未覆盖（追加 --force 覆盖）。")
         return 0
+    if not target.resolve().is_relative_to(REPO_ROOT.resolve()):
+        print("[dev-doctor] VS Code 配置指向工作树之外，拒绝写入。", file=sys.stderr)
+        return 1
+    try:
+        shared_python = verified_shared_python()
+    except ValueError as error:
+        print(
+            f"[dev-doctor] 共享环境预检失败，未写入启动配置：{error}", file=sys.stderr
+        )
+        return 1
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
-        json.dumps(build_vscode_launch_config(dev_port), ensure_ascii=False, indent=2)
+        json.dumps(
+            build_vscode_launch_config(dev_port, shared_python=shared_python),
+            ensure_ascii=False,
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -215,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     dev_port = resolve_dev_port(args.port)
+    if dev_port == PROD_HTTP_PORT:
+        parser.error(f"开发端口不能使用正式版端口 {PROD_HTTP_PORT}")
     if args.kill_dev:
         return kill_repo_dev_backends()
     if args.init_vscode:
