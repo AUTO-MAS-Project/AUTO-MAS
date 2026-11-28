@@ -2,12 +2,14 @@
 
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from app.core import Config
 from app.models.schema import OutBase
 from app.mystery.access import MysteryContextError, get_access_context
+from app.mystery.temporary_access import open_for_today
 from app.utils import get_logger
 
 
@@ -31,7 +33,7 @@ logger = get_logger("神秘入口")
     response_model=MysteryContextOut,
     responses={503: {"model": MysteryContextOut}},
 )
-def get_mystery_context() -> MysteryContextOut | JSONResponse:
+def get_mystery_context(request: Request) -> MysteryContextOut | JSONResponse:
     # 同步端点由 FastAPI 在线程池执行，首次设备查询与源码读取不阻塞事件循环。
     try:
         device_hash, backend_hash = get_access_context()
@@ -53,6 +55,20 @@ def get_mystery_context() -> MysteryContextOut | JSONResponse:
             code=503, status="error", message="申请信息不可用", errorCode=error.code
         )
         return JSONResponse(status_code=503, content=response.model_dump())
+    # 识别本机 Electron 页面的请求，普通网页和远程查询仍保持只读。
+    if (
+        request.client
+        and request.client.host in {"127.0.0.1", "::1"}
+        and request.headers.get("origin") in {None, "null"}
+        and request.headers.get("sec-fetch-mode") == "cors"
+        and request.headers.get("sec-fetch-dest") == "empty"
+        and " Electron/" in request.headers.get("user-agent", "")
+    ):
+        try:
+            open_for_today(Config.config_path, f"{device_hash}:{backend_hash}")
+        except (OSError, ValueError) as error:
+            # 临时开放失败时仍返回申请信息，用户可按原流程解锁。
+            logger.warning(f"临时开放神秘入口失败: {type(error).__name__}")
     return MysteryContextOut(
         data=MysteryContextData(deviceHash=device_hash, backendHash=backend_hash)
     )
