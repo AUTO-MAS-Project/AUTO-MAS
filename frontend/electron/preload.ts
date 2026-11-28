@@ -30,8 +30,10 @@ const electronAPI = {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
     ipcRenderer.invoke('mystery:verify', accessCode, context),
-  selectFolder: () => ipcRenderer.invoke('select-folder'),
-  selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
+  selectFolder: (options?: { title?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('select-folder', options),
+  selectFile: (filters?: unknown[], options?: { title?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('select-file', filters, options),
   saveTextFile: (
     defaultName: string,
     content: string,

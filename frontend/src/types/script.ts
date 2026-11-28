@@ -5,7 +5,6 @@ import type {
   MaaConfig,
   MaaEndConfig_Update,
   GeneralConfig,
-  SrcConfig,
   ScriptCreateIn,
   PluginProvidedScriptType,
   ScriptGetOut,
@@ -46,12 +45,6 @@ export interface GeneralScriptConfig {
   Info: DraftGroup<NonNullable<GeneralConfig['Info']>, 'RootPath'>
   Run: DraftGroup<NonNullable<GeneralConfig['Run']>>
   Script: DraftGroup<NonNullable<GeneralConfig['Script']>, 'ConfigPath' | 'LogPath' | 'ScriptPath'>
-}
-
-export interface SRCScriptConfig {
-  Update: DraftGroup<NonNullable<SrcConfig['Update']>>
-  Info: DraftGroup<NonNullable<SrcConfig['Info']>, 'Path'>
-  Run: DraftGroup<NonNullable<SrcConfig['Run']>>
 }
 
 type MaaEndTaskSwitchConfig = Record<`If${MaaEndTaskSwitch}`, boolean> & {

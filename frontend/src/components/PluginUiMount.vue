@@ -39,7 +39,7 @@ onMounted(() => {
     refreshing = true
     stop()
     status.value = 'loading'
-    const available = await props.refresh()
+    const available = await props.refresh().catch(() => false)
     if (generation !== pending) return
     refreshing = false
     if (available) remount()
@@ -57,6 +57,8 @@ onMounted(() => {
       () => props.target.userId,
       () => props.target.planId,
       () => props.target.configUid,
+      () => props.target.pluginId,
+      () => props.target.channelId,
     ],
     remount,
     { immediate: true, flush: 'sync' }
@@ -89,7 +91,7 @@ onScopeDispose(() => cleanup?.())
       <iframe
         ref="frame"
         :key="iframeUrl"
-        sandbox="allow-scripts"
+        sandbox="allow-scripts allow-forms"
         referrerpolicy="no-referrer"
         :title="mount.pluginName"
         :src="iframeUrl"

@@ -7,8 +7,8 @@ import maa from '@/views/maa/entry'
 import m9a from '@/views/m9a/entry'
 import maafw from '@/views/maafw/entry'
 import mss from '@/views/mss/entry'
-import src from '@/views/src/entry'
 import whimbox from '@/views/whimbox/entry'
+import srcIcon from '@/assets/SRC.png'
 
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
@@ -56,7 +56,7 @@ export interface ScriptFrontendAdapter {
 }
 
 /** 普通专项：按 editors 生成路由，进插件中心统计 */
-const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, src, bettergi]
+const pluginAdapters: ScriptFrontendAdapter[] = [maa, whimbox, bettergi]
 
 /**
  * MaaFW 家族，顺序固定为 MaaFW、M9A、MSS。路由名与普通专项同形（`${type}ScriptEdit` 等），
@@ -100,11 +100,11 @@ export const MAAFW_FAMILY_ADAPTERS: readonly ScriptFrontendAdapter[] = maafwAdap
 
 /** 插件中心按所属插件对上托管类型、计划表类型与专项图标。 */
 export const SCRIPT_PLUGIN_BINDINGS: PluginAdapterBinding[] = [
-  ...pluginAdapters,
-  ...MAAFW_FAMILY_ADAPTERS,
-].map(adapter => ({
-  pluginId: adapter.pluginId,
-  scriptType: adapter.type,
-  logo: adapter.metadata.logo,
-  planConfigType: adapter.plan?.configType,
-}))
+  ...[...pluginAdapters, ...MAAFW_FAMILY_ADAPTERS].map(adapter => ({
+    pluginId: adapter.pluginId,
+    scriptType: adapter.type,
+    logo: adapter.metadata.logo,
+    planConfigType: adapter.plan?.configType,
+  })),
+  { pluginId: 'src_adapter', scriptType: 'SRC', logo: srcIcon },
+]

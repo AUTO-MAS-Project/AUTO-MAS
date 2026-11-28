@@ -6,7 +6,8 @@ import { deferred, fire, testView } from '../../../tests/vueRenderer'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import Antd from 'ant-design-vue'
+import Antd, { InputNumber } from 'ant-design-vue'
+import zhCN from '../../../../res/i18n/zh_CN.json'
 import { PathKind, Service } from '@/api'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
@@ -75,7 +76,11 @@ async function render(
           widget: 'segmented',
           options: [{ value: false }],
         },
-        { field: 'single', component: 'switch' },
+        {
+          field: 'single',
+          component: 'switch',
+          description: 'Check for updates before starting each new run.',
+        },
         { field: 'notes', widget: 'textarea' },
         {
           field: 'exe',
@@ -128,6 +133,7 @@ async function render(
       values,
       uid: 'uid',
       namespace: 'demo',
+      scope: 'script',
       tables: declarativeTables({
         tables: [
           {
@@ -195,6 +201,79 @@ async function render(
 }
 
 describe('插件声明式表格与字段反馈', () => {
+  it('运行次数支持步进和直接输入，零值显示不限制，普通数字保留小数步长', async () => {
+    const values = reactive<Record<string, Record<string, unknown>>>({
+      Run: { ProxyTimesLimit: 0, Ratio: 0.2 },
+    })
+    const client = new QueryClient()
+    const view = testView(
+      defineComponent(
+        () => () =>
+          h(DeclarativeForm, {
+            uid: 'uid',
+            namespace: 'demo',
+            scope: 'script',
+            groups: [
+              {
+                name: 'Run',
+                hints: [
+                  { field: 'ProxyTimesLimit', component: 'number', min: 0, max: 4, precision: 0 },
+                  { field: 'Ratio', component: 'number', min: 0, max: 0.3, step: 0.1 },
+                ],
+              },
+            ],
+            values,
+            'onUpdate:value': (group, field, value) => (values[group]![field] = value),
+          })
+      )
+    )
+    view.app.component('AInputNumber', InputNumber)
+    view.app.use(VueQueryPlugin, { queryClient: client }).use(
+      createI18n({
+        legacy: false,
+        locale: 'zh-CN',
+        flatJson: true,
+        missingWarn: false,
+        messages: { 'zh-CN': { ...zhCN } },
+      })
+    )
+    view.mount()
+    const field = (name: string) => view.all().find(el => el.props['aria-label'] === name)!
+    const spinbutton = (name: string) =>
+      view.all(field(name)).find(el => el.props.role === 'spinbutton')!
+    const button = (name: string, label: string) =>
+      view.all(field(name)).find(el => el.tag === 'button' && el.props['aria-label'] === label)!
+    const daily = zhCN['core.edit.runsPerDayThis']
+    const input = spinbutton(daily)
+    try {
+      expect(input.props.value).toBe('0')
+      expect(view.text(field(daily))).toContain('不限制')
+      expect(button(daily, '减少').props.disabled).toBe(true)
+
+      await fire(button(daily, '增加'), 'onClick')
+      expect(input.props.value).toBe('1')
+      expect(view.text(field(daily))).toContain('次 / 天')
+      await fire(button(daily, '减少'), 'onClick')
+      expect(spinbutton(daily)).toBe(input)
+      expect(input.props.value).toBe('0')
+
+      await fire(input, 'onFocus', {})
+      expect(view.text(field(daily))).not.toContain('不限制')
+      await fire(input, 'onInput', { target: { value: '3' } })
+      await fire(input, 'onBlur', {})
+      expect(values.Run?.ProxyTimesLimit).toBe(3)
+      expect(input.props.value).toBe('3')
+
+      await fire(button('Ratio', '增加'), 'onClick')
+      expect(values.Run?.Ratio).toBe(0.3)
+      expect(spinbutton('Ratio').props.value).toBe('0.3')
+      expect(button('Ratio', '增加').props.disabled).toBe(true)
+    } finally {
+      view.app.unmount()
+      client.clear()
+    }
+  })
+
   it('系统目录和文件选择保留筛选器，取消后保留草稿', async () => {
     const selectFolder = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce('D:/folder')
     const selectFile = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(['D:/demo.exe'])
@@ -241,6 +320,7 @@ describe('插件声明式表格与字段反馈', () => {
       () => ({
         uid: uid.value,
         namespace: 'demo',
+        scope: 'script',
         groups: groups.value,
         values: draft.values,
         errors: draft.errors.value,
@@ -352,6 +432,7 @@ describe('插件声明式表格与字段反馈', () => {
       () => ({
         uid: 'uid',
         namespace: 'demo',
+        scope: 'script',
         pluginName: 'demo15',
         setupMode: true,
         groups: [{ name: 'Setup', hints }],
@@ -457,24 +538,20 @@ describe('插件声明式表格与字段反馈', () => {
     expect((await render(false, false)).html).not.toContain('<nav')
   })
 
-  it('只聚合连续开关，控件覆盖与孤立开关保留在普通栅格', async () => {
+  it('相邻与独立布尔字段均使用带标签的开关，保留字段顺序和反馈', async () => {
     const { html } = await render(false)
-    expect(
-      [...html.matchAll(/class="declarative-(field|switch)-grid"/g)].map(match => match[1])
-    ).toEqual(['field', 'switch', 'field', 'field'])
-    const grids = html.split(/class="declarative-(?:field|switch)-grid"/)
-    expect(grids[1]).toContain('value="outside"')
-    expect(grids[2]!.match(/role="switch"/g)).toHaveLength(2)
-    expect(grids[2]).toContain('switch-tile--tile')
-    expect(grids[2]).toContain('aria-checked="true"')
-    expect(grids[2]).toMatch(
-      /enabled[\s\S]*invalid switch[\s\S]*locked[\s\S]*core.plugins.readOnly/
+    const switches = html.match(/<button\b[^>]*role="switch"[^>]*>/g) ?? []
+    const control = (label: string) =>
+      switches.find(button => button.includes(`aria-label="${label}"`))
+    expect(control('enabled')).toContain('aria-checked="true"')
+    expect(control('locked')).toMatch(/\sdisabled(?:[\s>])/)
+    expect(control('single')).toContain('aria-checked="false"')
+    expect(html).toContain('aria-label="Check for updates before starting each new run."')
+    expect(html).toMatch(
+      /value="outside"[\s\S]*invalid switch[\s\S]*core.plugins.readOnly[\s\S]*ant-segmented[\s\S]*single[\s\S]*<textarea/
     )
-    expect(grids[3]).toMatch(
-      /ant-segmented[\s\S]*single[\s\S]*setting-toggle-button[\s\S]*textarea/
-    )
-    expect(grids[3]).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
-    expect(grids[3]).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
+    expect(html).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
+    expect(html).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
   })
 
   it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {

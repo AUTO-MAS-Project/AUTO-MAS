@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiOutlined, BellOutlined, FileTextOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { GlobalConfig, NotifyChannelOut } from '@/api'
-import type { DynamicSettingChangeHandler } from './settingTypes'
+import type { DynamicSettingChangeHandler, SettingGroupChangeHandler } from './settingTypes'
 import { Service } from '@/api'
 import { useClawBinding } from './useClawBinding'
 import NotifyChannelCard from './components/NotifyChannelCard.vue'
@@ -23,6 +23,8 @@ import SectionCard from '@/components/ui/SectionCard.vue'
 import { handleExternalLink } from '@/utils/openExternal'
 
 const props = defineProps<{
+  configUid: string
+  saveGroup: SettingGroupChangeHandler
   settings: GlobalConfig
   handleSettingChange: DynamicSettingChangeHandler
   testNotify: () => Promise<void>
@@ -255,6 +257,8 @@ const modalPopupContainer = () =>
     </SectionCard>
 
     <NotifyChannelModal
+      :config-uid="configUid"
+      :save-group="saveGroup"
       :open="activeChannel != null"
       :channel="activeChannel"
       :values="notifyValues"
