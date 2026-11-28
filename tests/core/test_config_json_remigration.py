@@ -422,3 +422,110 @@ asyncio.run(run())
         timeout=120,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    ["sign_flow_accounts.yaml", "game_sign_accounts.yaml"],
+    ids=["recorded-new-name", "recorded-legacy-name"],
+)
+def test_startup_resumes_remigration_written_to_legacy_name(tmp_path, recorded):
+    """重迁内容落在旧名下时，续跑要按实际文件结账，不按进度里的名字判缺失。"""
+    import os
+    import subprocess
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import hashlib
+import sqlite3
+from unittest.mock import AsyncMock
+
+from app.config import config_manager
+from app.core import Config
+from app.core.config.upgrade import MIGRATION_RECORD
+from app.utils import io
+
+recorded = __RECORDED__
+uid = '9c4f0a17-3d52-4b6e-8f10-27ae5d3c9b64'
+legacy_target = Config.config_path / 'game_sign_accounts.yaml'
+source = Config.config_path / 'GameSignAccounts.json'
+payload = {
+    'order': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    'data': {uid: {'GameSignAccount': {'Name': '重迁账号'}}},
+}
+# 旧版中断形态：内容已经写进改名前的目标，进度停在 prepared。
+io.write_file(legacy_target, payload)
+io.write_file(source, {
+    'instances': [{'uid': uid, 'type': 'GameSignAccountGroup'}],
+    uid: {'GameSignAccount': {'Name': '重迁账号'}},
+})
+record_path = Config.config_path / MIGRATION_RECORD
+io.write_file(record_path, {
+    'version': 2,
+    'files': {'GameSignAccounts.json': {
+        'target': recorded,
+        'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'target_sha256': hashlib.sha256(legacy_target.read_bytes()).hexdigest(),
+        'state': 'prepared',
+    }},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute('CREATE TABLE version(v text)')
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+
+async def run():
+    await Config.check_data(prepare_plugins=AsyncMock())
+    accounts = list(Config.ToolsConfig.SignFlow_Accounts.values())
+    assert len(accounts) == 1, accounts
+    assert accounts[0].SignFlowAccount.Name == '重迁账号'
+    migrated = Config.config_path / 'sign_flow_accounts.yaml'
+    assert migrated.is_file()
+    assert not legacy_target.exists()
+    entry = io.read_dict_file(record_path)['files']['GameSignAccounts.json']
+    assert entry['state'] == 'complete', entry
+    assert entry['target'] == 'game_sign_accounts.yaml', entry
+    await config_manager.flush()
+
+asyncio.run(run())
+""".replace("__RECORDED__", repr(recorded))
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(root), "AUTO_MAS_ENV": "development"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_reset_targets_resume_keeps_written_documents(tmp_path):
+    """reset_targets 重迁在归档之后中断时，续跑要保留已经写好的内容。"""
+    import hashlib
+
+    (tmp_path / "legacy-json").mkdir()
+
+    nodes = {key: _Profile.build() for _, _, key in CONFIG_FILES}
+    record = {"version": 2, "files": {}, "reset_targets": True}
+    for old, new, _ in CONFIG_FILES:
+        config_io.write_file(tmp_path / new, {"Values": {"Revision": 7}})
+        config_io.write_file(
+            tmp_path / "legacy-json" / old, {"Values": {"Revision": 5}}
+        )
+        record["files"][old] = {
+            "target": new,
+            "source_sha256": None,
+            "target_sha256": hashlib.sha256((tmp_path / new).read_bytes()).hexdigest(),
+            "state": "prepared",
+        }
+    config_io.write_file(tmp_path / MIGRATION_RECORD, record)
+
+    upgrade_json_configs(tmp_path, nodes)
+
+    for _, new, _ in CONFIG_FILES:
+        assert config_io.read_dict_file(tmp_path / new) == {"Values": {"Revision": 7}}
+    assert config_io.read_dict_file(tmp_path / MIGRATION_RECORD)["complete"] is True
