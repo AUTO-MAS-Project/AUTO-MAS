@@ -36,6 +36,21 @@ describe('新建计划表菜单', () => {
           hasPasswordField: true,
         },
       },
+      maaend: {
+        uid: 'maaend',
+        ui: {},
+        info: { plugin_name: 'maaend_adapter', state: PluginState.ENABLED },
+        providedScript: {
+          scriptKey: 'MaaEnd',
+          scriptConfigType: 'MaaEndConfig',
+          userConfigType: 'MaaEndUserConfig',
+          planConfigType: PLAN_CONFIG_TYPES.MAA_END,
+          supportsGameBinding: true,
+          supportsDesktopSession: true,
+          hasAccountField: true,
+          hasPasswordField: true,
+        },
+      },
     })
     const types = (enabled: string[], registry = plugins) =>
       getAvailablePlanTypes(enabled, registry).map(plan => plan.configType)
@@ -46,6 +61,9 @@ describe('新建计划表菜单', () => {
     expect(types(['MSS'], indexPluginScriptTypes())).not.toContain(PLAN_CONFIG_TYPES.MSS)
     expect(getPlanTypeDescriptor(PLAN_CONFIG_TYPES.MSS)).toBeNull()
     expect(types(['MSS'])).not.toContain(PLAN_CONFIG_TYPES.MAA)
+    expect(types(['MaaEnd'])).toContain(PLAN_CONFIG_TYPES.MAA_END)
+    expect(types(['MaaEnd'], indexPluginScriptTypes())).not.toContain(PLAN_CONFIG_TYPES.MAA_END)
+    expect(getPlanTypeDescriptor(PLAN_CONFIG_TYPES.MAA_END)).toBeNull()
     expect(types([])).toContain(PLAN_CONFIG_TYPES.UNIVERSAL)
   })
 })

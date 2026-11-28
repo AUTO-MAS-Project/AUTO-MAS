@@ -1,5 +1,5 @@
 import type { APIRequestContext, Locator, Page } from '@playwright/test'
-import { expect, maaEndUnavailable, test } from './fixtures'
+import { expect, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 
@@ -227,10 +227,8 @@ test.describe('@config-mode-cards', () => {
     try {
       for (const item of [
         { type: 'General', route: 'general' },
-        { type: 'MaaEnd', route: 'maaend' },
         { type: 'Whimbox', route: 'whimbox' },
       ]) {
-        if (item.type === 'MaaEnd' && maaEndUnavailable) continue
         const { scriptId } = await post(page.request, '/api/scripts/add', { type: item.type })
         const script = {
           ...item,
@@ -325,47 +323,6 @@ test.describe('@config-mode-cards', () => {
       await page.setViewportSize({ width: 1512, height: 1000 })
       await app.goto('/settings')
       await chooseLanguage('English')
-      const maaEnd = scripts.find(({ type }) => type === 'MaaEnd')
-      if (maaEnd) {
-        await app.goto(`/scripts/${maaEnd.scriptId}/users/${maaEnd.userId}/edit/maaend`)
-        const groups = page.locator('.config-mode-options')
-        await expect(groups).toHaveCount(2)
-        await expect(
-          groups.first().locator('.config-mode-option').nth(1).locator('input')
-        ).toBeChecked()
-        await expect(
-          groups.first().locator('.config-mode-option').nth(1).locator('input')
-        ).toBeEnabled()
-        await app.evidence('config-mode-maaend-en-dark-wide')
-        for (const [index, count] of [3, 2].entries()) {
-          await expectReadableCards(groups.nth(index), count)
-          expect
-            .soft(await visibleDescriptions(groups.nth(index)))
-            .toEqual(Array.from({ length: count }, () => true))
-        }
-        await page.setViewportSize({ width: 768, height: 1000 })
-        await app.evidence('config-mode-maaend-en-dark-narrow')
-        for (const [index, count] of [3, 2].entries()) {
-          const current = groups.nth(index)
-          await expectReadableCards(current, count)
-          await expectCompactCards(current, count)
-          await checkDisclosure(
-            page,
-            current,
-            count,
-            index === 1
-              ? () => app.evidence('config-mode-maaend-en-dark-overlay-descriptions-expanded')
-              : undefined
-          )
-        }
-        const summaries = groups.nth(1).locator('.config-mode-summary')
-        if ((await summaries.count()) === 2) {
-          expect
-            .soft(await summaries.allTextContents())
-            .toEqual(['Override for tasks, then restore', 'Keep base settings'])
-        }
-      }
-
       await page.setViewportSize({ width: 768, height: 1000 })
       const whimbox = scripts.find(({ type }) => type === 'Whimbox')!
       await app.goto(`/scripts/${whimbox.scriptId}/users/${whimbox.userId}/edit/whimbox`)

@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test'
 import type { WSTaskCompletedData } from '../src/services/websocket/types'
 import { projectTaskTree } from '../src/composables/taskTreeProjection'
-import { expect, maaEndUnavailable, test } from './fixtures'
+import { expect, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 const post = async (request: APIRequestContext, path: string, data: unknown) => {
@@ -136,36 +136,30 @@ test.describe('@maa-update configuration and dispatch', () => {
   })
 })
 
-for (const script of [
-  { type: 'MAA', route: 'maa', heading: 'Update takeover' },
-  { type: 'MaaEnd', route: 'maaend', heading: 'MaaEnd program updates' },
-]) {
-  test(`@maa-update ${script.type} package mode persists without a CDK`, async ({ app, page }) => {
-    test.skip(script.type === 'MaaEnd' && maaEndUnavailable, '需要 MaaEnd 适配器源码或 wheel')
-    const created = await post(page.request, '/api/scripts/add', { type: script.type })
-    await app.goto(`/scripts/${created.scriptId}/edit/${script.route}`)
-    const panel = page.locator('.form-section').filter({
-      has: page.getByRole('heading', { name: script.heading, exact: true }),
-    })
-    const mode = panel.getByRole('combobox', { name: 'Update method', exact: true })
-    await expect(mode).toBeDisabled()
-    await panel.getByRole('switch').click()
-    await expect(mode).toBeEnabled()
-    await mode.locator('xpath=ancestor::*[contains(@class, "ant-select-selector")]').click()
-    const saved = page.waitForResponse(
-      response =>
-        response.url().endsWith('/api/scripts/update') &&
-        response.request().postDataJSON()?.data?.Update?.PackageMode === 'incremental'
-    )
-    await page
-      .locator('.ant-select-dropdown:visible')
-      .getByText('Incremental update', { exact: true })
-      .click()
-    expect((await (await saved).json()).code).toBe(200)
-    await page.reload()
-    await expect(panel.getByText('Incremental update', { exact: true })).toBeVisible()
-    await expect(panel.getByPlaceholder('Empty falls back to global key')).toHaveValue('')
-    await panel.scrollIntoViewIfNeeded()
-    await app.evidence('incremental-update-persistence')
+test('@maa-update MAA package mode persists without a CDK', async ({ app, page }) => {
+  const created = await post(page.request, '/api/scripts/add', { type: 'MAA' })
+  await app.goto(`/scripts/${created.scriptId}/edit/maa`)
+  const panel = page.locator('.form-section').filter({
+    has: page.getByRole('heading', { name: 'Update takeover', exact: true }),
   })
-}
+  const mode = panel.getByRole('combobox', { name: 'Update method', exact: true })
+  await expect(mode).toBeDisabled()
+  await panel.getByRole('switch').click()
+  await expect(mode).toBeEnabled()
+  await mode.locator('xpath=ancestor::*[contains(@class, "ant-select-selector")]').click()
+  const saved = page.waitForResponse(
+    response =>
+      response.url().endsWith('/api/scripts/update') &&
+      response.request().postDataJSON()?.data?.Update?.PackageMode === 'incremental'
+  )
+  await page
+    .locator('.ant-select-dropdown:visible')
+    .getByText('Incremental update', { exact: true })
+    .click()
+  expect((await (await saved).json()).code).toBe(200)
+  await page.reload()
+  await expect(panel.getByText('Incremental update', { exact: true })).toBeVisible()
+  await expect(panel.getByPlaceholder('Empty falls back to global key')).toHaveValue('')
+  await panel.scrollIntoViewIfNeeded()
+  await app.evidence('incremental-update-persistence')
+})

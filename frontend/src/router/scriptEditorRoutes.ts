@@ -19,10 +19,6 @@ type OrdinaryScriptType = Exclude<BuiltinScriptType, PluginEditorScriptType>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
-  MaaEnd: {
-    script: () => import('@/views/EditView/Script/MaaEndScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/MaaEndUserEdit.vue'),
-  },
   HSR: {
     script: () => import('@/views/EditView/Script/HSRScriptEdit.vue'),
     user: () => import('@/views/EditView/User/HSRUserEdit.vue'),

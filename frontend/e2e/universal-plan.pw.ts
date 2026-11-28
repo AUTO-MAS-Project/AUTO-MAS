@@ -52,7 +52,7 @@ test.describe('@universal-plan', () => {
       data: { Info: { Name: 'Shared universal plan' } },
     })
     await app.goto(`/scripts/${script.scriptId}/users/${user.userId}/edit/general`)
-    // 通用脚本计划表与 MaaEnd 一致：一个「固定配置 / 计划名」选择框 + 跳转到计划表
+    // 通用脚本计划表使用一个「固定配置 / 计划名」选择框，并提供跳转入口
     const planSelect = page.locator('.universal-plan-select')
     await expect(planSelect).toContainText('Fixed configuration')
     await planSelect.click()
