@@ -234,11 +234,6 @@ export const SCRIPT_METADATA = {
     label: 'ZZZ-OD',
     typeTagColor: 'volcano',
     routeSuffix: 'zzzod',
-    routeTitles: {
-      script: '编辑ZZZ-OD脚本',
-      userAdd: '添加ZZZ-OD用户',
-      userEdit: '编辑ZZZ-OD用户',
-    },
     createOrder: 10,
     create: {
       titleKey: 'core.scripts.type.ZzzOd',

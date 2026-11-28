@@ -39,10 +39,6 @@ const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
     script: () => import('@/views/EditView/Script/OkNteScriptEdit.vue'),
     user: () => import('@/views/EditView/User/OkNteUserEdit.vue'),
   },
-  ZzzOd: {
-    script: () => import('@/views/EditView/Script/ZzzOdScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/ZzzOdUserEdit.vue'),
-  },
 }
 
 const PAGE_ROUTES = {
