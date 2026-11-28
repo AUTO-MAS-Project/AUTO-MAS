@@ -5,16 +5,46 @@ from typing import Any, Literal
 
 from fastapi import Depends, HTTPException, Request
 
-from app.config import ConfigEntry
+from app.config import ConfigEntry, DeclarativeBlock, HostBlock, PluginBlock
 from app.config.wire import config_contract
 from app.core import Plugin
 from app.models.config import ScriptEntry, UserEntry
-from app.models.schema import BackupTargetHint, DeclarativeConfigUi
+from app.models.schema import (
+    BackupTargetHint,
+    ConfigBlockOut,
+    DeclarativeBlockOut,
+    DeclarativeConfigUi,
+    HostBlockOut,
+    PluginBlockOut,
+)
 from app.models.task import TaskMode
 from app.plugin.frontend import MountedFrontend
 
 # 托管是否进桌面分身改由全局清单管理，旧字段只为降级与已发布插件保留，不在表单里出现。
 _DEPRECATED_FIELDS = frozenset({("Run", "ExecutionSession")})
+
+
+def _config_blocks(entry: ConfigEntry) -> list[ConfigBlockOut] | None:
+    blocks = type(entry).ui_blocks
+    if blocks is None:
+        return None
+    pages = Plugin.frontend_block_pages(entry)
+    projected: list[ConfigBlockOut] = []
+    for block in blocks:
+        match block:
+            case HostBlock(name):
+                projected.append(HostBlockOut(name=name))
+            case DeclarativeBlock(groups):
+                projected.append(DeclarativeBlockOut(groups=list(groups)))
+            case PluginBlock(page_id, fallback_groups):
+                projected.append(
+                    PluginBlockOut(
+                        pageId=page_id,
+                        fallbackGroups=list(fallback_groups),
+                        mount=pages.get(page_id),
+                    )
+                )
+    return projected
 
 
 def config_detail_ui(
@@ -36,6 +66,7 @@ def config_detail_ui(
             f"plugins.{record.info.plugin_name}.config" if record is not None else None
         ),
         frontendSurfaces=Plugin.resolve_frontend_surfaces(entry),
+        blocks=_config_blocks(entry),
         locked=entry.is_locked,
         **documents[uid]["ui"],
     )
@@ -95,14 +126,22 @@ async def require_frontend_activation(
 ) -> FrontendWriteGuard | None:
     if session is None:
         return None
-    frontend, _, page = session
+    frontend, provider, page = session
 
     def authorize(entry: ConfigEntry) -> None:
-        if not any(
+        if any(
             mount is frontend and binding.page == page
             for _, mount, binding in Plugin.frontend_bindings(entry)
         ):
-            raise HTTPException(status_code=403, detail="页面未绑定到此配置")
+            return
+        block = Plugin.frontend_block_pages(entry).get(page)
+        if (
+            block is not None
+            and block.pluginName == provider
+            and block.activationId == frontend.activation_id
+        ):
+            return
+        raise HTTPException(status_code=403, detail="页面未绑定到此配置")
 
     return authorize
 

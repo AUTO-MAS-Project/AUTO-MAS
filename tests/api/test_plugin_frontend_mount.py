@@ -6,6 +6,7 @@ import os
 import sys
 from dataclasses import replace
 from shutil import copytree, ignore_patterns
+from typing import Annotated
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ import pytest
 import pytest_asyncio
 from fastapi import APIRouter, FastAPI
 from httpx import ASGITransport, AsyncClient
+from pydantic import Field
 
 from app.api import (
     config_triggers,
@@ -21,10 +23,25 @@ from app.api import (
     scripts_router,
     setting_router,
 )
-from app.config import ConfigCollection, config_manager
+from app.config import (
+    ConfigCollection,
+    ConfigGroup,
+    DeclarativeBlock,
+    HostBlock,
+    PluginBlock,
+    UiVisibility,
+    collection,
+    config_manager,
+    ui,
+)
 from app.core import Config, Plugin
 from app.core.i18n import I18n
-from app.models.config import GeneralConfig, PluginRegistryCollection
+from app.models.config import (
+    GeneralConfig,
+    PluginRegistryCollection,
+    ScriptEntry,
+    UserEntry,
+)
 from app.plugin.errors import PluginOperationError
 from app.plugin.http import HttpRegistry
 from app.plugin.runtime import discover
@@ -53,8 +70,8 @@ async def host(monkeypatch, isolated_app_paths):
     monkeypatch.setitem(config_manager._collections, "PlanConfig", plans)
     monkeypatch.setattr(Plugin, "script_types", {})
     monkeypatch.setattr(Plugin, "http", HttpRegistry())
-    for collection in (scripts, plans, registry):
-        await collection.activate()
+    for root in (scripts, plans, registry):
+        await root.activate()
     app = FastAPI()
     for router in (
         scripts_router,
@@ -464,6 +481,153 @@ async def test_script_and_user_bindings_authorize_actual_targets(
             f"/api/scripts/{path}", json={**target, "data": {}}, headers=headers
         )
         assert response.status_code == 403
+
+
+async def test_block_only_page_projects_and_authorizes_owning_user(
+    host, demo_package, monkeypatch
+):
+    record, ui_dir = demo_package
+    plugin = record._plugin_cls
+    decl = plugin.decl
+
+    class HiddenFields(ConfigGroup):
+        Value: str = ""
+
+    class BlockUser(UserEntry):
+        ui_blocks = (
+            HostBlock("game_binding"),
+            DeclarativeBlock(("Hidden",)),
+            PluginBlock("stage", ("info",)),
+            PluginBlock("missing", ("notify",)),
+        )
+        Hidden: Annotated[HiddenFields, ui(visibility=UiVisibility.HIDE)] = Field(
+            default_factory=HiddenFields
+        )
+
+    class BlockScript(ScriptEntry):
+        users: ConfigCollection[BlockUser] = collection(BlockUser)
+
+    class BlockPlan(decl.plan_type):
+        ui_blocks = (DeclarativeBlock(("First",)),)
+
+    monkeypatch.setattr(
+        plugin,
+        "decl",
+        replace(
+            decl, script_type=BlockScript, user_type=BlockUser, plan_type=BlockPlan
+        ),
+    )
+    manifest = ui_dir / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    data["pages"]["stage"] = data["pages"]["plan"]
+    data["pages"]["missing"] = {"web": {"entry": "missing.html", "panelApi": 1}}
+    data["bindings"] = []
+    manifest.write_text(json.dumps(data), encoding="utf8")
+    await Plugin.enable(record)
+
+    document = await registry_document(host, record)
+    assert document["providedScript"]["blockSurfaces"] == ["user", "plan"]
+    frontend = document["frontend"]
+    assert frontend["bindings"] == []
+    assert any("block_pages.missing" in message for message in frontend["diagnostics"])
+    assert (
+        await host.get(asset_url(record, frontend["revision"], "plan.html"))
+    ).status_code == 200
+
+    script_id, script = await Config.add_script("Demo15")
+    user_id, user = await Config.add_user(str(script_id))
+    ids = {"scriptId": str(script_id), "userId": str(user_id)}
+    detail = (await host.post("/api/scripts/user/get", json=ids)).json()["ui"]
+    assert "Hidden" not in detail["hints"]
+    assert detail["blocks"] == [
+        {"kind": "host", "name": "game_binding"},
+        {"kind": "declarative", "groups": ["Hidden"]},
+        {
+            "kind": "plugin",
+            "pageId": "stage",
+            "fallbackGroups": ["info"],
+            "mount": {
+                "pageId": "stage",
+                "pluginName": "demo15",
+                "revision": frontend["revision"],
+                "activationId": frontend["activationId"],
+                "artifacts": {"web": {"entry": "plan.html", "panelApi": 1}},
+            },
+        },
+        {
+            "kind": "plugin",
+            "pageId": "missing",
+            "fallbackGroups": ["notify"],
+            "mount": None,
+        },
+    ]
+
+    headers = {
+        "X-Plugin-Ui-Provider": "demo15",
+        "X-Plugin-Ui-Activation": frontend["activationId"],
+        "X-Plugin-Ui-Page": "stage",
+    }
+    update = {**ids, "data": {"info": {"name": "from-block"}}}
+    response = await host.post("/api/scripts/user/update", json=update, headers=headers)
+    assert response.status_code == 200 and response.json()["code"] == 200
+    assert user.info.name == "from-block"
+    response = await host.post(
+        "/api/scripts/update",
+        json={"scriptId": str(script_id), "data": {"info": {"name": "denied"}}},
+        headers=headers,
+    )
+    assert response.status_code == 403 and script.info.name != "denied"
+    update["data"]["info"]["name"] = "denied"
+    for override, status in (
+        ({"X-Plugin-Ui-Page": "plan"}, 403),
+        ({"X-Plugin-Ui-Page": "missing"}, 403),
+        ({"X-Plugin-Ui-Activation": "stale"}, 409),
+    ):
+        response = await host.post(
+            "/api/scripts/user/update", json=update, headers={**headers, **override}
+        )
+        assert response.status_code == status
+    assert user.info.name == "from-block"
+
+
+async def test_manifest_without_bindings_or_declared_pages_does_not_serve_assets(
+    host, demo_package
+):
+    record, ui_dir = demo_package
+    manifest = ui_dir / "manifest.json"
+    data = json.loads(manifest.read_bytes())
+    data["bindings"] = []
+    manifest.write_text(json.dumps(data), encoding="utf8")
+    await Plugin.enable(record)
+
+    document = await registry_document(host, record)
+    assert document["providedScript"]["blockSurfaces"] == []
+    frontend = document["frontend"]
+    assert "plan" in frontend["pages"]
+    assert (
+        await host.get(asset_url(record, frontend["revision"], "plan.html"))
+    ).status_code == 404
+
+
+async def test_host_and_declarative_blocks_enable_without_ui_directory(
+    host, demo_package, monkeypatch
+):
+    record, ui_dir = demo_package
+    ui_dir.rename(ui_dir.with_name("unused-ui"))
+    plugin = record._plugin_cls
+    decl = plugin.decl
+
+    class BlockScript(decl.script_type):
+        ui_steps = ()
+        ui_sections = {}
+        ui_blocks = (HostBlock("config_restore"), DeclarativeBlock(("Info", "Setup")))
+
+    monkeypatch.setattr(plugin, "decl", replace(decl, script_type=BlockScript))
+    await Plugin.enable(record)
+
+    document = await registry_document(host, record)
+    assert document["frontend"] is None
+    assert document["providedScript"]["blockSurfaces"] == ["script", "setup"]
 
 
 async def test_manifest_only_reload_revokes_session(demo):

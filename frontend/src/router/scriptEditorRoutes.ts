@@ -77,17 +77,28 @@ export async function resolveScriptPanelRoute(
   type: string
 ) {
   const page = to.meta.maafwPage ?? to.meta.scriptPage
-  if (!page || page === 'userAdd') return
-  const kind = to.name === genericPanelRoute.setup ? 'setup' : page === 'userEdit' ? 'user' : page
-  const custom = staticPanelRoute(type, kind)
-  const generic = genericPanelRoute[kind]
+  if (!page) return
+  const kind =
+    to.name === genericPanelRoute.setup
+      ? 'setup'
+      : page === 'userEdit' || page === 'userAdd'
+        ? 'user'
+        : page
+  const custom = page === 'userAdd' ? routeNameOf(type, page) : staticPanelRoute(type, kind)
+  const generic = page === 'userAdd' ? 'GenericUserAdd' : genericPanelRoute[kind]
   if (!custom || custom === generic || !router.hasRoute(custom)) return
-  const registry = await getPluginRegistry()
-  const surface = indexPluginScriptTypes(registry.data).frontendByScriptKey.get(type)?.[kind]
-  const name = compatibleWheel(surface) ? generic : custom
-  if (name === to.name) return true
+  const { frontendByScriptKey, blockSurfacesByScriptKey } = indexPluginScriptTypes(
+    (await getPluginRegistry()).data
+  )
+  const surface = frontendByScriptKey.get(type)?.[kind]
+  const name =
+    blockSurfacesByScriptKey.get(type)?.has(kind) || compatibleWheel(surface) ? generic : custom
+  if (name === to.name) {
+    if (page === 'userAdd' && name === custom) return
+    return true
+  }
   const scriptId = to.params.scriptId ?? to.params.id
-  const params = kind === 'user' ? { scriptId, userId: to.params.userId } : { scriptId }
+  const params = page === 'userEdit' ? { scriptId, userId: to.params.userId } : { scriptId }
   return {
     name,
     params:
@@ -119,6 +130,13 @@ declare module 'vue-router' {
 const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
 export const genericEditorRoutes: RouteRecordRaw[] = [
+  {
+    path: PAGE_ROUTES.userAdd.path('plugin/:scriptType'),
+    name: 'GenericUserAdd',
+    component: () => import('@/views/plugins/PluginUserAdd.vue'),
+    props: true,
+    meta: { title: 'core.comp.addUser', scriptPage: 'userAdd' },
+  },
   {
     path: '/scripts/:scriptId/setup/plugin/:scriptType',
     name: genericPanelRoute.setup,

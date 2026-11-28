@@ -11,6 +11,7 @@ from types import UnionType
 from typing import Any, Literal, NotRequired, TypedDict, Union, get_args, get_origin
 
 from annotated_types import Ge, Gt, Le, Lt
+from pydantic.fields import FieldInfo
 
 from ..types import PathKind, PathPolicy
 from .ann import strip_optional, unwrap_ann
@@ -54,15 +55,40 @@ class UiSection:
     default_collapsed: bool = False
 
 
+type HostBlockName = Literal[
+    "game_binding", "config_restore", "native_session", "webhooks"
+]
+
+
+@dataclass(frozen=True)
+class HostBlock:
+    name: HostBlockName
+
+
+@dataclass(frozen=True)
+class DeclarativeBlock:
+    groups: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PluginBlock:
+    page_id: str
+    fallback_groups: tuple[str, ...] = ()
+
+
+type UiBlock = HostBlock | DeclarativeBlock | PluginBlock
+
+
 class TriggerUiState(str, Enum):
     IDLE = "idle"
     BUSY = "busy"
 
 
 class ComponentHint(TypedDict, total=False):
-    """单字段 UI 组件提示（无文案/宽度）。"""
+    """单字段 UI 组件提示，可附带字段说明。"""
 
     field: str
+    description: str | None
     component: str
     secret: bool
     editable: bool
@@ -290,12 +316,14 @@ def visibility_spec_for_field(field_info: object) -> UiVisibilitySpec | None:
 
 def hint_for_field(
     fname: str,
-    field_info: object,
+    field_info: FieldInfo,
     *,
     is_trigger: bool = False,
 ) -> ComponentHint:
     """单字段 ``ComponentHint``（无 ``editable``；显隐在实例 ``_get_ui_hints`` 叠加）。"""
     hint: ComponentHint = {"field": fname, "component": "input"}
+    if field_info.description:
+        hint["description"] = field_info.description
     ann = getattr(field_info, "annotation", None)
     base, meta = unwrap_ann(ann)
     meta = list(meta) + list(getattr(field_info, "metadata", ()) or ())

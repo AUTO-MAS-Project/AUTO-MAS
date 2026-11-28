@@ -12,7 +12,7 @@ type PluginScriptType = PluginProvidedScriptType & {
   description: string
 }
 
-export function compatibleWheel(mount?: FrontendSurfaceMount) {
+export function compatibleWheel(mount?: FrontendSurfaceMount | null) {
   const web = mount?.artifacts.web
   if (mount && web?.panelApi === 1) return { ...mount, entry: web.entry }
 }
@@ -27,6 +27,8 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
     Partial<Record<PanelBinding['surface'], FrontendSurfaceMount>>
   >()
   const frontendByPlanConfigType = new Map<string, FrontendSurfaceMount>()
+  const blockSurfacesByScriptKey = new Map<string, Set<string>>()
+  const blockPlanConfigTypes = new Set<string>()
 
   const settingsPanels = new Map<string, FrontendSurfaceMount>()
   const notificationPanels = new Map<string, FrontendSurfaceMount>()
@@ -54,6 +56,12 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
       }
     }
     if (!providedScript) continue
+    if (info?.state === PluginState.ENABLED && providedScript.blockSurfaces?.length) {
+      const surfaces = new Set(providedScript.blockSurfaces)
+      blockSurfacesByScriptKey.set(providedScript.scriptKey, surfaces)
+      if (surfaces.has('plan') && providedScript.planConfigType)
+        blockPlanConfigTypes.add(providedScript.planConfigType)
+    }
     const script = {
       ...providedScript,
       firstAccountMode:
@@ -75,6 +83,8 @@ export function indexPluginScriptTypes(documents: Record<string, PluginRegistryD
     notificationPanels,
     frontendByScriptKey,
     frontendByPlanConfigType,
+    blockSurfacesByScriptKey,
+    blockPlanConfigTypes,
   }
 }
 

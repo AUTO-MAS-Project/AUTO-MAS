@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
 import DeclarativeControl from './DeclarativeControl.vue'
+import { createDeclarativeI18n, type DeclarativeI18nScope } from './declarativeI18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { SwitchTile } from '@/components/ui'
 import { apiErrorMessage } from '@/utils/apiResult'
@@ -12,6 +13,7 @@ const props = withDefaults(
   defineProps<{
     group: string
     namespace: string
+    scope: DeclarativeI18nScope
     hint: DeclarativeHint
     value: unknown
     options: Required<DeclarativeOption>[]
@@ -33,22 +35,16 @@ const props = withDefaults(
   { error: undefined, disabledReason: undefined, retry: undefined, inlineAction: undefined }
 )
 const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
-const { t, te } = useI18n()
-const key = computed(
-  () =>
-    /* 由插件命名空间、配置分组与字段名生成当前控件的语言资源键。 */ `${props.namespace}.${props.group}.${props.hint.field}`
+const { t, te, locale } = useI18n()
+const i18n = computed(() =>
+  createDeclarativeI18n(t, te, locale.value, props.namespace, props.scope)
 )
 // 字段和行内动作分别使用所属分组的翻译，缺失时展示声明字段名。
 function fieldLabel(group: string, hint: DeclarativeHint) {
-  const labelKey = `${props.namespace}.${group}.${hint.field}.label`
-  return te(labelKey) ? t(labelKey) : hint.field || ''
+  return i18n.value.config(`${group}.${hint.field}.label`) ?? hint.field ?? ''
 }
 const label = computed(() => fieldLabel(props.group, props.hint))
-const tip = computed(() =>
-  /* 读取当前控件的翻译说明，无对应资源时不显示说明。 */ te(`${key.value}.tip`)
-    ? t(`${key.value}.tip`)
-    : ''
-)
+const tip = computed(() => i18n.value.tip(props.group, props.hint))
 const pathHint = computed(() =>
   props.hint.component === 'path' && props.hint.path_must_exist
     ? t('core.plugins.pathMustExistHint')

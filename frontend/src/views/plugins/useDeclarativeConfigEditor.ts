@@ -15,6 +15,7 @@ import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
 import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
+import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { useConfigQuery } from '@/services/configUiSync'
 import { ApiResponseError, apiErrorMessage, requestApi } from '@/utils/apiResult'
 import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analytics'
@@ -24,6 +25,7 @@ import type {
   PluginUiEditor,
   PluginUiSaveResult,
   PluginUiTarget,
+  WheelMount,
 } from '@/composables/usePluginUiBridge'
 import {
   usePluginSettingsDraft,
@@ -120,13 +122,20 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       )
       const document = data[selected.id]
       if (!document) throw new Error(t('core.apiErrors.invalidResponse'))
-      return { selected, ui, uiSources, values: declarativeValues(declarativeGroups(ui), document) }
+      return {
+        selected,
+        ui,
+        uiSources,
+        hasWebhooks: selected.mode === 'user' && 'Notify_CustomWebhooks' in document,
+        values: declarativeValues(declarativeGroups(ui), document),
+      }
     },
   })
-  const ui = computed(() => {
+  const currentDetail = computed(() => {
     const current = detail.data.value
-    return current && isCurrent(current.selected) ? current.ui : undefined
+    return current && isCurrent(current.selected) ? current : undefined
   })
+  const ui = computed(() => currentDetail.value?.ui)
   const configUid = computed(() => ui.value?.configUid ?? '')
   const surface = computed(() => ui.value?.frontendSurfaces?.[target.value.mode])
   const wheel = computed(() => compatibleWheel(surface.value))
@@ -140,9 +149,10 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       configUid: configUid.value,
     }
   })
-  const refreshWheel = async () => {
+  const resolveSurfaceMount = () => wheel.value
+  const refreshWheel = async (resolveMount = resolveSurfaceMount) => {
     const { isSuccess } = await detail.refetch()
-    return isSuccess && !!wheel.value
+    return isSuccess && !!resolveMount()
   }
   // 宿主管理游戏绑定以及计划名称、排期模式。
   const groups = computed(() => {
@@ -156,6 +166,29 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       .filter(group => group.hints.length)
   })
   const tables = computed(() => declarativeTables(ui.value))
+  const blockOptions = useDeclarativeOptions(
+    computed(() => {
+      const blockGroups = new Set(
+        (ui.value?.blocks ?? []).flatMap(block => {
+          if (block.kind === 'declarative') return block.groups
+          if (block.kind === 'plugin') return block.fallbackGroups
+          return []
+        })
+      )
+      return {
+        ...draft.values,
+        uid: configUid.value,
+        pluginName: ui.value?.pluginName,
+        ui: {
+          hints: Object.fromEntries(
+            groups.value
+              .filter(({ name }) => blockGroups.has(name))
+              .map(({ name, hints }) => [name, hints])
+          ),
+        },
+      }
+    })
+  )
   const backupTargets = computed(() => ui.value?.backupTargets ?? [])
   const ensureTargets = () => Promise.all(backupTargets.value.map(pool => ensureBackup(pool.key)))
   watch(
@@ -192,7 +225,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   const canSubmit = computed(
     () =>
       canWrite.value &&
-      !optionsInvalid.value &&
+      !(ui.value?.blocks != null ? blockOptions.optionsInvalid.value : optionsInvalid.value) &&
       draft.changes.value.every(({ group, field }) =>
         ui.value?.hints[group]?.some(hint => hint.field === field && hint.editable !== false)
       )
@@ -357,27 +390,52 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     return fields.length ? persist(activation, fields) : { ok: true }
   }
 
-  function wheelEditor(locked: boolean): PluginUiEditor {
+  function wheelEditor(
+    locked: boolean,
+    resolveMount: () => WheelMount | undefined = resolveSurfaceMount,
+    visibleGroups?: PluginUiEditor['groups']
+  ): PluginUiEditor {
     const selected = target.value
-    const activation = wheel.value
-    const isActive = () =>
-      isCurrent(selected) &&
-      !!activation &&
-      wheel.value?.activationId === activation.activationId &&
-      wheel.value.pageId === activation.pageId &&
-      !ui.value?.locked
+    const activation = resolveMount()
+    const panelGroups = visibleGroups ?? groups.value
+    const scopedErrors = (errors: Record<string, string>) =>
+      Object.fromEntries<string>(
+        panelGroups.flatMap(({ name, hints }) =>
+          hints.flatMap(({ field }) => {
+            const key = `${name}.${field}`
+            return field && errors[key] ? [[key, errors[key]] as const] : []
+          })
+        )
+      )
+    const isActive = () => {
+      const mount = resolveMount()
+      return (
+        !locked &&
+        !ui.value?.locked &&
+        isCurrent(selected) &&
+        !!mount &&
+        mount.activationId === activation?.activationId &&
+        mount.pageId === activation?.pageId
+      )
+    }
     return {
       locale: locale.value,
       locked: locked || !!ui.value?.locked,
       busy: busy.value || detail.isFetching.value || detail.isError.value,
-      groups: groups.value,
+      groups: panelGroups,
       values: draft.values,
+      ...(visibleGroups && { fieldErrors: scopedErrors(draft.errors.value) }),
       configRevision: configRevision.value,
-      save: async (changes, commit) =>
-        activation && isActive() ? saveWheel(changes, commit, activation) : readOnly(),
+      save: async (changes, commit) => {
+        if (!activation || !isActive()) return readOnly()
+        const result = await saveWheel(changes, commit, activation)
+        return visibleGroups && !result.ok && result.fieldErrors
+          ? { ...result, fieldErrors: scopedErrors(result.fieldErrors) }
+          : result
+      },
       runAction: async (group, hint, value, canRun) => {
         if (!activation || !isActive()) return 'cancelled'
-        const owner = hint.field ? resolveActionOwner(groups.value, group, hint.field) : undefined
+        const owner = hint.field ? resolveActionOwner(panelGroups, group, hint.field) : undefined
         return runAction(group, hint, value, owner, {
           activation,
           canRun: () => isActive() && canRun(),
@@ -404,6 +462,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   return {
     draft,
     ui,
+    hasWebhooks: computed(() => currentDetail.value?.hasWebhooks),
     configUid,
     groups,
     surface,
@@ -417,6 +476,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     canSubmit,
     creatingUser,
     optionsInvalid,
+    blockOptions,
     finishSetup,
     backupTargets,
     restoreApi,

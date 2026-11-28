@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Collection
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -12,7 +13,7 @@ from uuid import uuid4
 
 from starlette.responses import Response
 
-from app.models.schema import PanelArtifactInfo, PanelBinding
+from app.models.schema import FrontendSurfaceMount, PanelArtifactInfo, PanelBinding
 
 if TYPE_CHECKING:
     from starlette.requests import Request
@@ -64,6 +65,7 @@ class MountedFrontend:
         self.activation_id = uuid4().hex
         self.pages: dict[str, dict[str, PanelArtifactInfo]] = {}
         self.bindings: list[PanelBinding] = []
+        self.block_pages: frozenset[str] = frozenset()
         self.diagnostics: list[str] = []
         self._assets: dict[str, tuple[str, bytes]] = {}
 
@@ -75,6 +77,7 @@ class MountedFrontend:
         script_key: str | None,
         plan_type: str | None,
         gate: CallGate,
+        block_pages: Collection[str] = (),
     ) -> MountedFrontend | None:
         root = package / "ui"
         manifest = root / "manifest.json"
@@ -83,7 +86,7 @@ class MountedFrontend:
         try:
             if _linked(package) or _linked(root) or _linked(manifest):
                 raise ValueError("UI 目录和清单不能使用链接")
-            if not manifest.exists():
+            if not manifest.exists() and not block_pages:
                 return None
             raw = manifest.read_bytes()
             digest.update(len(raw).to_bytes(8, "big"))
@@ -100,6 +103,11 @@ class MountedFrontend:
             self._read_bindings(data.get("bindings"), name, script_key, plan_type)
         except (OSError, ValueError, RecursionError) as error:
             self.diagnostics.append(f"manifest.json: {error}")
+
+        requested_pages = frozenset(block_pages)
+        self.block_pages = requested_pages.intersection(self.pages)
+        for page in sorted(requested_pages - self.block_pages):
+            self.diagnostics.append(f"block_pages.{page}: 引用了不可用页面")
 
         for path, (_, content) in sorted(self._assets.items()):
             encoded = path.encode()
@@ -204,11 +212,25 @@ class MountedFrontend:
             except ValueError as error:
                 self.diagnostics.append(f"bindings[{index}]: {error}")
 
+    def surface_mount(self, *, name: str, page: str) -> FrontendSurfaceMount:
+        """提供已通过校验的页面产物及其启用身份。"""
+        return FrontendSurfaceMount(
+            pluginName=name,
+            pageId=page,
+            revision=self.revision,
+            activationId=self.activation_id,
+            artifacts=self.pages[page],
+        )
+
     def asset_response(
         self, *, revision: str, asset: str, prefix: str, request: Request
     ) -> Response:
         """仅返回当前修订的规范 URL，按资源类型附加隔离策略。"""
-        if not self.bindings or revision != self.revision or asset not in self._assets:
+        if (
+            not (self.bindings or self.block_pages)
+            or revision != self.revision
+            or asset not in self._assets
+        ):
             return Response(status_code=404)
         raw_path = request.scope.get("raw_path")
         canonical = f"{quote(prefix)}/ui/{revision}/{quote(asset)}".encode("ascii")

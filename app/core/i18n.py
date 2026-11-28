@@ -74,6 +74,7 @@ class PluginResourceManager:
         script_key: str | None,
         plan_type: str | None,
         gate: CallGate,
+        block_pages: set[str],
     ) -> MountedFrontend | None:
         """从同一已登记包读取本次启用的 UI 快照，由 HTTP 挂载持有到停用。"""
         from app.plugin.frontend import MountedFrontend
@@ -81,7 +82,14 @@ class PluginResourceManager:
         package = self._package_roots.get(name)
         if package is None:
             return None
-        return MountedFrontend.load(package, name, script_key, plan_type, gate)
+        return MountedFrontend.load(
+            package=package,
+            name=name,
+            script_key=script_key,
+            plan_type=plan_type,
+            gate=gate,
+            block_pages=block_pages,
+        )
 
     def set_plugin_sources(self, sources: dict[str, Path]) -> None:
         """生命周期提供可读资源目录；禁用保留，卸载/来源消失时移除。"""

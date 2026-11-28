@@ -18,6 +18,8 @@ vi.mock('@/utils/analytics', () => ({ beginAnalyticsOperation: () => ({ finish: 
 vi.mock('@/i18n', () => ({
   translate: (key: string) => key,
   normalizeLocale: (language: string) => language,
+  fallbackLocales: () => [],
+  i18nRevision: { value: 0 },
   i18n: { global: { locale: { value: 'en-US' } } },
 }))
 vi.mock('@/composables/useAppLifecycle', () => ({

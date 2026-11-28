@@ -128,6 +128,7 @@ async function render(
       values,
       uid: 'uid',
       namespace: 'demo',
+      scope: 'script',
       tables: declarativeTables({
         tables: [
           {
@@ -241,6 +242,7 @@ describe('插件声明式表格与字段反馈', () => {
       () => ({
         uid: uid.value,
         namespace: 'demo',
+        scope: 'script',
         groups: groups.value,
         values: draft.values,
         errors: draft.errors.value,
@@ -352,6 +354,7 @@ describe('插件声明式表格与字段反馈', () => {
       () => ({
         uid: 'uid',
         namespace: 'demo',
+        scope: 'script',
         pluginName: 'demo15',
         setupMode: true,
         groups: [{ name: 'Setup', hints }],

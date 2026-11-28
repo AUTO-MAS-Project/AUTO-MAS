@@ -271,6 +271,7 @@ onBeforeRouteUpdate((to, from) => to.params.pluginId === from.params.pluginId ||
             :errors="draft.errors.value"
             :uid="configUid"
             :namespace="`plugins.${view?.pluginId ?? ''}.config`"
+            scope="settings"
             :disabled="locked || saving || runningKey !== null"
             :values="draft.values"
             :running-key="runningKey"

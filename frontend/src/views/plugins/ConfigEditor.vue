@@ -7,12 +7,14 @@ import { ConfigEditShell, StateView } from '@/components/ui'
 import { DeclarativeForm } from '@/components/declarative'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import PluginUiMount from '@/components/PluginUiMount.vue'
+import WebhookManager from '@/components/WebhookManager.vue'
 import ConfigRestoreSection from '@/components/shared/ConfigRestoreSection.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import type { PluginUiActivation } from '@/utils/pluginUiRequests'
+import ConfigBlockList from './ConfigBlockList.vue'
 import { useDeclarativeConfigEditor, type ConfigEditorTarget } from './useDeclarativeConfigEditor'
 
 const props = defineProps<
@@ -33,9 +35,11 @@ const target = computed<ConfigEditorTarget>(() => {
   if (props.mode === 'user') return { mode: 'user', scriptId: scriptId.value, id: userId.value }
   return { mode: setupMode.value ? 'setup' : 'script', id: scriptId.value }
 })
+const editor = useDeclarativeConfigEditor(target)
 const {
   draft,
   ui,
+  hasWebhooks,
   configUid,
   groups,
   surface,
@@ -65,7 +69,7 @@ const {
   beforeLeave,
   reload,
   save,
-} = useDeclarativeConfigEditor(target)
+} = editor
 const [DefineForm, EditorForm] = createReusableTemplate<{ locked: boolean }>()
 const [DefineFallback, EditorFallback] = createReusableTemplate<{ locked: boolean }>()
 const { restore } = restoreApi
@@ -118,6 +122,7 @@ defineExpose({ beforeLeave })
         :errors="draft.errors.value"
         :uid="configUid"
         :namespace="ui?.i18nNamespace ?? ''"
+        :scope="mode"
         :disabled="locked || busy || loading"
         :active-fields="activeFields"
         :running-key="runningKey"
@@ -151,10 +156,12 @@ defineExpose({ beforeLeave })
       :error="error"
       :empty="
         !configUid ||
-        (!surface &&
+        (ui?.blocks == null &&
+          !surface &&
           !$slots.fallback &&
           !groups.length &&
           !setupMode &&
+          !hasWebhooks &&
           !backupTargets.length &&
           !ui?.nativeSession)
       "
@@ -162,8 +169,19 @@ defineExpose({ beforeLeave })
       overlay-loading
       @retry="reload"
     >
+      <ConfigBlockList
+        v-if="ui?.blocks != null"
+        :editor="editor"
+        :mode="mode"
+        :script-id="scriptId"
+        :script-type="scriptType"
+        :user-id="userId"
+        :locked="locked"
+        :setup-mode="setupMode"
+        @finish="finish()"
+      />
       <PluginUiMount
-        v-if="wheel"
+        v-else-if="wheel"
         :mount="wheel"
         :target="wheelTarget"
         :editor="wheelEditor(locked)"
@@ -210,8 +228,8 @@ defineExpose({ beforeLeave })
       :user-id="mode === 'user' ? userId : undefined"
       content-class="config-editor-content"
     >
-      <GameBindingSection v-if="mode === 'script'" :script-id="scriptId" />
-      <a-space v-if="backupTargets.length || ui?.nativeSession">
+      <GameBindingSection v-if="ui?.blocks == null && mode === 'script'" :script-id="scriptId" />
+      <a-space v-if="ui?.blocks == null && (backupTargets.length || ui?.nativeSession)">
         <a-button
           v-if="backupTargets.length"
           :disabled="busy || loading"
@@ -233,7 +251,7 @@ defineExpose({ beforeLeave })
         </a-button>
       </a-space>
       <ConfigRestoreSection
-        v-if="backupTargets.length"
+        v-if="ui?.blocks == null && backupTargets.length"
         v-model:open="restoreOpen"
         :targets="backupTargets"
         :api="{ ...restoreApi, restore }"
@@ -245,6 +263,13 @@ defineExpose({ beforeLeave })
         :user-id="mode === 'user' ? userId : null"
       />
       <EditorForm :locked="locked || !!ui?.locked" />
+      <WebhookManager
+        v-if="ui?.blocks == null && hasWebhooks"
+        :key="userId"
+        mode="user"
+        :script-id="scriptId"
+        :user-id="userId"
+      />
     </ConfigLockPanel>
   </ConfigEditShell>
 </template>
