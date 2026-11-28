@@ -14,7 +14,8 @@ from app.core.notify.channels.openclaw_qq import transport
 from app.core.notify.commands import execute_notification_command
 from app.models.config import GeneralConfig, QueueConfig, ScriptConfigType
 from app.models.notification.channel import QQSessionDependencies
-from app.models.task import TaskMode
+from app.models.schema import TaskSelectionNode
+from app.models.task import TaskMode, TaskTriggerReason
 
 
 def message(content, *, group=False, author="owner", age=0, message_id=None):
@@ -163,12 +164,16 @@ async def test_aliases_and_literal_names_preserve_exact_target(
     await commands.sender._handle_command(data)
     await commands.sender._handle_command(data)
 
-    selection = (
-        {"uid": "-", "children": {0: {"uid": str(uid)}}}
-        if kind == "script"
-        else {"uid": str(uid)}
-    )
-    commands.start.assert_awaited_once_with(TaskMode.AUTO_PROXY, {0: selection})
+    if kind == "queue":
+        commands.start.assert_awaited_once_with(
+            TaskMode.AUTO_PROXY,
+            {0: TaskSelectionNode(uid=str(uid))},
+            trigger=TaskTriggerReason.MANUAL,
+        )
+    else:
+        commands.start.assert_awaited_once_with(
+            TaskMode.AUTO_PROXY, {0: {"uid": "-", "children": {0: {"uid": str(uid)}}}}
+        )
     assert commands.request.await_count == 1
     body = commands.request.await_args.kwargs["body"]
     assert body["msg_id"] == data["id"]
@@ -303,4 +308,8 @@ async def test_invalid_list_page_and_escaped_page_like_name(commands):
     commands.start.assert_not_awaited()
 
     await commands.sender._handle_command(message("start -- list 2"))
-    commands.start.assert_awaited_once_with(TaskMode.AUTO_PROXY, {0: {"uid": str(uid)}})
+    commands.start.assert_awaited_once_with(
+        TaskMode.AUTO_PROXY,
+        {0: TaskSelectionNode(uid=str(uid))},
+        trigger=TaskTriggerReason.MANUAL,
+    )

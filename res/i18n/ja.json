@@ -5069,5 +5069,10 @@
   "core.update.startupBackup.source_not_ready": "前のバージョンで起動が完了しなかったため、既存の復元用バックアップを保持しました。",
   "core.update.startupBackup.title": "更新前のバックアップ",
   "core.update.startupBackup.unknown_version": "更新前のバージョンを確認できませんでした。既存のバックアップは保持しました。",
-  "core.edit.baahCalendarReminder": "イベントカレンダー通知"
+  "core.edit.baahCalendarReminder": "イベントカレンダー通知",
+  "core.edit.baahGenerateRecommended": "推奨設定を生成",
+  "core.edit.baahRecommendedHint": "テンプレートのサーバー：CN。生成しても現在の設定は変更しません。BAAH でサーバーと接続先を確認してから、一覧で手動選択してください。",
+  "core.edit.baahConfigNamesFailed": "BAAH の設定一覧を読み込めませんでした",
+  "core.edit.baahRecommendedFailed": "推奨設定を生成できませんでした",
+  "core.edit.baahRecommendedCreated": "{name} を作成しました。現在の設定は変更していません。"
 }

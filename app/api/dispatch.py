@@ -179,14 +179,13 @@ async def get_power_countdown_snapshot() -> PowerCountdownSnapshot:
 async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
 
     try:
-        task_id = None
         if task.mode == TaskMode.AUTO_PROXY:
             from app.core.desktop_session.lifecycle import DesktopSessionLifecycle
 
-            task_id = await DesktopSessionLifecycle.start_configured_script(
-                task.tasks[0]
+            task_id = await DesktopSessionLifecycle.start_configured_task(
+                task.tasks[0], require_desktop=task.requireDesktopSession
             )
-        if task_id is None:
+        else:
             if task.requireDesktopSession:
                 raise RuntimeError("本次任务已不再配置为在桌面分身执行")
             task_id = await TaskManager.start(task.mode, task.tasks)

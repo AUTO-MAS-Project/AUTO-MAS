@@ -5069,5 +5069,10 @@
   "core.update.startupBackup.source_not_ready": "The previous version did not finish starting. Existing restore points were kept.",
   "core.update.startupBackup.title": "Pre-upgrade backup",
   "core.update.startupBackup.unknown_version": "The previous version could not be identified. Existing backups were kept.",
-  "core.edit.baahCalendarReminder": "Activity calendar reminders"
+  "core.edit.baahCalendarReminder": "Activity calendar reminders",
+  "core.edit.baahGenerateRecommended": "Generate recommended config",
+  "core.edit.baahRecommendedHint": "Template: CN. Current config stays selected. Check server and device in BAAH before selecting this file.",
+  "core.edit.baahConfigNamesFailed": "Could not load BAAH configs",
+  "core.edit.baahRecommendedFailed": "Could not generate the recommended config",
+  "core.edit.baahRecommendedCreated": "Created {name}. Your current config is unchanged."
 }

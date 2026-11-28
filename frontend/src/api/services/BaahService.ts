@@ -2,11 +2,32 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BAAHRecommendedConfigIn } from '../models/BAAHRecommendedConfigIn';
+import type { BAAHRecommendedConfigOut } from '../models/BAAHRecommendedConfigOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class BaahService {
+    /**
+     * 生成 BAAH 推荐配置
+     * @param requestBody
+     * @returns BAAHRecommendedConfigOut Successful Response
+     * @throws ApiError
+     */
+    public static createBaahRecommendedConfigApiApiScriptsBaahConfigCreateRecommendedPost(
+        requestBody: BAAHRecommendedConfigIn,
+    ): CancelablePromise<BAAHRecommendedConfigOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/baah/config/create-recommended',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 获取 BAAH 配置文件名列表
      * 返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
