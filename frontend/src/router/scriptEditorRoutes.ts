@@ -1,11 +1,19 @@
-import { useRouter, type HistoryState, type RouteRecordRaw } from 'vue-router'
+import {
+  useRouter,
+  type HistoryState,
+  type RouteLocationNormalized,
+  type Router,
+  type RouteRecordRaw,
+} from 'vue-router'
+import { getPluginRegistry } from '@/composables/usePluginScriptTypes'
+import { compatibleWheel, indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { maafwRouteName } from './maafwRoutes'
 import { isMaaFWFamily } from '@/plugins/maafwFamily'
 import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType>
+type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType | 'SRC'>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -52,6 +60,58 @@ const PAGE_ROUTES = {
 export type ScriptEditorKind = keyof typeof PAGE_ROUTES
 const routeNameOf = (type: string, kind: ScriptEditorKind | 'user') =>
   `${type}${PAGE_ROUTES[kind === 'user' ? 'userEdit' : kind].name}`
+const genericPanelRoute = {
+  script: 'GenericScriptEdit',
+  setup: 'GenericScriptSetup',
+  user: 'GenericUserEdit',
+} as const
+
+function staticPanelRoute(type: string, surface: keyof typeof genericPanelRoute) {
+  if (surface === 'setup') return isMaaFWFamily(type) ? maafwRouteName(type, 'setup') : undefined
+  return routeNameOf(type, surface)
+}
+
+export async function resolveScriptPanelRoute(
+  to: RouteLocationNormalized,
+  router: Router,
+  type: string
+) {
+  const page = to.meta.maafwPage ?? to.meta.scriptPage
+  if (!page) return
+  const kind =
+    to.name === genericPanelRoute.setup
+      ? 'setup'
+      : page === 'userEdit' || page === 'userAdd'
+        ? 'user'
+        : page
+  const custom = page === 'userAdd' ? routeNameOf(type, page) : staticPanelRoute(type, kind)
+  const generic = page === 'userAdd' ? 'GenericUserAdd' : genericPanelRoute[kind]
+  if (!custom || custom === generic || !router.hasRoute(custom)) return
+  const { frontendByScriptKey, blockSurfacesByScriptKey } = indexPluginScriptTypes(
+    (await getPluginRegistry()).data
+  )
+  const surface = frontendByScriptKey.get(type)?.[kind]
+  const name =
+    blockSurfacesByScriptKey.get(type)?.has(kind) || compatibleWheel(surface) ? generic : custom
+  if (name === to.name) {
+    if (page === 'userAdd' && name === custom) return
+    return true
+  }
+  const scriptId = to.params.scriptId ?? to.params.id
+  const params = page === 'userEdit' ? { scriptId, userId: to.params.userId } : { scriptId }
+  return {
+    name,
+    params:
+      name === generic
+        ? { ...params, scriptType: type }
+        : kind === 'user'
+          ? params
+          : { id: scriptId },
+    query: to.query,
+    hash: to.hash,
+  }
+}
+
 type ScriptEditorParams = {
   setup: { id: string }
   script: { id: string }
@@ -69,31 +129,62 @@ declare module 'vue-router' {
 
 const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
+export const srcEditorRedirects: RouteRecordRaw[] = [
+  {
+    path: PAGE_ROUTES.script.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: genericPanelRoute.script,
+      params: { scriptId: to.params.id, scriptType: 'SRC' },
+    }),
+  },
+  {
+    path: PAGE_ROUTES.userAdd.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: 'GenericUserAdd',
+      params: { scriptId: to.params.scriptId, scriptType: 'SRC' },
+    }),
+  },
+  {
+    path: PAGE_ROUTES.userEdit.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: genericPanelRoute.user,
+      params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType: 'SRC' },
+    }),
+  },
+]
+
 export const genericEditorRoutes: RouteRecordRaw[] = [
   {
+    path: PAGE_ROUTES.userAdd.path('plugin/:scriptType'),
+    name: 'GenericUserAdd',
+    component: () => import('@/views/plugins/PluginUserAdd.vue'),
+    props: true,
+    meta: { title: 'core.comp.addUser', scriptPage: 'userAdd' },
+  },
+  {
     path: '/scripts/:scriptId/setup/plugin/:scriptType',
-    name: 'GenericScriptSetup',
+    name: genericPanelRoute.setup,
     component: genericEditor,
     props: { mode: 'script', setup: true },
     meta: { title: 'core.comp.editScript', scriptPage: 'script' },
   },
   {
     path: '/scripts/:scriptId/edit/plugin/:scriptType',
-    name: 'GenericScriptEdit',
+    name: genericPanelRoute.script,
     component: genericEditor,
     props: { mode: 'script' },
     meta: { title: 'core.comp.editScript', scriptPage: 'script' },
   },
   {
     path: PAGE_ROUTES.userEdit.path('plugin/:scriptType'),
-    name: 'GenericUserEdit',
+    name: genericPanelRoute.user,
     component: genericEditor,
     props: { mode: 'user' },
     meta: { title: 'core.comp.editUser', scriptPage: 'userEdit' },
   },
 ]
 
-/** 优先进入已注册的专用页面，运行时专项从详情接口读取表单。 */
+/** 静态入口和直达地址统一由路由守卫解析当前插件面板。 */
 export function useScriptEditorNavigation() {
   const router = useRouter()
   return <K extends keyof ScriptEditorParams>(
@@ -112,10 +203,12 @@ export function useScriptEditorNavigation() {
     const custom = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
     const generic =
       kind === 'script'
-        ? 'GenericScriptEdit'
+        ? genericPanelRoute.script
         : kind === 'userEdit' || kind === 'user'
-          ? 'GenericUserEdit'
-          : null
+          ? genericPanelRoute.user
+          : kind === 'userAdd' && type === 'SRC'
+            ? 'GenericUserAdd'
+            : null
     if (custom !== generic && router.hasRoute(custom)) {
       void router.push({ name: custom, params, state })
       return true

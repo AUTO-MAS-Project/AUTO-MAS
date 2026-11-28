@@ -6,6 +6,7 @@ import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
+import srcIcon from '@/assets/SRC.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 export interface ScriptMetadata {
@@ -86,7 +87,19 @@ export const SCRIPT_METADATA = {
   },
   M9A: SCRIPT_ADAPTER_METADATA.M9A,
   MAA: SCRIPT_ADAPTER_METADATA.MAA,
-  SRC: SCRIPT_ADAPTER_METADATA.SRC,
+  SRC: {
+    logo: srcIcon,
+    label: 'SRC',
+    typeTagColor: 'purple',
+    routeSuffix: 'src',
+    createOrder: 3,
+    create: {
+      titleKey: 'core.scripts.type.SRC',
+      descriptionKey: 'core.scripts.create.typeDesc.SRC',
+      keywords: ['src', '星穹铁道'],
+      group: 'specialized',
+    },
+  },
   Whimbox: SCRIPT_ADAPTER_METADATA.Whimbox,
   MaaEnd: {
     logo: maaEndIcon,
@@ -162,7 +175,9 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-} satisfies Record<BuiltinScriptType, ScriptMetadata>
+} satisfies Record<Exclude<BuiltinScriptType, 'SRC'>, ScriptMetadata> & {
+  SRC: Omit<ScriptMetadata, 'routeTitles'>
+}
 
 export const isBuiltinScriptType = (type: string): type is BuiltinScriptType =>
   Object.prototype.hasOwnProperty.call(SCRIPT_METADATA, type)

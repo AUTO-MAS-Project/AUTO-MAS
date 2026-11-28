@@ -1,6 +1,7 @@
 //   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
 //   Copyright © 2025-2026 AUTO-MAS Team
 
+import { ref, watch } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 import enUS from './bootstrap/en-US.json'
@@ -22,6 +23,8 @@ const SOURCE_LOCALE: AppLocale = 'zh-CN'
 export const UNRECOGNIZED_LOCALE: AppLocale = 'en-US'
 
 export const SUPPORTED_LOCALES: AppLocale[] = ['zh-CN', 'en-US', 'ja-JP']
+
+export const i18nRevision = ref(0)
 
 export type LocaleMessages = { [key: string]: string | LocaleMessages }
 
@@ -67,6 +70,12 @@ export const i18n = createI18n({
     'ja-JP': { bootstrap: bootstrapMessages['ja-JP'] },
   },
 })
+
+// 词表加载器整批替换 core 与插件词表，刷新一次面板缓存。
+watch(
+  () => SUPPORTED_LOCALES.map(locale => i18n.global.getLocaleMessage(locale)),
+  () => i18nRevision.value++
+)
 
 /** 在组件外部取译文（composable 之外的工具函数里用）。 */
 export const t = i18n.global.t

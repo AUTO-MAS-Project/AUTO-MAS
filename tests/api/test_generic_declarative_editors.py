@@ -21,10 +21,15 @@ from app.config import (
     ConfigEntry,
     ConfigGroup,
     ConfigManager,
+    DeclarativeBlock,
+    HostBlock,
+    PluginBlock,
+    Trigger,
     UiSection,
     UiStep,
     config_manager,
     select,
+    trigger_field,
     ui,
 )
 from app.core import Config, Plugin
@@ -54,9 +59,7 @@ async def editor_client():
 
 @pytest_asyncio.fixture
 async def editors(monkeypatch, editor_client, isolated_app_paths):
-    monkeypatch.syspath_prepend(
-        Path(__file__).resolve().parents[2] / "examples/demo15/src"
-    )
+    monkeypatch.syspath_prepend(Config.source_path / "examples/demo15/src")
     from demo15 import PLUGIN
 
     scripts = ConfigCollection.build(
@@ -116,6 +119,7 @@ async def test_lists_details_and_locks(editors):
 
         detail = await post(f"{path}/get", **ids)
         ui = detail["ui"]
+        assert ui["blocks"] is None
         assert ui["pluginName"] == "demo15"
         if path != "scripts":
             assert ui["backupTargets"] == [] and ui["nativeSession"] is None
@@ -697,6 +701,61 @@ async def test_invalid_editor_declarations_fail_at_definition(
             ui_steps = steps
             ui_sections = sections
             Setup: Options = Field(default_factory=Options)
+
+
+@pytest.mark.parametrize(
+    ("blocks", "steps", "sections", "error"),
+    [
+        ((), (), {}, "非空序列"),
+        (("unexpected",), (), {}, "ui_blocks 区块"),
+        ((HostBlock("unknown"),), (), {}, "HostBlock"),
+        ((HostBlock("webhooks"), HostBlock("webhooks")), (), {}, "HostBlock"),
+        ((PluginBlock(" "),), (), {}, "page_id"),
+        ((PluginBlock("stage"), PluginBlock("stage")), (), {}, "page_id"),
+        ((DeclarativeBlock(()),), (), {}, "DeclarativeBlock"),
+        ((DeclarativeBlock(("Unknown",)),), (), {}, "区块分组"),
+        (
+            (DeclarativeBlock(("Options",)), PluginBlock("stage", ("Options",))),
+            (),
+            {},
+            "区块分组",
+        ),
+        ((HostBlock("webhooks"),), (UiStep("setup"),), {}, "ui_steps"),
+        (
+            (HostBlock("webhooks"),),
+            (),
+            {"group:Options": UiSection(step="setup")},
+            "分区步骤",
+        ),
+        (
+            (DeclarativeBlock(("Options",)), PluginBlock("stage", ("Actions",))),
+            (),
+            {},
+            "action_ref.*同一区块",
+        ),
+    ],
+)
+async def test_invalid_block_declarations_fail_at_definition(
+    blocks, steps, sections, error
+):
+    class OptionFields(ConfigGroup):
+        Path: Annotated[str, ui(action_ref="Actions.Discover")] = ""
+
+    class ActionFields(ConfigGroup):
+        Discover: Trigger = None
+
+    with pytest.raises(ValueError, match=error):
+
+        class Entry(ConfigEntry):
+            ui_blocks = blocks
+            ui_steps = steps
+            ui_sections = sections
+            Options: OptionFields = Field(default_factory=OptionFields)
+            Actions: ActionFields = Field(default_factory=ActionFields)
+
+            @trigger_field("Actions.Discover")
+            async def discover(self):
+                return None
 
 
 async def test_option_source_is_one_segment_and_replaces_literal_inference():

@@ -145,6 +145,21 @@ def bind_openapi(app: FastAPI) -> None:
                 description=app.description,
                 routes=app.routes,
             )
+            schemas = document.get("components", {}).get("schemas", {})
+            if "DeclarativeConfigUi" in schemas:
+                variants = schemas["DeclarativeConfigUi"]["properties"]["blocks"][
+                    "anyOf"
+                ]
+                blocks = next(
+                    variant for variant in variants if variant["type"] == "array"
+                )
+                # TypeScript 生成器只识别数组项的引用和枚举，不解析内联 oneOf 与 const。
+                union = blocks["items"]
+                schemas["ConfigBlockOut"] = union
+                blocks["items"] = {"$ref": "#/components/schemas/ConfigBlockOut"}
+                for ref in union["discriminator"]["mapping"].values():
+                    kind = schemas[ref.rsplit("/", 1)[-1]]["properties"]["kind"]
+                    kind["enum"] = [kind.pop("const")]
             declarations = [
                 (record._plugin_cls.script_type_key, Plugin.script_types[record.uid])
                 for record in Plugin.list_plugins()

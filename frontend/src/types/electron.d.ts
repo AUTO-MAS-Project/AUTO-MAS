@@ -271,8 +271,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 不带选择状态时表示资源列表变化。 */
   onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
-  selectFolder: () => Promise<string | null>
-  selectFile: (filters?: unknown[]) => Promise<string[]>
+  selectFolder: (options?: { title?: string; defaultPath?: string }) => Promise<string | null>
+  selectFile: (
+    filters?: unknown[],
+    options?: { title?: string; defaultPath?: string }
+  ) => Promise<string[]>
   saveTextFile: (
     defaultName: string,
     content: string,

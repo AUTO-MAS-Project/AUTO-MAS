@@ -5,16 +5,21 @@ import { createI18n } from 'vue-i18n'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import Antd, { message } from 'ant-design-vue'
-import { BackgroundTaskState, Service } from '@/api'
+import { BackgroundTaskState, Service, PluginState } from '@/api'
+import { PanelBinding } from '@/api/models/PanelBinding'
 import PluginSettingsPage from '@/views/PluginSettingsPage.vue'
 
 vi.mock('@/views/plugins/usePluginCenterData', () => ({
-  usePluginModelContext: () => ({ value: {} }),
+  usePluginModelContext: () => ({
+    value: { bindings: [], texts: { text: () => undefined, tags: () => undefined }, appIcon: '' },
+  }),
 }))
 vi.mock('@/utils/analytics', () => ({ beginAnalyticsOperation: () => ({ finish: vi.fn() }) }))
 vi.mock('@/i18n', () => ({
   translate: (key: string) => key,
   normalizeLocale: (language: string) => language,
+  fallbackLocales: () => [],
+  i18nRevision: { value: 0 },
   i18n: { global: { locale: { value: 'en-US' } } },
 }))
 vi.mock('@/composables/useAppLifecycle', () => ({
@@ -23,6 +28,66 @@ vi.mock('@/composables/useAppLifecycle', () => ({
 }))
 vi.mock('@/services/websocket/subscriptions', () => ({ subscribe: vi.fn(), unsubscribe: vi.fn() }))
 vi.mock('@/services/websocket/connection', () => ({ reconnectNow: vi.fn() }))
+
+it.each([1, 2])('面板 API %i 选择设置页或原表单', async version => {
+  const client = new QueryClient()
+  const locale = 'en-US'
+  const config = {
+    uid: 'cfg',
+    Info: { Name: 'Alice' },
+    ui: { hints: { Info: [{ field: 'Name', editable: true }] } },
+  }
+  const registry = {
+    data: {
+      record: {
+        uid: 'record',
+        ui: {},
+        info: { plugin_name: 'demo', state: PluginState.ENABLED },
+        frontend: {
+          diagnostics: [],
+          activationId: 'active',
+          revision: 'rev',
+          pages: { settings: { web: { panelApi: version, entry: 'settings.html' } } },
+          bindings: [{ page: 'settings', surface: PanelBinding.surface.SETTINGS }],
+        },
+      },
+    },
+  }
+  client.setQueryData(['plugins', 'settings', 'record', locale], {
+    value: { requestedId: 'record', requestedLocale: locale, config, registry },
+  })
+  vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue(registry)
+  vi.spyOn(Service, 'getPluginConfigApiPluginConfigGetPost').mockResolvedValue({
+    code: 200,
+    data: config,
+  })
+  vi.spyOn(Service, 'getActiveConfigTriggersApiConfigTriggersActiveGet').mockResolvedValue({
+    code: 200,
+    data: [],
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pluginId', component: PluginSettingsPage }],
+  })
+  try {
+    await router.push('/record')
+    const app = createSSRApp(() => h(RouterView))
+    app.use(router).use(Antd).use(VueQueryPlugin, { queryClient: client })
+    app.use(createI18n({ legacy: false, locale, missingWarn: false, fallbackWarn: false }))
+    const rendered = new Set<string>()
+    app.mixin({
+      created() {
+        rendered.add(this.$options.__name ?? '')
+      },
+    })
+    await renderToString(app)
+    expect(rendered.has('PluginUiMount')).toBe(version === 1)
+    expect(rendered.has('DeclarativeForm')).toBe(version === 2)
+  } finally {
+    client.clear()
+    vi.restoreAllMocks()
+  }
+})
 
 it('插件设置页把所选动作交给后台执行，保留普通按钮的启动命令', async () => {
   const menu = {

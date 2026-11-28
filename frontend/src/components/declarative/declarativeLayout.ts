@@ -28,17 +28,6 @@ export function declarativeValues(
   )
 }
 
-function isTileSwitch(hint: DeclarativeHint) {
-  return (
-    hint.component === 'switch' &&
-    (!hint.widget || hint.widget === 'switch') &&
-    !hint.secret &&
-    !hint.masked &&
-    hint.format !== 'time' &&
-    hint.format !== 'datetime'
-  )
-}
-
 export function isWideField(hint: DeclarativeHint) {
   return (
     hint.component === 'path' ||
@@ -46,19 +35,6 @@ export function isWideField(hint: DeclarativeHint) {
     hint.widget === 'textarea' ||
     (hint.multiple && hint.ordered)
   )
-}
-
-/** 孤立开关与相邻普通字段共用栅格，只有相邻开关才切换排版。 */
-export function fieldRuns(hints: DeclarativeHint[]) {
-  const runs: Array<{ tiles: boolean; hints: DeclarativeHint[] }> = []
-  const switches = hints.map(isTileSwitch)
-  for (const [index, hint] of hints.entries()) {
-    const tiles = Boolean(switches[index] && (switches[index - 1] || switches[index + 1]))
-    const last = runs.at(-1)
-    if (last && last.tiles === tiles) last.hints.push(hint)
-    else runs.push({ tiles, hints: [hint] })
-  }
-  return runs
 }
 
 /** 按显示坐标取列。转置后同一列可能混合多种控件，此时留给表格自适应。 */
@@ -83,7 +59,7 @@ type LayoutGroup = { name: string; hints: DeclarativeHint[] }
 type FieldLocation = { group: string; field: string }
 type CardContent =
   | { table: DeclarativeTableHint; columnTypes: Record<string, string> }
-  | { group: LayoutGroup; runs: ReturnType<typeof fieldRuns> }
+  | { group: LayoutGroup }
 
 const isAction = (hint: DeclarativeHint | undefined) =>
   hint?.component === 'button' || hint?.component === 'dropdown-button'
@@ -161,7 +137,7 @@ export function declarativeLayout(
         card(
           `group:${name}`,
           remaining.map(hint => `${name}.${hint.field}`),
-          { group: { name, hints: remaining }, runs: fieldRuns(remaining) }
+          { group: { name, hints: remaining } }
         )
       )
   }
