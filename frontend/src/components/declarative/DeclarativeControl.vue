@@ -61,7 +61,12 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{ 'update:modelValue': [value: unknown]; pick: []; blur: [] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: unknown]
+  pick: []
+  blur: []
+  commit: []
+}>()
 const { t } = useI18n()
 
 const size = computed(() => (props.compact ? 'middle' : 'large'))
@@ -87,11 +92,11 @@ const kind = computed(() => {
     : 'input'
 })
 
-const update = (value: unknown) =>
-  /* 把控件值变更通过模型更新事件交给上层，路径清空时提交 null。 */ emit(
-    'update:modelValue',
-    props.component === 'path' && value === '' ? null : value
-  )
+function update(value: unknown) {
+  emit('update:modelValue', props.component === 'path' && value === '' ? null : value)
+  if (['switch', 'select', 'segmented', 'date', 'datetime', 'time'].includes(kind.value))
+    emit('commit')
+}
 const dateValue = computed(() => (typeof props.modelValue === 'string' ? props.modelValue : ''))
 const timeValue = computed(() =>
   dateValue.value.includes('T')
@@ -208,6 +213,7 @@ const updateTime = (value: string | null) => {
       :zero-label="zeroLabel"
       :aria-label="label"
       @update:model-value="update"
+      @step="emit('commit')"
       @blur="emit('blur')"
     />
     <a-input-number
@@ -221,6 +227,7 @@ const updateTime = (value: string | null) => {
       :precision="precision"
       :step="step"
       @update:value="update"
+      @step="emit('commit')"
       @blur="emit('blur')"
     />
     <a-date-picker

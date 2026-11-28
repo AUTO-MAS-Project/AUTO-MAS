@@ -39,11 +39,6 @@ export const SCRIPT_METADATA = {
     label: 'BAAH',
     typeTagColor: 'magenta',
     routeSuffix: 'baah',
-    routeTitles: {
-      script: '编辑BAAH脚本',
-      userAdd: '添加BAAH用户',
-      userEdit: '编辑BAAH用户',
-    },
     createOrder: 11,
     create: {
       titleKey: 'core.scripts.type.BAAH',

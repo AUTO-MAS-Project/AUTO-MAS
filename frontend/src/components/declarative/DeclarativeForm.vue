@@ -54,6 +54,7 @@ const i18n = computed(() =>
 const emit = defineEmits<{
   'update:value': [group: string, field: string, value: unknown]
   'update:optionsInvalid': [invalid: boolean]
+  commit: [group: string, field: string]
   action: [group: string, hint: DeclarativeHint, value: unknown, owner?: SettingsChange]
   finish: []
 }>()
@@ -141,6 +142,8 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
     loading: actionBusy(group, hint) || state?.loading.value,
     error: props.errors[key] || validationErrors.value[key] || state?.error.value || undefined,
     retry: state?.error.value ? state.execute : undefined,
+    onCommit: () => emit('commit', group, field),
+    onBlur: () => emit('commit', group, field),
     onAction: (value: unknown) => emit('action', group, hint, value),
     inlineAction: action && {
       ...action,

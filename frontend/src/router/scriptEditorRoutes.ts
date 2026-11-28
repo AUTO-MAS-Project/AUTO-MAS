@@ -27,10 +27,6 @@ const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
     script: () => import('@/views/EditView/Script/GeneralScriptEdit.vue'),
     user: () => import('@/views/EditView/User/GeneralUserEdit.vue'),
   },
-  BAAH: {
-    script: () => import('@/views/EditView/Script/BAAHScriptEdit.vue'),
-    user: () => import('@/views/EditView/User/BAAHUserEdit.vue'),
-  },
   Okww: {
     script: () => import('@/views/EditView/Script/OkwwScriptEdit.vue'),
     user: () => import('@/views/EditView/User/OkwwUserEdit.vue'),

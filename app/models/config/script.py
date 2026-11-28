@@ -2025,6 +2025,7 @@ class OkNteConfig(DomainEntry):
         return data
 
 
+# 仅供旧 JSON 转换及已发布的 CRUD 接口描述；运行时的 BAAH 类型由插件登记。
 class BAAHUserConfig(DomainEntry):
     "BAAH 账号配置"
 
@@ -2175,13 +2176,7 @@ __all__ = [
 
 
 type ScriptConfigType = (
-    ScriptEntry
-    | MaaEndConfig
-    | HSRConfig
-    | GeneralConfig
-    | OkwwConfig
-    | OkNteConfig
-    | BAAHConfig
+    ScriptEntry | MaaEndConfig | HSRConfig | GeneralConfig | OkwwConfig | OkNteConfig
 )
 type UserConfigType = (
     UserEntry
@@ -2190,5 +2185,4 @@ type UserConfigType = (
     | GeneralUserConfig
     | OkwwUserConfig
     | OkNteUserConfig
-    | BAAHUserConfig
 )
