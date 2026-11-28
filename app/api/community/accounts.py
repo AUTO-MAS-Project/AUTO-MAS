@@ -41,7 +41,10 @@ from app.config.wire import (
     config_group_contract,
 )
 from app.core import Community, Config, Notify
-from app.core.community.sign import CommunitySignInProgressError
+from app.core.community.sign import (
+    CommunitySignInProgressError,
+    CommunitySignPluginUnavailableError,
+)
 from app.models.schema import OutBase
 from app.tools.common.community.contracts import is_community_sign_completed
 from app.utils import UTC8, format_exception_reason, get_logger
@@ -292,6 +295,10 @@ async def manual_sign_flow() -> OutBase:
             status="error",
             message="游戏社区签到正在执行，请稍后重试",
         )
+    except CommunitySignPluginUnavailableError as e:
+        # 插件没装/没启用不是签到失败，原样把原因交给前端，由它引导去插件市场。
+        _log_community_api_error("游戏社区签到插件未启用", e)
+        return OutBase(code=503, status="error", message=str(e))
     except Exception as e:
         _log_community_api_error("游戏社区签到失败", e)
         return OutBase(

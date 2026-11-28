@@ -22,7 +22,10 @@
 
 """社区工具：协议、凭据与签到结果。"""
 
-from app.tools.common.community.contracts import CommunitySignInProgressError
+from app.tools.common.community.contracts import (
+    CommunitySignInProgressError,
+    CommunitySignPluginUnavailableError,
+)
 from app.tools.common.community.plugins import (
     COMMUNITY_PLUGIN_REFERENCES,
     CommunityCapability,
@@ -41,6 +44,7 @@ __all__ = [
     "CommunityCapability",
     "CommunityPluginReference",
     "CommunitySignInProgressError",
+    "CommunitySignPluginUnavailableError",
     "format_community_sign_results",
     "get_community_plugin_references",
     "get_confirmed_community_capabilities",

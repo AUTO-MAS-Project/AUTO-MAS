@@ -2827,6 +2827,7 @@
   "core.signflow.toast.signError": "签到失败: {error}",
   "core.signflow.toast.signFailed": "签到失败",
   "core.signflow.toast.signPartialNotify": "签到完成，但部分通知发送失败",
+  "core.signflow.toast.signPluginMissing": "签到插件未启用",
   "core.signflow.toast.tokenSaved": "Token 已保存",
   "core.signflow.toast.userAdded": "账号已添加",
   "core.signflow.token.empty": "该账号还没有可体检的凭据",

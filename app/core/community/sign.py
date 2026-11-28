@@ -35,6 +35,9 @@ from app.tools.common.community import sign as _tool_community_sign_provider
 from app.utils import get_logger
 
 CommunitySignInProgressError = _tool_community_contract.CommunitySignInProgressError
+CommunitySignPluginUnavailableError = (
+    _tool_community_contract.CommunitySignPluginUnavailableError
+)
 
 
 logger = get_logger("游戏社区签到")
@@ -150,7 +153,9 @@ class CommunitySignOperations:
         try:
             runner = Plugin.services.require("signflow.sign")
         except PluginError as error:
-            raise RuntimeError(
+            # 用专用异常而不是 RuntimeError：API 与调度层要据此给出
+            # 「去插件市场安装」的引导，而不是当成一次普通签到失败。
+            raise _tool_community_contract.CommunitySignPluginUnavailableError(
                 "签到插件未启用：请先在插件市场安装并启用 SignFlow 签到"
             ) from error
 

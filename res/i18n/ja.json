@@ -2827,6 +2827,7 @@
   "core.signflow.toast.signError": "受け取りに失敗しました: {error}",
   "core.signflow.toast.signFailed": "受け取りに失敗しました",
   "core.signflow.toast.signPartialNotify": "受け取りは完了しましたが、一部の通知を送信できませんでした",
+  "core.signflow.toast.signPluginMissing": "受け取りプラグインが有効になっていません",
   "core.signflow.toast.tokenSaved": "トークンを保存しました",
   "core.signflow.toast.userAdded": "アカウントを追加しました",
   "core.signflow.token.empty": "このアカウントには確認できる認証情報がありません",

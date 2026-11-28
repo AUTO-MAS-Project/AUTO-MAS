@@ -2,11 +2,14 @@
  * 游戏社区：手动触发一次签到。
  *
  * 签到接口的 409 表示已有签到在跑（自动签到或上一次手动签到），
- * 这不是错误，所以单独提示并直接返回；其余失败才交给调用方提示。
+ * 这不是错误，所以单独提示并直接返回；503 表示签到插件还没装或没启用，
+ * 要引导用户去插件市场，而不是报一句失败；其余失败才交给调用方提示。
  */
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
+import { openAlert } from '@/composables/useConfirm'
+import { navigateTo } from '@/router'
 import { useGameSignApi } from './useGameSignApi'
 
 export function useManualSign(onFinished?: () => Promise<void> | void) {
@@ -21,6 +24,20 @@ export function useManualSign(onFinished?: () => Promise<void> | void) {
       if (response.code === 409) {
         logger.warn('自动签到正在执行，已跳过本次手动签到')
         message.warning(t('core.signflow.toast.autoSignRunning'))
+        return
+      }
+      if (response.code === 503) {
+        // 后端把「插件未启用」单独回了 503，原生文案比通用失败更有用，直接展示。
+        logger.warn('签到插件未启用，已引导前往插件市场')
+        void openAlert({
+          tone: 'warning',
+          title: t('core.signflow.toast.signPluginMissing'),
+          description: response.message,
+          okText: t('core.unavailableConfig.installPlugin'),
+          onOk: () => {
+            void navigateTo('/plugins/market')
+          },
+        })
         return
       }
       if (response.code !== 200 && response.code !== 0) {
