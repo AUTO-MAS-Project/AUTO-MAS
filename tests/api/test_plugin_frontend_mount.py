@@ -154,16 +154,25 @@ async def test_demo_assets_and_csp(host, demo_package):
         "plan",
     )
     revision = frontend["revision"]
-    for asset, mime in {
-        "panel-sdk.js": "text/javascript; charset=utf-8",
-        "plan.html": "text/html; charset=utf-8",
-        "plan.js": "text/javascript; charset=utf-8",
-        "plan.css": "text/css; charset=utf-8",
-        "plan.svg": "image/svg+xml",
-    }.items():
+    host_assets = Config.source_path / "app/plugin/ui_assets"
+    expected_assets = {
+        "_host/panel-sdk.js": (
+            "text/javascript; charset=utf-8",
+            (host_assets / "panel-sdk.js").read_bytes(),
+        ),
+        "_host/panel-base.css": (
+            "text/css; charset=utf-8",
+            (host_assets / "panel-base.css").read_bytes(),
+        ),
+        "plan.html": ("text/html; charset=utf-8", (ui / "plan.html").read_bytes()),
+        "plan.js": ("text/javascript; charset=utf-8", (ui / "plan.js").read_bytes()),
+        "plan.css": ("text/css; charset=utf-8", (ui / "plan.css").read_bytes()),
+        "plan.svg": ("image/svg+xml", (ui / "plan.svg").read_bytes()),
+    }
+    for asset, (mime, expected_bytes) in expected_assets.items():
         response = await client.get(asset_url(record, revision, asset))
         assert response.status_code == 200
-        assert response.content == (ui / asset).read_bytes()
+        assert response.content == expected_bytes
         assert response.headers["content-type"] == mime
         assert response.headers["x-content-type-options"] == "nosniff"
         assert response.headers["cache-control"] == "no-store"
@@ -182,18 +191,19 @@ async def test_demo_assets_and_csp(host, demo_package):
                 "object-src": "'none'",
                 "frame-src": "'none'",
                 "worker-src": "'none'",
-                "script-src": f"{root}panel-sdk.js {root}plan.js",
-                "style-src": f"{root}plan.css",
+                "script-src": f"{root}plan.js {root}_host/panel-sdk.js",
+                "style-src": f"{root}plan.css {root}_host/panel-base.css",
                 "img-src": f"{root}plan.svg",
                 "font-src": "'none'",
                 "connect-src": " ".join(
                     root + name
                     for name in (
-                        "panel-sdk.js",
                         "plan.css",
                         "plan.html",
                         "plan.js",
                         "plan.svg",
+                        "_host/panel-sdk.js",
+                        "_host/panel-base.css",
                     )
                 ),
             }

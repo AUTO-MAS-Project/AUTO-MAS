@@ -47,6 +47,8 @@ from .. import schema as schema_model
 
 logger = get_logger("配置模型")
 
+parse_legacy_bool = TypeAdapter(bool).validate_python
+
 
 def none_as(value: str | int | float) -> BeforeValidator:
     """将显式空值还原为配置项原有的清空值，不改变省略或非空值的校验。"""
@@ -475,7 +477,7 @@ def migrate_maaend_sanity_tasks(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(task, dict) or "IfSanity" not in task:
         return data
     info = data.setdefault("Info", {})
-    enabled = task.pop("IfSanity")
+    enabled = parse_legacy_bool(task.pop("IfSanity"))
     strategy = info.setdefault("SanityStrategy", "MAS")
     mode = info.get("SanityMode", "Fixed")
     essence = strategy == "MAS" and task.get("SanityTaskType") in (

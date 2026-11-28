@@ -946,6 +946,8 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
         if data_raw is not None and not isinstance(data_raw, dict):
             raise TypeError(f"data 须为 dict，收到 {type(data_raw).__name__}")
         data = data_raw or {}
+        if any(not isinstance(key, str) for key in data):
+            raise TypeError("data 的 UUID 键须为字符串")
 
         # 清空冷态残留（写 effective / ws；外层 activate 已建工作区）
         object.__setattr__(self.effective, "order", [])
@@ -960,9 +962,18 @@ class ConfigCollection(ConfigNode, Generic[TEntry]):
             try:
                 if not isinstance(item, dict):
                     raise TypeError(f"order 项须为 dict，收到 {type(item).__name__}")
-                uid = UUID(str(item["uid"]))
+                uid = item["uid"]
+                if isinstance(uid, str):
+                    uid = UUID(uid)
+                elif not isinstance(uid, UUID):
+                    raise TypeError(
+                        f"order 的 uid 须为 UUID，收到 {type(uid).__name__}"
+                    )
                 type_name = str(item["type"])
-                raw = data.get(str(uid))
+                key = str(uid)
+                if key not in data:
+                    raise ValueError(f"order 的 uid {uid} 缺少对应的 data 条目")
+                raw = data[key]
                 if isinstance(raw, ConfigNode):
                     payload = raw.model_dump(
                         mode="json",

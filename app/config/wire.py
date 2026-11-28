@@ -21,12 +21,15 @@ from typing import (
     TypeVar,
     Union,
     cast,
+    get_args,
+    get_origin,
 )
 from uuid import UUID
 
 from annotated_types import BaseMetadata
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     JsonValue,
@@ -120,6 +123,13 @@ class CollectionOrderItem(BaseModel):
     type: str  # Entry 子类名，如 "ExampleQueue"
 
 
+def reject_bool_as_int(value: object) -> object:
+    """在整数校验前拒绝布尔值，避免被转换为 0 或 1。"""
+    if isinstance(value, bool):
+        raise ValueError("整数不接受布尔值")
+    return value
+
+
 @lru_cache(maxsize=None)
 def config_group_contract(
     group_type: type[BaseModel],
@@ -156,9 +166,15 @@ def config_group_contract(
         annotation, _metadata = unwrap_ann(field.annotation)
         if any(isinstance(m, PathPolicy) for m in (*_metadata, *field.metadata)):
             annotation = str
+        integer = annotation is int or (
+            get_origin(annotation) is Literal
+            and all(type(option) is int for option in get_args(annotation))
+        )
         constraints = tuple(m for m in field.metadata if isinstance(m, BaseMetadata))
         if constraints:
             annotation = Annotated[annotation, *constraints]
+        if mode == "input" and integer:
+            annotation = Annotated[annotation, BeforeValidator(reject_bool_as_int)]
         if annotation is list:
             annotation = list[JsonValue]
         elif annotation is dict:

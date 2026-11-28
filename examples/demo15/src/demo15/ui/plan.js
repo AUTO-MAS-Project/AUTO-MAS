@@ -39,14 +39,14 @@ async function start() {
     status.textContent = state.locked ? 'Read-only' : feedback
   }
 
-  const context = await panel.readConfig()
+  const context = await panel.getContext()
   state = context
   applyConfig(context.config)
   panel.onStateChange(next => {
     state = next
     updateControls()
   })
-  panel.onConfigReloaded(applyConfig)
+  panel.onConfigReloaded(({ config }) => applyConfig(config))
   updateControls()
 
   form.addEventListener('input', async ({ target: input }) => {

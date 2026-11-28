@@ -151,7 +151,7 @@ class UiHintMarker:
     deps: tuple[str, ...] = ()
     secret: bool = False
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None
-    options: tuple[OptionValue, ...] = ()
+    options: tuple[OptionValue, ...] | None = None
     action_ref: str | None = None
 
 
@@ -201,7 +201,7 @@ def ui(
         format=format,
         deps=tuple(deps or ()),
         secret=secret,
-        options=tuple(options or ()),
+        options=tuple(options) if options is not None else None,
         visibility=visibility,
         action_ref=action_ref,
     )
@@ -314,6 +314,20 @@ def visibility_spec_for_field(field_info: object) -> UiVisibilitySpec | None:
     return None
 
 
+def _static_option_values(annotation: object) -> list[OptionValue] | None:
+    base, _ = unwrap_ann(annotation)
+    if get_origin(base) is list and (items := get_args(base)):
+        base, _ = unwrap_ann(items[0])
+    if get_origin(base) is Literal:
+        return list(get_args(base))
+    candidates = get_args(base) if get_origin(base) in (Union, UnionType) else (base,)
+    for candidate in candidates:
+        candidate, _ = unwrap_ann(candidate)
+        if isinstance(candidate, type) and issubclass(candidate, Enum):
+            return [member.value for member in candidate]
+    return None
+
+
 def hint_for_field(
     fname: str,
     field_info: FieldInfo,
@@ -355,7 +369,7 @@ def hint_for_field(
             if m.widget:
                 hint["widget"] = m.widget
                 hint["component"] = m.widget
-            if m.options:
+            if m.options is not None:
                 hint["options"] = [{"value": value} for value in m.options]
             if m.format:
                 hint["format"] = m.format
@@ -382,18 +396,7 @@ def hint_for_field(
         or (hint.get("component") == "select" and not hint.get("endpoint"))
     )
     if infer_static_options:
-        borigin = get_origin(base)
-        type_candidates: list[object] = [base]
-        if borigin is Union or borigin is UnionType:
-            type_candidates = [a for a in get_args(base) if a is not type(None)]
-
-        enum_cls: type[Enum] | None = None
-        for cand in type_candidates:
-            if isinstance(cand, type) and issubclass(cand, Enum):
-                enum_cls = cand
-                break
-
-        if base is bool or borigin is bool:
+        if base is bool:
             hint["component"] = "switch"
         elif base in (int, float):
             hint["component"] = "number"
@@ -423,24 +426,10 @@ def hint_for_field(
         ):
             hint["component"] = "date"
             hint["format"] = hint.get("format") or "date"
-        elif enum_cls is not None:
+        elif (options := _static_option_values(base)) is not None:
             hint["component"] = "select"
-            hint["options"] = [{"value": str(m.value)} for m in enum_cls]
-            hint["multiple"] = False
-        elif borigin is Literal:
-            hint["component"] = "select"
-            hint["options"] = [{"value": str(v)} for v in get_args(base)]
-            hint["multiple"] = False
-        elif borigin is list:
-            inner = get_args(base)[0] if get_args(base) else str
-            if isinstance(inner, type) and issubclass(inner, Enum):
-                hint["component"] = "select"
-                hint["options"] = [{"value": str(m.value)} for m in inner]
-                hint["multiple"] = True
-            elif get_origin(inner) is Literal:
-                hint["component"] = "select"
-                hint["options"] = [{"value": str(v)} for v in get_args(inner)]
-                hint["multiple"] = True
+            if "options" not in hint:
+                hint["options"] = [{"value": value} for value in options]
 
     # ── 路径声明直接提供选择提示，不向 UI 暴露阻止目录；URL 沿用预设识别 ──
     type_name = getattr(base, "__name__", "") or str(base)

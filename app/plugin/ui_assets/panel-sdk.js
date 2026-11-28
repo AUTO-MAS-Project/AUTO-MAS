@@ -60,7 +60,7 @@ globalThis.connectPanel = function connectPanel() {
       return
     }
     if (event === 'configReloaded') {
-      for (const listener of configListeners) listener(payload.config)
+      for (const listener of configListeners) listener(payload)
       return
     }
     const request = pending.get(requestId)
@@ -106,8 +106,8 @@ globalThis.connectPanel = function connectPanel() {
   if (document.body) observeHeight()
   else document.addEventListener('DOMContentLoaded', observeHeight, { once: true })
 
-  async function readConfig() {
-    const context = await call('readConfig')
+  async function getContext() {
+    const context = await call('getContext')
     applyTheme(context.theme)
     return context
   }
@@ -117,7 +117,8 @@ globalThis.connectPanel = function connectPanel() {
    * Event subscriptions return an unsubscribe function.
    */
   return {
-    readConfig,
+    getContext,
+    translate: keys => call('translate', { keys }),
     saveConfig: (changes, phase = 'commit') => call('saveConfig', { changes, phase }),
     runAction: (group, field, value = true) => call('runAction', { group, field, value }),
     pickPath: options => call('pickPath', options),
