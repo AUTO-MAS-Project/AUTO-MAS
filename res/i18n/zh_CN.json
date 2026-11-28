@@ -5069,5 +5069,10 @@
   "core.update.startupBackup.source_not_ready": "上一版本未完成启动，已保留原有回退备份。",
   "core.update.startupBackup.title": "更新前备份提示",
   "core.update.startupBackup.unknown_version": "无法确认升级前的版本，本次未生成备份，已有备份仍保留。",
-  "core.edit.baahCalendarReminder": "活动日历提醒"
+  "core.edit.baahCalendarReminder": "活动日历提醒",
+  "core.edit.baahGenerateRecommended": "生成推荐配置",
+  "core.edit.baahRecommendedHint": "模板区服：CN。仅生成文件，不改变当前配置；请先在 BAAH 确认区服并配置设备，再从列表手动选用。",
+  "core.edit.baahConfigNamesFailed": "无法读取 BAAH 配置列表",
+  "core.edit.baahRecommendedFailed": "生成推荐配置失败",
+  "core.edit.baahRecommendedCreated": "已生成 {name}，当前配置未改变"
 }
