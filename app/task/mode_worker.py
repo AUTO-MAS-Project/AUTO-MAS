@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 class ModeWorker(TaskBase):
     mode: ClassVar[TaskMode]
+    # 有的专项只在托管、账号历史和结果中结算取消，账号节点保留最后一次脚本状态。
+    mark_user_cancelled: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -92,7 +94,8 @@ class ModeWorker(TaskBase):
                 if self.user_config is not None:
                     await self.user_config.commit()
             if self.cancelled or self.task_info.info.status == "cancelled":
-                await self.user_info.set_state(status="已取消")
+                if self.mark_user_cancelled:
+                    await self.user_info.set_state(status="已取消")
             elif (
                 self.error is None and self._entered and self.user_info.status == "运行"
             ):
@@ -109,7 +112,11 @@ class AutoProxyWorker(ModeWorker):
         except Exception:
             point(self, "task", state="failed")
             raise
-        if self.user_info.status == "已取消":
+        if (
+            self.cancelled
+            or self.task_info.info.status == "cancelled"
+            or self.user_info.status == "已取消"
+        ):
             point(self, "task", state="cancelled")
         elif self.error is not None or self.user_info.status == "异常":
             point(self, "task", state="failed")

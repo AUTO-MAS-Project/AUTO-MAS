@@ -1,5 +1,7 @@
 import { onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { beginAnalyticsOperation } from '@/utils/analytics'
+import { apiOutcome } from '@/utils/featureAnalytics'
 import { useConfirm } from './useConfirm'
 import { createDeclarativeI18n } from '@/components/declarative/declarativeI18n'
 import { i18nRevision } from '@/i18n'
@@ -39,6 +41,7 @@ export interface PluginUiEditor {
   values: SettingsValues
   fieldErrors?: Record<string, string>
   configRevision: number
+  waitForRead?: () => Promise<unknown>
   save: (changes: PluginUiChange[], commit: boolean) => Promise<PluginUiSaveResult>
   runAction: (
     group: string,
@@ -300,6 +303,13 @@ export function usePluginUiBridge(
         )
           return reject('invalid_params')
         if (method !== 'GET' && method !== 'POST' && !writable()) return reject('read_only')
+        const generation =
+          pluginName === 'baah_adapter' &&
+          method === 'POST' &&
+          path === '/config/create-recommended'
+            ? beginAnalyticsOperation('adapter_setup_finished')
+            : null
+        let outcome: ReturnType<typeof apiOutcome> | 'unknown' = 'unknown'
         try {
           // fetch 保留响应状态，并禁止重定向离开插件命名空间。
           const response = await fetch(
@@ -323,13 +333,26 @@ export function usePluginUiBridge(
           } catch {
             data = text
           }
+          if (isRecord(data) && typeof data.code === 'number')
+            outcome = apiOutcome({ code: data.code })
           reply({ ok: response.ok, status: response.status, data })
         } catch {
           reject('request_failed')
+        } finally {
+          generation?.finish({
+            script_type: 'BAAH',
+            operation_kind: 'template',
+            engine_kind: 'unknown',
+            outcome,
+          })
         }
       } else if (action === 'saveConfig') {
         const { phase, changes } = params
-        if (!writable() || current.busy) return reject('read_only')
+        if (!writable()) return reject('read_only')
+        // 连续编辑可能赶上前一次写入触发的配置回读；回读后按最新锁和字段权限校验。
+        if (current.waitForRead) await current.waitForRead()
+        const writer = editor()
+        if (!writable() || writer.busy) return reject('read_only')
         if (
           (phase !== 'draft' && phase !== 'commit') ||
           !Array.isArray(changes) ||
@@ -349,7 +372,7 @@ export function usePluginUiBridge(
           })
         )
           return reject('invalid_changes')
-        reply(await current.save(changes, phase === 'commit'))
+        reply(await writer.save(changes, phase === 'commit'))
       } else if (action === 'runAction') {
         const { group, field, value } = params
         if (!writable() || current.busy) return reject('read_only')

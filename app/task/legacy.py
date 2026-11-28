@@ -406,7 +406,7 @@ class TaskExecuteBase(ABC):
                 if state.push_log_mode == "汇总"
                 else render_scatter_push_log
             )
-            user._completion_details = tuple(render(entries))
+            user.set_completion_details(tuple(render(entries)))
 
     @property
     def execution_mode(self) -> TaskMode | Literal["Update"]:

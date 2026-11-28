@@ -61,6 +61,7 @@ def config_detail_ui(
     uid = str(entry.uid)
     ui = DeclarativeConfigUi(
         configUid=uid,
+        autoSave=entry.ui_auto_save,
         pluginName=record.info.plugin_name if record is not None else None,
         i18nNamespace=(
             f"plugins.{record.info.plugin_name}.config" if record is not None else None
@@ -84,7 +85,9 @@ def config_detail_ui(
     _, decl = registration
     scope = "script" if isinstance(entry, ScriptEntry) else "user"
     ui.backupTargets = [
-        BackupTargetHint(key=pool.key, kind=pool.kind)
+        BackupTargetHint(
+            key=pool.key, kind=pool.kind, editorEvents=list(pool.editor_events)
+        )
         for pool in decl.restore_pools
         if pool.editor_scope == scope
     ]

@@ -98,6 +98,37 @@ function mountWheel() {
 }
 
 describe('wheel iframe', () => {
+  it.each([false, true])('回读期间接收编辑，按回读后的锁状态 %s 处理', async locked => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    const read = deferred<void>()
+    const waitForRead = vi.fn(() => read.promise)
+    try {
+      child.ready()
+      editor.value = { ...editor.value, busy: true, waitForRead }
+      await nextTick()
+      const request = child.request('saveConfig', {
+        phase: 'commit',
+        changes: [{ group: 'Second', field: 'Count', value: 5 }],
+      })
+      await vi.waitFor(() => expect(waitForRead).toHaveBeenCalledOnce())
+      expect(editor.value.save).not.toHaveBeenCalled()
+      editor.value = { ...editor.value, busy: false, locked }
+      await nextTick()
+      read.resolve()
+      await vi.waitFor(() =>
+        expect(child.replies.get(request)).toMatchObject(
+          locked ? { error: 'read_only' } : { result: { ok: true } }
+        )
+      )
+      expect(editor.value.save).toHaveBeenCalledTimes(locked ? 0 : 1)
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
   it('authenticates ready and requests, and projects only visible non-secret fields', async () => {
     const { view, target } = mountWheel()
     await nextTick()

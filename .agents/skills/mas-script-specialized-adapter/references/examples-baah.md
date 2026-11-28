@@ -2,7 +2,7 @@
 
 BAAH 是**独立发行版 + 自带 JSON 配置体系**的线：入口 `BAAH.exe <配置名>.json`，配置由它自己的 jsoneditor 界面维护，MAS 不复制配置目录、不做字段化，只以「配置文件名」引用 BAAH 原有配置，并在运行期对少量关键字段做托管。模拟器不归 BAAH 管，由 MAS 调度。
 
-具体字段、路径、函数名现场读 `app/task/BAAH/` 与 BAAH 发行版确认。本文件只记推不出来的部分。
+具体字段、路径、函数名以[独立适配器源码](https://github.com/AUTO-MAS-Project/AUTO-MAS-BAAH-Adapter/tree/dev/src/baah_adapter)与 BAAH 发行版为准。本文件只记推不出来的部分。
 
 ## 产品决策（读代码看不出为什么）
 

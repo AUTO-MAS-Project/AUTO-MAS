@@ -476,18 +476,21 @@ export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
 async function seedPluginProfile(dataRoot, pluginsOnly) {
   const script = path.join(frontendRoot, 'e2e', 'fixtures', 'seed-profile.py')
   const projects = process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS?.trim()
-  const wheel = process.env.AUTO_MAS_E2E_MAAEND_WHEEL?.trim()
-  const wheelEnv = wheel
-    ? {
-        // uv 会在别处解析依赖，文件 URL 也能保留临时目录里的空格。
-        UV_OVERRIDE: [
-          pathToFileURL(path.join(dataRoot, 'plugins', 'pypi', 'e2e-wheel-requirements.txt')).href,
-          process.env.UV_OVERRIDE,
-        ]
-          .filter(Boolean)
-          .join(' '),
-      }
-    : {}
+  const maaEndWheel = process.env.AUTO_MAS_E2E_MAAEND_WHEEL?.trim()
+  const baahWheel = process.env.AUTO_MAS_E2E_BAAH_WHEEL?.trim()
+  const wheelEnv =
+    maaEndWheel || baahWheel
+      ? {
+          // uv 会在别处解析依赖，文件 URL 也能保留临时目录里的空格。
+          UV_OVERRIDE: [
+            pathToFileURL(path.join(dataRoot, 'plugins', 'pypi', 'e2e-wheel-requirements.txt'))
+              .href,
+            process.env.UV_OVERRIDE,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        }
+      : {}
   const child = spawn(
     'uv',
     [
@@ -507,7 +510,8 @@ async function seedPluginProfile(dataRoot, pluginsOnly) {
         ...process.env,
         AUTO_MAS_ENV: 'development',
         AUTO_MAS_E2E_PLUGIN_PROJECTS: projects ? path.resolve(projects) : '',
-        AUTO_MAS_E2E_MAAEND_WHEEL: wheel ? path.resolve(wheel) : '',
+        AUTO_MAS_E2E_MAAEND_WHEEL: maaEndWheel ? path.resolve(maaEndWheel) : '',
+        AUTO_MAS_E2E_BAAH_WHEEL: baahWheel ? path.resolve(baahWheel) : '',
         ...wheelEnv,
       },
     }
@@ -521,11 +525,11 @@ async function seedPluginProfile(dataRoot, pluginsOnly) {
   const registry = parse(
     await readFile(path.join(dataRoot, 'config', 'plugin_registry.yaml'), 'utf8')
   )
-  const maaEndEnabled = Object.values(registry.data).some(
-    ({ info }) => info.plugin_name === 'maaend_adapter' && info.enabled
-  )
+  const enabled = name =>
+    Object.values(registry.data).some(({ info }) => info.plugin_name === name && info.enabled)
   return {
-    AUTO_MAS_E2E_MAAEND_READY: maaEndEnabled ? '1' : '0',
+    AUTO_MAS_E2E_MAAEND_READY: enabled('maaend_adapter') ? '1' : '0',
+    AUTO_MAS_E2E_BAAH_READY: enabled('baah_adapter') ? '1' : '0',
     ...wheelEnv,
   }
 }
@@ -597,7 +601,9 @@ async function main() {
     if (
       real &&
       !inPlace &&
-      (process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS || process.env.AUTO_MAS_E2E_MAAEND_WHEEL)
+      (process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS ||
+        process.env.AUTO_MAS_E2E_MAAEND_WHEEL ||
+        process.env.AUTO_MAS_E2E_BAAH_WHEEL)
     ) {
       pluginEnv = await seedPluginProfile(dataRoot, true)
     }

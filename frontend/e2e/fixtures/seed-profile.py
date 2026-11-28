@@ -71,21 +71,21 @@ def source_adapter_names(*roots: Path) -> set[str]:
     return names
 
 
-def install_maaend_wheel(wheel: Path, site_packages: Path) -> None:
-    """预装显式发行文件，让宿主随后仍能从隔离目录解析它的依赖。"""
-    if (
-        not wheel.is_file()
-        or parse_wheel_filename(wheel.name)[0] != "auto-mas-maaend-adapter"
-    ):
-        raise RuntimeError(f"请提供 MaaEnd 适配器的 wheel 文件：{wheel}")
+def install_fixture_wheels(sources: dict[str, Path], site_packages: Path) -> None:
+    """把待测 wheel 固定到隔离目录，让预装和宿主依赖求解使用同一份文件。"""
     wheels = site_packages.parent / "fixture-wheels"
     wheels.mkdir(parents=True, exist_ok=True)
-    local_wheel = wheels / wheel.name
-    shutil.copy2(wheel, local_wheel)
-    # 宿主会重新解析已装插件。让 uv 保留文件地址，即使索引里有相同版本也用本轮文件。
+    requirements = []
+    files = []
+    for package, wheel in sources.items():
+        if not wheel.is_file() or parse_wheel_filename(wheel.name)[0] != package:
+            raise RuntimeError(f"请提供 {package} 的 wheel 文件：{wheel}")
+        local_wheel = wheels / wheel.name
+        shutil.copy2(wheel, local_wheel)
+        requirements.append(f"{package} @ {local_wheel.as_uri()}")
+        files.append(str(local_wheel))
     (site_packages.parent / "e2e-wheel-requirements.txt").write_text(
-        f"auto-mas-maaend-adapter @ {local_wheel.as_uri()}\n",
-        encoding="utf-8",
+        "\n".join(requirements) + "\n", encoding="utf-8"
     )
     subprocess.run(
         [
@@ -98,7 +98,7 @@ def install_maaend_wheel(wheel: Path, site_packages: Path) -> None:
             str(site_packages),
             "--no-deps",
             "--no-index",
-            str(local_wheel),
+            *files,
         ],
         check=True,
     )
@@ -124,11 +124,18 @@ async def main() -> None:
     local = source_adapter_names(repo_plugins, Config.plugins_path)
     names = [name for name in GAME_ADAPTERS if name in local]
     names.extend(name for name in (MAAEND_ADAPTER, "zzzod_adapter") if name in local)
-    if wheel := os.environ.get("AUTO_MAS_E2E_MAAEND_WHEEL"):
-        if MAAEND_ADAPTER in local:
-            raise RuntimeError("MaaEnd 源码与 wheel 同时提供，请只选一种来源")
-        install_maaend_wheel(Path(wheel), site_packages)
-        names.append(MAAEND_ADAPTER)
+    wheel_sources = {}
+    for name, package, variable in (
+        (MAAEND_ADAPTER, "auto-mas-maaend-adapter", "AUTO_MAS_E2E_MAAEND_WHEEL"),
+        ("baah_adapter", "auto-mas-baah-adapter", "AUTO_MAS_E2E_BAAH_WHEEL"),
+    ):
+        if wheel := os.environ.get(variable):
+            if name in local:
+                raise RuntimeError(f"{name} 源码与 wheel 同时提供，请只选一种来源")
+            wheel_sources[package] = Path(wheel)
+            names.append(name)
+    if wheel_sources:
+        install_fixture_wheels(wheel_sources, site_packages)
     for name in BROWSER_ADAPTERS:
         if name not in local and not plugins_only:
             if not (test_plugins / name).is_dir():

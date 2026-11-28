@@ -32,7 +32,12 @@ const props = withDefaults(
   }>(),
   { error: undefined, disabledReason: undefined, retry: undefined, inlineAction: undefined }
 )
-const emit = defineEmits<{ 'update:value': [value: unknown]; action: [value: unknown]; blur: [] }>()
+const emit = defineEmits<{
+  'update:value': [value: unknown]
+  action: [value: unknown]
+  blur: []
+  commit: []
+}>()
 const { t, te, locale } = useI18n()
 const i18n = computed(() =>
   createDeclarativeI18n(t, te, locale.value, props.namespace, props.scope)
@@ -86,7 +91,10 @@ const pick = async () => {
       props.hint.path_kind === 'folder'
         ? await window.electronAPI.selectFolder()
         : (await window.electronAPI.selectFile(filters))?.[0]
-    if (selected) emit('update:value', selected)
+    if (selected) {
+      emit('update:value', selected)
+      emit('commit')
+    }
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.emulator.toast.filePickerUnavailable')))
   }
@@ -125,6 +133,7 @@ const pick = async () => {
         @update:model-value="update"
         @pick="pick"
         @blur="emit('blur')"
+        @commit="emit('commit')"
       />
       <DeclarativeControl
         v-if="inlineAction"

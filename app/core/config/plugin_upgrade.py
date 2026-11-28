@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
 from packaging.version import Version
 
-from app.core.config.upgrade import is_blank_file
+from app.core.config.upgrade import is_blank_file, preserve_pre_upgrade
 from app.plugin.types import PluginCodeDrift, PluginState
 from app.utils import io as _utils_io
 
@@ -27,6 +28,7 @@ _ADAPTER_PLUGINS = {
     "MaaPluginConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
     "MaaPluginPlanConfig": ("maa_adapter", "auto-mas-maa-adapter"),
+    "BAAHConfig": ("baah_adapter", "auto-mas-baah-adapter"),
     "ZzzOdConfig": ("zzzod_adapter", "auto-mas-zzzod-adapter"),
     "MaaFWConfig": ("maafw_adapter", "auto-mas-maafw-adapter"),
     "M9AConfig": ("m9a_adapter", "auto-mas-m9a-adapter"),
@@ -49,6 +51,7 @@ _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
     "mumu_adapter": Version("0.1.1"),
     "ldplayer_adapter": Version("0.1.1"),
+    "baah_adapter": Version("0.1.0"),
     "zzzod_adapter": Version("0.1.1"),
     # 0.3 起插件之间只经宿主的服务调用；0.2.x 的专项直接导入的模块，在 0.3 的服务插件里
     # 已经没有，两代不能混装，所以三个专项的下限提到 0.3.0。
@@ -198,6 +201,48 @@ async def install_adapter_plugin(name: str, package: str) -> None:
         await Plugin.enable(record)
     if record.info.state != PluginState.ENABLED:
         raise RuntimeError(f"适配插件未启用：{name}")
+
+
+def _has_legacy_baah(collection: dict[str, Any], kind: str) -> bool:
+    """内置托管和账号只有 Info，插件保存后还会写入 SDK 的 info。"""
+    order = collection.get("order", collection.get("instances"))
+    if not isinstance(order, list):
+        return kind == "BAAHUserConfig"
+    entries = collection.get("data", collection)
+    for item in order:
+        if not isinstance(item, dict) or "type" not in item:
+            return True
+        if item["type"] != kind:
+            continue
+        body = entries.get(item.get("uid")) if isinstance(entries, dict) else None
+        if not isinstance(body, dict) or not all(
+            isinstance(body.get(key), dict) for key in ("Info", "info")
+        ):
+            return True
+        if kind == "BAAHConfig":
+            users = body.get("UserData")
+            if not isinstance(users, dict) or _has_legacy_baah(users, "BAAHUserConfig"):
+                return True
+    return False
+
+
+def backup_legacy_baah(config_path: Path, database_path: Path) -> None:
+    """首次接手前留下同一启动时点的配置及数据库；中断时不暴露半份备份。"""
+    destination = config_path / "legacy-baah-plugin"
+    if destination.is_dir():
+        return
+    for name in ("scripts.yaml", "ScriptConfig.json"):
+        path = config_path / name
+        if not path.is_file() or is_blank_file(path):
+            continue
+        if _has_legacy_baah(_utils_io.read_dict_file(path), "BAAHConfig"):
+            with TemporaryDirectory(dir=config_path) as temp:
+                snapshot = Path(temp) / "snapshot"
+                preserve_pre_upgrade(
+                    config_path, database_path=database_path, backup=snapshot
+                )
+                snapshot.rename(destination)
+            return
 
 
 def backup_legacy_adapter_users(

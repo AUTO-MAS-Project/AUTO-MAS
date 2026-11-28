@@ -62,6 +62,7 @@ from app.core.config.plugin_upgrade import (
     adapter_plugin_types,
     automatic_plugin_packages,
     backup_legacy_adapter_users,
+    backup_legacy_baah,
     backup_legacy_maaend_documents,
     backup_legacy_maafw_documents,
     backup_legacy_zzzod_users,
@@ -85,7 +86,6 @@ from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
     BAAHConfig,
-    BAAHUserConfig,
     EmulatorConfig,
     SignFlowAccountGroup,
     GeneralConfig,
@@ -338,7 +338,6 @@ class AppConfig:
         self._adapter_plugin_failures: dict[str, str] = {}
         for model in (
             *CLASS_BOOK.values(),
-            BAAHUserConfig,
             HSRUserConfig,
             QueueItem,
         ):
@@ -594,6 +593,11 @@ class AppConfig:
             )
         # 已升级用户也可能失去此前随主仓交付的专项源码，激活领域配置前补齐所需实现。
         required = required_adapter_plugins(self.config_path)
+        if "baah_adapter" in required and version == "v2.2":
+            # 这些安装已跳过全局升级备份，首次由插件接手前另存同一时点的原件。
+            await asyncio.to_thread(
+                backup_legacy_baah, self.config_path, self.database_path
+            )
         if _utils_environment.install_zzzod_for_development():
             required.setdefault("zzzod_adapter", "auto-mas-zzzod-adapter")
         for adapter, config_type in (
@@ -647,7 +651,7 @@ class AppConfig:
             for name, package in packages.items():
                 can_defer = name not in required_games and (
                     version == "v2.2"
-                    or name == MAAEND_ADAPTER_NAME
+                    or name in {MAAEND_ADAPTER_NAME, "baah_adapter"}
                     or (version == "v2.1" and name == "zzzod_adapter")
                 )
                 if not can_defer:
@@ -765,6 +769,15 @@ class AppConfig:
                         migration_nodes[key] = ConfigCollection.build(
                             [*entry_types.values(), legacy_class]
                         )
+            if "baah_adapter" in required:
+                # v1 JSON 以 SubConfigsInfo.UserData 保存账号。先按旧模型处理嵌套
+                # 集合、日期和密文，插件再于激活时接手 YAML；离线时 YAML 仍可旁挂。
+                script_types = dict(migration_nodes["ScriptConfig"].entry_types)
+                script_types["BAAHConfig"] = BAAHConfig
+                migration_nodes = {
+                    **migration_nodes,
+                    "ScriptConfig": ConfigCollection.build(list(script_types.values())),
+                }
             await asyncio.to_thread(
                 upgrade_json_configs,
                 self.config_path,
@@ -821,12 +834,13 @@ class AppConfig:
         held_items = []
         if version != "v2.2":
             # 旧数据升级要靠插件在场转换，版本号不能带着没解析的成员推进。
-            # 这一轮 MaaEnd 装不上时，允许其他托管照常启动，等下次重试再推进版本。
-            maaend_types = (
-                adapter_plugin_types(MAAEND_ADAPTER_NAME)
-                if MAAEND_ADAPTER_NAME in self._adapter_plugin_failures
-                else set()
-            )
+            # 这一轮有专项可暂缓安装时，允许其他托管照常启动，等下次重试再推进版本。
+            deferred_types = {
+                kind
+                for name in (MAAEND_ADAPTER_NAME, "baah_adapter")
+                if name in self._adapter_plugin_failures
+                for kind in adapter_plugin_types(name)
+            }
             # v2.2 仍会尝试补装 ZzzOd，旧托管可以先原样保留。
             deferred_zzzod = (
                 version == "v2.1" and "zzzod_adapter" in self._adapter_plugin_failures
@@ -835,7 +849,7 @@ class AppConfig:
             for config_collection in (self.ScriptConfig, self.PlanConfig):
                 for item in config_collection.unresolved():
                     if item.reason != "load_failed":
-                        if item.type_name in maaend_types:
+                        if item.type_name in deferred_types:
                             held_items.append(item)
                             continue
                         if (
@@ -864,7 +878,7 @@ class AppConfig:
                 raise RuntimeError("配置升级时" + "；".join(reasons))
         if held_items:
             logger.warning(
-                "MaaEnd 插件这一轮没装上，以下配置先原样保留："
+                "专项插件这一轮没装上，以下配置先原样保留："
                 + "、".join(sorted({item.type_name for item in held_items}))
                 + "；专项升级待下次安装插件后完成"
             )
@@ -1333,7 +1347,7 @@ class AppConfig:
         payload: dict[str, Any] | None = None,
     ) -> tuple[
         uuid.UUID,
-        ScriptEntry | GeneralConfig | OkwwConfig | OkNteConfig | HSRConfig | BAAHConfig,
+        ScriptEntry | GeneralConfig | OkwwConfig | OkNteConfig | HSRConfig,
     ]:
         """添加托管配置"""
 
@@ -1604,8 +1618,7 @@ class AppConfig:
         | GeneralUserConfig
         | OkwwUserConfig
         | OkNteUserConfig
-        | HSRUserConfig
-        | BAAHUserConfig,
+        | HSRUserConfig,
     ]:
         """添加账号配置"""
 

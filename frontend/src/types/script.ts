@@ -23,6 +23,7 @@ export const PLUGIN_EDITOR_SCRIPT_TYPES = [
   'MSS',
   'MaaEnd',
   'ZzzOd',
+  'BAAH',
 ] as const satisfies readonly BuiltinScriptType[]
 export type PluginEditorScriptType = (typeof PLUGIN_EDITOR_SCRIPT_TYPES)[number]
 
