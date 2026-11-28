@@ -7,8 +7,8 @@ import { buildMaaFWRoutes } from './maafwRoutes'
 import {
   buildScriptEditorRoutes,
   genericEditorRoutes,
+  pluginEditorRedirects,
   resolveScriptPanelRoute,
-  srcEditorRedirects,
 } from './scriptEditorRoutes'
 import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import {
@@ -127,7 +127,7 @@ const routes = [
   },
   ...buildScriptEditorRoutes(),
   ...genericEditorRoutes,
-  ...srcEditorRedirects,
+  ...pluginEditorRedirects,
   ...maafwRoutes.script,
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,

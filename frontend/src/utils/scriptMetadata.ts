@@ -1,4 +1,4 @@
-import type { BuiltinScriptType } from '@/types/script'
+import type { BuiltinScriptType, PluginEditorScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import hsrIcon from '@/assets/hsr.png'
@@ -7,6 +7,7 @@ import maaEndIcon from '@/assets/MaaEnd.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
+import whimboxIcon from '@/assets/whimbox.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 export interface ScriptMetadata {
@@ -100,7 +101,19 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  Whimbox: SCRIPT_ADAPTER_METADATA.Whimbox,
+  Whimbox: {
+    logo: whimboxIcon,
+    label: 'Whimbox',
+    typeTagColor: 'pink',
+    routeSuffix: 'whimbox',
+    createOrder: 12,
+    create: {
+      titleKey: 'core.scripts.type.Whimbox',
+      descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
+      keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
+      group: 'specialized',
+    },
+  },
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -175,9 +188,8 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-} satisfies Record<Exclude<BuiltinScriptType, 'SRC'>, ScriptMetadata> & {
-  SRC: Omit<ScriptMetadata, 'routeTitles'>
-}
+} satisfies Record<Exclude<BuiltinScriptType, PluginEditorScriptType>, ScriptMetadata> &
+  Record<PluginEditorScriptType, Omit<ScriptMetadata, 'routeTitles'>>
 
 export const isBuiltinScriptType = (type: string): type is BuiltinScriptType =>
   Object.prototype.hasOwnProperty.call(SCRIPT_METADATA, type)

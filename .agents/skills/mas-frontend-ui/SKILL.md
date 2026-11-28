@@ -9,7 +9,7 @@ Companion to `mas-frontend-standards` for Electron desktop operational UI built 
 
 ## Concept Preview Gate (Mandatory)
 
-Before editing application UI source for **any** visual/UI change:
+Before editing application UI source for **any** visual/UI change (skip for pure plugin UI migrations with existing design or sandboxed runs without a live browser — NEVER launch Chromium with `--single-process` on Windows):
 1. Build an isolated temporary prototype using AntD Vue + theme tokens + representative data.
 2. Capture Playwright screenshots at desktop sizes and affected states (both light & dark if theme-dependent).
 3. Show screenshots to the user and wait for **explicit approval** (a request to implement/PR does NOT count).
