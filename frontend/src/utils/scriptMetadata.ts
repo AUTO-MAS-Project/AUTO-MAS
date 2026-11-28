@@ -158,11 +158,6 @@ export const SCRIPT_METADATA = {
     label: 'MaaEnd',
     typeTagColor: 'blue',
     routeSuffix: 'maaend',
-    routeTitles: {
-      script: '编辑MaaEnd脚本',
-      userAdd: '添加MaaEnd用户',
-      userEdit: '编辑MaaEnd用户',
-    },
     createOrder: 4,
     create: {
       titleKey: 'core.scripts.type.MaaEnd',

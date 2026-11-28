@@ -96,7 +96,4 @@ export const test = base.extend<{ app: App }>({
   },
 })
 
-// 只跳过没提供 MaaEnd 的普通隔离环境，提供后仍由用例检查真实后端。
-export const maaEndUnavailable = process.env.AUTO_MAS_E2E_MAAEND_READY === '0'
-
 export { expect }

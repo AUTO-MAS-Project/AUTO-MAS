@@ -8,7 +8,6 @@ import {
   type ScriptUpdateIn,
   type ScriptGetOut,
   type HSRStageOptionsData,
-  type MaaEndOptionsOut,
   type MaaFWInterfacePreviewOut,
   type MaaFWAgentEnvPrepareOut,
   type ScriptCreateIn,
@@ -301,21 +300,6 @@ export function useScriptApi() {
     }
   }
 
-  const getMaaEndOptions = async (scriptId: string): Promise<MaaEndOptionsOut | null> => {
-    try {
-      const response = await Service.getMaaendOptionsApiScriptsMaaendOptionsPost({ scriptId })
-      if (response?.code !== 200)
-        throw new Error(response?.message || t('core.apiErrors.invalidResponse'))
-      return response
-    } catch (err) {
-      const errorMsg = getApiErrorMessage(err, t('core.apiErrors.maaEndOptionsFailed'))
-      error.value = errorMsg
-      logger.error(`获取 MaaEnd 动态选项失败: ${errorMsg}`)
-      message.error(errorMsg)
-      return null
-    }
-  }
-
   // 删除脚本
   const deleteScript = async (scriptId: string): Promise<boolean> => {
     loading.value = true
@@ -455,7 +439,6 @@ export function useScriptApi() {
     getScripts,
     getScript,
     getHsrStageOptions,
-    getMaaEndOptions,
     previewMaaFWInterface,
     prepareMaaFWAgentEnv,
     deleteScript,
