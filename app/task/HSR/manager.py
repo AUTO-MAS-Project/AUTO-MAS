@@ -430,9 +430,6 @@ class HSRManager(NotificationTaskBase):
                         DownloadRequest(
                             url=candidate.download_url,
                             content_hash=candidate.sha256 or None,
-                            downloader="builtin"
-                            if candidate.source == "MirrorChyan"
-                            else None,
                         )
                     )
         return requests

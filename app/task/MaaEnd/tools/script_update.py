@@ -202,11 +202,6 @@ class UpdateDownload:
 async def check_update(root: Path, config: MaaEndConfig) -> UpdateDownload | str:
     """只读安装身份、回执并查询发行包，不分配下载目录或安装工作。"""
     channel = config.Update.Channel
-    effective_cdk = (
-        config.Update.MirrorChyanCDK.strip()
-        or Config.setting.Update.MirrorChyanCDK.strip()
-    )
-    proxy = Config.proxy
     downloader = "fluxdown" if Config.setting.Update.FluxdownTakeoverAll else "builtin"
     original = None
     try:
@@ -268,35 +263,6 @@ async def check_update(root: Path, config: MaaEndConfig) -> UpdateDownload | str
         target = verified_target
     # 当前版本高于所选通道时只用精确匹配的 GitHub 官方包恢复可信回执；
     # Mirror 酱提供的是通道最新包，不能假定其中含有该历史版本。
-    cdk = "" if recover_native else (effective_cdk)
-    source = "GitHub"
-    if cdk and config.Update.PackageMode != "incremental":
-        payload = await request_mirror_resource(
-            "MaaEnd",
-            params={
-                "cdk": cdk,
-                "os": "win",
-                "arch": "x64" if arch == "x86_64" else "arm64",
-                "channel": channel,
-            },
-            proxy=proxy,
-        )
-        data = payload.get("data", {})
-        if (
-            data.get("update_type") != "full"
-            or Version(str(data.get("version_name", ""))) != target
-        ):
-            raise ValueError("Mirror 酱完整包版本与官方发行版本不一致")
-        url = str(data.get("url", ""))
-        parsed = urlsplit(url)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-        ):
-            raise ValueError("Mirror 酱下载地址无效")
-        source = "MirrorChyan"
     return UpdateDownload(
         original,
         target,
@@ -305,7 +271,7 @@ async def check_update(root: Path, config: MaaEndConfig) -> UpdateDownload | str
         url,
         size,
         digest,
-        source,
+        "GitHub",
         downloader,
         recover_native,
     )
@@ -359,7 +325,7 @@ async def prepare_update(
             progress=progress,
         )
         if not rebuilt:
-            if cdk and source != "MirrorChyan":
+            if cdk:
                 payload = await request_mirror_resource(
                     "MaaEnd",
                     params={
