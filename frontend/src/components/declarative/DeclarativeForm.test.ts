@@ -6,7 +6,8 @@ import { deferred, fire, testView } from '../../../tests/vueRenderer'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import Antd from 'ant-design-vue'
+import Antd, { InputNumber } from 'ant-design-vue'
+import zhCN from '../../../../res/i18n/zh_CN.json'
 import { PathKind, Service } from '@/api'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { usePluginSettingsDraft } from '@/views/plugins/settings/usePluginSettingsDraft'
@@ -200,6 +201,79 @@ async function render(
 }
 
 describe('插件声明式表格与字段反馈', () => {
+  it('运行次数支持步进和直接输入，零值显示不限制，普通数字保留小数步长', async () => {
+    const values = reactive<Record<string, Record<string, unknown>>>({
+      Run: { ProxyTimesLimit: 0, Ratio: 0.2 },
+    })
+    const client = new QueryClient()
+    const view = testView(
+      defineComponent(
+        () => () =>
+          h(DeclarativeForm, {
+            uid: 'uid',
+            namespace: 'demo',
+            scope: 'script',
+            groups: [
+              {
+                name: 'Run',
+                hints: [
+                  { field: 'ProxyTimesLimit', component: 'number', min: 0, max: 4, precision: 0 },
+                  { field: 'Ratio', component: 'number', min: 0, max: 0.3, step: 0.1 },
+                ],
+              },
+            ],
+            values,
+            'onUpdate:value': (group, field, value) => (values[group]![field] = value),
+          })
+      )
+    )
+    view.app.component('AInputNumber', InputNumber)
+    view.app.use(VueQueryPlugin, { queryClient: client }).use(
+      createI18n({
+        legacy: false,
+        locale: 'zh-CN',
+        flatJson: true,
+        missingWarn: false,
+        messages: { 'zh-CN': { ...zhCN } },
+      })
+    )
+    view.mount()
+    const field = (name: string) => view.all().find(el => el.props['aria-label'] === name)!
+    const spinbutton = (name: string) =>
+      view.all(field(name)).find(el => el.props.role === 'spinbutton')!
+    const button = (name: string, label: string) =>
+      view.all(field(name)).find(el => el.tag === 'button' && el.props['aria-label'] === label)!
+    const daily = zhCN['core.edit.runsPerDayThis']
+    const input = spinbutton(daily)
+    try {
+      expect(input.props.value).toBe('0')
+      expect(view.text(field(daily))).toContain('不限制')
+      expect(button(daily, '减少').props.disabled).toBe(true)
+
+      await fire(button(daily, '增加'), 'onClick')
+      expect(input.props.value).toBe('1')
+      expect(view.text(field(daily))).toContain('次 / 天')
+      await fire(button(daily, '减少'), 'onClick')
+      expect(spinbutton(daily)).toBe(input)
+      expect(input.props.value).toBe('0')
+
+      await fire(input, 'onFocus', {})
+      expect(view.text(field(daily))).not.toContain('不限制')
+      await fire(input, 'onInput', { target: { value: '3' } })
+      await fire(input, 'onBlur', {})
+      expect(values.Run?.ProxyTimesLimit).toBe(3)
+      expect(input.props.value).toBe('3')
+
+      await fire(button('Ratio', '增加'), 'onClick')
+      expect(values.Run?.Ratio).toBe(0.3)
+      expect(spinbutton('Ratio').props.value).toBe('0.3')
+      expect(button('Ratio', '增加').props.disabled).toBe(true)
+    } finally {
+      view.app.unmount()
+      client.clear()
+    }
+  })
+
   it('系统目录和文件选择保留筛选器，取消后保留草稿', async () => {
     const selectFolder = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce('D:/folder')
     const selectFile = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(['D:/demo.exe'])

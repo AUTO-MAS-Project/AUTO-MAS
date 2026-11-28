@@ -320,8 +320,9 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  column-gap: 16px;
-  row-gap: 14px;
+  column-gap: 32px;
+  row-gap: 20px;
+  padding: 4px 0 12px;
 }
 .declarative-field-grid .wide {
   grid-column: 1 / -1;

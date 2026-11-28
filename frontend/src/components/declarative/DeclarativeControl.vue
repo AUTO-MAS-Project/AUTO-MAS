@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { Dayjs } from 'dayjs'
 import { useI18n } from 'vue-i18n'
 import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { NumberStepper } from '@/components/ui'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { isBrowserDevelopment } from '@/utils/environment'
 import DeclarativeOrderedSelect from './DeclarativeOrderedSelect.vue'
@@ -20,6 +21,8 @@ const props = withDefaults(
     max?: number | null
     precision?: number
     step?: number
+    unit?: string
+    zeroLabel?: string
     options?: Option[]
     multiple?: boolean
     pathKind?: string | null
@@ -41,6 +44,8 @@ const props = withDefaults(
     max: null,
     precision: undefined,
     step: undefined,
+    unit: undefined,
+    zeroLabel: undefined,
     options: () => /* 为未声明选项的控件提供独立空列表，避免组件实例共享可变默认值。 */ [],
     multiple: false,
     pathKind: null,
@@ -189,6 +194,20 @@ const updateTime = (value: string | null) => {
         {{ pathKind === 'folder' ? t('core.edit.pickDirectory') : t('core.comp.pickFile') }}
       </a-button>
     </a-space-compact>
+    <NumberStepper
+      v-else-if="kind === 'number' && !compact"
+      :model-value="typeof modelValue === 'number' ? modelValue : null"
+      :disabled="disabled"
+      :min="min ?? undefined"
+      :max="max ?? undefined"
+      :precision="precision"
+      :step="step"
+      :unit="unit"
+      :zero-label="zeroLabel"
+      :aria-label="label"
+      @update:model-value="update"
+      @blur="emit('blur')"
+    />
     <a-input-number
       v-else-if="kind === 'number'"
       :size="size"

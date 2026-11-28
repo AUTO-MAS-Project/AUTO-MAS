@@ -43,6 +43,25 @@ function fieldLabel(group: string, hint: DeclarativeHint) {
 }
 const label = computed(() => fieldLabel(props.group, props.hint))
 const tip = computed(() => i18n.value.tip(props.group, props.hint))
+const stepper = computed(() => {
+  if (props.tableCell || props.scope !== 'script' || props.group !== 'Run') return undefined
+  switch (props.hint.field) {
+    case 'GameUpdateTimeLimit':
+    case 'HardTimeLimit':
+    case 'RunTimeLimit':
+      return { unit: t('core.edit.stepperUnitTimeout'), step: 5 }
+    case 'ProxyTimesLimit':
+      return {
+        unit: t('core.edit.stepperUnitDaily'),
+        zeroLabel: t('core.edit.stepperUnlimited'),
+        step: 1,
+      }
+    case 'RunTimesLimit':
+      return { unit: t('core.edit.stepperUnitRetry'), step: 1 }
+    default:
+      return undefined
+  }
+})
 const pathHint = computed(() =>
   props.hint.component === 'path' && props.hint.path_must_exist
     ? t('core.plugins.pathMustExistHint')
@@ -98,7 +117,9 @@ const pick = async () => {
         :min="hint.min"
         :max="hint.max"
         :precision="hint.precision"
-        :step="hint.step"
+        :step="stepper?.step ?? hint.step"
+        :unit="stepper?.unit"
+        :zero-label="stepper?.zeroLabel"
         :multiple="hint.multiple"
         :options="options"
         @update:model-value="update"
@@ -130,7 +151,7 @@ const pick = async () => {
 .declarative-field-body {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -138,6 +159,8 @@ const pick = async () => {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 12px;
+  min-height: 36px;
+  padding-block: 4px;
 }
 .declarative-field > :is(.field-error, .field-reason, .ant-btn) {
   grid-column: 1 / -1;
