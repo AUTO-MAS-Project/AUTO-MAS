@@ -53,35 +53,50 @@ describe('应用路由', () => {
     expect(router.resolve('/plugins/demo/legacy').matched).toHaveLength(0)
   }, 15000)
 
-  it('SRC 旧地址进入插件编辑器并保留参数、查询与锚点', async () => {
-    const { default: router } = await import('./index')
-    vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
-      code: 200,
-      types: ['SRC'],
-    })
-    for (const [oldPath, newPath, name] of [
-      ['/scripts/s/edit/src', '/scripts/s/edit/plugin/SRC', 'GenericScriptEdit'],
-      ['/scripts/s/users/add/src', '/scripts/s/users/add/plugin/SRC', 'GenericUserAdd'],
-      ['/scripts/s/users/u/edit/src', '/scripts/s/users/u/edit/plugin/SRC', 'GenericUserEdit'],
-    ] as const) {
-      const record = router.getRoutes().find(route => route.name === name)!
-      record.meta.skipGuard = true
-      try {
-        await router.push(`${oldPath}?from=bookmark#section`)
-        expect(router.currentRoute.value).toMatchObject({
-          name,
-          fullPath: `${newPath}?from=bookmark#section`,
-          params: {
-            scriptId: 's',
-            scriptType: 'SRC',
-            ...(name === 'GenericUserEdit' && { userId: 'u' }),
-          },
-        })
-      } finally {
-        delete record.meta.skipGuard
+  it.each([
+    ['SRC', 'src'],
+    ['Whimbox', 'whimbox'],
+  ])(
+    '%s 旧地址进入插件编辑器并保留参数、查询与锚点',
+    async (scriptType, suffix) => {
+      const { default: router } = await import('./index')
+      vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
+        code: 200,
+        types: [scriptType],
+      })
+      for (const [oldPath, newPath, name] of [
+        [`/scripts/s/edit/${suffix}`, `/scripts/s/edit/plugin/${scriptType}`, 'GenericScriptEdit'],
+        [
+          `/scripts/s/users/add/${suffix}`,
+          `/scripts/s/users/add/plugin/${scriptType}`,
+          'GenericUserAdd',
+        ],
+        [
+          `/scripts/s/users/u/edit/${suffix}`,
+          `/scripts/s/users/u/edit/plugin/${scriptType}`,
+          'GenericUserEdit',
+        ],
+      ] as const) {
+        const record = router.getRoutes().find(route => route.name === name)!
+        record.meta.skipGuard = true
+        try {
+          await router.push(`${oldPath}?from=bookmark#section`)
+          expect(router.currentRoute.value).toMatchObject({
+            name,
+            fullPath: `${newPath}?from=bookmark#section`,
+            params: {
+              scriptId: 's',
+              scriptType,
+              ...(name === 'GenericUserEdit' && { userId: 'u' }),
+            },
+          })
+        } finally {
+          delete record.meta.skipGuard
+        }
       }
-    }
-  }, 15000)
+    },
+    15000
+  )
 
   it('按绑定与启用状态选择静态编辑器或插件面板，保留直达地址参数', async () => {
     const { default: router } = await import('./index')

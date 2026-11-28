@@ -24,6 +24,12 @@ import type {
 export type BuiltinScriptType = `${ScriptCreateIn['type']}`
 export type ScriptType = PluginProvidedScriptType['scriptKey']
 
+export const PLUGIN_EDITOR_SCRIPT_TYPES = [
+  'SRC',
+  'Whimbox',
+] as const satisfies readonly BuiltinScriptType[]
+export type PluginEditorScriptType = (typeof PLUGIN_EDITOR_SCRIPT_TYPES)[number]
+
 // 草稿由显式默认值初始化；路径保留 null，其余可编辑字段要求有值。
 type DraftGroup<T, Nullable extends keyof T = never> = {
   [K in keyof T]-?: K extends Nullable ? Exclude<T[K], undefined> : NonNullable<T[K]>
