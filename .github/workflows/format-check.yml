@@ -75,6 +75,10 @@ jobs:
           uv sync --locked --only-group dev
           uv run --no-sync ruff format --check .
 
+      - name: 检查 Python 未定义名称
+        if: steps.scope.outputs.run_python == 'true'
+        run: uv run --no-sync ruff check --select F821 .
+
       - name: 设置 Node.js 环境
         if: steps.scope.outputs.run_frontend == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

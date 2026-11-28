@@ -17,14 +17,21 @@ SPEC.loader.exec_module(pr_check)
 def test_plan_gates_docs_only() -> None:
     gates = pr_check.plan_gates(["CONTRIBUTING.md", "docs/task-scheduler.md"])
     ids = [g.id for g in gates]
-    assert ids == ["GIT-DIFF", "RUFF-FORMAT"]
+    assert ids == ["GIT-DIFF", "RUFF-FORMAT", "RUFF-F821"]
 
 
 def test_plan_gates_backend_and_lock() -> None:
     gates = pr_check.plan_gates(["app/api/setting.py", "pyproject.toml"])
     ids = [g.id for g in gates]
     # 后端改动必须跑 pytest 全量（BACKEND-TEST），顺序在依赖锁检查之后、碎片检查之前。
-    assert ids == ["GIT-DIFF", "RUFF-FORMAT", "UV-LOCK", "BACKEND-TEST", "CHANGELOG"]
+    assert ids == [
+        "GIT-DIFF",
+        "RUFF-FORMAT",
+        "RUFF-F821",
+        "UV-LOCK",
+        "BACKEND-TEST",
+        "CHANGELOG",
+    ]
 
 
 def test_plan_gates_frontend_vue_and_electron() -> None:
