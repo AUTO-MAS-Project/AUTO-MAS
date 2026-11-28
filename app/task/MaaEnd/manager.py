@@ -565,6 +565,15 @@ class MaaEndManager(ScriptManagerBase):
             except script_install.InstallUnsafeError:
                 if not journal.is_file():
                     raise
+                if config.Update.TakeoverEnabled:
+                    raise
+                archived = await adapter.archive_completed_external_update()
+                if archived is None:
+                    raise
+                await self.script_info.set_log(
+                    "MaaEnd 检测到外部更新器已完成安装，"
+                    f"遗留安装恢复现场已归档：{archived.name}"
+                )
             if journal.is_file():
                 # 只有无可回滚目录、原生安装完整且身份可信时，公共层
                 # 才允许清理过期 journal；否则重新尝试原生恢复。

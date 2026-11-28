@@ -3,6 +3,7 @@
 """MaaEnd 安装状态与修复适配器。公共 #1916 负责决定恢复策略。"""
 
 import asyncio
+import json
 import shutil
 import threading
 from pathlib import Path
@@ -171,6 +172,60 @@ class MaaEndInstallAdapter:
             self.takeover_enabled,
             self.allow_damaged_repair,
         )
+
+    async def archive_completed_external_update(self) -> Path | None:
+        """归档关闭接管后由外部更新器越过完成态事务留下的恢复现场。
+
+        只有事务已进入 installed、当前 MaaEnd 本体可识别，且目录确实不同于
+        完成态快照时才归档。整个工作区原样改名保留，不能清理或回滚。
+        """
+        if self.takeover_enabled:
+            return None
+        directory = script_install.workspace(self.root)
+        if not directory.exists():
+            return None
+        script_install._reject_link(directory)
+        journal = directory / "transaction.json"
+        previous = directory / "previous"
+        ready = directory / "ready"
+        for path in (journal, previous, ready):
+            if path.exists() or path.is_symlink():
+                script_install._reject_link(path)
+        if not journal.is_file() or ready.exists():
+            return None
+        if previous.exists() and not previous.is_dir():
+            return None
+        snapshot = journal.read_bytes()
+        if not snapshot or len(snapshot) > _MAX_TRANSACTION_BYTES:
+            raise script_install.InstallUnsafeError("MaaEnd 原生事务标记无效")
+        try:
+            state = json.loads(snapshot)
+        except (UnicodeDecodeError, ValueError, TypeError) as error:
+            raise script_install.InstallUnsafeError(
+                "MaaEnd 原生事务标记损坏"
+            ) from error
+        files = state.get("files") if isinstance(state, dict) else None
+        if (
+            not isinstance(state, dict)
+            or state.get("root") != str(self.root.resolve())
+            or state.get("phase") != "installed"
+            or not isinstance(files, dict)
+            or not files
+        ):
+            return None
+        await self.ensure_idle()
+        await script_update.verify_current_install_integrity(self.root)
+        current = await script_install.run_worker(script_install.tree_hashes, self.root)
+        if current == files:
+            return None
+        await self.ensure_idle()
+        if journal.is_symlink() or journal.read_bytes() != snapshot:
+            raise script_install.InstallUnsafeError("MaaEnd 事务内容在归档时发生变化")
+        archive = directory.with_name(f"{directory.name}-archived-{uuid4().hex}")
+        if archive.exists() or archive.is_symlink():
+            raise script_install.InstallUnsafeError("MaaEnd 事务归档路径已存在")
+        directory.replace(archive)
+        return archive
 
     async def retry_native(self) -> None:
         await self.recover_native()
