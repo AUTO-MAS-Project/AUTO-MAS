@@ -27,7 +27,7 @@ import type { Component } from 'vue'
  * 开关状态、文案、图标、按钮由父组件按自身会话机制传入——专项只负责
  * 「何时显示/隐藏 + 按钮行为」，本组件只负责视觉。
  *
- * 参考接入：``ZzzOdUserEdit.vue``（配置会话 / 查看会话两个遮罩）。
+ * 参考接入：``OkwwUserEdit.vue``（配置会话 / 查看会话两个遮罩）。
  */
 withDefaults(
   defineProps<{

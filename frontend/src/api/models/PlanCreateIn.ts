@@ -14,6 +14,7 @@ export namespace PlanCreateIn {
         MAA_END_PLAN = 'MaaEndPlan',
         MAA_PLAN_CONFIG = 'MaaPlanConfig',
         MSSPLAN_CONFIG = 'MSSPlanConfig',
+        MAA_END_PLAN_CONFIG = 'MaaEndPlanConfig',
     }
 }
 

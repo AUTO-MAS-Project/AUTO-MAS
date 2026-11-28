@@ -11,6 +11,8 @@ import WebhookManager from '@/components/WebhookManager.vue'
 import ConfigRestoreSection from '@/components/shared/ConfigRestoreSection.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
+import { usePluginRegistry } from '@/composables/usePluginScriptTypes'
+import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import type { PluginUiActivation } from '@/utils/pluginUiRequests'
@@ -27,6 +29,12 @@ const route = useRoute()
 const router = useRouter()
 const openEditor = useScriptEditorNavigation()
 const scriptType = computed(() => String(route.params.scriptType))
+const pluginRegistry = usePluginRegistry(computed(() => props.mode !== 'plan'))
+const scriptLogo = computed(
+  () =>
+    indexPluginScriptTypes(pluginRegistry.data.value?.data).byScriptKey.get(scriptType.value)
+      ?.iconSrc ?? SCRIPT_METADATA.General.logo
+)
 const scriptId = computed(() => String(route.params.scriptId ?? ''))
 const userId = computed(() => String(route.params.userId ?? ''))
 const setupMode = computed(() => props.mode === 'script' && props.setup === true)
@@ -206,7 +214,8 @@ defineExpose({ beforeLeave })
     <template #header>
       <ScriptEditHeader
         :script-type="scriptType"
-        :logo-src="SCRIPT_METADATA.General.logo"
+        :logo-src="scriptLogo"
+        :logo-fallback-src="SCRIPT_METADATA.General.logo"
         :logo-alt="scriptType"
         :title="mode === 'user' ? t('core.comp.editUser') : t('core.comp.editScript')"
         @cancel="router.push({ name: 'Scripts' })"

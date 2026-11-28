@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from .BAAH import BAAHManager as BAAHManager
     from .general import GeneralManager as GeneralManager
     from .HSR import HSRManager as HSRManager
-    from .MaaEnd import MaaEndManager as MaaEndManager
     from .mode_worker import (
         MODE_WORKERS as MODE_WORKERS,
     )
@@ -47,7 +46,6 @@ if TYPE_CHECKING:
     from .OkNte import OkNteManager as OkNteManager
     from .Okww import OkwwManager as OkwwManager
     from .user_expander import UserExpander as UserExpander
-    from .ZzzOd import ZzzOdManager as ZzzOdManager
 
 # 惰性导出（与 app/core/__init__.py 同一 idiom）：宿主启动少导入一批模块。
 # 属性访问语义不变：`import app.task as task; task.MaaEndManager` 照常可用。
@@ -58,7 +56,6 @@ _LAZY_EXPORTS = {
     "ScriptConfigWorker": (".mode_worker", "ScriptConfigWorker"),
     "ScriptViewWorker": (".mode_worker", "ScriptViewWorker"),
     "MODE_WORKERS": (".mode_worker", "MODE_WORKERS"),
-    "MaaEndManager": (".MaaEnd", "MaaEndManager"),
     "GeneralManager": (".general", "GeneralManager"),
     "OkwwManager": (".Okww", "OkwwManager"),
     "OkNteManager": (".OkNte", "OkNteManager"),
@@ -89,7 +86,6 @@ __all__ = [
     "ScriptViewWorker",
     "MODE_WORKERS",
     "GeneralManager",
-    "MaaEndManager",
     "OkwwManager",
     "OkNteManager",
     "HSRManager",

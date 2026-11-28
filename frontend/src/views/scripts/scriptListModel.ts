@@ -25,6 +25,7 @@ export interface ScriptListItem {
   id: string
   type: ScriptType
   name: string
+  iconSrc?: string
   projectLabel?: string | null
   controllerType?: string | null
   users: ScriptListUser[]

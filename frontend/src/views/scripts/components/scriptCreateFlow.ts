@@ -69,12 +69,12 @@ export function getScriptTypeOptions(
             description: t(create.descriptionKey),
             keywords: create.keywords,
             group: create.group,
-            icon: logo,
+            icon: plugins.byScriptKey.get(value)?.iconSrc ?? logo,
           },
         ]
       : []
   )
-  for (const { scriptKey, displayName, description } of plugins.byScriptKey.values()) {
+  for (const { scriptKey, displayName, description, iconSrc } of plugins.byScriptKey.values()) {
     if (isBuiltinScriptType(scriptKey) || !enabled.includes(scriptKey)) continue
     options.push({
       value: scriptKey,
@@ -82,7 +82,7 @@ export function getScriptTypeOptions(
       description,
       keywords: [scriptKey],
       group: 'specialized',
-      icon: SCRIPT_METADATA.General.logo,
+      icon: iconSrc ?? SCRIPT_METADATA.General.logo,
     })
   }
   return options

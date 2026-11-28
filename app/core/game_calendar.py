@@ -29,11 +29,11 @@ SCRIPT_CALENDAR_GAMES = {
     for script, game in {
         "MaaEnd": "endfield",
         "HSR": "starrail",
-        "ZzzOd": "zenless",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
         "BAAH": "bluearchive",
     }.items()
+    if script in CLASS_BOOK
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}
 

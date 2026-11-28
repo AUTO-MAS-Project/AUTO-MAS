@@ -28,49 +28,32 @@ _CLOSE_RESERVATION_SECONDS = 180
 
 
 def _reason_probe(
-    config: object,
+    config: object, *, defer_io: bool = False
 ) -> "DesktopSessionReason | None | Callable[[], DesktopSessionReason | None]":
     """同步读取能力参数，按需构造只读取上游资源的检查。"""
     from app.models.config import (
         GeneralConfig,
         HSRConfig,
-        MaaEndConfig,
         OkNteConfig,
         OkwwConfig,
         ScriptEntry,
-        ZzzOdConfig,
     )
     from app.utils import IS_ELEVATED
 
     if isinstance(config, ScriptEntry):
         from app.core.plugin import Plugin
 
+        if defer_io:
+            return Plugin.desktop_session_reason(
+                config, elevated=IS_ELEVATED, defer_io=True
+            )
         return Plugin.desktop_session_reason(config, IS_ELEVATED)
     if isinstance(config, GeneralConfig):
         if config.Game.Enabled and config.Game.Type == "Emulator":
             return "unsupported_config"
         return None
-    if isinstance(config, MaaEndConfig):
-        from app.task.MaaEnd.resource_loader import load_maaend_controller_protocol
-
-        path = config.Info.Path
-        if path is None:
-            return "unsupported_config"
-        controller = str(config.Game.ControllerType).strip()
-
-        def check_maaend() -> "DesktopSessionReason | None":
-            try:
-                if load_maaend_controller_protocol(path, controller) == "Win32":
-                    return None
-            except (OSError, KeyError, ValueError):
-                return "unsupported_config"
-            return "unsupported_config"
-
-        return check_maaend
     if isinstance(config, (HSRConfig, OkNteConfig, OkwwConfig)):
         return None
-    if isinstance(config, ZzzOdConfig):
-        return None if IS_ELEVATED else "admin_required"
     return "unsupported_config"
 
 
@@ -89,7 +72,7 @@ def require_task_support(config: object) -> None:
 
 async def query_task_reason(config: object):
     """给详情查询复用同一能力判断，把资源 I/O 放在工作线程。"""
-    probe = _reason_probe(config)
+    probe = _reason_probe(config, defer_io=True)
     return await asyncio.to_thread(probe) if callable(probe) else probe
 
 

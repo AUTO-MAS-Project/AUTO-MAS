@@ -73,7 +73,6 @@ export const WS_UPDATE_CANCELLED = 'update.cancelled'
 // MFW 运行环境准备（id=<scriptId>）
 export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
 // MFW 项目手动更新过程：检查 / 下载 / 覆盖 / 校验与逐行日志（id=<scriptId>）
-export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 
 // 游戏社区签到结果（id=SignFlow）
 export const WS_SIGN_FLOW_RESULT_UPDATED = 'signflow.result.updated'
@@ -201,35 +200,6 @@ interface WSMaaFWEnvPrepareProgressData {
   log?: string | null
 }
 
-/** MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress) */
-export interface WSMaaFWProjectUpdateProgressData {
-  /** checking / downloading / downloaded / extracting / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
-  stage: string
-  /** running / success / failed */
-  status: string
-  message: string
-  /** 本次事件附带的新增日志行 */
-  log?: string | null
-  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
-  logLevel?: string | null
-  /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
-  percent?: number | null
-  downloadedBytes?: number | null
-  totalBytes?: number | null
-  /** 下载速度 (B/s)，由后端按时间差算好 */
-  speedBytesPerSec?: number | null
-  /** full 全量 / incremental 增量 */
-  packageKind?: string | null
-  appliedFiles?: number | null
-  totalFiles?: number | null
-  /** 解压阶段：已解压 / 总文件数（不含目录条目） */
-  extractedFiles?: number | null
-  extractTotalFiles?: number | null
-  /** 解压阶段：已写出 / 解压后总字节 */
-  extractedBytes?: number | null
-  extractTotalBytes?: number | null
-}
-
 /** 更新下载进度数据 (id=Update, type=update.progress) */
 export interface WSUpdateProgressData {
   downloaded_size: number
@@ -350,7 +320,6 @@ interface WSMessageDataMap {
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
   [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
-  [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_SIGN_FLOW_RESULT_UPDATED]: WSSignFlowResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData

@@ -19,15 +19,11 @@ from app.utils.common.process.runner import popen_scoped
 from app.utils.common.process.scope import TaskProcessScope, current_process_scope
 
 
-def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin(monkeypatch):
+def test_desktop_session_keeps_builtin_support_when_whimbox_is_a_plugin():
     from whimbox_adapter.config import WhimboxConfig
 
-    from app.models.config import GeneralConfig, ZzzOdConfig
+    from app.models.config import GeneralConfig
 
-    monkeypatch.setattr("app.utils.IS_ELEVATED", False)
-    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) == "admin_required"
-    monkeypatch.setattr("app.utils.IS_ELEVATED", True)
-    assert lifecycle.task_unavailable_reason(ZzzOdConfig.build()) is None
     general = GeneralConfig.build(payload={"Game": {"Enabled": False}})
     assert lifecycle.task_unavailable_reason(general) is None
     assert (
@@ -154,39 +150,6 @@ def test_process_operations_filter_and_recheck_scope(monkeypatch):
         session.desktop_process_target.reset(token)
     assert not operations.terminate_process(process, force=True)
     process.kill.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_shared_game_update_guard_checks_other_sessions(monkeypatch, tmp_path):
-    from app.task.MaaEnd.tools.update.checks import _release_install_dir
-    from app.utils import process as process_api
-
-    game = tmp_path / "game" / "Endfield.exe"
-    process = Mock(pid=100)
-    info = {"name": game.name, "exe": str(game)}
-    process.as_dict.side_effect = lambda *, attrs: {attr: info[attr] for attr in attrs}
-    monkeypatch.setattr(operations.psutil, "process_iter", lambda: iter([process]))
-    monkeypatch.setattr(
-        operations, "matches_session", lambda _, session_id: session_id in (None, 1)
-    )
-    kill = AsyncMock()
-    monkeypatch.setattr(process_api, "kill_process", kill)
-    token = session.desktop_process_target.set(
-        session.DesktopProcessTarget(7, tmp_path, tmp_path)
-    )
-    try:
-        assert await operations.is_process_stopped(game)
-        assert not await operations.is_process_stopped(game, all_sessions=True)
-        assert await _release_install_dir(game)
-        kill.assert_not_awaited()
-        other_installation = tmp_path / "other" / game.name
-        assert await operations.is_process_stopped(
-            other_installation, all_sessions=True
-        )
-        info["exe"] = None
-        assert not await operations.is_process_stopped(game, all_sessions=True)
-    finally:
-        session.desktop_process_target.reset(token)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="桌面分身仅在 Windows 使用 WTS")
@@ -1065,24 +1028,3 @@ def test_desktop_host_disconnects_without_logging_off_on_eof(monkeypatch):
     monkeypatch.setattr(host, "close", close)
     host.run()
     close.assert_called_once_with(logoff=False)
-
-
-@pytest.mark.asyncio
-async def test_script_session_support_reads_resources_off_the_event_loop(
-    monkeypatch, tmp_path
-):
-    from threading import get_ident
-
-    from app.models.config import MaaEndConfig
-    from app.task.MaaEnd import resource_loader
-
-    caller = get_ident()
-
-    def load(*_):
-        assert get_ident() != caller
-        return "Win32"
-
-    monkeypatch.setattr(resource_loader, "load_maaend_controller_protocol", load)
-    config = MaaEndConfig.build(payload={"Info": {"Path": str(tmp_path)}})
-    await config.activate()
-    assert await lifecycle.query_task_reason(config) is None

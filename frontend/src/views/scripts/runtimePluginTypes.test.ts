@@ -17,7 +17,7 @@ import {
   type PluginRegistryDocument,
   type ScriptIndexItem,
 } from '@/api'
-import { maafwRouteName } from '@/router/maafwRoutes'
+import { PLUGIN_EDITOR_SCRIPT_TYPES } from '@/types/script'
 import { queryClient } from '@/services/queryClient'
 import { indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
 import { getAvailablePlanTypes, getPlanTypeDescriptor } from '@/utils/planTypeRegistry'
@@ -102,14 +102,14 @@ describe('运行时专项', () => {
     openEditor('General', 'user', { scriptId: 's', userId: 'u' })
     expect(resolve().name).toBe('GeneralUserEdit')
     expect(openEditor('Demo15', 'userAdd', { scriptId: 's' })).toBe(false)
-    expect(openEditor('SRC', 'userAdd', { scriptId: 's' })).toBe(true)
-    expect(resolve().path).toBe('/scripts/s/users/add/plugin/SRC')
-    expect(openEditor('MAA', 'userAdd', { scriptId: 's' })).toBe(true)
-    expect(resolve().path).toBe('/scripts/s/users/add/plugin/MAA')
-    expect(openEditor('Whimbox', 'userAdd', { scriptId: 's' })).toBe(true)
-    expect(resolve().path).toBe('/scripts/s/users/add/plugin/Whimbox')
-    expect(openEditor('BetterGI', 'userAdd', { scriptId: 's' })).toBe(true)
-    expect(resolve().path).toBe('/scripts/s/users/add/plugin/BetterGI')
+    for (const type of ['MaaEnd', 'ZzzOd'] as const) {
+      expect(openEditor(type, 'script', { id: 's' })).toBe(true)
+      expect(resolve().path).toBe('/scripts/s/edit/plugin/' + type)
+    }
+    for (const type of PLUGIN_EDITOR_SCRIPT_TYPES) {
+      expect(openEditor(type, 'userAdd', { scriptId: 's' })).toBe(true)
+      expect(resolve().path).toBe('/scripts/s/users/add/plugin/' + type)
+    }
     openEditor('General', 'userAdd', { scriptId: 's' })
     expect(resolve().name).toBe('GeneralUserAdd')
   })
@@ -156,7 +156,7 @@ describe('运行时专项', () => {
     )
   })
 
-  it('向导托管只建托管，退出后可由新增首账号重入，MFW 仍走自己的引导', async () => {
+  it('向导托管只建托管，退出后可由新增首账号重入，MFW 也进入通用引导', async () => {
     vi.stubGlobal('window', { electronAPI: { getLogger: () => ({ error: vi.fn() }) } })
     const wizard = {
       ...demo,
@@ -178,15 +178,7 @@ describe('运行时专项', () => {
     const empty = { render: () => null }
     const router = createRouter({
       history: createMemoryHistory(),
-      routes: [
-        ...genericEditorRoutes,
-        { path: '/scripts', name: 'Scripts', component: empty },
-        {
-          path: '/scripts/:id/setup/mfw',
-          name: maafwRouteName('MaaFW', 'setup'),
-          component: empty,
-        },
-      ],
+      routes: [...genericEditorRoutes, { path: '/scripts', name: 'Scripts', component: empty }],
     })
     const { useScriptCreation } = await import('./useScriptCreation')
     const creation = createApp({})
@@ -208,7 +200,12 @@ describe('运行时专项', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('GenericScriptSetup'))
     await creation.submit({ kind: 'new', type: 'MaaFW' })
     await vi.waitFor(() =>
-      expect(router.currentRoute.value.name).toBe(maafwRouteName('MaaFW', 'setup'))
+      expect(router.currentRoute.value.fullPath).toBe('/scripts/s/setup/plugin/MaaFW')
+    )
+    await router.push({ name: 'Scripts' })
+    await creation.createUser({ id: 's', type: 'MaaFW', users: [], usersLoadError: null })
+    await vi.waitFor(() =>
+      expect(router.currentRoute.value.fullPath).toBe('/scripts/s/setup/plugin/MaaFW')
     )
     expect(addUser).not.toHaveBeenCalled()
   })
