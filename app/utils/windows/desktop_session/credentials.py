@@ -187,6 +187,8 @@ def load(path: Path, account: str) -> Credential | None:
         with path.open("rb") as stream:
             payload = json.loads(stream.read(65537))
         encoded = payload[account]
+        if encoded is None:
+            return None
         encrypted = bytearray(base64.b64decode(encoded, validate=True))
         if not 0 < len(encrypted) <= 65536:
             raise ValueError
@@ -209,7 +211,7 @@ def encode(credential: Credential) -> str:
         clear[:] = b"\0" * len(clear)
 
 
-def save(path: Path, account: str, encoded: str) -> None:
+def save(path: Path, account: str, encoded: str | None) -> None:
     try:
         atomic_write(path, json.dumps({account: encoded}).encode("utf-8"))
     except OSError:

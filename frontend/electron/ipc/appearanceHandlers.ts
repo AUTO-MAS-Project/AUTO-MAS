@@ -25,6 +25,7 @@ import {
   inspectAppearancePackage,
   inspectMascotPackage,
 } from '../services/assetPackageProcess'
+import { getImageDimensions } from '../services/imageDimensions'
 import { broadcastMascotChange } from './mascotHandlers'
 
 const logger = getLogger('外观包')
@@ -217,11 +218,15 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
 
   ipcMain.handle(
     'appearance:online-prepare',
-    (_event, fileKey: unknown, versionNo: unknown, category: unknown) => {
+    (event, fileKey: unknown, versionNo: unknown, category: unknown) => {
       const service = serviceFor(category)
       if (!service) return INVALID_ARGUMENT
       if (typeof fileKey !== 'string' || typeof versionNo !== 'number') return INVALID_ARGUMENT
-      return service.prepare(fileKey, versionNo)
+      return service.prepare(fileKey, versionNo, progress => {
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('appearance:online-prepare-progress', progress)
+        }
+      })
     }
   )
 
@@ -281,10 +286,34 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
       }
       const resolved = path.resolve(zipPath)
       try {
-        const { manifest, previewUrl } = await (category === 'mascot'
+        const inspected = await (category === 'mascot'
           ? inspectMascotPackage(resolved)
           : inspectAppearancePackage(resolved))
+        const { manifest, previewUrl } = inspected
         const theme = 'tokens' in manifest ? manifest : null
+        const tryOnAppearance =
+          'tryOnAppearance' in inspected ? inspected.tryOnAppearance : undefined
+        const previewDimensions =
+          'previewDimensions' in inspected ? inspected.previewDimensions : undefined
+        const menuIconKeys = Object.keys(theme?.menuIcons ?? {})
+        const precheck = theme
+          ? {
+              hasCustomMenuIcons: menuIconKeys.length > 0,
+              hasDefaultMenuIcon: Boolean(theme.menuIcons?.default),
+              menuIconCount: menuIconKeys.length,
+              hasBackground: Boolean(theme.background),
+              hasCursors: Object.keys(theme.cursors ?? {}).length > 0,
+              hasMascot: Boolean(theme.mascot),
+              ...(previewDimensions ? { previewDimensions } : {}),
+            }
+          : {
+              hasCustomMenuIcons: false,
+              hasDefaultMenuIcon: true,
+              menuIconCount: 0,
+              hasBackground: false,
+              hasCursors: false,
+              hasMascot: true,
+            }
         const tokens = theme
           ? Object.fromEntries(
               Object.entries(theme.tokens).filter(([, value]) => value !== undefined)
@@ -299,6 +328,9 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
             ...(manifest.description === undefined ? {} : { description: manifest.description }),
             ...(theme ? { mode: theme.mode, tokens } : {}),
             ...(previewUrl ? { previewUrl } : {}),
+            ...(tryOnAppearance ? { tryOnAppearance } : {}),
+            ...(theme ? { hasBundledMascot: Boolean(theme.mascot) } : {}),
+            precheck,
           },
         }
       } catch (error) {
@@ -332,7 +364,12 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
       const data = fs.readFileSync(resolved)
       const mime = imageMimeFromMagic(data)
       if (!mime) return { success: false, error: '封面只支持 PNG、JPEG 或 WebP 图片' }
-      return { success: true, dataUrl: `data:${mime};base64,${data.toString('base64')}` }
+      const dimensions = getImageDimensions(data)
+      return {
+        success: true,
+        dataUrl: `data:${mime};base64,${data.toString('base64')}`,
+        ...(dimensions ? { width: dimensions.width, height: dimensions.height } : {}),
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       logger.warn(`读取封面图片失败: ${message}`)

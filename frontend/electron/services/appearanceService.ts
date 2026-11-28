@@ -13,6 +13,7 @@ import {
   type PackageErrorCode,
 } from './assetPackageService'
 import { normalizeMascot, validateMascotAssets } from './mascotManifest'
+import { getImageDimensions, type ImageDimensions } from './imageDimensions'
 export {
   ASSET_PACKAGE_LIMITS as APPEARANCE_LIMITS,
   AssetPackageError as AppearanceError,
@@ -335,22 +336,59 @@ export const getAppearanceRoot = (userDataPath: string): string => store.root(us
 export const validateAppearanceManifest = normalizeManifest
 export const readAppearancePackage = (zipPath: string) => store.readArchive(zipPath)
 
-/** 与安装共用校验，只读预览，不写用户目录。 */
+/** 与安装共用校验，只读预览并构建内存试穿沙盒所需资产（不含桌宠帧），不写用户目录。 */
 export async function inspectAppearancePackage(zipPath: string): Promise<{
   manifest: AppearanceManifest
   previewUrl?: string
+  previewDimensions?: ImageDimensions
+  tryOnAppearance: InstalledAppearance
 }> {
   const pack = await store.readArchive(zipPath)
   try {
     const { manifest, files } = pack
-    const preview = files.find(file => file.path.toLowerCase() === manifest.preview?.toLowerCase())
+    const fileMap = new Map(files.map(file => [file.path.toLowerCase(), file]))
+    const toDataUrl = (assetPath: string | undefined): string | undefined => {
+      if (!assetPath) return undefined
+      const matched = fileMap.get(assetPath.toLowerCase())
+      if (!matched) return undefined
+      return `data:${matched.mime};base64,${fs.readFileSync(matched.source).toString('base64')}`
+    }
+
+    const previewFile = manifest.preview ? fileMap.get(manifest.preview.toLowerCase()) : undefined
+    const previewBuffer = previewFile ? fs.readFileSync(previewFile.source) : undefined
+    const previewUrl =
+      previewFile && previewBuffer
+        ? `data:${previewFile.mime};base64,${previewBuffer.toString('base64')}`
+        : undefined
+    const previewDimensions = previewBuffer
+      ? (getImageDimensions(previewBuffer) ?? undefined)
+      : undefined
+
+    const menuIconUrls: AppearanceMenuIcons = {}
+    for (const [key, assetPath] of Object.entries(manifest.menuIcons ?? {})) {
+      const url = toDataUrl(assetPath)
+      if (url) menuIconUrls[key as keyof AppearanceMenuIcons] = url
+    }
+    const cursorUrls: Partial<Record<AppearanceCursorKey, string>> = {}
+    for (const [key, cursor] of Object.entries(manifest.cursors ?? {})) {
+      const url = toDataUrl(cursor.path)
+      if (url) cursorUrls[key as AppearanceCursorKey] = url
+    }
+    const backgroundUrl = toDataUrl(manifest.background?.path)
+
+    const tryOnAppearance: InstalledAppearance = {
+      ...manifest,
+      ...(previewUrl ? { previewUrl } : {}),
+      ...(backgroundUrl ? { backgroundUrl } : {}),
+      ...(manifest.menuIcons ? { menuIconUrls } : {}),
+      ...(manifest.cursors ? { cursorUrls } : {}),
+    }
+
     return {
       manifest,
-      ...(preview
-        ? {
-            previewUrl: `data:${preview.mime};base64,${fs.readFileSync(preview.source).toString('base64')}`,
-          }
-        : {}),
+      ...(previewUrl ? { previewUrl } : {}),
+      ...(previewDimensions ? { previewDimensions } : {}),
+      tryOnAppearance,
     }
   } finally {
     await fs.promises.rm(pack.directory, { recursive: true, force: true })

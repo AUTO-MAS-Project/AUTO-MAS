@@ -6,10 +6,11 @@ import type { OptionHint } from './OptionHint';
 import type { PathKind } from './PathKind';
 import type { TriggerUiState } from './TriggerUiState';
 /**
- * 单字段 UI 组件提示（无文案/宽度）。
+ * 单字段 UI 组件提示，可附带字段说明。
  */
 export type ComponentHint = {
     field?: string;
+    description?: (string | null);
     component?: string;
     secret?: boolean;
     editable?: boolean;
@@ -27,6 +28,9 @@ export type ComponentHint = {
     multiple?: boolean;
     ordered?: boolean;
     endpoint?: (string | null);
+    option_source?: string;
+    depends_on?: Record<string, string>;
+    action_ref?: string;
     plan_type?: string;
     deps?: (Array<string> | null);
     widget?: (string | null);

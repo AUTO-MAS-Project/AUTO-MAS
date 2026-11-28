@@ -27,10 +27,13 @@ from datetime import date, datetime, time, timedelta, timezone
 from functools import partial
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
-from app.core import Community, Notify, Startup
+from app.core import Community, Notify, Publisher, Startup
+from app.core.ws import protocol
 from app.models.notification.community import community_notification_results
-from app.models.task import TaskMode, TaskTriggerReason
+from app.models.schema import TaskSelectionNode, WSEnvelope
+from app.models.task import TaskTriggerReason
 from app.services import telemetry as _service_telemetry
 from app.utils import UTC4, UTC8, get_logger, startup
 from app.utils import environment as _utils_environment
@@ -41,8 +44,11 @@ from .community.scheduling import (
     CommunityTriggerSource,
 )
 from .config import Config
+from .desktop_session.lifecycle import (
+    DesktopSessionDisconnected,
+    DesktopSessionLifecycle,
+)
 from .game_calendar import CALENDAR_REFRESH_INTERVAL_SECONDS, GameCalendar
-from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
@@ -100,6 +106,11 @@ class _MainTimer:
         self._resume_wakeup: bool | None = None
         self.startup_task: asyncio.Task[None] | None = None
         self._startup_dispatched = False
+        self._login_request: str | None = None
+        self._login_delivered = False
+        self._waiting_startups: set[str] = set()
+        self._ready_startups: set[str] = set()
+        self._blocked_occurrences: set[tuple[str, TaskTriggerReason, object]] = set()
         self.wakeup_timer: asyncio.Task[None] | None = None
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
@@ -454,8 +465,14 @@ class _MainTimer:
             if key[2].date() >= now_wall.date() - timedelta(days=1)
         }
 
+        ready_startups, self._ready_startups = self._ready_startups, set()
+        blocked: set[tuple[str, TaskTriggerReason, object]] = set()
         for uid, queue in list(Config.QueueConfig.items()):
             try:
+                resume = (
+                    str(uid) in ready_startups
+                    and queue.Info.ExecutionSession == "desktop"
+                )
                 check_start = prev_wall
                 if first_wakeup_check:
                     # 冷启动不保留本轮去重集合，不能重跑持久化记录之前的旧槽。
@@ -466,7 +483,7 @@ class _MainTimer:
                     uid, queue, check_start, now_wall, real_elapsed
                 )
                 startup_due = (
-                    startup
+                    (startup or resume)
                     and not self.is_scheduled_wakeup()
                     and (
                         queue.Info.StartUpMode == "Always"
@@ -490,11 +507,30 @@ class _MainTimer:
                     if not matched:
                         continue
                     try:
-                        await TaskManager.start(
-                            TaskMode.AUTO_PROXY,
-                            {0: {"uid": str(uid)}},
+                        await DesktopSessionLifecycle.start_configured_task(
+                            TaskSelectionNode(uid=str(uid)),
                             trigger=reason,
+                            require_desktop=resume
+                            and reason == TaskTriggerReason.STARTUP,
                         )
+                    except DesktopSessionDisconnected:
+                        if reason == TaskTriggerReason.STARTUP and resume:
+                            continue
+                        occurrence = (
+                            str(uid),
+                            reason,
+                            tuple(due)
+                            if reason == TaskTriggerReason.TIMED
+                            else next_cycle,
+                        )
+                        blocked.add(occurrence)
+                        if occurrence not in self._blocked_occurrences:
+                            if self._login_request is None:
+                                self._login_request = str(uuid4())
+                                self._login_delivered = False
+                            if reason == TaskTriggerReason.STARTUP:
+                                self._waiting_startups.add(str(uid))
+                        continue
                     except Exception as error:
                         logger.opt(exception=error).error(
                             f"队列 {reason.value} 触发失败：{uid}"
@@ -505,6 +541,34 @@ class _MainTimer:
                             self._timed_fired.add((str(uid), time_set_id, planned))
             except Exception as error:
                 logger.opt(exception=error).error(f"队列触发失败：{uid}")
+
+        self._blocked_occurrences = blocked
+        if self._login_request and not self._login_delivered:
+            await self.send_pending_desktop_login()
+
+    async def send_pending_desktop_login(self) -> None:
+        """主窗口首次连接或重连时重新投递仍在等待的登录请求。"""
+        request_id = self._login_request
+        if request_id:
+            delivered = await Publisher.send(
+                id=protocol.ID_MAIN,
+                type=protocol.DESKTOP_SESSION_LOGIN_NEEDED,
+                data={"requestId": request_id},
+            )
+            if self._login_request == request_id:
+                self._login_delivered = delivered
+
+    def finish_desktop_login(self, message: WSEnvelope) -> None:
+        """仅恢复本次登录请求关联的启动队列，迟到或重复的回复直接忽略。"""
+        if (
+            not self._login_request
+            or message.data.get("requestId") != self._login_request
+        ):
+            return
+        if message.data.get("retryStartup") is True:
+            self._ready_startups.update(self._waiting_startups)
+        self._waiting_startups.clear()
+        self._login_request = None
 
     def _due_timed_slots(
         self,

@@ -1,12 +1,10 @@
 import { defineAsyncComponent, type Component } from 'vue'
-import {
-  SCRIPT_BUILTIN_PLANS,
-  SCRIPT_PLUGIN_BINDINGS,
-  SCRIPT_PLUGIN_PLANS,
-} from '@/plugins/scriptAdapters'
+import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
 import { PlanCreateIn } from '@/api/models/PlanCreateIn'
 import { PlanIndexItem } from '@/api/models/PlanIndexItem'
 import type { PlanGetOut } from '@/api'
+import { translate as t } from '@/i18n'
+import type { PluginScriptTypes } from './pluginScriptTypes'
 
 // ==================== 类型定义 ====================
 
@@ -20,7 +18,6 @@ export const PLAN_CONFIG_TYPES = {
   UNIVERSAL: PlanIndexItem.type.UNIVERSAL_PLAN_CONFIG,
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
-  BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
   MSS: PlanIndexItem.type.MSSPLAN_CONFIG,
 } as const
 
@@ -87,7 +84,6 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
       () => import('@/views/plan/tables/UniversalPlanTable.vue')
     ),
   },
-  ...SCRIPT_PLUGIN_PLANS,
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,
     createType: PlanCreateIn.type.MAA_END_PLAN,
@@ -98,32 +94,9 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
     supportsSimpleView: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
   },
-  [PLAN_CONFIG_TYPES.BAAH]: {
-    configType: PLAN_CONFIG_TYPES.BAAH,
-    createType: PlanCreateIn.type.BAAHPLAN,
-    displayNameKey: 'core.plan.type.baah',
-    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
-    defaultName: '新 BAAH 计划表',
-    selectorTag: 'BAAH',
-    reloadAfterSave: false,
-    // BAAH 两种排法都是一格一个控件，但要按行说明每一位是什么，转置成简化视图只会更难读
-    supportsSimpleView: false,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
-  },
-  // 随主程序编译的专项计划表（MSS，由 views/mss/entry.ts 登记），排在最后
-  ...SCRIPT_BUILTIN_PLANS,
 }
-
-export const DEFAULT_PLAN_CONFIG_TYPE: PlanConfigType = PLAN_CONFIG_TYPES.MAA
 
 // ==================== 查询方法 ====================
-
-export function getAvailablePlanTypes(scriptTypes: readonly string[]) {
-  return Object.values(PLAN_TYPE_REGISTRY).filter(plan => {
-    const owner = SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === plan.configType)
-    return !owner || scriptTypes.includes(owner.scriptType)
-  })
-}
 
 export const isKnownPlanType = (planType: string): planType is PlanConfigType =>
   Object.prototype.hasOwnProperty.call(PLAN_TYPE_REGISTRY, planType)
@@ -136,5 +109,40 @@ export const getPlanTypeDescriptor = (planType?: string | null): PlanTypeDescrip
   return PLAN_TYPE_REGISTRY[planType]
 }
 
-export const getPlanCreateType = (planType: string): PlanCreateType | null =>
-  getPlanTypeDescriptor(planType)?.createType ?? null
+export function getPlanTypeOption(configType: string, plugins: PluginScriptTypes) {
+  const stored = getPlanTypeDescriptor(configType)
+  if (stored) {
+    return {
+      configType,
+      createType: stored.createType,
+      displayName: t(stored.displayNameKey),
+      selectorTag: stored.selectorTag,
+      defaultName: stored.defaultName,
+    }
+  }
+  const plugin = plugins.byPlanConfigType.get(configType)
+  if (plugin) {
+    const name = plugin.displayName
+    return {
+      configType,
+      createType: configType,
+      displayName: name,
+      selectorTag: name,
+      defaultName: name,
+    }
+  }
+}
+
+export type PlanTypeOption = NonNullable<ReturnType<typeof getPlanTypeOption>>
+
+export function getAvailablePlanTypes(scriptTypes: readonly string[], plugins: PluginScriptTypes) {
+  const types = new Set([...Object.keys(PLAN_TYPE_REGISTRY), ...plugins.byPlanConfigType.keys()])
+  const available: PlanTypeOption[] = []
+  for (const type of types) {
+    const owner =
+      plugins.byPlanConfigType.get(type)?.scriptKey ??
+      SCRIPT_PLUGIN_BINDINGS.find(binding => binding.planConfigType === type)?.scriptType
+    if (!owner || scriptTypes.includes(owner)) available.push(getPlanTypeOption(type, plugins)!)
+  }
+  return available
+}

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Demo15 plan</title>
+    <link rel="stylesheet" href="./plan.css">
+    <script src="./_host/panel-sdk.js" defer></script>
+    <script src="./plan.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <form>
+        <fieldset disabled>
+          <div class="task" data-group="First">
+            <h2>First</h2>
+            <label>
+              <input name="Enabled" type="checkbox" aria-describedby="first-enabled-error"> Enabled
+              <span class="field-error" id="first-enabled-error"></span>
+            </label>
+            <label>
+              Count <input name="Count" type="number" min="0" step="1" required aria-describedby="first-count-error">
+              <span class="field-error" id="first-count-error"></span>
+            </label>
+          </div>
+          <div class="task" data-group="Second">
+            <h2>Second</h2>
+            <label>
+              <input name="Enabled" type="checkbox" aria-describedby="second-enabled-error"> Enabled
+              <span class="field-error" id="second-enabled-error"></span>
+            </label>
+            <label>
+              Count <input name="Count" type="number" min="0" step="1" required aria-describedby="second-count-error">
+              <span class="field-error" id="second-count-error"></span>
+            </label>
+          </div>
+          <button type="submit">Save</button>
+        </fieldset>
+      </form>
+      <p role="status">Loading plan…</p>
+    </main>
+  </body>
+</html>

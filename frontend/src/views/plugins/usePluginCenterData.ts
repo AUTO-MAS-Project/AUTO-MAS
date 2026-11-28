@@ -3,6 +3,9 @@ import { useI18n } from 'vue-i18n'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import appIcon from '@/assets/AUTO-MAS.ico'
 import { usePluginApi } from '@/composables/usePluginApi'
+import { compatibleWheel, indexPluginScriptTypes } from '@/utils/pluginScriptTypes'
+import { usePluginRegistry } from '@/composables/usePluginScriptTypes'
+import { getApiErrorMessage } from '@/utils/apiError'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { usePlanApi } from '@/composables/usePlanApi'
 import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
@@ -72,11 +75,7 @@ export function usePluginCenterData() {
   const { getScriptUsers } = useScriptList()
   const { getPlans } = usePlanApi()
 
-  const registry = usePluginQuery(
-    () => ['plugins', 'registry', locale.value],
-    () => api.getRegistry(),
-    () => t('core.plugins.loadFailed')
-  )
+  const registry = usePluginRegistry()
   const catalog = usePluginQuery(
     () => pluginCatalogQueryKey(locale.value),
     () => api.getCatalog(),
@@ -154,6 +153,9 @@ export function usePluginCenterData() {
   const enabledUids = computed(() =>
     installed.value.flatMap(view => (view.enabled ? view.uid : []))
   )
+  const settingsPanels = computed(
+    () => indexPluginScriptTypes(registry.data.value?.data).settingsPanels
+  )
   const settings = useQuery({
     // 键不含 uid 列表：注册表刷新后紧接着重取，调用时读当下已启用的插件。
     queryKey: computed(() => ['plugins', 'settingsVisibility', locale.value]),
@@ -162,6 +164,7 @@ export function usePluginCenterData() {
       Object.fromEntries(
         await Promise.all(
           enabledUids.value.map(async uid => {
+            if (compatibleWheel(settingsPanels.value.get(uid))) return [uid, 'visible'] as const
             try {
               const result = await api.getConfig(uid)
               return [uid, pluginSettingsGroups(result.data).length ? 'visible' : 'hidden'] as const
@@ -181,11 +184,11 @@ export function usePluginCenterData() {
     Promise.all([reloadUsage(), settings.refetch()])
   const reload = async () => {
     const [registryResult, catalogResult] = await Promise.all([
-      registry.execute(),
+      registry.refetch({ cancelRefetch: false }),
       catalog.execute(),
     ])
     await reloadDetails()
-    return registryResult !== null && catalogResult !== null
+    return !registryResult.isError && catalogResult !== null
   }
 
   const catalogRefreshing = ref(false)
@@ -236,8 +239,12 @@ export function usePluginCenterData() {
     usageOf,
     settingsVisibility,
     registry: {
-      loading: registry.loading,
-      error: registry.error,
+      loading: registry.isFetching,
+      error: computed(
+        () =>
+          registry.error.value &&
+          getApiErrorMessage(registry.error.value, t('core.plugins.loadFailed'))
+      ),
       loaded: computed(() => registry.data.value !== undefined),
     },
     catalog: {

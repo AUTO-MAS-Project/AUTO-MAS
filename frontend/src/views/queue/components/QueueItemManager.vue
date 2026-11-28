@@ -3,9 +3,10 @@
     variant="plain"
     :title="t('core.queue.item.cardTitle')"
     class="app-page-section queue-item-card"
+    :inert="pending"
   >
     <template #actions>
-      <a-button type="primary" :loading="loading" :disabled="locked" @click="addQueueItem">
+      <a-button type="primary" :loading="loading" :disabled="looksDisabled" @click="addQueueItem">
         <template #icon>
           <PlusOutlined />
         </template>
@@ -17,8 +18,9 @@
       v-model="queueItems"
       group="queueItems"
       item-key="id"
-      :disabled="loading || locked"
+      :disabled="loading || readOnly"
       :busy="loading"
+      :loading="pending"
       @end="onDragEnd"
     >
       <template #header>
@@ -44,7 +46,7 @@
             class="script-select"
             :placeholder="t('core.queue.item.selectScript')"
             :options="scriptOptions"
-            :disabled="locked"
+            :disabled="looksDisabled"
             allow-clear
             @change="updateQueueItemScript(record)"
           />
@@ -52,7 +54,7 @@
         <div class="row-cell days-cell">
           <QueueWeekdaysSelect
             v-model="record.schedule.Days"
-            :disabled="locked"
+            :disabled="looksDisabled"
             @change="saveDays(record)"
           />
         </div>
@@ -60,7 +62,7 @@
           <a-space>
             <QueueDeleteButton
               :title="t('core.queue.item.deleteConfirm')"
-              :disabled="locked"
+              :disabled="looksDisabled"
               :confirm="() => deleteQueueItem(record.id)"
             />
           </a-space>
@@ -77,11 +79,13 @@ import QueueWeekdaysSelect from './QueueWeekdaysSelect.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
 import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
-import { onMounted, ref, nextTick, watch } from 'vue'
+import { computed, onMounted, ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { Service } from '@/api'
 import { queueApi } from '@/composables/useQueueApi'
+import { sharedScriptOptions } from './queueScriptOptions'
+import { useInPlaceSaves } from '../useInPlaceSaves'
 
 const { t } = useI18n()
 
@@ -92,41 +96,54 @@ interface Props {
   queueId: string
   queueItems: any[]
   locked?: boolean
+  /** 本队列数据还没读回（显示的是占位内容）：立即只读，但不改样式 */
+  pending?: boolean
+  /** 只读已持续一段时间：显示禁用样式 */
+  dimmed?: boolean
+  /** 就地保存成功后回写。用 prop 不用事件：子表被卸载后，排着的保存仍要回写 */
+  onSaved?: (queueId: string, queueItemId: string, schedule: Record<string, any>) => void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   locked: false,
+  pending: false,
+  dimmed: false,
+  onSaved: undefined,
 })
 
 // Emits
-const emit = defineEmits<{
-  refresh: []
-}>()
+const emit = defineEmits<{ refresh: [] }>()
+
+// 逻辑只读与禁用样式分开：快速切换队列时不闪灰
+const readOnly = computed(() => props.locked || props.pending)
+const looksDisabled = computed(() => props.locked || props.dimmed)
 
 // 响应式数据
 const loading = ref(false)
 const isDraggingQueueItem = ref(false)
 
-// 选项数据
-const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
+// 选项数据：切换队列会重挂载本组件，沿用上次读到的选项，避免下拉框先显示原始脚本 ID
+const scriptOptions = sharedScriptOptions
 
 const withSchedule = (items: any[]) =>
   items.map(item => ({ ...item, schedule: { Days: [], ...(item.schedule || {}) } }))
 const queueItems = ref(withSchedule(props.queueItems))
-watch(
-  () => props.queueItems,
-  items => {
-    if (!isDraggingQueueItem.value) queueItems.value = withSchedule(items)
-  },
-  { deep: true }
-)
+// 就地保存没结束时不整表替换（见 useInPlaceSaves）
+const syncFromProps = () => {
+  if (isDraggingQueueItem.value || saving.value) return
+  queueItems.value = withSchedule(props.queueItems)
+}
+const { saving, queued } = useInPlaceSaves(() => props.queueId, syncFromProps)
+watch(() => props.queueItems, syncFromProps, { deep: true })
 
 // 保存队列项的执行星期。这里不 emit refresh：本地 record 已是最新值，
 // 整表刷新反而会把用户正在编辑的输入顶掉。返回是否保存成功，供调用方
 // 决定要不要把本地值当作“已确认”的基线（例如 savedIntervalMinutes）。
 const saveSchedule = async (record: any, data: Record<string, any>): Promise<boolean> => {
+  if (readOnly.value) return false
+  const queueId = props.queueId
   try {
-    const response = await queueApi.updateSchedule(props.queueId, record.id, data)
+    const response = await queueApi.updateSchedule(queueId, record.id, data)
 
     if (response.code !== 200) {
       message.error(
@@ -137,6 +154,7 @@ const saveSchedule = async (record: any, data: Record<string, any>): Promise<boo
       emit('refresh')
       return false
     }
+    props.onSaved?.(queueId, record.id, data)
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -155,7 +173,7 @@ const saveDays = async (record: any) => {
     (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
   )
   record.schedule.Days = days
-  await saveSchedule(record, { Days: days })
+  await queued(record.id, () => saveSchedule(record, { Days: days }))
 }
 
 // 加载脚本选项
@@ -182,6 +200,7 @@ const loadOptions = async () => {
 
 // 更新队列项脚本
 const updateQueueItemScript = async (record: any) => {
+  if (readOnly.value) return
   try {
     loading.value = true
 
@@ -215,6 +234,7 @@ const updateQueueItemScript = async (record: any) => {
 
 // 添加队列项
 const addQueueItem = async () => {
+  if (readOnly.value) return
   try {
     loading.value = true
 
@@ -243,6 +263,7 @@ const addQueueItem = async () => {
 
 // 删除队列项
 const deleteQueueItem = async (itemId: string) => {
+  if (readOnly.value) return
   try {
     const response = await queueApi.deleteItem({
       queueId: props.queueId,
@@ -269,7 +290,7 @@ const deleteQueueItem = async (itemId: string) => {
 // 拖拽结束处理函数
 const onDragEnd = async (evt: any) => {
   // 如果位置没有变化，直接返回
-  if (evt.oldIndex === evt.newIndex) {
+  if (evt.oldIndex === evt.newIndex || readOnly.value) {
     return
   }
 

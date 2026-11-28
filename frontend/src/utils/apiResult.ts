@@ -8,7 +8,8 @@ type ResponseWithCode = {
 export class ApiResponseError extends Error {
   constructor(
     message: string,
-    readonly fieldErrors?: Record<string, string>
+    readonly fieldErrors?: Record<string, string>,
+    readonly code?: number
   ) {
     super(message)
   }
@@ -22,7 +23,7 @@ import { getApiErrorMessage as apiErrorMessage } from '@/utils/apiError'
 export const responseError = (response: ResponseWithCode, fallback: string): Error | null =>
   /* 把非成功业务响应转换为错误，成功响应返回空值供调用方继续读取数据。 */ response.code === 200
     ? null
-    : new ApiResponseError(response.message || fallback, response.fieldErrors)
+    : new ApiResponseError(response.message || fallback, response.fieldErrors, response.code)
 
 /** 生成客户端请求统一校验结果，失败时保留安全的后端原因。 */
 export const requestApi = async <T extends ResponseWithCode>(

@@ -23,7 +23,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
 from pydantic import Field
@@ -44,6 +44,8 @@ from .tag import TagItem
 
 class UserEntry(GameBindingOwner):
     """用户配置上界：插件子类扩展；删用户时由宿主订阅清本地 data/。"""
+
+    ui_native_session: ClassVar[Literal["view", "config"] | None] = None
 
     class Info(ConfigGroup):
         name: str = Field(default="新用户", description="用户名")
@@ -95,6 +97,8 @@ class UserEntry(GameBindingOwner):
 
 class ScriptEntry(GameBindingOwner):
     """脚本配置上界：至少脚本名 + 游戏选择；users 由适配器挂具体 user_type。"""
+
+    ui_native_session: ClassVar[Literal["view", "config"] | None] = None
 
     class Info(ConfigGroup):
         name: str = Field(default="新脚本", description="脚本名称")

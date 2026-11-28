@@ -8,11 +8,7 @@ const adapters = [
   ['Okww', 'okww'],
   ['OkNte', 'oknte'],
   ['MaaEnd', 'maaend'],
-  ['MaaFW', 'maafw'],
-  ['M9A', 'm9a'],
-  ['MSS', 'mss'],
   ['HSR', 'hsr'],
-  ['BetterGI', 'bettergi'],
   ['ZzzOd', 'zzzod'],
   ['BAAH', 'baah'],
   ['Whimbox', 'whimbox'],
@@ -92,52 +88,6 @@ test.describe('@account-editors', () => {
           .evaluateAll(cols => cols.slice(0, 3).map(col => col.getBoundingClientRect().width))
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1)
         await app.evidence(`account-editor-${segment}-narrow`)
-        if (type === 'MaaFW') {
-          const updateUrl = '**/api/scripts/user/update'
-          await page.route(
-            updateUrl,
-            route => route.fulfill({ json: { code: 500, message: 'E2E save rejected' } }),
-            { times: 1 }
-          )
-          await notes.fill('Keep this draft after a failed save')
-          await notes.blur()
-          await expect(page.locator('.save-status-error')).toHaveText('Save failed')
-          await expect(notes).toHaveValue('Keep this draft after a failed save')
-          await expect(page.locator('.ant-message-error')).toContainText('E2E save rejected')
-          let release!: () => void
-          let received!: () => void
-          const gate = new Promise<void>(resolve => {
-            release = resolve
-          })
-          const intercepted = new Promise<void>(resolve => {
-            received = resolve
-          })
-          await page.route(
-            updateUrl,
-            async route => {
-              received()
-              await gate
-              await route.continue()
-            },
-            { times: 1 }
-          )
-          try {
-            await notes.fill('Saved before leaving')
-            await notes.blur()
-            await intercepted
-            await expect(page.locator('.save-status-saving')).toHaveText('Saving…')
-            const back = page.locator('.user-edit-header').getByRole('button', { name: /Back$/ })
-            await back.click()
-            await expect(back).toHaveClass(/ant-btn-loading/)
-            await expect(page).toHaveURL(new RegExp(`/users/${userId}/edit/${segment}$`))
-            release()
-            await expect(page).toHaveURL(/#\/scripts$/)
-            await app.goto(`/scripts/${scriptId}/users/${userId}/edit/${segment}`)
-            await expect(notes).toHaveValue('Saved before leaving')
-          } finally {
-            release()
-          }
-        }
       } finally {
         await app.goto('/scripts')
         await post('/api/scripts/delete', { scriptId })

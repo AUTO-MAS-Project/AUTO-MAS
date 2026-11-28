@@ -113,6 +113,15 @@ class GeneralManager(ScriptManagerBase):
                 return "未完成模拟器配置, 请检查托管配置中的模拟器设置！"
             elif game.Type == "Client":
                 game_path = client_executable_path(config)
+                target = Config.GameConfig.get(game_target_id(config))
+                if (
+                    game_path is None
+                    and target is not None
+                    and target.info.type != "client"
+                ):
+                    return (
+                        "所绑定的游戏目标不是本地游戏客户端，请在托管配置中更换游戏目标"
+                    )
                 if game_path is None or not game_path.exists():
                     return "未完成游戏配置, 请检查托管配置中的游戏设置！"
             elif game.Type == "URL" and not (game.URL and game.ProcessName):

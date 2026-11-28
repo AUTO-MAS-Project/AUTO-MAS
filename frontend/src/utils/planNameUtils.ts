@@ -2,8 +2,6 @@
  * 计划表名称管理工具函数
  */
 
-import { getPlanTypeDescriptor } from './planTypeRegistry'
-
 interface PlanNameValidationResult {
   isValid: boolean
   /** 词表 key，由调用方解析 */
@@ -12,13 +10,11 @@ interface PlanNameValidationResult {
 
 /**
  * 生成唯一的计划表名称（使用数字后缀）
- * @param planType 计划表类型
+ * @param baseName 该类型的默认名称
  * @param existingNames 已存在的名称列表
  * @returns 唯一的计划表名称
  */
-export function generateUniquePlanName(planType: string, existingNames: string[]): string {
-  const baseName = getPlanTypeDescriptor(planType)?.defaultName || '新计划表'
-
+export function generateUniquePlanName(baseName: string, existingNames: string[]): string {
   // 如果基础名称没有被使用，直接返回
   if (!existingNames.includes(baseName)) {
     return baseName
@@ -68,13 +64,4 @@ export function validatePlanName(
   }
 
   return { isValid: true }
-}
-
-/**
- * 获取计划表类型显示标签的词表 key
- * @param planType 计划表类型
- * @returns 词表 key
- */
-export function getPlanTypeLabelKey(planType: string): string {
-  return getPlanTypeDescriptor(planType)?.displayNameKey || 'core.plan.typeFallback'
 }

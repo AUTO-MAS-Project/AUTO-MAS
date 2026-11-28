@@ -73,7 +73,6 @@ export const WS_UPDATE_CANCELLED = 'update.cancelled'
 // MFW 运行环境准备（id=<scriptId>）
 export const WS_MAAFW_ENV_PREPARE_PROGRESS = 'maafw.env-prepare.progress'
 // MFW 项目手动更新过程：检查 / 下载 / 覆盖 / 校验与逐行日志（id=<scriptId>）
-export const WS_MAAFW_PROJECT_UPDATE_PROGRESS = 'maafw.project-update.progress'
 
 // 游戏签到结果（id=GameSign）
 export const WS_GAMESIGN_RESULT_UPDATED = 'gamesign.result.updated'
@@ -93,6 +92,8 @@ export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
 
 // 系统通知（id=Main）：后端启动期攒下的通知（如 M9A 配置迁移结果），主连接建立后发一次
 export const WS_SYSTEM_NOTICE = 'system.notice'
+export const WS_DESKTOP_SESSION_LOGIN_FINISHED = 'desktop-session.login.finished'
+export const WS_DESKTOP_SESSION_LOGIN_NEEDED = 'desktop-session.login.needed'
 
 // ==================== 关键消息数据类型 ====================
 
@@ -197,35 +198,6 @@ interface WSMaaFWEnvPrepareProgressData {
   percent?: number | null
   /** 本次事件附带的新增日志行 */
   log?: string | null
-}
-
-/** MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress) */
-export interface WSMaaFWProjectUpdateProgressData {
-  /** checking / downloading / downloaded / extracting / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
-  stage: string
-  /** running / success / failed */
-  status: string
-  message: string
-  /** 本次事件附带的新增日志行 */
-  log?: string | null
-  /** 新增日志行的级别：alert 为要用户留意的行（面板标红），普通行为 null */
-  logLevel?: string | null
-  /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
-  percent?: number | null
-  downloadedBytes?: number | null
-  totalBytes?: number | null
-  /** 下载速度 (B/s)，由后端按时间差算好 */
-  speedBytesPerSec?: number | null
-  /** full 全量 / incremental 增量 */
-  packageKind?: string | null
-  appliedFiles?: number | null
-  totalFiles?: number | null
-  /** 解压阶段：已解压 / 总文件数（不含目录条目） */
-  extractedFiles?: number | null
-  extractTotalFiles?: number | null
-  /** 解压阶段：已写出 / 解压后总字节 */
-  extractedBytes?: number | null
-  extractTotalBytes?: number | null
 }
 
 /** 更新下载进度数据 (id=Update, type=update.progress) */
@@ -348,7 +320,6 @@ interface WSMessageDataMap {
   [WS_UPDATE_FAILED]: WSUpdateFailedData
   [WS_UPDATE_CANCELLED]: WSEmptyData
   [WS_MAAFW_ENV_PREPARE_PROGRESS]: WSMaaFWEnvPrepareProgressData
-  [WS_MAAFW_PROJECT_UPDATE_PROGRESS]: WSMaaFWProjectUpdateProgressData
   [WS_GAMESIGN_RESULT_UPDATED]: WSGameSignResultData
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
@@ -356,6 +327,8 @@ interface WSMessageDataMap {
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
   [WS_SYSTEM_NOTICE]: WSSystemNoticeData
+  [WS_DESKTOP_SESSION_LOGIN_NEEDED]: { requestId?: string }
+  [WS_DESKTOP_SESSION_LOGIN_FINISHED]: { requestId: string; retryStartup: boolean }
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

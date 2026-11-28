@@ -96,11 +96,37 @@ function supportsDesktopSession(): boolean {
   return process.platform === 'win32' && process.arch === 'x64' && getBackendOwnership() === 'owned'
 }
 
+/** 设置页保存的连接参数；单独启动托管时自动打开的分身沿用它们，非法值回退到默认。 */
+export interface DesktopSessionConnectionPreferences {
+  mode?: unknown
+  resolution?: unknown
+}
+
 export function registerDesktopSession(
   getMainWindow: () => BrowserWindow | null,
   icon: string,
-  getLanguage: () => unknown
+  getLanguage: () => unknown,
+  loginState: { completed: () => boolean; markCompleted: () => void },
+  getConnectionPreferences: () => DesktopSessionConnectionPreferences = () => ({})
 ) {
+  function taskConnectRequest(): DesktopSessionRequest {
+    let preferences: DesktopSessionConnectionPreferences = {}
+    try {
+      preferences = getConnectionPreferences() ?? {}
+    } catch {
+      // 读不到偏好时按默认参数连接，不挡住任务启动。
+    }
+    const { mode, resolution } = preferences
+    return {
+      queueIds: [],
+      mode: MODES.includes(mode as DesktopSessionRequest['mode'])
+        ? (mode as DesktopSessionRequest['mode'])
+        : 'proxy',
+      resolution: RESOLUTIONS.includes(resolution as DesktopSessionRequest['resolution'])
+        ? (resolution as DesktopSessionRequest['resolution'])
+        : '1080p',
+    }
+  }
   function labels() {
     const configured = getLanguage()
     const locale = (typeof configured === 'string' ? configured : app.getLocale()).toLowerCase()
@@ -115,6 +141,8 @@ export function registerDesktopSession(
   let nextTaskConnectId = 0
   let autoConnect: {
     id: number
+    firstLogin: boolean
+    password?: string
     acceptTimer?: ReturnType<typeof setTimeout>
     request: DesktopSessionRequest
     result: Promise<DesktopSessionConnectResult>
@@ -458,6 +486,7 @@ export function registerDesktopSession(
     }
     const request = normalizeRequest(input)
     if (!request) throw new Error('invalid_selection')
+    if (!loginState.completed()) return 'setup_required'
     if (closeFlight) throw new Error('busy')
     openedForTask = false
     pending.push(request)
@@ -465,24 +494,47 @@ export function registerDesktopSession(
   })
   ipcMain.handle(
     'desktop-session:connect-for-task',
-    (event): Promise<DesktopSessionConnectResult> => {
+    (event, login?: unknown): Promise<DesktopSessionConnectResult> => {
       if (
         !isApplicationWindowSender(event, getMainWindow(), { allowDevelopment: true }) ||
         !supportsDesktopSession()
       ) {
         return Promise.resolve('failed')
       }
+      let request = taskConnectRequest()
+      let password: string | undefined
+      let forTask = true
+      if (login !== undefined) {
+        if (
+          !login ||
+          typeof login !== 'object' ||
+          !('password' in login) ||
+          typeof login.password !== 'string' ||
+          login.password.length > 512
+        )
+          return Promise.resolve('failed')
+        const configured = normalizeRequest({ ...login, queueIds: [] })
+        if (!configured || !('forTask' in login) || typeof login.forTask !== 'boolean') {
+          return Promise.resolve('failed')
+        }
+        request = configured
+        forTask = login.forTask
+        password = login.password
+      } else if (!loginState.completed()) {
+        return Promise.resolve('setup_required')
+      }
       if (closeFlight) return Promise.resolve('cancelled')
       if (autoConnect) return autoConnect.result
       if (preview && unresponsive.has(preview)) return Promise.resolve('preview_unavailable')
-      if (!preview && !service.active) openedForTask = true
-      const request: DesktopSessionRequest = { queueIds: [], mode: 'proxy', resolution: '1080p' }
+      if (!preview && !service.active) openedForTask = forTask
       let finish: (result: DesktopSessionConnectResult) => void = () => undefined
       const result = new Promise<DesktopSessionConnectResult>(resolve => {
         finish = resolve
       })
       autoConnect = {
         id: ++nextTaskConnectId,
+        firstLogin: password !== undefined,
+        password,
         request,
         result,
         finish,
@@ -532,6 +584,9 @@ export function registerDesktopSession(
       }
       return { code: 'busy', queues: [] }
     }
+    if (!taskConnect?.firstLogin && !loginState.completed()) {
+      return { code: 'setup_required', queues: [] }
+    }
     const window = preview
     const request = normalizeRequest(input)
     const password = (input as Partial<DesktopSessionRequest> | null)?.password
@@ -542,7 +597,7 @@ export function registerDesktopSession(
       return { code: 'invalid_request', queues: [] }
     }
     const start = service.start(
-      { ...request, password },
+      { ...request, password: taskConnect?.firstLogin ? taskConnect.password : password },
       window.getNativeWindowHandle().readBigUInt64LE(),
       physicalBounds(),
       {
@@ -564,6 +619,7 @@ export function registerDesktopSession(
       }
     )
     if (taskConnect) {
+      delete taskConnect.password
       clearTimeout(taskConnect.acceptTimer)
       taskConnect.acceptTimer = undefined
       taskConnect.phase = 'connecting'
@@ -571,6 +627,28 @@ export function registerDesktopSession(
     const result = await start
     if (!taskConnect || autoConnect !== taskConnect) return result
 
+    if (taskConnect.firstLogin && !result.code && service.snapshot.state === 'connected') {
+      try {
+        loginState.markCompleted()
+      } catch {
+        finishAutoConnect('login_state_save_failed')
+        return result
+      }
+    }
+    if (
+      taskConnect.firstLogin &&
+      result.code &&
+      DESKTOP_SESSION_CREDENTIAL_ERRORS.has(result.code)
+    ) {
+      finishAutoConnect('credentials_rejected')
+      const main = getMainWindow()
+      if (main && !main.isDestroyed()) {
+        if (main.isMinimized()) main.restore()
+        main.show()
+        main.focus()
+      }
+      return { code: 'setup_required', queues: [] }
+    }
     if (!result.code) {
       taskConnect.phase = 'start-finished'
       resumeAutoConnect()

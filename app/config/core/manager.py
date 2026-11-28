@@ -335,15 +335,23 @@ class ConfigManager:
         option: OptionValue | None = None,
     ) -> UUID | None:
         """定位实时配置，写入指定触发器字段。"""
+        return self.submit_trigger(
+            self.trigger_target(config_uid),
+            group=group,
+            field=field,
+            value=value,
+            option=option,
+        )
+
+    def trigger_target(self, config_uid: UUID) -> ConfigEntry:
+        """定位触发器实际作用的配置，用于写入和面板授权。"""
         from .entry import ConfigEntry
 
         pending = list(self.iter_persist_roots())
         while pending:
             node = pending.pop()
             if node.uid == config_uid and isinstance(node, ConfigEntry):
-                return self.submit_trigger(
-                    node, group=group, field=field, value=value, option=option
-                )
+                return node
             pending.extend(node.iter_children())
         raise TriggerUnavailable("trigger_target_not_found")
 

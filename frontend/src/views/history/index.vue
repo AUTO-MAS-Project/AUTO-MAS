@@ -42,7 +42,7 @@
           <HistoryDetailPanel
             :has-user-selected="!!selectedUserData"
             :aggregate-errors="selectedUserData?.aggregate_errors ?? []"
-            :records="selectedUserData?.index || []"
+            :records="selectedRecords"
             :selected-record-index="selectedRecordIndex"
             :recruit-statistics="selectedStatistics.recruit"
             :drop-statistics="selectedStatistics.drops"
@@ -109,6 +109,7 @@ const {
   currentPreset,
   selectedUser,
   selectedUserData,
+  selectedRecords,
   selectedRecordIndex,
   currentDetail,
   searchForm,

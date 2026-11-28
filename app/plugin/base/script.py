@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 DesktopSessionCheckReason = Literal["admin_required", "unsupported_config"]
 DesktopSessionReason = Literal[DesktopSessionCheckReason, "plugin_unavailable"]
+FirstAccountMode = Literal["direct", "wizard"]
 
 
 @dataclass(frozen=True)
@@ -51,8 +52,9 @@ class ScriptTypeDecl:
     activity_game: str | None = None
     game_kinds: tuple[str, ...] = ()
     supports_mod_avd: bool = False
-    # 按托管当前配置和保存补丁收窄 game_kinds：返回 "emulator" / "client"；
-    # 返回 None、插件不可用或抛异常时按 game_kinds。同步调用，经插件调用门。
+    # 按托管当前配置和保存补丁判定这次用的游戏类型：返回 "emulator" / "client"；
+    # 返回 None、插件不可用或抛异常时按 game_kinds。所选目标类型不一致只提示、
+    # 不拦截绑定和运行。同步调用，经插件调用门。
     game_kind: Callable[[ScriptEntry, dict[str, Any]], str | None] | None = None
     # [兼容旧调用方] MFW 系已发布适配器使用布尔能力检查。
     desktop_session: Callable[[ScriptEntry], bool] | None = None
@@ -66,6 +68,7 @@ class ScriptTypeDecl:
     desktop_session_check: (
         Callable[[ScriptEntry, bool], DesktopSessionCheckReason | None] | None
     ) = None
+    first_account_mode: FirstAccountMode = "direct"
 
     # 仅公共建号入口应用，存量账号继续按配置模型读取。
     new_user_defaults: Callable[[], dict[str, Any]] | None = None

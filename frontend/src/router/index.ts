@@ -3,21 +3,19 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-r
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
-import { buildMaaFWRoutes } from './maafwRoutes'
-import { buildScriptEditorRoutes } from './scriptEditorRoutes'
-import { MAAFW_FAMILY_ADAPTERS, SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
+import {
+  buildScriptEditorRoutes,
+  genericEditorRoutes,
+  pluginEditorRedirects,
+  resolveScriptPanelRoute,
+} from './scriptEditorRoutes'
+import { isBuiltinScriptType } from '@/utils/scriptMetadata'
+import { SCRIPT_PLUGIN_BINDINGS } from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
-
-// MaaFW 家族的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按适配条目生成；
-// 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
-const maafwRoutes = buildMaaFWRoutes(
-  MAAFW_FAMILY_ADAPTERS,
-  () => import('../views/EditView/MaaFW/MaaFWPageHost.vue')
-)
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -116,11 +114,8 @@ const routes = [
     meta: { title: '脚本管理' },
   },
   ...buildScriptEditorRoutes(),
-  ...maafwRoutes.script,
-  ...maafwRoutes.setup,
-  ...maafwRoutes.userAdd,
-  ...maafwRoutes.userEdit,
-  ...SCRIPT_PLUGIN_ROUTES,
+  ...genericEditorRoutes,
+  ...pluginEditorRedirects,
   {
     path: '/plans/:planId/oknte/:day',
     name: 'OkNtePlanDetail',
@@ -335,10 +330,22 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
-// 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
-router.beforeResolve(async to => {
-  const type = to.meta.scriptType
-  if (type !== 'MAA' && type !== 'SRC') return
+// 编辑入口按页面绑定选择编辑器；插件直达地址也须检查当前能力。
+router.beforeEach(async to => {
+  const type = to.meta.scriptType ?? to.params.scriptType
+  if (typeof type !== 'string') return
+  try {
+    const editor = await resolveScriptPanelRoute(to, router, type)
+    if (editor) return editor
+  } catch (error) {
+    logger.warn(`读取 ${type} 插件面板失败: ${String(error)}`)
+  }
+  // 随宿主提供的编辑器可以直接打开；独立插件路由检查当前能力。
+  if (
+    isBuiltinScriptType(type) &&
+    !SCRIPT_PLUGIN_BINDINGS.some(binding => binding.scriptType === type)
+  )
+    return
   try {
     const types = await fetchScriptCapabilities()
     if (types.includes(type)) return

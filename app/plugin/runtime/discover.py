@@ -219,6 +219,13 @@ async def refresh(
         for child in sorted(_source_projects()):
             try:
                 draft = await _parse_source_package(child)
+            except OSError as exc:
+                if isinstance(exc, FileNotFoundError) and not child.is_dir():
+                    continue
+                # 无法读取的工程身份未知，不能用不完整的发现结果更新注册表。
+                raise PluginPrecheckError(
+                    f"无法读取本地插件工程 {child}: {exc}"
+                ) from exc
             except Exception as exc:
                 logger.debug(f"解析本地插件失败: {child}: {exc}")
                 continue
@@ -351,17 +358,15 @@ async def refresh(
             record = registry.by_name(name)
             assert record is not None
             record._project_dir = project_dir
-        from app.core.i18n import I18n
+        from app.core.i18n import PluginResources
 
-        I18n.set_plugin_sources(
+        PluginResources.set_package_roots(
             {
-                record.info.plugin_name: record._project_dir
-                / record.info.import_name
-                / "i18n"
+                record.info.plugin_name: record._project_dir / record.info.import_name
                 for record in registry.values()
                 if record._project_dir is not None
                 and record.info.import_name
                 and record.info.code_drift != PluginCodeDrift.PACKAGE_REMOVED
             }
         )
-        await I18n.get_locales()
+        await PluginResources.get_locales()

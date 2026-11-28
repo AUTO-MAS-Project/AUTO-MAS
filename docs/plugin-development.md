@@ -1,78 +1,43 @@
 # 插件开发、联调与交付
 
-本文说明 AUTO-MAS 插件的目录边界、本地联调、回归环境与市场发布流程。
+主程序仓库只维护宿主和核心 SDK（`plugins/auto_mas_core`）；所有适配器插件在独立仓库开发，通过插件中心安装。
 
-## 目录归属
-
-主程序仓库只跟踪核心 SDK（`plugins/auto_mas_core`）；其余适配器插件在独立仓库维护，发行包通过插件中心安装。
-
-**源码开发环境**：
+## 目录结构
 
 ```text
 AUTO-MAS/
 ├── app/
 ├── frontend/src/views/
-│   ├── maa/               # 暂时保留的 MAA 静态页面
-│   ├── whimbox/           # 暂时保留的奇想盒静态页面
-│   └── src/               # SRC 静态编辑页
 └── plugins/
-    ├── auto_mas_core/     # 主程序跟踪的 SDK
-    ├── maa_adapter/       # 开发者克隆的独立仓库（主仓 .gitignore 忽略）
-    ├── whimbox_adapter/   # 奇想盒独立仓库
-    └── src_adapter/       # SRC 独立仓库
+    ├── auto_mas_core/     # 主仓跟踪的 SDK
+    └── src_adapter/       # 本地克隆的独立插件仓（.gitignore 忽略，联调基准）
 ```
 
-**Runtime 安装目录**：
+Runtime 运行时，用户插件装在安装根目录的 `plugins/`（源码插件优先覆盖同 ID 发行包），SDK 随 `repo/plugins/auto_mas_core/` 更新。
 
-```text
-安装根目录/
-├── plugins/
-│   ├── <source_plugin>/   # 用户自行放入的源码插件
-│   └── pypi/site-packages/# 插件中心安装的发行包与依赖
-└── repo/
-    ├── app/
-    └── plugins/auto_mas_core/  # 随当前后端同步的 SDK
-```
+## 插件界面：三层积木模型
 
-Runtime 更新与源码切换会保留安装根目录的 `plugins/`，而 SDK 随 `repo/` 更新。
+托管、账号、计划及后续所有插件界面，统一由后端按 `blocks` 编排，前端由通用壳（`ConfigEditor` / `ConfigBlockList`）渲染：
 
-## 本地开发与联调
+1. **`mascore` 预设块（`HostBlock`）**：宿主现成的完整业务块（如 `game_binding`、`config_restore`、`native_session`、`webhooks`），插件只声明块名，零前端代码。
+2. **MAS 可组合组件（`DeclarativeBlock`）**：在 Python `ConfigModel` 上用 `ui()` / `select()` / `table()` 组合宿主原子控件（开关、步进器、下拉/有序多选、路径选择、表格等），零前端代码。
+3. **完全下游自定义（`PluginBlock`）**：声明式表达不了的局部复杂卡片，由插件随 wheel 交付前端产物并通过 `MountedFrontend` 挂载（参考 `src_adapter` 的 `stage.html`），必须提供 `fallbackGroups` 兜底；宿主自动提供 `./_host/panel-sdk.js` 和 `./_host/panel-base.css`，页头、配置锁、保存和离页守卫归宿主。
+   面板可通过 `panel.request(method, path, body?)` 调用本插件的 HTTP 接口。
 
-在主程序根目录克隆对应插件仓库到 `plugins/` 下：
+原则：
+- 按 **L1 `HostBlock` → L2 `DeclarativeBlock` → L3 `PluginBlock`** 递进选型。
+- 新增或外迁插件**不再**往主仓添加静态 `entry.ts` 或整页手写 Vue（SRC / MAA / 奇想盒 / BetterGI / MaaFW 系列已移出）。
+- 插件文案统一放在插件包 `i18n/{zh-CN,en-US,ja-JP}.json`，由宿主 `I18nManager` 解析。
+- 插件自有 HTTP 端点（如 `/api/plugin/signflow/*`）按启用状态动态挂载，不要用 `yarn openapi` 同步，在 `frontend/src/services/` 写薄封装即可。
 
-```powershell
-git clone https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter.git plugins/maa_adapter
-```
+## 本地联调
 
-其他常用适配器仓库：
-- 奇想盒：`AUTO-MAS-Project/AUTO-MAS-Whimbox-Adapter` → `plugins/whimbox_adapter`
-- BetterGI：[AUTO-MAS-BetterGI-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-BetterGI-Adapter) → `plugins/bettergi_adapter`
-- SRC：[AUTO-MAS-SRC-Adapter](https://github.com/AUTO-MAS-Project/AUTO-MAS-SRC-Adapter) → `plugins/src_adapter`
+1. 克隆插件仓到 `plugins/<插件目录>`（例如 `AUTO-MAS-Project/AUTO-MAS-SRC-Adapter` → `plugins/src_adapter`），启动后在插件中心启用。
+2. 未发布的共用库也可放在 `plugins/<库目录>`（`pyproject.toml` 的 `keywords` 写 `auto-mas-library`），启动时自动优先导入；需先卸载共享环境里的同名发行包，改库代码后重启后端。
 
-开发约定：
-- 启动主程序后在插件中心手动启用源码插件；插件的提交、发版均在各自独立仓库完成。
-- **源码覆盖语义**：本地源码会覆盖同 ID 的已安装发行包。验证市场安装时，先停掉后端并将源码目录移出 `plugins/`，再从插件中心安装。
-- **旧配置自动补装**：已有托管的配置升级需要对应插件时，主程序会在激活领域配置前自动通过发行包入口补装（有效的本地源码覆盖仍优先）。
-- **版本约束**：正式发布前按实际配套 SDK 发行版本收紧最低版本约束并用该 SDK 验证。
+## 测试与防漂移门禁
 
-### 本地库
-
-插件依赖的共用库尚未发布时，把库的源码工程同样放进 `plugins/<目录>`（`src/` 下恰好一个普通包，`pyproject.toml` 的 `keywords` 写 `auto-mas-library`、不写 `auto-mas-plugin`）。主程序把它当作本地库，不进插件中心、不进注册表：
-- **依赖求解**：库目录作为求解目标，插件对该包名（带版本范围也行）的依赖由它满足；库自己的包不装进共享环境，它声明的第三方依赖照常安装。改库的 `pyproject.toml` 会触发重新求解。
-- **导入优先级**：启动时把库的 `src` 放到导入路径最前，优先于共享环境里的同名发行包。改库代码要重启后端，库不支持热重载。
-- **联调**：先卸掉共享环境里的同名发行包，否则 `importlib.metadata` 读到的仍是发行包的版本。
-
-## 前端静态页面归属
-
-在动态前端加载上线前，MAA、奇想盒、SRC、BetterGI 的编辑页面暂由主程序 `frontend/src/views/` 维护并随桌面端构建（通过各目录的 `entry.ts` 注册，无计划表的专项可省略 `plan`）。新建托管与路由入口按后端实际启用的插件能力动态开放；后端实现、专用接口与配置模型由各自插件仓库持有。
-
-`frontend/src/views/gamesign/` 这类由插件能力承载的普通功能页同样留在主程序，但走普通路由（不经 `entry.ts`），页面只调 `frontend/src/services/` 下的薄封装。
-
-插件自有的 HTTP 端点（如 `/api/plugin/signflow/*`）由宿主在启停时挂到 `app.routes`，因此只有生成那一刻已启用的插件才会进 `frontend/src/api`。整仓重跑 `yarn openapi` 会把未启用插件的契约模型当作过期文件清掉，**不要用它来同步插件端点**；这类端点改在主程序 `frontend/src/services/` 里手写薄封装，视图与组合式函数只调该模块。
-
-## 回归与测试环境
-
-主仓专项集成测试消费 `tests/requirements-plugins.txt` 中锁定版本与 SHA-256 的已发布 wheel（安装到 `.test-plugins/`，SDK 使用当前主仓源码）：
+### 1. 主仓回归（锁定已发布 wheel）
 
 ```powershell
 uv sync --locked --group dev
@@ -82,24 +47,28 @@ uv run --no-sync python -m pytest tests -q
 Set-Location frontend
 yarn test
 yarn audit:i18n --check
-yarn e2e:check
 yarn e2e --grep '@plugins'
 ```
 
-升级集成测试依赖的插件包时，须同步更新版本号与 PyPI wheel 的 SHA-256 摘要。插件自身的单元测试在各自独立仓库内运行。
+### 2. 真实下游联调（以 `src_adapter` 为基准）
 
-## 生成 dev alpha 测试包
-
-代码合入 `dev` 后，可手动触发打包工作流生成跟随 `dev` 的前端测试包（产物位于 Actions 运行附件，包内 `build-source.json` 记录版本、提交与 Runtime 摘要）：
+修改主仓插件协议、三层积木、声明式表单或 `plugins/auto_mas_core/` 时，**必须用本地 `plugins/src_adapter` 跑通联调**，不能只跑主仓 mock 测试：
 
 ```powershell
-gh workflow run ci-package.yml --repo AUTO-MAS-Project/AUTO-MAS --ref dev -f alpha=true
+# 1) 以当前主仓作为宿主，跑真实下游 SRC 测试
+$env:AUTO_MAS_HOST_SOURCE = (Get-Location).Path
+$env:PYTHONPATH = "$((Get-Location).Path);$((Get-Location).Path)\plugins\src_adapter\src"
+uv run --no-sync python -m pytest plugins/src_adapter/tests/ -v
+
+# 2) 跑主仓插件挂载与声明式 UI 回归
+uv run --no-sync python -m pytest tests/api/test_generic_declarative_editors.py tests/api/test_plugin_frontend_mount.py -q
+yarn --cwd frontend test src/components/declarative/ src/views/plugins/ConfigEditor.test.ts src/components/PluginUiMount.test.ts
 ```
 
-## 发布与市场更新日志
+验证记录里附上主仓与 `src_adapter` 的 commit SHA。
 
-1. 在插件仓库完成构建、元数据校验与 PyPI 发布（例如 `auto-mas-maa-adapter`），目录维护工作流会自动同步至插件市场。
-2. **展示更新日志**：在插件仓库的 `CHANGELOG.md` 中使用 `## [版本] - 日期` 记录面向用户的改动，并在 `pyproject.toml` 的 `[project.urls]` 中配置指向该文件的公开 HTTPS `Changelog` 链接。
-3. **发布验收**：等待索引工作流完成后，下载[公开插件目录](https://data.auto-mas.top/api/v1/files/auto-mas/Client/plugins/download)按 `package_name` 核对 `version` 与 `changelog`（收录最近五版）；随后在客户端刷新插件市场，检查「更新」与「已安装」详情展示。直接从 PyPI 或镜像刷新时日志为空。
+## 发布
 
-PyPI Trusted Publishing 与完整发版步骤见[插件发布指南](https://doc.auto-mas.top/plugin/start/publish.html)及 [MAA 插件发布说明](https://github.com/AUTO-MAS-Project/AUTO-MAS-MAA-Adapter/blob/master/docs/PUBLISHING.md)。
+1. 插件仓发 PyPI（`CHANGELOG.md` 用 `## [版本] - 日期`，`pyproject.toml` 配好 `Changelog` 公开链接），市场索引自动同步。
+2. 如需发主仓前端测试包：`gh workflow run ci-package.yml --repo AUTO-MAS-Project/AUTO-MAS --ref dev -f alpha=true`。
+3. 完整发版步骤见[插件发布指南](https://doc.auto-mas.top/plugin/start/publish.html)。

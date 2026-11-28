@@ -1,11 +1,17 @@
-import type { ScriptType } from '@/types/script'
+import type { BuiltinScriptType, PluginEditorScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
+import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
-import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
+import m9aIcon from '@/assets/M9A.png'
+import maafwIcon from '@/assets/maafw.png'
+import mssIcon from '@/assets/mss.png'
+import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
+import srcIcon from '@/assets/SRC.png'
+import whimboxIcon from '@/assets/whimbox.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 export interface ScriptMetadata {
@@ -27,7 +33,6 @@ export interface ScriptMetadata {
 
 // 这里只放静态资料，不引入页面，供页面与列表共同读取而不形成依赖环。
 // 枚举顺序沿用原图标表；新建卡片（含 MaaFW 家族）一律按 createOrder 排列。
-// 已登记为适配条目（plugins/scriptAdapters.ts，含 MaaFW、M9A、MSS）的类型从条目取。
 export const SCRIPT_METADATA = {
   BAAH: {
     logo: baahIcon,
@@ -47,7 +52,19 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  BetterGI: SCRIPT_ADAPTER_METADATA.BetterGI,
+  BetterGI: {
+    logo: bettergiIcon,
+    label: 'BetterGI',
+    typeTagColor: 'gold',
+    routeSuffix: 'bettergi',
+    createOrder: 9,
+    create: {
+      titleKey: 'core.scripts.type.BetterGI',
+      descriptionKey: 'core.scripts.create.typeDesc.BetterGI',
+      keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
+      group: 'specialized',
+    },
+  },
   General: {
     logo: generalIcon,
     label: 'AUTO-MAS',
@@ -84,10 +101,58 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  M9A: SCRIPT_ADAPTER_METADATA.M9A,
-  MAA: SCRIPT_ADAPTER_METADATA.MAA,
-  SRC: SCRIPT_ADAPTER_METADATA.SRC,
-  Whimbox: SCRIPT_ADAPTER_METADATA.Whimbox,
+  M9A: {
+    logo: m9aIcon,
+    label: 'M9A',
+    typeTagColor: 'cyan',
+    routeSuffix: 'm9a',
+    createOrder: 5,
+    create: {
+      titleKey: 'core.scripts.type.M9A',
+      descriptionKey: 'core.scripts.create.typeDesc.M9A',
+      keywords: ['m9a', '1999', '重返未来'],
+      group: 'specialized',
+    },
+  },
+  MAA: {
+    logo: maaIcon,
+    label: 'MAA',
+    typeTagColor: 'blue',
+    routeSuffix: 'maa',
+    createOrder: 2,
+    create: {
+      titleKey: 'core.scripts.type.MAA',
+      descriptionKey: 'plugins.maa_adapter.scripts.create.typeDesc.MAA',
+      keywords: ['maa', '明日方舟'],
+      group: 'specialized',
+    },
+  },
+  SRC: {
+    logo: srcIcon,
+    label: 'SRC',
+    typeTagColor: 'purple',
+    routeSuffix: 'src',
+    createOrder: 3,
+    create: {
+      titleKey: 'core.scripts.type.SRC',
+      descriptionKey: 'core.scripts.create.typeDesc.SRC',
+      keywords: ['src', '星穹铁道'],
+      group: 'specialized',
+    },
+  },
+  Whimbox: {
+    logo: whimboxIcon,
+    label: 'Whimbox',
+    typeTagColor: 'pink',
+    routeSuffix: 'whimbox',
+    createOrder: 12,
+    create: {
+      titleKey: 'core.scripts.type.Whimbox',
+      descriptionKey: 'core.scripts.create.typeDesc.Whimbox',
+      keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
+      group: 'specialized',
+    },
+  },
   MaaEnd: {
     logo: maaEndIcon,
     label: 'MaaEnd',
@@ -106,9 +171,33 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-  MaaFW: SCRIPT_ADAPTER_METADATA.MaaFW,
-  MSS: SCRIPT_ADAPTER_METADATA.MSS,
-  ZzzOd: SCRIPT_ADAPTER_METADATA.ZzzOd,
+  MaaFW: {
+    logo: maafwIcon,
+    label: 'MFW',
+    typeTagColor: 'geekblue',
+    routeSuffix: 'maafw',
+    createOrder: 1,
+    create: {
+      // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。
+      titleKey: 'core.scripts.type.MaaFW',
+      descriptionKey: 'core.scripts.create.typeDesc.MaaFW',
+      keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
+      group: 'general',
+    },
+  },
+  MSS: {
+    logo: mssIcon,
+    label: 'MSS',
+    typeTagColor: 'orange',
+    routeSuffix: 'mss',
+    createOrder: 13,
+    create: {
+      titleKey: 'core.scripts.type.MSS',
+      descriptionKey: 'core.scripts.create.typeDesc.MSS',
+      keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
+      group: 'specialized',
+    },
+  },
   OkNte: {
     logo: okNteIcon,
     label: 'OK-NTE',
@@ -145,4 +234,26 @@ export const SCRIPT_METADATA = {
       group: 'specialized',
     },
   },
-} satisfies Record<ScriptType, ScriptMetadata>
+  ZzzOd: {
+    logo: zzzOdIcon,
+    label: 'ZZZ-OD',
+    typeTagColor: 'volcano',
+    routeSuffix: 'zzzod',
+    routeTitles: {
+      script: '编辑ZZZ-OD脚本',
+      userAdd: '添加ZZZ-OD用户',
+      userEdit: '编辑ZZZ-OD用户',
+    },
+    createOrder: 10,
+    create: {
+      titleKey: 'core.scripts.type.ZzzOd',
+      descriptionKey: 'core.scripts.create.typeDesc.ZzzOd',
+      keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
+      group: 'specialized',
+    },
+  },
+} satisfies Record<Exclude<BuiltinScriptType, PluginEditorScriptType>, ScriptMetadata> &
+  Record<PluginEditorScriptType, Omit<ScriptMetadata, 'routeTitles'>>
+
+export const isBuiltinScriptType = (type: string): type is BuiltinScriptType =>
+  Object.prototype.hasOwnProperty.call(SCRIPT_METADATA, type)

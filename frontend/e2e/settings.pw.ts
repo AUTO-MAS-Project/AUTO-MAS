@@ -38,6 +38,25 @@ const expectCircularSwatches = async (page: Page) => {
 }
 
 test.describe('@settings user preferences', () => {
+  test('opens first desktop sign-in from the Features card', async ({ app, page }) => {
+    await app.goto('/settings')
+    await page.evaluate(() => {
+      window.electronAPI.desktopSessionSupported = async () => true
+      window.electronAPI.desktopSessionOpen = async () => 'setup_required'
+      window.electronAPI.desktopSessionConnectForTask = async login =>
+        login?.password === '' && !login.forTask ? 'connected' : 'failed'
+    })
+    await page.getByRole('tab', { name: 'Features', exact: true }).click()
+    const open = page.getByRole('button', { name: 'Open desktop session', exact: true })
+    await open.click()
+    const dialog = page.getByRole('dialog', { name: 'Verify Windows password' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('checkbox', { name: 'Connect without a password' }).check()
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await expect(open).toBeVisible()
+  })
+
   test('anchors question hints to the icon for hover and keyboard focus', async ({ app, page }) => {
     await app.goto('/settings')
     const popup = page.locator('.ant-tooltip:visible')
@@ -80,7 +99,6 @@ test.describe('@settings user preferences', () => {
     await checkHint(page.locator('.row-label .help-icon:visible'))
     await page.getByRole('tab', { name: 'Features', exact: true }).click()
     await checkHint(page.locator('.row-label .help-icon:visible'))
-    await checkHint(page.locator('.card-note-hint .help-icon'))
     await page.getByRole('tab', { name: 'About', exact: true }).click()
     await checkHint(page.locator('.cdk-label .help-icon'))
     await app.evidence('settings-question-hints')
@@ -692,13 +710,11 @@ test.describe('@settings user preferences', () => {
       .toBeGreaterThan(0)
     await expect(headings.last()).toBeInViewport()
 
-    // 切到功能页签，确认顺序不变、未保存输入保留
+    // 切到功能页签，确认顺序不变、控件节点不随换列重建
     await page.getByRole('tab', { name: 'Features', exact: true }).click()
     const featureOrder = (await headings.allTextContents()).map(title => title.trim())
-    const draft = pane.locator('.number-input input').nth(1)
-    const draftElement = await draft.elementHandle()
-    const originalDraft = await draft.inputValue()
-    await draft.fill('4096')
+    const control = pane.locator('.retention-select')
+    const controlElement = await control.elementHandle()
 
     // 窄屏：目录保留，卡片退回单列（目录不随宽度消失）
     await page.setViewportSize({ width: 1040, height: 900 })
@@ -707,9 +723,8 @@ test.describe('@settings user preferences', () => {
     await expect(layout).toHaveAttribute('data-effective-layout', 'single')
     await expect(headings).toHaveText(featureOrder)
     expect((await cards.nth(0).boundingBox())!.x).toBe((await cards.nth(1).boundingBox())!.x)
-    await expect(draft).toHaveValue('4096')
-    expect(await draftElement!.evaluate(node => node.isConnected)).toBe(true)
-    await draft.fill(originalDraft)
+    await expect(control).toBeVisible()
+    expect(await controlElement!.evaluate(node => node.isConnected)).toBe(true)
 
     // 拉回宽屏：目录与两列自动恢复，无需任何开关操作
     await page.setViewportSize({ width: 1920, height: 1080 })

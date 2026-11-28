@@ -1,15 +1,20 @@
 // 设置页持有数据，这里统一处理字段补丁、规范化回读和 Electron 同步。
 import { useConfigLoader } from '@/services/configUiSync'
-import { computed, toRaw } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import type { PluginUiActivation } from '@/utils/pluginUiRequests'
 import type { GlobalConfig } from '@/api'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { updateInfo } from '@/composables/useVersionService'
-import type { DynamicSettingChangeHandler, SettingChangeHandler } from './settingTypes'
+import type {
+  DynamicSettingChangeHandler,
+  SettingChangeHandler,
+  SettingGroupChangeHandler,
+} from './settingTypes'
 
 const logger = window.electronAPI.getLogger('设置')
 
@@ -36,6 +41,7 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   const { loading: apiLoading, getSettings, updateSettings } = useSettingsApi()
   const saveQueue = useSaveQueue()
   const loading = computed(() => apiLoading.value || saveQueue.isSaving.value)
+  const configUid = ref('')
   let lastSnapshot: GlobalConfig | undefined
 
   const syncConfigToElectron = async (data: GlobalConfig) => {
@@ -59,7 +65,10 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
 
   // 刷新设置数据（只在后端会改写值的字段保存后才需要整份回读）
   const refreshSettings = useConfigLoader(['config', 'settings'], async read => {
-    const data = await getSettings(read)
+    const data = await getSettings(snapshot => {
+      read(snapshot)
+      configUid.value = snapshot.uiSources?.[0] ?? ''
+    })
     if (data) {
       const next = structuredClone(data)
       for (const category of Object.keys(data) as (keyof GlobalConfig)[]) {
@@ -80,11 +89,12 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   // 保存设置 - 只发送修改的字段（遵循最小原则）
   const saveSettings = async (
     category: keyof GlobalConfig,
-    changes: Record<string, unknown>
+    changes: Record<string, unknown>,
+    activation?: PluginUiActivation
   ): Promise<boolean> => {
     try {
       const updateData: GlobalConfig = { [category]: changes }
-      const result = await updateSettings(updateData)
+      const result = await updateSettings(updateData, activation)
       if (!result) {
         // 请求层已提示后端原因，保留当前输入供重试。
         return false
@@ -173,5 +183,25 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
 
   const handleSettingChange: SettingChangeHandler = handleDynamicSettingChange
 
-  return { loading, refreshSettings, handleSettingChange, handleDynamicSettingChange }
+  // 同一分类的多个字段一笔发出：成功才一起应用到本地，失败时都保留原值
+  const handleSettingGroupChange: SettingGroupChangeHandler = (category, changes, activation) =>
+    saveQueue.enqueue(async () => {
+      if (!(await saveSettings(category, changes, activation))) return false
+      if (Object.keys(changes).some(key => NORMALIZED_SETTING_KEYS.has(`${category}.${key}`))) {
+        await refreshSettings()
+        return true
+      }
+      for (const [key, value] of Object.entries(changes))
+        await applyLocalSettingChange(category, key, value)
+      return true
+    })
+
+  return {
+    configUid,
+    loading,
+    refreshSettings,
+    handleSettingChange,
+    handleDynamicSettingChange,
+    handleSettingGroupChange,
+  }
 }

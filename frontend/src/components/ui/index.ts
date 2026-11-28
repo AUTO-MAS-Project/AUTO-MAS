@@ -3,6 +3,7 @@ export type { AppModalFooterMode, AppModalLayer, AppModalSize } from './AppModal
 export { default as AppPage } from './AppPage.vue'
 export { default as ConfigEditShell } from './ConfigEditShell.vue'
 export { default as ConfirmActionButton } from './ConfirmActionButton.vue'
+export { default as NumberStepper } from './NumberStepper.vue'
 export { default as SectionCard } from './SectionCard.vue'
 export { default as SettingRow } from './SettingRow.vue'
 export { default as StateView } from './StateView.vue'

@@ -9,6 +9,7 @@ import type {
   DesktopSessionRequest,
   DesktopSessionStartRequest,
   DesktopSessionConnectResult,
+  DesktopSessionFirstLogin,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -29,6 +30,7 @@ import type {
   OnlineAppearanceDetailResult,
   OnlineAppearanceInstallResult,
   OnlineAppearanceListResult,
+  OnlineAppearancePrepareProgress,
   OnlineAppearancePrepareResult,
   OnlineAppearanceQuery,
 } from '@/types/appearance'
@@ -269,8 +271,11 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   /** 不带选择状态时表示资源列表变化。 */
   onMascotChanged?: (callback: (selection?: DesktopMascotSelection) => void) => () => void
   openDevTools: () => Promise<void>
-  selectFolder: () => Promise<string | null>
-  selectFile: (filters?: unknown[]) => Promise<string[]>
+  selectFolder: (options?: { title?: string; defaultPath?: string }) => Promise<string | null>
+  selectFile: (
+    filters?: unknown[],
+    options?: { title?: string; defaultPath?: string }
+  ) => Promise<string[]>
   saveTextFile: (
     defaultName: string,
     content: string,
@@ -537,9 +542,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath: string,
     category?: AppearanceCategory
   ) => Promise<LocalAppearanceInspectResult>
-  inspectAppearanceCover?: (
-    imagePath: string
-  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  inspectAppearanceCover?: (imagePath: string) => Promise<{
+    success: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    error?: string
+  }>
+  onOnlineAppearancePrepareProgress?: (
+    callback: (progress: OnlineAppearancePrepareProgress) => void
+  ) => () => void
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
@@ -560,8 +572,10 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
-  desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
-  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void | 'setup_required'>
+  desktopSessionConnectForTask?: (
+    login?: DesktopSessionFirstLogin
+  ) => Promise<DesktopSessionConnectResult>
   desktopSessionCancelTaskConnect?: (id: number) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
   desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>

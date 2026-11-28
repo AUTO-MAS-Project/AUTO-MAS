@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, onScopeDispose, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppModal from '@/components/ui/AppModal.vue'
+import { ExclamationCircleOutlined, WarningOutlined } from '@ant-design/icons-vue'
+import AppModal, { type AppModalSize } from '@/components/ui/AppModal.vue'
 import type {
   DesktopSessionPrompt,
   DesktopSessionPromptAction,
@@ -28,6 +29,17 @@ const copy = {
   quit: ['quitWithDesktopTitle', 'quitWithDesktopQuestion'],
   'close-failed': ['closeFailedTitle', 'closeFailed'],
 } as const
+// 尺寸档位与图标对齐 useConfirm：带列表或三个按钮的用 md，其余 sm；注销类按危险操作处理。
+const look = {
+  dispatch: { size: 'md', icon: WarningOutlined },
+  takeover: { size: 'sm', icon: WarningOutlined },
+  close: { size: 'sm', icon: ExclamationCircleOutlined },
+  'close-adopted': { size: 'md', icon: ExclamationCircleOutlined },
+  quit: { size: 'sm', icon: ExclamationCircleOutlined },
+  'close-failed': { size: 'sm', icon: ExclamationCircleOutlined },
+} as const satisfies Record<DesktopSessionPrompt['kind'], { size: AppModalSize; icon: unknown }>
+const size = computed<AppModalSize>(() => (prompt.value ? look[prompt.value.kind].size : 'sm'))
+const icon = computed(() => (prompt.value ? look[prompt.value.kind].icon : undefined))
 const title = computed(() => (prompt.value ? text(copy[prompt.value.kind][0]) : ''))
 const description = computed(() => (prompt.value ? text(copy[prompt.value.kind][1]) : ''))
 const notice = computed(() => prompt.value?.kind === 'close-failed')
@@ -37,6 +49,21 @@ const closePrompt = computed(() => {
     ? current
     : undefined
 })
+
+// 注销类与 useConfirm 的 danger 一致，默认聚焦取消；先于弹窗自身的聚焦落到按钮上，弹窗就不再抢焦点。
+const cancelButton = shallowRef<{ $el?: HTMLElement } | null>(null)
+watch(
+  () => closePrompt.value?.id,
+  async id => {
+    if (id === undefined) return
+    await nextTick()
+    // 弹窗首次打开时内容在下一帧才挂上，等一帧再聚焦。
+    requestAnimationFrame(() => {
+      if (closePrompt.value?.id === id) cancelButton.value?.$el?.focus?.()
+    })
+  },
+  { flush: 'post' }
+)
 
 function taskLabel(task: DesktopSessionPromptTarget): string {
   if (task.targetKind === 'unknown') return task.label
@@ -81,7 +108,8 @@ onScopeDispose(() => {
   <AppModal
     v-model:open="modalOpen"
     :title="title"
-    :width="560"
+    :size="size"
+    :icon="icon"
     footer="custom"
     :closable="false"
     :mask-closable="false"
@@ -120,7 +148,9 @@ onScopeDispose(() => {
     </a-flex>
     <template #footer>
       <a-space v-if="prompt" wrap>
-        <a-button v-if="!notice" @click="respond('cancel')">{{ text('cancel') }}</a-button>
+        <a-button v-if="!notice" ref="cancelButton" @click="respond('cancel')">{{
+          text('cancel')
+        }}</a-button>
         <template v-if="prompt.kind === 'dispatch'">
           <a-button @click="respond('desktop')">{{ text('mainFallbackDesktopOnly') }}</a-button>
           <a-button type="primary" @click="respond('split')">{{

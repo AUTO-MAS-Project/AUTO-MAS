@@ -1,11 +1,7 @@
 <template>
   <a-form-item>
     <template #label>
-      <FieldLabelWithHint
-        :text="t('core.edit.note')"
-        :hint="hint ?? t('core.edit.addNoteAboutThis')"
-        variant="form"
-      />
+      <FieldLabelWithHint :text="t('core.edit.note')" :hint="hint" variant="form" />
     </template>
     <a-textarea
       v-model:value="value"

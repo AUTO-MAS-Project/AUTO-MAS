@@ -2,6 +2,8 @@ import type { ConfigSnapshot } from '@/services/configUiSync'
 import { beginSettingsChanges } from '@/utils/settingsAnalytics'
 import { getApiErrorMessage } from '@/utils/apiError'
 import { translate as t } from '@/i18n'
+import { pluginUiPost, type PluginUiActivation } from '@/utils/pluginUiRequests'
+import type { OutBase } from '@/api'
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { GetService, UpdateService, type GlobalConfig, type SettingMirrorCdkData } from '@/api'
@@ -51,7 +53,10 @@ export function useSettingsApi() {
   }
 
   // 更新设置 - 只发送修改的字段
-  const updateSettings = async (settings: GlobalConfig): Promise<boolean> => {
+  const updateSettings = async (
+    settings: GlobalConfig,
+    activation?: PluginUiActivation
+  ): Promise<boolean> => {
     const channelChanges = beginNotificationChannelChanges(settings.Notify)
     const settingChanges = beginSettingsChanges(settings)
     // 开关自身不产生保存事件，也不在重新开启后补报。
@@ -69,9 +74,9 @@ export function useSettingsApi() {
     error.value = null
 
     try {
-      const response = await UpdateService.updateScriptApiSettingUpdatePost({
-        data: settings,
-      })
+      const response = activation
+        ? await pluginUiPost<OutBase>('/api/setting/update', { data: settings }, activation)
+        : await UpdateService.updateScriptApiSettingUpdatePost({ data: settings })
 
       // 根据code判断是否成功（非200就是不成功）
       if (response.code !== 200) {

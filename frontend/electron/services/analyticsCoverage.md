@@ -44,7 +44,7 @@
 | T034 | `queue_manage_finished`：队列增删改与排序 | 已接入 |
 | T035 | `queue_schedule_changed`：启动、定时、循环与星期配置 | 已接入 |
 | T036 | `queue_time_set_changed`：时间集合管理 | 已接入 |
-| T037 | `plan_manage_finished`：各类计划创建、重命名、删除与排序 | 已接入（含 `UniversalPlanConfig`） |
+| T037 | `plan_manage_finished`：各类计划创建、重命名、删除与排序 | 已接入（含 `UniversalPlanConfig`）；BAAH 使用原生轮换，不再提供 MAS 计划入口 |
 | T038 | `plan_edit_finished`：简单/复杂视图与轮换计划编辑 | 已接入（整批汇总记录） |
 | T039 | `update_check_finished`：手动/首次自动检查更新 | 已接入 |
 | T040 | `update_download_started`：用户选择更新后的下载进入率 | 已接入 |
@@ -80,7 +80,7 @@
 | 更新备份目录迁移 | 后端指标 `auto_mas.upgrade_backup.directory_moves`，仅记录迁移结果 | 由确认后的目录迁移入口记录，选择路径或取消不计 |
 | T069 | `replay_tool_finished`：失败录屏连接、保存与回放 | 已接入 |
 | T070 | `help_link_requested`：应用内帮助文档入口 | 已接入 |
-| T071–T084 | `adapter_setup_finished`：14 类专项配置引导与独有操作 | 已接入：MAA、SRC、MaaEnd、HSR、General、BAAH、MaaFW、M9A、MSS、BetterGI、OK-WW、OK-NTE、ZZZ-OD、Whimbox 各自实际存在的独有引导与保存入口，其余通用读写复用 `config_write_finished` / 任务观察 |
+| T071–T084 | `adapter_setup_finished`：14 类专项配置引导与独有操作 | 已接入：MAA、SRC、MaaEnd、HSR、General、BAAH（含推荐配置生成）、OK-WW、OK-NTE、ZZZ-OD、Whimbox 各自实际存在的独有引导与保存入口，MaaFW 系列的项目复用继续上报，通用读写（含 BetterGI 和 MaaFW 系列插件编辑器）复用 `config_write_finished` / 任务观察 |
 
 ## 扩展场景（T084 之外）
 

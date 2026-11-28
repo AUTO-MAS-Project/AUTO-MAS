@@ -1,0 +1,561 @@
+// @vitest-environment vue-client
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
+import { defineComponent, h, nextTick, shallowRef } from 'vue'
+import { createI18n } from 'vue-i18n'
+import { OpenAPI, TriggerUiState } from '@/api'
+import { i18nRevision } from '@/i18n'
+import type {
+  PluginUiEditor,
+  PluginUiSaveResult,
+  PluginUiTarget,
+} from '@/composables/usePluginUiBridge'
+import { pluginPanelTheme } from '@/composables/pluginPanelTheme'
+import { deferred, testView } from '../../tests/vueRenderer'
+import { pluginUiFrame } from '../../tests/pluginUiFrame'
+import PluginUiMount from './PluginUiMount.vue'
+
+const socket = vi.hoisted(() => ({
+  disconnected: vi.fn(),
+  capabilities: vi.fn(),
+}))
+vi.mock('@/services/websocket/connection', () => ({
+  connectionState: () => ({ value: 'open' }),
+  onConnected: () => () => {},
+  onDisconnected: socket.disconnected,
+}))
+vi.mock('@/services/websocket/subscriptions', () => ({
+  subscribe: socket.capabilities,
+  unsubscribe: vi.fn(),
+}))
+const confirm = vi.hoisted(() => vi.fn())
+vi.mock('@/composables/useConfirm', () => ({ useConfirm: () => ({ confirm }) }))
+const lightTheme = { mode: 'light', tokens: { '--mas-bg-base': '#fff' } } as const
+
+afterEach(() => vi.unstubAllGlobals())
+
+function mountWheel() {
+  vi.stubGlobal('window', new EventTarget())
+  pluginPanelTheme.value = lightTheme
+  socket.disconnected.mockReturnValue(() => {})
+  const target = shallowRef<PluginUiTarget>({
+    kind: 'plan',
+    configUid: 'uid',
+    planId: 'p',
+    scriptId: null,
+    userId: null,
+  })
+  const editor = shallowRef<PluginUiEditor>({
+    locale: 'en-US',
+    locked: false,
+    busy: false,
+    groups: [
+      {
+        name: 'Second',
+        hints: [
+          { field: 'Count', editable: true },
+          { field: 'Password', editable: true, secret: true },
+          { field: 'Masked', editable: true, masked: true },
+          { field: 'Run', editable: true, component: 'button', state: TriggerUiState.IDLE },
+        ],
+      },
+    ],
+    values: { Second: { Count: 3, Hidden: 'hi', Password: 'secret', Masked: 'masked' } },
+    configRevision: 0,
+    save: vi.fn().mockResolvedValue({ ok: true }),
+    runAction: vi.fn().mockResolvedValue('success'),
+    notify: vi.fn(),
+  })
+  const mount = {
+    pageId: 'plan',
+    artifacts: { web: { entry: 'plans/main.html', panelApi: 1 } },
+    entry: 'plans/main.html',
+    revision: 'rev',
+    activationId: 'active',
+    pluginName: 'demo15',
+  }
+  const refresh = vi.fn().mockResolvedValue(true)
+  const view = testView(
+    defineComponent(
+      () => () => h(PluginUiMount, { target: target.value, mount, editor: editor.value, refresh })
+    )
+  )
+  view.stub({ ASpin: 'div', AAlert: 'aside' })
+  view.app.use(
+    createI18n({
+      legacy: false,
+      locale: 'en-US',
+      missingWarn: false,
+      messages: {
+        'en-US': {
+          'plugins.demo15.panel.welcome': 'Hello, {name}',
+          'plugins.demo15.plan.config.Stage.Relic.options.rare': 'Rare relic',
+        },
+      },
+    })
+  )
+  view.mount()
+  return { view, target, editor, refresh }
+}
+
+describe('wheel iframe', () => {
+  it('authenticates ready and requests, and projects only visible non-secret fields', async () => {
+    const { view, target } = mountWheel()
+    await nextTick()
+    const frame = view.find('iframe')!
+    const child = pluginUiFrame(frame)
+    try {
+      expect(frame.props).toMatchObject({
+        sandbox: 'allow-scripts allow-forms',
+        referrerpolicy: 'no-referrer',
+      })
+      expect(child.url.pathname).toBe('/api/plugin/demo15/ui/rev/plans/main.html')
+      expect(child.envelope.mountToken).toMatch(/^[0-9a-f]{32}$/)
+      expect(child.envelope.target).toEqual(target.value)
+      // 用后续有效请求作为屏障，确认先前发给未握手端口的写入没有执行。
+      const wrongWindow = child.request('resize', { height: 333 })
+      child.ready({}, 'null', {})
+      const wrongOrigin = child.request('resize', { height: 444 })
+      child.ready({}, 'http://mas.test')
+      const wrongToken = child.request('resize', { height: 555 })
+      child.ready({ mountToken: 'bad' })
+      const wrongTarget = child.request('resize', { height: 666 })
+      child.ready({ target: { ...target.value, configUid: 'other' } })
+      // 握手前端口中的消息会被结构化克隆并排队，先使用其它端口测试拒绝。
+      child.close()
+      const active = pluginUiFrame(frame)
+      try {
+        active.ready()
+        const unauthenticated = active.request('resize', { height: 999 }, { source: 'other' })
+        const wrongRequestTarget = active.request('resize', { height: 999 }, { target: {} })
+        const good = active.request('readConfig')
+        await vi.waitFor(() =>
+          expect(active.replies.get(good)?.result).toEqual({
+            target: target.value,
+            surface: 'plan',
+            locale: 'en-US',
+            i18nRevision: i18nRevision.value,
+            locked: false,
+            busy: false,
+            theme: lightTheme,
+            config: { Second: { Count: 3 } },
+            configuredSecrets: ['Second.Password', 'Second.Masked'],
+          })
+        )
+        expect([...active.replies.keys()]).toEqual([good])
+        expect(
+          [wrongWindow, wrongOrigin, wrongToken, wrongTarget].some(id => child.replies.has(id))
+        ).toBe(false)
+        expect(active.replies.has(unauthenticated)).toBe(false)
+        expect(active.replies.has(wrongRequestTarget)).toBe(false)
+        expect(frame.props.style).toEqual({ height: '320px' })
+      } finally {
+        active.close()
+      }
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('translates panel and scoped config keys in one read-only request', async () => {
+    const { view, editor } = mountWheel()
+    editor.value = { ...editor.value, locked: true, busy: true }
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const revision = i18nRevision.value
+      const id = child.request('translate', {
+        keys: [
+          { key: 'panel.welcome', params: { name: 'Ada' } },
+          'Stage.Relic.options.rare',
+          'Stage.Untranslated.label',
+        ],
+      })
+      await vi.waitFor(() =>
+        expect(child.replies.get(id)?.result).toEqual({
+          locale: 'en-US',
+          revision,
+          messages: { 'panel.welcome': 'Hello, Ada', 'Stage.Relic.options.rare': 'Rare relic' },
+        })
+      )
+      i18nRevision.value++
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'en-US',
+            i18nRevision: revision + 1,
+            theme: lightTheme,
+          },
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('posts to the mounted plugin API while the editor is locked', async () => {
+    const previousBase = OpenAPI.BASE
+    OpenAPI.BASE = 'http://mas.test/'
+    const data = [{ id: '1-7' }]
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json(data))
+    vi.stubGlobal('fetch', fetch)
+    const { view, editor } = mountWheel()
+    editor.value = { ...editor.value, locked: true }
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const body = { server: 'Official' }
+      const id = child.request('request', { method: 'POST', path: '/stages', body })
+      await vi.waitFor(() =>
+        expect(child.replies.get(id)?.result).toEqual({ ok: true, status: 200, data })
+      )
+      expect(fetch).toHaveBeenCalledExactlyOnceWith('http://mas.test/api/plugin/demo15/stages', {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Plugin-Ui-Provider': 'demo15',
+          'X-Plugin-Ui-Activation': 'active',
+          'X-Plugin-Ui-Page': 'plan',
+        },
+        body: JSON.stringify(body),
+      })
+      fetch.mockResolvedValueOnce(new Response('Stage list unavailable', { status: 404 }))
+      const missing = child.request('request', { method: 'get', path: '/stages' })
+      await vi.waitFor(() =>
+        expect(child.replies.get(missing)?.result).toEqual({
+          ok: false,
+          status: 404,
+          data: 'Stage list unavailable',
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+      OpenAPI.BASE = previousBase
+    }
+  })
+
+  it('rejects invalid methods and paths before calling the plugin API', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const { view } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const paths = [
+        '/../other_plugin/x',
+        '/%2e%2e/other_plugin/x',
+        'http://evil.com',
+        '//other',
+        '/ui',
+        '/ui/a',
+        '/%75i/a',
+      ]
+      const ids = paths.map(path => child.request('request', { method: 'GET', path }))
+      ids.push(child.request('request', { method: 'OPTIONS', path: '/stages' }))
+      await vi.waitFor(() => {
+        for (const id of ids) expect(child.replies.get(id)?.error).toBe('invalid_params')
+      })
+      expect(fetch).not.toHaveBeenCalled()
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it.each(['settings', 'notification'] as const)(
+    'binds dialogs to the active %s target',
+    async kind => {
+      const { view, target, editor } = mountWheel()
+      target.value = {
+        kind,
+        scriptId: null,
+        userId: null,
+        planId: null,
+        configUid: 'uid',
+        ...(kind === 'settings' ? { pluginId: 'record' } : { channelId: 'mail' }),
+      }
+      await nextTick()
+      const child = pluginUiFrame(view.find('iframe')!)
+      try {
+        child.ready()
+        const ask = async (action: string, params: object) => {
+          const id = child.request(action, params)
+          await vi.waitFor(() => expect(child.replies.has(id)).toBe(true))
+          return child.replies.get(id)
+        }
+        const foreign = child.request(
+          'getContext',
+          {},
+          { target: { ...target.value, extra: true } }
+        )
+        expect((await ask('getContext', {}))?.result).toMatchObject({
+          surface: kind,
+          target: target.value,
+        })
+        expect(child.replies.has(foreign)).toBe(false)
+        expect((await ask('pickPath', { mode: 'file' }))?.result).toEqual({
+          ok: false,
+          code: 'unavailable',
+        })
+        const selectFile = vi.fn().mockResolvedValue(['chosen'])
+        Object.assign(window, {
+          electronAPI: { selectFile, selectFolder: vi.fn().mockResolvedValue(null) },
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', title: 'Pick', defaultPath: 'here' }))?.result
+        ).toEqual({ cancelled: false, path: 'chosen' })
+        expect(selectFile).toHaveBeenCalledWith(undefined, { title: 'Pick', defaultPath: 'here' })
+        expect((await ask('pickPath', { mode: 'folder' }))?.result).toEqual({
+          cancelled: true,
+          path: null,
+        })
+        expect(
+          (await ask('pickPath', { mode: 'file', filters: [{ name: 'File', extensions: [42] }] }))
+            ?.error
+        ).toBe('invalid_params')
+        confirm.mockResolvedValueOnce(false)
+        expect((await ask('confirm', { message: 'Continue?', danger: true }))?.result).toEqual({
+          confirmed: false,
+        })
+        expect(confirm).toHaveBeenCalledWith(
+          expect.objectContaining({ description: 'Continue?', tone: 'danger' })
+        )
+        expect((await ask('confirm', { message: ' '.repeat(501) }))?.error).toBe('invalid_params')
+        editor.value = { ...editor.value, locked: true }
+        expect((await ask('pickPath', { mode: 'file' }))?.error).toBe('read_only')
+        expect((await ask('confirm', { message: 'Continue?' }))?.error).toBe('read_only')
+      } finally {
+        child.close()
+        view.app.unmount()
+      }
+    }
+  )
+
+  it('pushes lock, busy, locale, theme and projected config changes without a new request', async () => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const theme = { mode: 'dark', tokens: { '--mas-bg-base': '#141414' } } as const
+      pluginPanelTheme.value = theme
+      editor.value = { ...editor.value, locked: true, busy: true, locale: 'ja-JP' }
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+          },
+        })
+      )
+      editor.value = {
+        ...editor.value,
+        configRevision: 1,
+        values: { Second: { Count: 7, Password: '' } },
+      }
+      await vi.waitFor(() =>
+        expect(child.events.at(-1)).toEqual({
+          event: 'configReloaded',
+          payload: { config: { Second: { Count: 7 } }, configuredSecrets: ['Second.Masked'] },
+        })
+      )
+      expect(child.replies.size).toBe(0)
+      const fieldErrors = { 'Second.Count': 'Use a lower count' }
+      editor.value = { ...editor.value, fieldErrors }
+      await vi.waitFor(() =>
+        expect(child.events).toContainEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+            fieldErrors,
+          },
+        })
+      )
+      const context = child.request('getContext')
+      const config = child.request('readConfig')
+      await vi.waitFor(() => {
+        expect(child.replies.get(context)?.result).toMatchObject({ fieldErrors })
+        expect(child.replies.get(config)?.result).toMatchObject({ fieldErrors })
+      })
+      editor.value = { ...editor.value, fieldErrors: {} }
+      await vi.waitFor(() =>
+        expect(child.events.at(-1)).toEqual({
+          event: 'stateChanged',
+          payload: {
+            locked: true,
+            busy: true,
+            locale: 'ja-JP',
+            i18nRevision: i18nRevision.value,
+            theme,
+            fieldErrors: {},
+          },
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('accepts string replacements and explicit clears for write-only secrets', async () => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const save = (field: string, value: unknown) =>
+        child.request('saveConfig', {
+          phase: 'commit',
+          changes: [{ group: 'Second', field, value }],
+        })
+      const replaced = save('Password', 'replacement')
+      const cleared = save('Password', '')
+      const invalid = save('Password', 123)
+      const masked = save('Masked', 'replacement')
+      const context = child.request('getContext')
+      await vi.waitFor(() => expect(child.replies.has(context)).toBe(true))
+      expect(child.replies.get(replaced)?.result).toEqual({ ok: true })
+      expect(child.replies.get(cleared)?.result).toEqual({ ok: true })
+      expect(child.replies.get(invalid)?.error).toBe('invalid_changes')
+      expect(child.replies.get(masked)?.error).toBe('invalid_changes')
+      expect(vi.mocked(editor.value.save).mock.calls).toEqual(
+        ['replacement', ''].map(value => [[{ group: 'Second', field: 'Password', value }], true])
+      )
+      expect(child.replies.get(context)?.result).toEqual(
+        expect.objectContaining({
+          config: { Second: { Count: 3 } },
+          configuredSecrets: ['Second.Password', 'Second.Masked'],
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('deduplicates the latest 512 request IDs and evicts the oldest', async () => {
+    const { view } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      for (let id = 0; id < 512; id++) child.request('resize', { height: 350 }, {}, id)
+      child.request('resize', { height: 500 }, {}, 0)
+      const newest = child.request('resize', { height: 400 }, {}, 512)
+      await vi.waitFor(() => expect(child.replies.get(newest)?.result).toBe(400))
+      expect(child.replies.get(0)?.result).toBe(350)
+      child.request('resize', { height: 500 }, {}, 1)
+      child.request('resize', { height: 600 }, {}, 0)
+      await vi.waitFor(() => expect(child.replies.get(0)?.result).toBe(600))
+      expect(child.replies.get(1)?.result).toBe(350)
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('enforces trigger, toast and size allowlists and rejects duplicate request IDs', async () => {
+    const { view, editor } = mountWheel()
+    await nextTick()
+    const frame = view.find('iframe')!
+    const child = pluginUiFrame(frame)
+    try {
+      child.ready()
+      const run = child.request('runAction', { group: 'Second', field: 'Run', value: true })
+      child.request('runAction', { group: 'Second', field: 'Run', value: true }, {}, run)
+      const undeclared = child.request('runAction', {
+        group: 'Second',
+        field: 'Count',
+        value: true,
+      })
+      const hidden = child.request('saveConfig', {
+        phase: 'commit',
+        changes: [{ group: 'Second', field: 'Hidden', value: 'new' }],
+      })
+      const toast = child.request('notify', { severity: 'info', message: '<b>plain text</b>' })
+      const tooLong = child.request('notify', { severity: 'success', message: 'x'.repeat(501) })
+      const severity = child.request('notify', { severity: 'debug', message: 'hi' })
+      const size = child.request('resize', { height: 10000 })
+      const invalid = child.request('resize', { height: Infinity })
+      const unknown = child.request('openUrl', {})
+      await vi.waitFor(() => expect(child.replies.get(unknown)?.error).toBe('unknown_action'))
+      expect(child.replies.get(run)?.result).toBe('success')
+      expect(child.replies.get(undeclared)?.error).toBe('invalid_action')
+      expect(editor.value.runAction).toHaveBeenCalledOnce()
+      expect(child.replies.get(hidden)?.error).toBe('invalid_changes')
+      expect(editor.value.save).not.toHaveBeenCalled()
+      expect(editor.value.notify).toHaveBeenCalledExactlyOnceWith('info', '<b>plain text</b>')
+      expect(child.replies.get(toast)?.result).toBe(true)
+      expect(child.replies.get(tooLong)?.error).toBe('invalid_message')
+      expect(child.replies.get(severity)?.error).toBe('invalid_severity')
+      expect(child.replies.get(size)?.result).toBe(4000)
+      expect(child.replies.get(invalid)?.error).toBe('invalid_height')
+      expect(frame.props.style).toEqual({ height: '4000px' })
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('revokes old channels after a target switch, capability update and disconnect', async () => {
+    const { view, editor, target, refresh } = mountWheel()
+    const saving = deferred<PluginUiSaveResult>()
+    vi.mocked(editor.value.save).mockReturnValue(saving.promise)
+    await nextTick()
+    const oldFrame = view.find('iframe')!
+    const old = pluginUiFrame(oldFrame)
+    try {
+      old.ready()
+      const stale = old.request('saveConfig', {
+        phase: 'commit',
+        changes: [{ group: 'Second', field: 'Count', value: 7 }],
+      })
+      await vi.waitFor(() => expect(editor.value.save).toHaveBeenCalledOnce())
+      target.value = { ...target.value, planId: 'other', configUid: 'other-uid' }
+      await nextTick()
+      saving.resolve({ ok: true })
+      expect(view.find('iframe')).not.toBe(oldFrame)
+      const current = pluginUiFrame(view.find('iframe')!)
+      try {
+        expect(current.envelope.mountToken).not.toBe(old.envelope.mountToken)
+        current.ready()
+        const context = current.request('getContext')
+        await vi.waitFor(() =>
+          expect(current.replies.get(context)?.result).toMatchObject({
+            target: { planId: 'other', configUid: 'other-uid' },
+          })
+        )
+        expect(old.replies.has(stale)).toBe(false)
+        await socket.capabilities.mock.lastCall![1]()
+        await nextTick()
+        expect(refresh).toHaveBeenCalledOnce()
+        expect(view.find('iframe')?.props.src).not.toBe(current.url.pathname + current.url.hash)
+        socket.disconnected.mock.lastCall![0]()
+        await nextTick()
+        expect(view.find('iframe')).toBeUndefined()
+      } finally {
+        current.close()
+      }
+    } finally {
+      old.close()
+      view.app.unmount()
+    }
+  })
+})

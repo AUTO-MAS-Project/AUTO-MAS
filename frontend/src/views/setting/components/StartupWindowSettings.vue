@@ -37,10 +37,7 @@ const silentAvailable = computed(
     <section class="setting-group">
       <h4 class="setting-group-title">{{ t('core.setting.func.startupGroup') }}</h4>
 
-      <SettingRow
-        :label="t('core.setting.func.autoStart')"
-        :hint="t('core.setting.func.autoStartTip')"
-      >
+      <SettingRow :label="t('core.setting.func.autoStart')">
         <a-switch
           :checked="startValue('IfSelfStart')"
           :aria-label="t('core.setting.func.autoStart')"

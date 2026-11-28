@@ -3,7 +3,6 @@ import { ThunderboltOutlined } from '@ant-design/icons-vue'
 import { SectionCard, SwitchTile } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import type { HSRConfig_Run } from '@/api'
-import ScriptExecutionSessionField from './ScriptExecutionSessionField.vue'
 import ScriptRunLimitField from './ScriptRunLimitField.vue'
 
 defineProps<{ showLowPerformance: boolean }>()
@@ -21,7 +20,6 @@ function handleLowPerformanceChange(value: boolean) {
 
 <template>
   <SectionCard variant="card" :title="t('core.edit.runConfiguration')" :icon="ThunderboltOutlined">
-    <ScriptExecutionSessionField />
     <a-row :gutter="24">
       <a-col :xs="24" :md="12">
         <ScriptRunLimitField

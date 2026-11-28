@@ -19,7 +19,7 @@
           />
           <ScriptTypeStep
             v-model="selectedType"
-            :types="capabilities.types.value"
+            :options="availableTypes"
             :loading="capabilities.loading.value"
             :error="capabilities.error.value"
             @retry="capabilities.refresh"
@@ -176,7 +176,7 @@
               {{ t('core.scripts.create.modeNew') }}
             </a-descriptions-item>
             <a-descriptions-item :label="t('core.scripts.create.labelType')">
-              {{ t(getTypeOption(selectedType).titleKey) }}
+              {{ availableTypes.find(option => option.value === selectedType)?.title }}
             </a-descriptions-item>
             <a-descriptions-item
               v-if="selectedType === 'General'"
@@ -220,6 +220,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import ScriptTypeStep from './ScriptTypeStep.vue'
+import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import { useScriptCapabilities } from '@/composables/useScriptCapabilities'
 import { computed, defineComponent, h, onBeforeUnmount, ref, toRef, watch } from 'vue'
 import {
@@ -230,12 +231,10 @@ import {
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import type { ScriptType } from '@/types/script'
 import type { ShareTemplateItem } from '@/composables/useTemplateApi'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
-import { resolveMaaFWAdapter } from '@/plugins/maafwFamily'
-import { openExternalUrl } from '@/utils/openExternal'
+import { maafwTypeOrDefault } from '@/plugins/maafwFamily'
 import SelectableOptionCard from '@/components/SelectableOptionCard.vue'
 import SelectableOptionList from '@/components/SelectableOptionList.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -244,7 +243,7 @@ import {
   buildCreateRequest,
   buildCreateSteps,
   isMfwFamily,
-  SCRIPT_TYPE_OPTIONS,
+  getScriptTypeOptions,
   type ConfigMode,
   type CreateStepKey,
   type ScriptCreateRequest,
@@ -289,7 +288,7 @@ const emit = defineEmits<{
 const TEMPLATE_SEARCH_DEBOUNCE = 400
 
 const currentStep = ref<CreateStepKey>('type')
-const selectedType = ref<ScriptType>('MAA')
+const selectedType = ref('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
 const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
@@ -319,7 +318,7 @@ const canGoBack = computed(
 )
 const capabilities = useScriptCapabilities(toRef(props, 'open'))
 const availableTypes = computed(() =>
-  SCRIPT_TYPE_OPTIONS.filter(option => capabilities.types.value.includes(option.value))
+  getScriptTypeOptions(capabilities.types.value, capabilities.provided.value, t)
 )
 watch(capabilities.error, error => {
   // 能力读取失败时返回带重试入口的步骤，避免配置步骤只剩不可用的下一步按钮。
@@ -341,7 +340,7 @@ const selectedTemplate = computed(() =>
 )
 const isMfwStep = computed(() => currentStep.value === 'config' && isMfwFamily(selectedType.value))
 // MFW 家族第二步：只列与选中的类型卡片同类型的项目
-const createMfwType = computed(() => resolveMaaFWAdapter(selectedType.value).type)
+const createMfwType = computed(() => maafwTypeOrDefault(selectedType.value))
 const nextDisabled = computed(() => {
   if (
     props.submitting ||
@@ -360,6 +359,7 @@ const nextDisabled = computed(() => {
 })
 const primaryButtonText = computed(() => {
   if (currentStep.value === 'type') {
+    if (!isBuiltinScriptType(selectedType.value)) return t('core.scripts.create.title')
     return steps.value.length > 1 && !skipMfwSourceStep.value
       ? t('core.scripts.create.next')
       : t('core.scripts.create.createAndConfigure')
@@ -426,9 +426,6 @@ const formatPublishedAt = (publishedAt: string | undefined) =>
   publishedAt ? formatBackendDateTime(publishedAt) : t('core.scripts.template.unknownTime')
 
 onBeforeUnmount(cancelScheduledSearch)
-
-const getTypeOption = (type: ScriptType) =>
-  SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
 
 const handleBack = () => {
   if (props.submitting) return

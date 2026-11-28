@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ConfigUpdateOut } from '../models/ConfigUpdateOut';
 import type { GameBatchSettingsIn } from '../models/GameBatchSettingsIn';
 import type { GameDeviceUpdateIn } from '../models/GameDeviceUpdateIn';
 import type { GameSettingsIn } from '../models/GameSettingsIn';
@@ -42,7 +43,7 @@ export class UpdateService {
      */
     public static updateScriptApiScriptsUpdatePost(
         requestBody: ScriptUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/update',
@@ -80,7 +81,7 @@ export class UpdateService {
      */
     public static updateUserApiScriptsUserUpdatePost(
         requestBody: UserUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
@@ -156,7 +157,7 @@ export class UpdateService {
      */
     public static updatePlanApiPlanUpdatePost(
         requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/update',

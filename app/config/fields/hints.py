@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from enum import Enum
@@ -11,6 +11,7 @@ from types import UnionType
 from typing import Any, Literal, NotRequired, TypedDict, Union, get_args, get_origin
 
 from annotated_types import Ge, Gt, Le, Lt
+from pydantic.fields import FieldInfo
 
 from ..types import PathKind, PathPolicy
 from .ann import strip_optional, unwrap_ann
@@ -41,15 +42,53 @@ class OptionHint(TypedDict):
     label: NotRequired[str]
 
 
+@dataclass(frozen=True)
+class UiStep:
+    key: str
+    title: str | None = None
+
+
+@dataclass(frozen=True)
+class UiSection:
+    step: str | None = None
+    collapsible: bool = False
+    default_collapsed: bool = False
+
+
+type HostBlockName = Literal[
+    "game_binding", "config_restore", "native_session", "webhooks"
+]
+
+
+@dataclass(frozen=True)
+class HostBlock:
+    name: HostBlockName
+
+
+@dataclass(frozen=True)
+class DeclarativeBlock:
+    groups: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PluginBlock:
+    page_id: str
+    fallback_groups: tuple[str, ...] = ()
+
+
+type UiBlock = HostBlock | DeclarativeBlock | PluginBlock
+
+
 class TriggerUiState(str, Enum):
     IDLE = "idle"
     BUSY = "busy"
 
 
 class ComponentHint(TypedDict, total=False):
-    """单字段 UI 组件提示（无文案/宽度）。"""
+    """单字段 UI 组件提示，可附带字段说明。"""
 
     field: str
+    description: str | None
     component: str
     secret: bool
     editable: bool
@@ -67,6 +106,9 @@ class ComponentHint(TypedDict, total=False):
     multiple: bool
     ordered: bool
     endpoint: str | None
+    option_source: str
+    depends_on: dict[str, str]
+    action_ref: str
     plan_type: str
     deps: list[str] | None
     widget: str | None
@@ -109,7 +151,8 @@ class UiHintMarker:
     deps: tuple[str, ...] = ()
     secret: bool = False
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None
-    options: tuple[OptionValue, ...] = ()
+    options: tuple[OptionValue, ...] | None = None
+    action_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +162,15 @@ class Select:
     endpoint: str | None = None
     ordered: bool = False
     plan_type: str | None = None
+    option_source: str | None = None
+    depends_on: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        source = self.option_source
+        if source is not None and (
+            source in ("", ".") or ".." in source or any(c in source for c in "/\\?#")
+        ):
+            raise ValueError(f"option_source 必须是单个路径段: {source!r}")
 
 
 @dataclass(frozen=True)
@@ -138,6 +190,7 @@ def ui(
     secret: bool = False,
     options: list[OptionValue] | None = None,
     visibility: UiVisibility | Callable[..., UiVisibility] | None = None,
+    action_ref: str | None = None,
 ) -> UiHintMarker:
     """生成 UI 覆盖标记，置于 ``Annotated`` 内。
 
@@ -148,16 +201,28 @@ def ui(
         format=format,
         deps=tuple(deps or ()),
         secret=secret,
-        options=tuple(options or ()),
+        options=tuple(options) if options is not None else None,
         visibility=visibility,
+        action_ref=action_ref,
     )
 
 
 def select(
-    *, endpoint: str | None = None, ordered: bool = False, plan_type: str | None = None
+    *,
+    endpoint: str | None = None,
+    ordered: bool = False,
+    plan_type: str | None = None,
+    option_source: str | None = None,
+    depends_on: Mapping[str, str] | None = None,
 ) -> Select:
     """生成 select 标记（等价于 ``Select(...)``）。"""
-    return Select(endpoint=endpoint, ordered=ordered, plan_type=plan_type)
+    return Select(
+        endpoint=endpoint,
+        ordered=ordered,
+        plan_type=plan_type,
+        option_source=option_source,
+        depends_on=tuple(depends_on.items()) if depends_on else (),
+    )
 
 
 def legacy(
@@ -249,14 +314,30 @@ def visibility_spec_for_field(field_info: object) -> UiVisibilitySpec | None:
     return None
 
 
+def _static_option_values(annotation: object) -> list[OptionValue] | None:
+    base, _ = unwrap_ann(annotation)
+    if get_origin(base) is list and (items := get_args(base)):
+        base, _ = unwrap_ann(items[0])
+    if get_origin(base) is Literal:
+        return list(get_args(base))
+    candidates = get_args(base) if get_origin(base) in (Union, UnionType) else (base,)
+    for candidate in candidates:
+        candidate, _ = unwrap_ann(candidate)
+        if isinstance(candidate, type) and issubclass(candidate, Enum):
+            return [member.value for member in candidate]
+    return None
+
+
 def hint_for_field(
     fname: str,
-    field_info: object,
+    field_info: FieldInfo,
     *,
     is_trigger: bool = False,
 ) -> ComponentHint:
     """单字段 ``ComponentHint``（无 ``editable``；显隐在实例 ``_get_ui_hints`` 叠加）。"""
     hint: ComponentHint = {"field": fname, "component": "input"}
+    if field_info.description:
+        hint["description"] = field_info.description
     ann = getattr(field_info, "annotation", None)
     base, meta = unwrap_ann(ann)
     meta = list(meta) + list(getattr(field_info, "metadata", ()) or ())
@@ -276,6 +357,10 @@ def hint_for_field(
             hint["component"] = "select"
             if m.endpoint:
                 hint["endpoint"] = m.endpoint
+            if m.option_source is not None:
+                hint["option_source"] = m.option_source
+            if m.depends_on:
+                hint["depends_on"] = dict(m.depends_on)
             if m.plan_type is not None:
                 hint["plan_type"] = m.plan_type
             if m.ordered:
@@ -284,12 +369,14 @@ def hint_for_field(
             if m.widget:
                 hint["widget"] = m.widget
                 hint["component"] = m.widget
-            if m.options:
+            if m.options is not None:
                 hint["options"] = [{"value": value} for value in m.options]
             if m.format:
                 hint["format"] = m.format
             if m.deps:
                 hint["deps"] = list(m.deps)
+            if m.action_ref is not None:
+                hint["action_ref"] = m.action_ref
             if m.secret:
                 hint["secret"] = True
         elif isinstance(m, (Ge, Gt)):
@@ -303,23 +390,13 @@ def hint_for_field(
             hint["plan_type"] = ref.entry_types[0].__name__
 
     # ── Python / Literal / Enum 类型推导 ──
-    # 无 endpoint 的 select 仍从 Literal / Enum 推导静态选项；有 endpoint 时由接口供值。
-    infer_static_options = hint.get("component") == "input" or (
-        hint.get("component") == "select" and not hint.get("endpoint")
+    # 有动态来源的 select 由接口供值；其余 Literal / Enum 仍推导静态选项。
+    infer_static_options = "option_source" not in hint and (
+        hint.get("component") == "input"
+        or (hint.get("component") == "select" and not hint.get("endpoint"))
     )
     if infer_static_options:
-        borigin = get_origin(base)
-        type_candidates: list[object] = [base]
-        if borigin is Union or borigin is UnionType:
-            type_candidates = [a for a in get_args(base) if a is not type(None)]
-
-        enum_cls: type[Enum] | None = None
-        for cand in type_candidates:
-            if isinstance(cand, type) and issubclass(cand, Enum):
-                enum_cls = cand
-                break
-
-        if base is bool or borigin is bool:
+        if base is bool:
             hint["component"] = "switch"
         elif base in (int, float):
             hint["component"] = "number"
@@ -349,24 +426,10 @@ def hint_for_field(
         ):
             hint["component"] = "date"
             hint["format"] = hint.get("format") or "date"
-        elif enum_cls is not None:
+        elif (options := _static_option_values(base)) is not None:
             hint["component"] = "select"
-            hint["options"] = [{"value": str(m.value)} for m in enum_cls]
-            hint["multiple"] = False
-        elif borigin is Literal:
-            hint["component"] = "select"
-            hint["options"] = [{"value": str(v)} for v in get_args(base)]
-            hint["multiple"] = False
-        elif borigin is list:
-            inner = get_args(base)[0] if get_args(base) else str
-            if isinstance(inner, type) and issubclass(inner, Enum):
-                hint["component"] = "select"
-                hint["options"] = [{"value": str(m.value)} for m in inner]
-                hint["multiple"] = True
-            elif get_origin(inner) is Literal:
-                hint["component"] = "select"
-                hint["options"] = [{"value": str(v)} for v in get_args(inner)]
-                hint["multiple"] = True
+            if "options" not in hint:
+                hint["options"] = [{"value": value} for value in options]
 
     # ── 路径声明直接提供选择提示，不向 UI 暴露阻止目录；URL 沿用预设识别 ──
     type_name = getattr(base, "__name__", "") or str(base)

@@ -13,22 +13,7 @@ import type {
   DesktopMascotTaskMenu,
 } from '../src/types/desktopMascot'
 
-// 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
-contextBridge.exposeInMainWorld(
-  'appEnvironment',
-  process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
-)
-contextBridge.exposeInMainWorld(
-  'backendOwnership',
-  process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
-)
-
-window.addEventListener('DOMContentLoaded', () => {
-  // 预加载脚本已加载
-})
-
-// 暴露安全的 API 给渲染进程
-contextBridge.exposeInMainWorld('electronAPI', {
+const electronAPI = {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
     beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
@@ -45,8 +30,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
   verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
     ipcRenderer.invoke('mystery:verify', accessCode, context),
-  selectFolder: () => ipcRenderer.invoke('select-folder'),
-  selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
+  selectFolder: (options?: { title?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('select-folder', options),
+  selectFile: (filters?: unknown[], options?: { title?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('select-file', filters, options),
   saveTextFile: (
     defaultName: string,
     content: string,
@@ -331,6 +318,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('appearance:inspect-local', zipPath, category),
   inspectAppearanceCover: (imagePath: string) =>
     ipcRenderer.invoke('appearance:inspect-cover', imagePath),
+  onOnlineAppearancePrepareProgress: (callback: (progress: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('appearance:online-prepare-progress', listener)
+    return () => ipcRenderer.removeListener('appearance:online-prepare-progress', listener)
+  },
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)
@@ -401,7 +393,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
-  desktopSessionConnectForTask: () => ipcRenderer.invoke('desktop-session:connect-for-task'),
+  desktopSessionConnectForTask: (
+    login?: import('./services/desktopSessionProtocol').DesktopSessionFirstLogin
+  ) => ipcRenderer.invoke('desktop-session:connect-for-task', login),
   desktopSessionCancelTaskConnect: (id: number) =>
     ipcRenderer.invoke('desktop-session:cancel-task-connect', id),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
@@ -489,4 +483,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   removeBackendStatusListener: () => {
     ipcRenderer.removeAllListeners('backend-status')
   },
-})
+}
+
+if (process.isMainFrame) {
+  // 环境在页面执行前可用；沙箱 preload 只读取主进程传入的启动参数。
+  contextBridge.exposeInMainWorld(
+    'appEnvironment',
+    process.argv.includes('--auto-mas-environment=production') ? 'production' : 'development'
+  )
+  contextBridge.exposeInMainWorld(
+    'backendOwnership',
+    process.argv.includes('--auto-mas-backend-ownership=external') ? 'external' : 'owned'
+  )
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI)
+}

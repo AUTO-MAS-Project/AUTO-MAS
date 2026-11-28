@@ -29,11 +29,15 @@
 
 import hashlib
 import json
+import os
 import re
 import shutil
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
+from tempfile import mkdtemp
 from time import sleep
 
 from app.utils import IS_WINDOWS, get_logger, is_long_path_supported
@@ -428,8 +432,58 @@ def get_backup_dir(store_root: Path, ts: str) -> Path | None:
     return dest if dest.is_dir() else None
 
 
+_restore_stack: ContextVar[ExitStack | None] = ContextVar(
+    "config_restore_files", default=None
+)
+
+
+@contextmanager
+def restore_file_transaction() -> Iterator[ExitStack]:
+    """同一次池恢复共用留底；回填字段失败时一并撤回已换入的文件。"""
+    parent = _restore_stack.get()
+    with ExitStack() as stack:
+        token = _restore_stack.set(stack)
+        try:
+            yield stack
+            if parent is not None:
+                parent.enter_context(stack.pop_all())
+        finally:
+            _restore_stack.reset(token)
+
+
+@contextmanager
+def _replace_from_backup(target: Path, files: Mapping[str, Path]) -> Iterator[None]:
+    """先在同卷备齐文件再换入；整次恢复成功后才清理原件。"""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(dir=target.parent, prefix=".mas-restore-"))
+    new, old = staging / "new", staging / "old"
+    committed = False
+    try:
+        for rel, source in files.items():
+            _ensure_path_length(target / rel)
+            dest = new / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, dest)
+        if os.path.lexists(target):
+            target.rename(old)
+        try:
+            new.rename(target)
+            yield
+            committed = True
+        except BaseException:
+            if os.path.lexists(target):
+                target.rename(staging / "discard")
+            if os.path.lexists(old):
+                old.rename(target)
+            raise
+    finally:
+        # 回滚改名本身失败时保留原件，不能随暂存目录一起删除。
+        if committed or not os.path.lexists(old):
+            _utils_io.force_rmtree(staging)
+
+
 def restore_dir(store_root: Path, ts: str, target: Path) -> None:
-    """把归档整目录恢复到 ``target``（先删后拷，与源完全一致）。
+    """把归档整目录恢复到 ``target``，成功后目标与备份内容一致。
 
     恢复前归档当前配置由调用方负责（在调用前以 ``force=True`` 归档当前
     内容，保证误恢复可找回）；本原语不隐含归档。
@@ -453,19 +507,8 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     }
     if not restored:
         raise ValueError(f"备份内容为空: {ts}")
-    target = Path(target)
-    # 长路径预检要在 force_rmtree 之前：「先删后拷」一旦写不回去，用户目录已经没了，
-    # 比归档失败贵得多；预检让这种情况在删除之前就报错。
-    for rel in restored:
-        _ensure_path_length(target / rel)
-    # 先清再拷，逐文件写回：目标残留目录被占用时不再「部分已删、备份一个
-    # 没拷回」；删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）
-    # 时普通 rmtree 删不掉，残留会让随后的写回失败。
-    _utils_io.force_rmtree(target)
-    for rel, path in restored.items():
-        dest = target / rel
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, dest)
+    with restore_file_transaction() as stack:
+        stack.enter_context(_replace_from_backup(Path(target), restored))
 
 
 def read_backup_text(
@@ -551,7 +594,7 @@ def restore_files(
     *,
     dir_map: Mapping[str, Path] | None = None,
 ) -> None:
-    """按相对键把备份文件写回目标目录（replace 语义：先清理受管键再写入）。
+    """按相对键替换目标目录内的受管文件或子树。
 
     ``rel_keys`` 限定本次管理的相对键（默认归档内全部文件）；每个键的目标
     路径 = ``dir_map.get(顶级键, target_root)`` 下对应位置（未传 ``dir_map``
@@ -581,47 +624,26 @@ def restore_files(
 
     backup_dir = Path(backup_dir)
     target_root = Path(target_root)
+    sources = dir_files(backup_dir)
     managed = (
         sorted(rel_keys)
         if rel_keys is not None
-        else sorted(rel for rel in dir_files(backup_dir) if rel not in META_FILE_NAMES)
+        else sorted(sources.keys() - META_FILE_NAMES)
     )
     if not managed:
         raise ValueError(f"备份内容为空: {backup_dir.name}")
 
-    # 按顶级键分组（第一段路径；无斜杠的键自身即顶级文件）
-    top_keys: dict[str, list[str]] = {}
+    # 普通目录替换顶级键；映射的引擎根是共享目录，只替换根下受管键。
+    replacements: dict[Path, dict[str, Path]] = {}
     for rel in managed:
-        top, _, _ = rel.partition("/")
-        top_keys.setdefault(top, []).append(rel)
-
-    # 先清理受管键管辖的既有内容
-    for top, rels in top_keys.items():
+        top, _, suffix = rel.partition("/")
+        root = target_root
         if dir_map and top in dir_map:
-            # dir_map 映射：目标根是共享目录，只删备份内出现的路径/子目录
-            base = dir_map[top]
-            heads: dict[str, bool] = {}
-            for rel in rels:
-                suffix = rel[len(top) + 1 :]
-                head, _, rest = suffix.partition("/")
-                heads[head] = heads.get(head, False) or bool(rest)
-            for head, has_sub in heads.items():
-                target = base / head
-                if has_sub:  # 备份内含该子树全部文件（如 SRA/configs/）
-                    _utils_io.force_rmtree(target)
-                else:
-                    target.unlink(missing_ok=True)
-        elif any("/" in rel for rel in rels):
-            # 默认映射 + 目录前缀：该子树完全由备份管理，整棵替换
-            _utils_io.force_rmtree(target_root / top)
-        else:
-            (target_root / top).unlink(missing_ok=True)
-
-    # 再按相对键逐文件写回
-    for rel in managed:
-        if dir_map and (top := rel.partition("/")[0]) in dir_map:
-            target = dir_map[top] / rel[len(top) + 1 :]
-        else:
-            target = target_root / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(backup_dir / rel, target)
+            root = dir_map[top]
+            top, _, suffix = suffix.partition("/")
+        if not top or rel not in sources:
+            raise ValueError(f"无效的归档文件路径: {rel}")
+        replacements.setdefault(root / top, {})[suffix] = sources[rel]
+    with restore_file_transaction() as stack:
+        for target, files in replacements.items():
+            stack.enter_context(_replace_from_backup(target, files))

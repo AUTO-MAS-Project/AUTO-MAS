@@ -17,6 +17,10 @@ export type QueueConfig_InfoInput = {
      */
     CycleEnabled?: (boolean | null);
     /**
+     * 调度此队列时的启动位置
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 队列级运行后脚本: 运行结束后执行一次, 先于「完成后操作」
      */
     IfScriptAfterTask?: (boolean | null);

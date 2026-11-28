@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import weakref
+from collections.abc import Sequence
 from pathlib import Path
 from typing import (
     Any,
@@ -11,6 +12,7 @@ from typing import (
     Iterator,
     Self,
     cast,
+    get_args,
     get_origin,
 )
 from uuid import UUID
@@ -24,22 +26,31 @@ from pydantic import (
     model_serializer,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from app.utils import get_logger
 
 from ..errors import ConfigAggregateError, DeletedNodeError
 from ..fields import (
+    DeclarativeBlock,
+    HostBlock,
+    HostBlockName,
     NestedCollectionMarker,
+    PluginBlock,
     RefDeleteAction,
     RefField,
+    UiBlock,
     UiHintsMap,
+    UiSection,
+    UiStep,
     UiVisibility,
     UiVisibilitySpec,
     Virtual,
     is_reactive_model_field,
     is_trigger_model_field,
     is_virtual_model_field,
+    parse_field_path,
 )
 from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
@@ -131,6 +142,9 @@ class ConfigEntry(ConfigNode):
     """L2 配置条目；文档形状 = 各 Group 字段顶层嵌套。"""
 
     # 类级规格（每子类独立）
+    ui_steps: ClassVar[tuple[UiStep, ...]] = ()
+    ui_sections: ClassVar[dict[str, UiSection]] = {}
+    ui_blocks: ClassVar[tuple[UiBlock, ...] | None] = None
     _cfg_group_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_collection_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_virtual_specs: ClassVar[dict[tuple[str, str], str]] = {}
@@ -147,10 +161,12 @@ class ConfigEntry(ConfigNode):
         return omit_masked_placeholders(cls, migrate_legacy_fields(cls, value))
 
     class Ui(ConfigGroup):
-        """前端组件提示虚拟组：``ui.hints`` / ``ui.tables``。"""
+        """前端组件与布局提示。"""
 
         hints: Virtual[UiHintsMap] = None
         tables: Virtual[UiTablesList] = None
+        steps: Virtual[list[UiStep]] = None
+        sections: Virtual[dict[str, UiSection]] = None
 
     ui: Ui = Field(default_factory=Ui)
 
@@ -335,6 +351,106 @@ class ConfigEntry(ConfigNode):
             }
             for col_cls, columns in tables_by_cls.items()
         ]
+        cls._validate_ui_flow()
+
+    @classmethod
+    def _validate_ui_flow(cls) -> None:
+        block_by_group = cls._validate_ui_blocks()
+        steps = {step.key for step in cls.ui_steps}
+        if len(steps) != len(cls.ui_steps):
+            raise ValueError(f"{cls.__name__}: ui_steps 的 key 重复")
+        for key, section in cls.ui_sections.items():
+            prefix, _, name = key.partition(":")
+            if prefix not in ("group", "table") or not name.strip() or ":" in name:
+                raise ValueError(
+                    f"{cls.__name__}: 分区须为 group:<Name> 或 table:<Name>，收到 {key!r}"
+                )
+            if section.step is not None and section.step not in steps:
+                raise ValueError(
+                    f"{cls.__name__}: 分区 {key!r} 引用了未知步骤 {section.step!r}"
+                )
+
+        def declared_field(path: str) -> FieldInfo:
+            group, name = parse_field_path(path)
+            if group in cls._cfg_ui_hints:
+                fields = cast(
+                    type[ConfigGroup], cls.model_fields[group].annotation
+                ).model_fields
+                if name in fields:
+                    return fields[name]
+            raise ValueError(f"{cls.__name__}: 未声明的字段路径 {path!r}")
+
+        for group, hints in cls._cfg_ui_hints.items():
+            for hint in hints:
+                for path in hint.get("depends_on", {}).values():
+                    declared_field(path)
+                action = hint.get("action_ref")
+                if action is None:
+                    continue
+                if not is_trigger_model_field(declared_field(action)):
+                    raise ValueError(
+                        f"{cls.__name__}: action_ref {action!r} 须指向 Trigger 字段"
+                    )
+                if block_by_group and block_by_group.get(group) != block_by_group.get(
+                    parse_field_path(action)[0]
+                ):
+                    raise ValueError(
+                        f"{cls.__name__}: action_ref {action!r} 须与 {group} 位于同一区块"
+                    )
+
+    @classmethod
+    def _validate_ui_blocks(cls) -> dict[str, int]:
+        blocks = cls.ui_blocks
+        block_by_group: dict[str, int] = {}
+        if blocks is None:
+            return block_by_group
+        if not isinstance(blocks, Sequence) or not blocks:
+            raise ValueError(f"{cls.__name__}: ui_blocks 须为非空序列")
+        if cls.ui_steps or any(
+            section.step is not None for section in cls.ui_sections.values()
+        ):
+            raise ValueError(
+                f"{cls.__name__}: ui_blocks 不能与 ui_steps 或分区步骤共用"
+            )
+
+        host_names = get_args(HostBlockName.__value__)
+        hosts: set[HostBlockName] = set()
+        pages: set[str] = set()
+        for index, block in enumerate(blocks):
+            if isinstance(block, HostBlock):
+                if block.name not in host_names or block.name in hosts:
+                    raise ValueError(
+                        f"{cls.__name__}: 未知或重复的 HostBlock {block.name!r}"
+                    )
+                hosts.add(block.name)
+                continue
+            if isinstance(block, DeclarativeBlock):
+                groups = block.groups
+                if not groups:
+                    raise ValueError(f"{cls.__name__}: DeclarativeBlock 须声明分组")
+            elif isinstance(block, PluginBlock):
+                if not block.page_id.strip() or block.page_id in pages:
+                    raise ValueError(
+                        f"{cls.__name__}: 空白或重复的 PluginBlock.page_id {block.page_id!r}"
+                    )
+                pages.add(block.page_id)
+                groups = block.fallback_groups
+            else:
+                raise ValueError(f"{cls.__name__}: 未知的 ui_blocks 区块 {block!r}")
+
+            for group in groups:
+                if group not in cls._cfg_group_fields or group in block_by_group:
+                    raise ValueError(f"{cls.__name__}: 未知或重复的区块分组 {group!r}")
+                block_by_group[group] = index
+        return block_by_group
+
+    @virtual_field("ui.steps")
+    def _get_ui_steps(self) -> list[UiStep]:
+        return list(self.ui_steps)
+
+    @virtual_field("ui.sections")
+    def _get_ui_sections(self) -> dict[str, UiSection]:
+        return dict(self.ui_sections)
 
     def _ui_visibility(self, group: str, field: str | None = None) -> UiVisibility:
         """同步求显隐；组级隐藏、禁用作用于子项，掩码仅用于具体字段。"""

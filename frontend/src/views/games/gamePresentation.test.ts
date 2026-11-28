@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vite-plus/test'
 import type { ActiveTriggerField } from '@/api'
-import type { GameRow } from '@/types/games'
+import { gameDevices, type GameRow } from '@/types/games'
 import {
   buildTargetOperationsMap,
   filterGameTargetRows,
+  formatTargetConfigSummary,
+  supportsConfigGuard,
   getTargetPriorityBadge,
   resolveEditableDeviceTarget,
   resolveEditableGameTarget,
@@ -72,6 +74,17 @@ describe('gamePresentation', () => {
     ).toBeUndefined()
   })
 
+  it('已删除实例的墓碑不列入目标的设备', () => {
+    const target = makeRow('game-a', '目标 A')
+    const devices = target.document.devices!
+    devices.order!.push({ uid: 'game-a-dev-1', type: 'MuMuDevice' })
+    devices.data!['game-a-dev-1'] = {
+      info: { name: '目标 A-1', index: '1', status: 5, tombstone: true },
+    } as NonNullable<typeof devices.data>[string]
+
+    expect(gameDevices(target).map(device => device.uid)).toEqual(['game-a-dev-0'])
+  })
+
   it('目标数降到 5 个以内隐藏搜索框时忽略旧关键词，避免把剩余目标藏空', () => {
     const sixTargets = Array.from({ length: 6 }, (_, i) => makeRow(`g-${i}`, `目标 ${i}`))
     expect(shouldShowTargetSearch(sixTargets.length)).toBe(true)
@@ -107,5 +120,29 @@ describe('gamePresentation', () => {
     expect(opsMap.get('game-a')).toHaveLength(1)
     expect(getTargetPriorityBadge(targetA, opsMap.get('game-a'))?.kind).toBe('operating')
     expect(getTargetPriorityBadge(targetA, [])?.kind).toBe('recovery')
+  })
+
+  it('配置守卫跟着插件是否下发记录基准提示走，不按 ModAVD 类型隐藏', () => {
+    const target = makeRow('game-a', '目标 A', {
+      type: { type: 'avd', name: 'ModAVD', configType: 'ModAvdGame', kind: 'emulator' },
+    })
+    target.document.info = {
+      ...target.document.info,
+      config_guard: true,
+    } as GameRow['document']['info']
+    const t = (key: string) => key
+
+    // 已去掉守卫的插件（ModAVD 适配 0.1.2 起）不下发 capture
+    expect(supportsConfigGuard(target)).toBe(false)
+    expect(formatTargetConfigSummary(target, t)).not.toContain('core.games.summary.configGuard')
+
+    // 仍带守卫的旧插件（0.1.1）下发 capture，开关和摘要都要留着
+    target.runtime.actionHints!['game-a']!.push({
+      field: 'capture',
+      component: 'button',
+      editable: true,
+    })
+    expect(supportsConfigGuard(target)).toBe(true)
+    expect(formatTargetConfigSummary(target, t)).toContain('core.games.summary.configGuard')
   })
 })

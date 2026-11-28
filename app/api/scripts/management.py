@@ -25,22 +25,32 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import (
     BaseModel,
     Field,
     SerializeAsAny,
-    model_validator,
+    SkipValidation,
+    ValidationError,
 )
 
 import app.models.config as _config_models
+from app.api._config_editors import (
+    FrontendWriteGuard,
+    config_detail_ui,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.api._error_codes import config_error_code
-from app.config.wire import ConfigInput, ConfigPayload, config_contract
+from app.config.errors import ConfigAggregateError
+from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config
 from app.core.game_calendar import SCRIPT_CALENDAR_GAMES
 from app.models.config.script import reject_invalid_log_formats
 from app.models.schema import (
     ConfigSnapshotOut,
+    ConfigUpdateOut,
+    DeclarativeConfigGetOut,
     OutBase,
     ScriptDeleteIn,
     UnavailableConfigItem,
@@ -157,7 +167,7 @@ class ScriptGetIn(BaseModel):
     )
 
 
-class ScriptGetOut(ConfigSnapshotOut):
+class ScriptGetOut(DeclarativeConfigGetOut):
     index: List[ScriptIndexItem] = Field(..., description="托管索引列表")
     data: Dict[
         str,
@@ -187,30 +197,17 @@ class ScriptLockOut(ConfigSnapshotOut):
 
 class ScriptUpdateIn(BaseModel):
     scriptId: str = Field(..., description="托管ID")
-    data: Union[
-        SerializeAsAny[BaseModel],
-        GeneralConfigInput,
-        OkwwConfigInput,
-        OkNteConfigInput,
-        MaaEndConfigInput,
-        HSRConfigInput,
-        BAAHConfigInput,
+    data: SkipValidation[
+        Union[
+            SerializeAsAny[BaseModel],
+            GeneralConfigInput,
+            OkwwConfigInput,
+            OkNteConfigInput,
+            MaaEndConfigInput,
+            HSRConfigInput,
+            BAAHConfigInput,
+        ]
     ] = Field(..., description="托管更新数据")
-
-    @model_validator(mode="before")
-    @classmethod
-    def select_config_contract(cls, value):
-        """按目标配置选输入类型，避免联合类型丢弃其他专项的同组字段。"""
-        if not isinstance(value, dict) or not isinstance(value.get("data"), dict):
-            return value
-        try:
-            target = Config.ScriptConfig[value["scriptId"]]
-        except (KeyError, ValueError, TypeError, AttributeError):
-            return value
-        payload = config_contract(type(target), mode="input").model_validate(
-            value["data"]
-        )
-        return {**value, "data": payload}
 
 
 class ScriptReorderIn(BaseModel):
@@ -307,12 +304,15 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
                 for decl in Plugin.script_types.values()
             }
         )
+        ui = None
         reason = None
         desktop_session_supported = None
         if script.scriptId and index:
             from app.core.desktop_session.lifecycle import query_task_reason
 
-            reason = await query_task_reason(Config.ScriptConfig[script.scriptId])
+            entry = Config.ScriptConfig[script.scriptId]
+            ui = config_detail_ui(entry, data)
+            reason = await query_task_reason(entry)
             desktop_session_supported = reason is None
         index = [
             ScriptIndexItem(
@@ -346,6 +346,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
         )
     # 配置框架运行时生成具体投影类，保留现有联合响应的兼容契约。
     return ScriptGetOut(
+        ui=ui,
         index=index,
         data=data,  # pyright: ignore[reportArgumentType]
         unavailable=unavailable,
@@ -374,34 +375,44 @@ async def get_script_lock(target: ScriptLockIn) -> ScriptLockOut:
     "/update",
     tags=["Update"],
     summary="更新托管配置信息",
-    response_model=OutBase,
+    response_model=ConfigUpdateOut,
     status_code=200,
 )
 async def update_script(
     script: ScriptUpdateIn = Body(...),
-) -> OutBase:
+    guard: FrontendWriteGuard | None = Depends(
+        require_frontend_activation, scope="function"
+    ),
+) -> ConfigUpdateOut:
 
     try:
-        data = script.data.model_dump(exclude_unset=True)
+        entry = Config.ScriptConfig[script.scriptId]
+        if guard is not None:
+            guard(entry)
+        data = config_update_data(entry, script.data)
         # 日志格式写错要等到运行期准备阶段才炸，收尾也会跟着断：保存时就挡住。
         invalid_format = reject_invalid_log_formats(data)
         if invalid_format:
-            return OutBase(code=500, status="error", message=invalid_format)
+            return ConfigUpdateOut(code=500, status="error", message=invalid_format)
         # 设备绑定不受支持时拦截保存，避免先提交配置。
         refusal = await Config.update_script_settings(script.scriptId, data)
         if refusal:
-            return OutBase(code=500, status="error", message=refusal)
+            return ConfigUpdateOut(code=500, status="error", message=refusal)
 
+    except HTTPException:
+        raise
+    except (ValidationError, ConfigAggregateError) as e:
+        return ConfigUpdateOut.from_validation_error(e, code=config_error_code(e))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"
         )
-        return OutBase(
+        return ConfigUpdateOut(
             code=config_error_code(e),
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
         )
-    return OutBase()
+    return ConfigUpdateOut()
 
 
 @router.post(

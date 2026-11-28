@@ -23,7 +23,7 @@
         v-else-if="column.key === 'detail'"
         type="link"
         size="small"
-        :disabled="isSaving || Boolean(error)"
+        :disabled="isSaving"
         @click="navigateTo(`/plans/${props.planId}/okww/${planColumnGroup(record.day)}`)"
         >{{
           incompleteFarmTarget(record.day)
@@ -39,13 +39,11 @@
         :bordered="false"
         :min="1"
         :max="99"
+        :precision="0"
         :disabled="isSaving || Boolean(error)"
         :placeholder="t('core.plan.oknte.inheritShort')"
         :aria-label="`${label(record.day)} ${column.title}`"
-        @change="
-          (value: number | null) =>
-            value !== null && save(record.day, numberField(record.day), value)
-        "
+        @change="(value: number | null) => saveStageIndex(record.day, value)"
       />
       <a-popover
         v-else-if="column.key === 'AdditionalTasks'"
@@ -132,13 +130,7 @@ const drafts = ref<Record<string, Record<string, any>>>({})
 const error = ref('')
 let retry = () => {}
 
-watch(
-  () => props.planId,
-  () => {
-    drafts.value = {}
-    error.value = ''
-  }
-)
+watch(() => props.planId, discardDrafts)
 const days = computed(() =>
   props.currentMode === 'ALL'
     ? ['ALL']
@@ -205,6 +197,10 @@ function notApplicable(day: string, field: string) {
 function number(day: string) {
   return key(day)[numberField(day)] ?? undefined
 }
+function saveStageIndex(day: string, value: number | null) {
+  if (value !== null && Number.isInteger(value) && value >= 1 && value <= 99)
+    return save(day, numberField(day), value)
+}
 function additionalTaskSummary(day: string) {
   const tasks: string[] | null = key(day).AdditionalTasks
   if (tasks == null) return t('core.plan.oknte.inheritShort')
@@ -243,13 +239,30 @@ async function save(day: string, field: string, input: unknown) {
   }
   drafts.value[day] = next
   const saved = await enqueue(() => props.handlePlanChange(`${planColumnGroup(day)}.Key`, next))
-  error.value = saved ? '' : t('core.misc.couldNotUpdatePlan')
-  retry = () => {
-    void save(day, field, input)
+  if (saved) {
+    delete drafts.value[day]
+    error.value = ''
+  } else {
+    error.value = t('core.misc.couldNotUpdatePlan')
+    retry = () => {
+      void save(day, field, input)
+    }
   }
 }
 
-defineExpose({ beforeLeave: () => !isSaving.value && !error.value })
+function discardDrafts() {
+  drafts.value = {}
+  error.value = ''
+  retry = () => {}
+}
+
+defineExpose({
+  beforeLeave: () => {
+    if (isSaving.value) return false
+    if (error.value) discardDrafts()
+    return true
+  },
+})
 </script>
 <style scoped>
 .additional-task-editor {
