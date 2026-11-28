@@ -28,6 +28,7 @@ const {
   busy,
   canSave,
   canSubmit,
+  commitField,
   configUid,
   creatingUser,
   draft,
@@ -107,6 +108,7 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
       :active-fields="activeFields"
       :running-key="runningKey"
       @update:value="draft.update"
+      @commit="commitField"
       @action="runAction"
     />
   </DefineForm>
@@ -177,7 +179,12 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
         <BlockForm v-else :form-groups="block.visibleGroups" :notice="true" />
       </template>
     </template>
-    <a-flex justify="end" align="center" gap="small">
+    <a-flex
+      v-if="!ui?.autoSave || setupMode || draft.dirtyCount.value"
+      justify="end"
+      align="center"
+      gap="small"
+    >
       <span v-if="draft.dirtyCount.value" class="unsaved-count">{{
         t('core.plugins.unsavedCount', { count: draft.dirtyCount.value })
       }}</span>

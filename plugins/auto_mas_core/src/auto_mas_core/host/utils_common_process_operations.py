@@ -3,9 +3,17 @@
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-__all__ = ["iter_processes", "managed_process", "terminate_process"]
+__all__ = [
+    "iter_process_info",
+    "iter_processes",
+    "managed_process",
+    "terminate_process",
+]
 
 if TYPE_CHECKING:
+    from app.utils.common.process.operations import (
+        iter_process_info as iter_process_info,
+    )
     from app.utils.common.process.operations import iter_processes as iter_processes
     from app.utils.common.process.operations import managed_process as managed_process
     from app.utils.common.process.operations import (

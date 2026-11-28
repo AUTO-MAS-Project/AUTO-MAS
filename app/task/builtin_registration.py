@@ -24,8 +24,6 @@ from app.utils.common.startup_timing import startup_stage
 
 def build_builtin_script_capabilities() -> ScriptCapabilities:
     """装配宿主当前内置的专项能力。"""
-    with startup_stage("后端/专项注册导入/BAAH.registration"):
-        from app.task.BAAH.registration import REGISTRATION as baah
     with startup_stage("后端/专项注册导入/general.registration"):
         from app.task.general.registration import REGISTRATION as general
     with startup_stage("后端/专项注册导入/HSR.registration"):
@@ -40,7 +38,6 @@ def build_builtin_script_capabilities() -> ScriptCapabilities:
             general,
             oknte,
             hsr,
-            baah,
         ),
         expected_types=CLASS_BOOK.values(),
     )

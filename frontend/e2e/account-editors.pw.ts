@@ -8,7 +8,6 @@ const adapters = [
   ['Okww', 'okww'],
   ['OkNte', 'oknte'],
   ['HSR', 'hsr'],
-  ['BAAH', 'baah'],
   ['Whimbox', 'whimbox'],
 ]
 

@@ -12,6 +12,7 @@ from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
     backup_legacy_adapter_users,
+    backup_legacy_baah,
     backup_legacy_maafw_documents,
     backup_legacy_zzzod_users,
     migrate_maa_update_channel,
@@ -29,6 +30,7 @@ from app.utils import io as config_io
         ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
         ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
         ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("BAAHConfig", "baah_adapter", "auto-mas-baah-adapter"),
         ("ZzzOdConfig", "zzzod_adapter", "auto-mas-zzzod-adapter"),
         ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
         ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
@@ -111,8 +113,38 @@ def test_zzzod_backup_only_archives_pre_plugin_index(tmp_path):
     assert backup.read_bytes() == original
 
 
+@pytest.mark.parametrize("legacy_account", [{"Info": {"Name": "旧账号"}}, None])
+def test_baah_backup_only_for_legacy_or_missing_records(tmp_path, legacy_account):
+    path = tmp_path / "scripts.yaml"
+    database = tmp_path / "history.db"
+    backup = tmp_path / "legacy-baah-plugin"
+    sid, uid, old_uid = (str(uuid4()) for _ in range(3))
+    users = {
+        "order": [{"uid": uid, "type": "BAAHUserConfig"}],
+        "data": {uid: {"Info": {"Name": "新账号"}, "info": {}}},
+    }
+    scripts = {
+        "order": [{"uid": sid, "type": "BAAHConfig"}],
+        "data": {sid: {"Info": {"Name": "BAAH"}, "info": {}, "UserData": users}},
+    }
+    config_io.write_file(path, scripts)
+    backup_legacy_baah(tmp_path, database)
+    assert not backup.exists()
+
+    users["order"].append({"uid": old_uid, "type": "BAAHUserConfig"})
+    if legacy_account is not None:
+        users["data"][old_uid] = legacy_account
+    config_io.write_file(path, scripts)
+    original = path.read_bytes()
+    backup_legacy_baah(tmp_path, database)
+    assert (backup / path.name).read_bytes() == original
+
+
 @pytest.mark.parametrize("version", ["v2.1", "v2.2"])
-def test_startup_preserves_zzzod_when_package_is_unavailable(tmp_path, version):
+@pytest.mark.parametrize("adapter, config_key", [("zzzod", "ZzzOd"), ("baah", "BAAH")])
+def test_startup_preserves_managed_script_when_package_is_unavailable(
+    tmp_path, version, adapter, config_key
+):
     """补装失败时仍加载其他托管，保留原始账号和回退索引。"""
     source_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(
@@ -138,15 +170,16 @@ Config.bind_script_config_handler(GeneralConfig, build_config_handler())
 sid, uid = str(uuid4()), str(uuid4())
 general = str(uuid4())
 queue, queued = str(uuid4()), str(uuid4())
-zzzod = {"UserData": {
-    "order": [{"uid": uid, "type": "ZzzOdUserConfig"}],
+version, adapter, config_key = sys.argv[1:]
+original_script = {"UserData": {
+    "order": [{"uid": uid, "type": f"{config_key}UserConfig"}],
     "data": {uid: {"Info": {"Name": "原账号"}}},
 }}
 path = Config.config_path / "scripts.yaml"
 io.write_file(path, {
-    "order": [{"uid": sid, "type": "ZzzOdConfig"},
+    "order": [{"uid": sid, "type": f"{config_key}Config"},
               {"uid": general, "type": "GeneralConfig"}],
-    "data": {sid: zzzod, general: {}},
+    "data": {sid: original_script, general: {}},
 })
 queue_path = Config.config_path / "queues.yaml"
 io.write_file(queue_path, {
@@ -157,7 +190,6 @@ io.write_file(queue_path, {
     }}},
 })
 original = path.read_bytes()
-version = sys.argv[1]
 with sqlite3.connect(Config.database_path) as db:
     db.execute("CREATE TABLE version(v text)")
     db.execute("INSERT INTO version VALUES (?)", (version,))
@@ -166,18 +198,83 @@ with patch("app.core.config.manager.install_adapter_plugin", side_effect=PluginP
 assert Config.ScriptConfig[general].uid == uuid.UUID(general)
 assert Config.ScriptConfig.is_unresolved(sid)
 assert str(Config.QueueConfig[queue].QueueItem[queued].Info.ScriptId) == sid
-assert io.read_dict_file(path)["data"][sid] == zzzod
-assert (path.parent / "legacy-zzzod-plugin" / path.name).read_bytes() == original
+assert io.read_dict_file(path)["data"][sid] == original_script
+backup = path.parent / f"legacy-{adapter}-plugin"
+if adapter == "baah" and version == "v2.1":
+    backup = path.parent / "legacy-json" / "pre-upgrade"
+assert (backup / path.name).read_bytes() == original
+if adapter == "baah":
+    with closing(sqlite3.connect(backup / Config.database_path.name)) as snapshot:
+        assert snapshot.execute("SELECT v FROM version").fetchone() == (version,)
 with closing(sqlite3.connect(Config.database_path)) as db:
-    assert db.execute("SELECT v FROM version").fetchone() == ("v2.2",)
+    assert db.execute("SELECT v FROM version").fetchone() == (version if adapter == "baah" else "v2.2",)
 """,
             version,
+            adapter,
+            config_key,
         ],
         cwd=tmp_path,
         capture_output=True,
         text=True,
         encoding="utf-8",
         env={**os.environ, "PYTHONPATH": str(source_root), "PYTHONIOENCODING": "utf-8"},
+        timeout=45,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_offline_legacy_baah_preserves_nested_accounts(tmp_path):
+    """旧 JSON 仍走日期转换，账号及 Webhook 在缺插件时按 UID 保存在 YAML 中。"""
+    source_root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import sqlite3
+from unittest.mock import patch
+from uuid import uuid4
+
+from app.core import Config
+from app.utils import io
+
+sid, uid, hook = map(str, (uuid4(), uuid4(), uuid4()))
+user = {
+    "Info": {"Name": "旧账号", "ActivityLineType": "Globle", "ConfigName": "custom"},
+    "Data": {"LastProxyDate": "2025-02-01", "ProxyTimes": 7},
+    "SubConfigsInfo": {"Notify_CustomWebhooks": {
+        "instances": [{"uid": hook, "type": "Webhook"}], hook: {},
+    }},
+}
+legacy = {"instances": [{"uid": sid, "type": "BAAHConfig"}], sid: {
+    "Info": {"Name": "旧托管"},
+    "SubConfigsInfo": {"UserData": {
+        "instances": [{"uid": uid, "type": "BAAHUserConfig"}], uid: user,
+    }},
+}}
+io.write_file(Config.config_path / "ScriptConfig.json", legacy)
+with sqlite3.connect(Config.database_path) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES ('v1.11')")
+with patch("app.core.config.manager.install_adapter_plugin", side_effect=RuntimeError("offline")):
+    asyncio.run(Config.check_data())
+
+assert Config.ScriptConfig.is_unresolved(sid)
+raw = io.read_dict_file(Config.config_path / "scripts.yaml")["data"][sid]
+assert raw["Info"]["Name"] == "旧托管"
+assert raw["UserData"]["order"] == [{"uid": uid, "type": "BAAHUserConfig"}]
+user = raw["UserData"]["data"][uid]
+assert user["Info"]["ActivityLineType"] == "Globle"
+assert user["Info"]["ConfigName"] == "custom"
+assert user["Data"]["ProxyTimes"] == 7
+from datetime import datetime
+date = datetime.fromisoformat(str(user["Data"]["LastProxyDate"]))
+assert date.tzinfo is not None
+assert user["Notify_CustomWebhooks"]["order"] == [{"uid": hook, "type": "Webhook"}]
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(source_root), "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        encoding="utf-8",
         timeout=45,
     )
     assert result.returncode == 0, result.stdout + result.stderr

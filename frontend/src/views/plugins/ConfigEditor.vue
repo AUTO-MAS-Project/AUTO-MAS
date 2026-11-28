@@ -67,6 +67,7 @@ const {
   runningKey,
   runAction,
   beforeLeave,
+  commitField,
   reload,
   save,
 } = editor
@@ -127,6 +128,7 @@ defineExpose({ beforeLeave })
         :active-fields="activeFields"
         :running-key="runningKey"
         @update:value="draft.update"
+        @commit="commitField"
         @update:options-invalid="optionsInvalid = $event"
         @action="runAction"
         @finish="finish()"

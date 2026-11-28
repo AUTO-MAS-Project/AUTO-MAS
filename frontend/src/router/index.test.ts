@@ -63,6 +63,7 @@ describe('应用路由', () => {
     ['MSS', 'mss', ['edit/mss'], true],
     ['MaaEnd', 'maaend', ['edit/maaend'], false],
     ['ZzzOd', 'zzzod', ['edit/zzzod'], false],
+    ['BAAH', 'baah', ['edit/baah'], false],
   ] as const)(
     '%s 旧地址进入插件编辑器并保留参数、查询与锚点',
     async (scriptType, suffix, userPaths, setup) => {

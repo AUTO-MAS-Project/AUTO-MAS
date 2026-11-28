@@ -63,7 +63,7 @@ test('插件与历史种子只写普通隔离根，真实与就地模式保持�
     const enabledPlugins = Object.values(pluginRegistry.data)
       .map(({ info }) => info)
       .filter(({ enabled }) => enabled)
-    for (const name of ['maa_adapter', 'whimbox_adapter']) {
+    for (const name of ['baah_adapter', 'maa_adapter', 'whimbox_adapter']) {
       assert.ok(enabledPlugins.some(({ plugin_name }) => plugin_name === name))
     }
     const maaEnd = enabledPlugins.find(({ plugin_name }) => plugin_name === 'maaend_adapter')

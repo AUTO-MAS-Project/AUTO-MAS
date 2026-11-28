@@ -14,11 +14,16 @@ import { useConfirm } from '@/composables/useConfirm'
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { useConfigQuery } from '@/services/configUiSync'
 import { ApiResponseError, apiErrorMessage, requestApi } from '@/utils/apiResult'
-import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analytics'
+import {
+  analyticsConfigSection,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
 import { pluginUiPost, type PluginUiActivation } from '@/utils/pluginUiRequests'
 import type {
   PluginUiChange,
@@ -88,6 +93,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   const { confirm } = useConfirm()
   const draft = usePluginSettingsDraft()
   const saving = ref(false)
+  const autoSaveQueue = useSaveQueue()
   const creatingUser = ref(false)
   const optionsInvalid = ref(false)
   const { addUser } = useUserApi()
@@ -190,11 +196,28 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     })
   )
   const backupTargets = computed(() => ui.value?.backupTargets ?? [])
-  const ensureTargets = () => Promise.all(backupTargets.value.map(pool => ensureBackup(pool.key)))
+  type BackupEvent = 'enter' | 'save' | 'leave'
+  function archiveFor(event: BackupEvent, selected = target.value, pools = backupTargets.value) {
+    const ids = {
+      scriptId: selected.mode === 'user' ? selected.scriptId : selected.id,
+      userId: selected.mode === 'user' ? selected.id : null,
+    }
+    return Promise.all(
+      pools
+        .filter(pool => (pool.editorEvents ?? ['enter', 'save']).some(item => item === event))
+        .map(pool => ensureBackup(pool.key, ids))
+    )
+  }
   watch(
     configUid,
-    uid => {
-      if (uid) void ensureTargets()
+    (uid, _, onCleanup) => {
+      if (!uid) return
+      const selected = target.value
+      const pools = backupTargets.value
+      void archiveFor('enter', selected, pools)
+      onCleanup(() => {
+        void archiveFor('leave', selected, pools)
+      })
     },
     { immediate: true, flush: 'sync' }
   )
@@ -260,6 +283,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   }
 
   async function beforeLeave() {
+    if (autoSaveQueue.isSaving.value) await autoSaveQueue.waitForIdle()
     if (saving.value || creatingUser.value || runningKey.value || !(await confirmDiscard()))
       return false
     return native.stopSession(true)
@@ -336,7 +360,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       if (isCurrent(selected)) {
         draft.commit(submitted, fields)
         message.success(t('core.plugins.saved'))
-        await Promise.all([detail.refetch(), ensureTargets()])
+        await Promise.all([detail.refetch(), archiveFor('save', selected)])
       }
       return { ok: true }
     } catch (error) {
@@ -359,7 +383,9 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
         config?.finish({
           owner_kind: selected.mode === 'setup' ? 'script' : selected.mode,
           section_kind: analyticsConfigSection(data),
-          script_type: 'unknown',
+          script_type: getAnalyticsScriptType(
+            selected.mode === 'user' ? selected.scriptId : selected.id
+          ),
           outcome,
         })
       saving.value = false
@@ -368,6 +394,30 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
 
   async function save(activation?: PluginUiActivation) {
     return canSave.value && (await persist(activation)).ok
+  }
+
+  function pendingRead() {
+    if (!ui.value?.autoSave || busy.value || !detail.isFetching.value) return undefined
+    return () => detail.refetch({ cancelRefetch: false })
+  }
+
+  function commitField(group: string, field: string) {
+    if (
+      !ui.value?.autoSave ||
+      !draft.changes.value.some(c => c.group === group && c.field === field)
+    )
+      return
+    const selected = target.value
+    void autoSaveQueue.enqueue(async () => {
+      const read = pendingRead()
+      if (read) await read()
+      if (
+        isCurrent(selected) &&
+        canSubmit.value &&
+        draft.changes.value.some(c => c.group === group && c.field === field)
+      )
+        await persist(undefined, [{ group, field }])
+    }, `${configUid.value}.${group}.${field}`)
   }
 
   const readOnly = (): PluginUiSaveResult => ({
@@ -421,7 +471,9 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     return {
       locale: locale.value,
       locked: locked || !!ui.value?.locked,
-      busy: busy.value || detail.isFetching.value || detail.isError.value,
+      // 即时保存面板在后台回读时继续接收输入；提交前等待回读并重新检查写权限。
+      busy: busy.value || (!ui.value?.autoSave && detail.isFetching.value) || detail.isError.value,
+      waitForRead: pendingRead(),
       groups: panelGroups,
       values: draft.values,
       ...(visibleGroups && { fieldErrors: scopedErrors(draft.errors.value) }),
@@ -495,6 +547,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
     runningKey,
     runAction,
     beforeLeave,
+    commitField,
     reload,
     save,
   }

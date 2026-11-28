@@ -18,7 +18,13 @@ from app.core import Config, Plugin  # noqa: E402
 from app.core.history import HistoryStore  # noqa: E402
 from app.models.schema import HistoryWrite  # noqa: E402
 
-BROWSER_ADAPTERS = ("maa_adapter", "src_adapter", "bettergi_adapter", "whimbox_adapter")
+BROWSER_ADAPTERS = (
+    "baah_adapter",
+    "maa_adapter",
+    "src_adapter",
+    "bettergi_adapter",
+    "whimbox_adapter",
+)
 GAME_ADAPTERS = (
     "mumu_adapter",
     "ldplayer_adapter",

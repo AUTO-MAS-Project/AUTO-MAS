@@ -12,7 +12,6 @@ from app.core.notify.native.contracts import NotificationAPI, NotificationSender
 from app.services.common.custom_script import native as common_script
 from app.services.contracts.custom_script import ScriptCommandAPI
 from app.services.windows import custom_script_native as windows_script
-from app.task.BAAH.tools.push_log import baah_resolve
 from app.task.OkNte.push_log import oknte_resolve
 from app.task.Okww.push_log import okww_resolve
 from app.utils.common import host as common_host
@@ -58,7 +57,6 @@ from app.utils.windows.power import WindowsPowerController
 # 必须是实际实现的赋值；不要用 cast、Any 或 ignore 绕过签名核对。
 okww_processor: PostProcessor = okww_resolve
 oknte_processor: PostProcessor = oknte_resolve
-baah_processor: PostProcessor = baah_resolve
 file_lock_windows: FileLockAPI = windows_file_lock
 file_lock_posix: FileLockAPI = posix_file_lock
 file_lock_unsupported: FileLockAPI = unsupported_file_lock

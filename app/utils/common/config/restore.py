@@ -183,6 +183,9 @@ class ConfigRestorePool:
     editor_scope: Literal["user", "script"] | None = None
     """展示此池的通用编辑器；仅托管编辑器的池允许省略账号。"""
 
+    editor_events: tuple[Literal["enter", "save", "leave"], ...] = ("enter", "save")
+    """通用编辑器在哪些时机归档此池。"""
+
 
 @dataclass
 class ConfigRestoreTarget:

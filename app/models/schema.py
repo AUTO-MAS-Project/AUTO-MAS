@@ -407,6 +407,9 @@ class ConfigUpdateOut(OutBase):
 
 
 class BackupTargetHint(BaseModel):
+    editorEvents: list[Literal["enter", "save", "leave"]] = Field(
+        default_factory=lambda: ["enter", "save"]
+    )
     key: str
     kind: Literal["user", "script"]
 
@@ -463,6 +466,8 @@ ConfigBlockOut = Annotated[
 
 class DeclarativeConfigUi(BaseModel):
     """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
+
+    autoSave: bool = False
 
     configUid: str
     locked: bool = False

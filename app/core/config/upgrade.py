@@ -265,15 +265,17 @@ def is_blank_file(path: Path) -> bool:
 
 
 def preserve_pre_upgrade(
-    config_path: Path, *, database_path: Path | None = None
+    config_path: Path, *, database_path: Path | None = None, backup: Path | None = None
 ) -> None:
     """按配置白名单及 SQLite 一致性快照留存升级原件，重试不覆盖首次备份。"""
-    backup = config_path / "legacy-json" / "pre-upgrade"
+    if backup is None:
+        backup = config_path / "legacy-json" / "pre-upgrade"
     backup.mkdir(parents=True, exist_ok=True)
     # 新旧聚合配置及早期升级涉及的 JSON；按固定范围保留相对路径，不复制历史备份。
     for pattern in (
         *(old for old, _new, _key in CONFIG_FILES),
         *(new for _old, new, _key in CONFIG_FILES),
+        "games.yaml",
         "plugins/*.yaml",
         "plugin_registry.yaml",
         "plugin_catalog.yaml",

@@ -173,6 +173,56 @@ describe('Demo15 配置编辑器', () => {
     },
   }
 
+  it('即时保存账号字段，并在离开时归档原账号', async () => {
+    const state = detail(
+      'u',
+      { Info: { Name: 'old' } },
+      { Info: [{ field: 'Name', component: 'input', editable: true }] }
+    )
+    const get = vi.spyOn(Service, 'getUserApiScriptsUserGetPost').mockResolvedValue({
+      ...state,
+      ui: {
+        ...state.ui,
+        autoSave: true,
+        blocks: [{ kind: 'declarative', groups: ['Info'] }],
+        backupTargets: [
+          { key: 'native', kind: BackupTargetHint.kind.SCRIPT, editorEvents: ['enter'] },
+          { key: 'mas', kind: BackupTargetHint.kind.USER, editorEvents: ['leave'] },
+        ],
+      },
+    })
+    const write = vi
+      .spyOn(Service, 'updateUserApiScriptsUserUpdatePost')
+      .mockResolvedValue({ code: 200 })
+    const archive = vi
+      .spyOn(Service, 'ensureConfigBackupApiApiScriptsBackupEnsurePost')
+      .mockResolvedValue({ code: 200, created: true, time: 't' })
+    const view = await editorView(userPath, client)
+    view.mount()
+    try {
+      await vi.waitFor(() => expect(view.find('input')).toBeDefined())
+      const input = view.find('input')!
+      await fire(input, 'onUpdate:value', 'new')
+      expect(write).not.toHaveBeenCalled()
+      await fire(input, 'onBlur')
+      await vi.waitFor(() =>
+        expect(write).toHaveBeenCalledWith({
+          scriptId: 's',
+          userId: 'u',
+          data: { Info: { Name: 'new' } },
+        })
+      )
+      await vi.waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(1))
+      await view.router.push('/scripts')
+      expect(archive.mock.calls.map(([req]) => [req.userId, req.target])).toEqual([
+        ['u', 'native'],
+        ['u', 'mas'],
+      ])
+    } finally {
+      view.app.unmount()
+    }
+  })
+
   it('按声明顺序组合宿主与表单区块，整页只有一组保存操作', async () => {
     const state = detail(
       's',
