@@ -19,10 +19,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel, Field
 
 from app.models.schema import (
     ComboBoxItem,
     ComboBoxOut,
+    OutBase,
 )
 from app.utils import get_logger
 
@@ -37,6 +39,39 @@ BAAHService = Annotated[BAAHConfigService, Depends(get_baah_config_service)]
 
 router = APIRouter()
 logger = get_logger("托管管理 API")
+
+
+class BAAHRecommendedConfigIn(BaseModel):
+    scriptId: str = Field(description="BAAH 托管 ID")
+
+
+class BAAHRecommendedConfigOut(OutBase):
+    configName: str = Field(default="", description="新建配置名，不含 .json 后缀")
+
+
+@router.post(
+    "/baah/config/create-recommended",
+    tags=["BAAH"],
+    summary="生成 BAAH 推荐配置",
+    response_model=BAAHRecommendedConfigOut,
+)
+async def create_baah_recommended_config_api(
+    data: BAAHRecommendedConfigIn, service: BAAHService
+) -> BAAHRecommendedConfigOut:
+    try:
+        name = await service.create_recommended_config(data.scriptId)
+        return BAAHRecommendedConfigOut(configName=name, message="推荐配置已生成")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"create_baah_recommended_config_api失败: {type(e).__name__}: {e}"
+        )
+        return BAAHRecommendedConfigOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
 
 
 @router.get(

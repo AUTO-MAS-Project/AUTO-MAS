@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
+import { pendingDesktopLogin } from '@/composables/useDesktopSessionLogin'
 import { message } from 'ant-design-vue'
 import { openConfirm } from '@/composables/useConfirm'
 import type { SelectValue } from 'ant-design-vue/es/select'
@@ -65,7 +66,14 @@ const {
 
 // 活动标签
 const route = useRoute()
-const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
+const activeKey = ref('basic')
+watch(
+  [() => route.query.tab, pendingDesktopLogin],
+  ([tab, login]) => {
+    if (login || tab === 'function' || tab === 'desktop-session') activeKey.value = 'function'
+  },
+  { immediate: true }
+)
 const version = computed(() => import.meta.env.VITE_APP_VERSION || t('core.setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
@@ -83,6 +91,7 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
 const {
   loading,
   handleSettingChange,
+  configUid,
   handleDynamicSettingChange,
   handleSettingGroupChange,
   refreshSettings,
@@ -250,6 +259,7 @@ onMounted(() => {
       </template>
       <template #function>
         <TabFunction
+          :active="activeKey === 'function'"
           :settings="settings"
           :handle-setting-change="handleSettingChange"
           :handle-setting-group-change="handleSettingGroupChange"
@@ -257,6 +267,8 @@ onMounted(() => {
       </template>
       <template #notify>
         <TabNotify
+          :config-uid="configUid"
+          :save-group="handleSettingGroupChange"
           :settings="settings"
           :handle-setting-change="handleDynamicSettingChange"
           :test-notify="testNotify"

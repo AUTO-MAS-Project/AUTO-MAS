@@ -323,6 +323,10 @@ def main():
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
             baah_config_service = BAAHConfigService(
                 get_script=lambda script_id: Config.ScriptConfig[script_id],
+                template_path=Config.resource_path
+                / "templates"
+                / "BAAH"
+                / "recommended.json",
             )
         with startup_stage("后端/专项能力绑定/MaaEnd 服务"):
             maaend_config_service = MaaEndConfigService(

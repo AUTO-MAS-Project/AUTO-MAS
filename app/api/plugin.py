@@ -130,6 +130,9 @@ class PluginProvidedScriptType(BaseModel):
     hasAccountField: bool = Field(description="用户配置是否声明 Info.Id")
     hasPasswordField: bool = Field(description="用户配置是否声明 Info.Password")
     firstAccountMode: FirstAccountMode = "direct"
+    blockSurfaces: list[Literal["script", "setup", "user", "plan"]] = Field(
+        default_factory=list
+    )
 
 
 class PluginFrontendInfo(BaseModel):
@@ -266,6 +269,13 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
     script_key, decl = registration
     info = decl.user_type.model_fields.get("Info")
     info_fields = getattr(info.annotation, "model_fields", {}) if info else {}
+    block_surfaces: list[Literal["script", "setup", "user", "plan"]] = []
+    if decl.script_type.ui_blocks:
+        block_surfaces.extend(("script", "setup"))
+    if decl.user_type.ui_blocks:
+        block_surfaces.append("user")
+    if decl.plan_type and decl.plan_type.ui_blocks:
+        block_surfaces.append("plan")
     return PluginProvidedScriptType(
         scriptKey=script_key,
         firstAccountMode=decl.first_account_mode,
@@ -279,6 +289,7 @@ def _provided_script(record: PluginRecord) -> PluginProvidedScriptType | None:
         ),
         hasAccountField="Id" in info_fields,
         hasPasswordField="Password" in info_fields,
+        blockSurfaces=block_surfaces,
     )
 
 
@@ -457,6 +468,7 @@ async def get_plugin_config(body: PluginConfigGetIn = Body(...)) -> PluginConfig
             data=PluginConfigDocument.model_validate(
                 {
                     "uid": cfg.uid,
+                    "locked": cfg.is_locked,
                     **cfg.model_dump(mode="json", context={"audience": "api"}),
                 }
             ),

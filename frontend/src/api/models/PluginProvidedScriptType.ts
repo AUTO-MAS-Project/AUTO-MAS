@@ -27,6 +27,7 @@ export type PluginProvidedScriptType = {
      */
     hasPasswordField: boolean;
     firstAccountMode?: PluginProvidedScriptType.firstAccountMode;
+    blockSurfaces?: Array<'script' | 'setup' | 'user' | 'plan'>;
 };
 export namespace PluginProvidedScriptType {
     export enum firstAccountMode {

@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { BackupTargetHint } from './BackupTargetHint';
+import type { ConfigBlockOut } from './ConfigBlockOut';
 import type { FrontendSurfaceMount } from './FrontendSurfaceMount';
 import type { UiHintsMap } from './UiHintsMap';
 import type { UiSection } from './UiSection';
@@ -23,5 +24,6 @@ export type DeclarativeConfigUi = {
     backupTargets?: Array<BackupTargetHint>;
     nativeSession?: ('view' | 'config' | null);
     frontendSurfaces?: Record<string, FrontendSurfaceMount>;
+    blocks?: (Array<ConfigBlockOut> | null);
 };
 

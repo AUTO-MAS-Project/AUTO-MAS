@@ -3,7 +3,7 @@
 ## 声明能力与分身清单
 
 1. 在现有 `ScriptTypeDecl` 中支持 `TaskMode.AUTO_PROXY`，并传入 `desktop_session_check`。回调接收当前托管配置和宿主是否已提权，同步返回 `None`（可用）、`admin_required`（需要管理员权限）或 `unsupported_config`（当前配置不兼容）。回调可重复执行，只读配置和权限，避免阻塞 I/O、写配置或启动进程。省略回调时插件仍可在主会话运行。
-2. 哪些托管和队列在分身运行，由宿主在「设置 → 功能」桌面分身卡片里集中管理，分两份全局设置：`DesktopSession.Targets` 是单独启动时进分身的托管，`DesktopSession.StartOnOpen` 是「打开分身并启动任务」一并派发的队列和托管。新插件不必声明 `Run.ExecutionSession`。已经继承 SDK `DesktopSessionRunFields` 或自行声明该字段的保留即可：宿主只在升级时读一次，把取值为 `desktop` 的托管只并入 `Targets`，之后不再读取，也不写回。单独启动托管只看 `Targets`；队列只在从桌面分身卡片派发时整条进分身，手动启动队列和定时任务在主会话运行。
+2. 宿主在「设置 → 功能」的桌面分身卡片里管理两份全局清单：`DesktopSession.Targets` 是单独启动时进分身的托管，`DesktopSession.StartOnOpen` 是「打开分身并启动任务」一并派发的队列和托管。新插件不必声明 `Run.ExecutionSession`。已经继承 SDK `DesktopSessionRunFields` 或自行声明该字段的保留即可：宿主只在升级时读一次，把取值为 `desktop` 的托管只并入 `Targets`，之后不再读取，也不写回。单独启动托管只看 `Targets`。手动、开机、定时和循环启动队列时，按「调度队列 → 启动位置」派发，默认为主会话。卡片的「随分身启动」清单独立于队列启动位置。
 3. 宿主按托管实际注册的配置类查找已启用插件，通过调用门检查能力。详情、预览和正式受理共用检查，持有托管锁后执行前再复核。托管在清单里但暂时不可用时，保留清单条目并返回原因，不悄悄改到主会话。需要改在主会话运行时，由用户把它移出清单，或在派发确认里选择主会话。
 
 需要宿主提权的适配器可在其现有 `ScriptTypeDecl(...)` 中传入下面的 `desktop_session_check`，奇想盒采用此条件。

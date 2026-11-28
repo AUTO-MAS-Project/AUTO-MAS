@@ -101,6 +101,7 @@ async def test_registry_provided_script(monkeypatch, with_plan):
                 "hasAccountField": with_plan,
                 "hasPasswordField": with_plan,
                 "firstAccountMode": "direct",
+                "blockSurfaces": [],
             }
             assert await ownership("/api/plugin_registry/get") == provided
         finally:

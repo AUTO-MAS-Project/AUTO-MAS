@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { DeleteOutlined } from '@ant-design/icons-vue'
+import { AppstoreOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useConfirm } from '@/composables/useConfirm'
 
 /** 所属插件不可用的托管或计划表：只读，只能删除。 */
@@ -22,7 +23,20 @@ const props = defineProps<{
 const emit = defineEmits<{ delete: [uid: string] }>()
 
 const { t } = useI18n()
+const router = useRouter()
 const { confirm } = useConfirm()
+
+const pluginActionLabel = (item: UnavailableConfigCard) => {
+  if (item.reason === 'plugin_disabled') return t('core.unavailableConfig.enablePlugin')
+  if (item.reason === 'plugin_unavailable') return t('core.unavailableConfig.installPlugin')
+  return t('core.unavailableConfig.openPluginCenter')
+}
+
+const openPluginTarget = (item: UnavailableConfigCard) => {
+  void router.push({
+    name: item.reason === 'plugin_unavailable' ? 'PluginMarket' : 'Plugins',
+  })
+}
 
 const reasonText = (item: UnavailableConfigCard) => {
   const plugin = item.plugin || t('core.unavailableConfig.unknownPlugin')
@@ -58,10 +72,16 @@ const confirmDelete = (item: UnavailableConfigCard) => {
         <div class="unavailable-reason">{{ reasonText(item) }}</div>
         <div v-if="item.detail" class="unavailable-detail">{{ item.detail }}</div>
       </div>
-      <a-button danger :loading="deletingId === item.uid" @click="confirmDelete(item)">
-        <template #icon><DeleteOutlined /></template>
-        {{ t('core.unavailableConfig.delete') }}
-      </a-button>
+      <a-space>
+        <a-button @click="openPluginTarget(item)">
+          <template #icon><AppstoreOutlined /></template>
+          {{ pluginActionLabel(item) }}
+        </a-button>
+        <a-button danger :loading="deletingId === item.uid" @click="confirmDelete(item)">
+          <template #icon><DeleteOutlined /></template>
+          {{ t('core.unavailableConfig.delete') }}
+        </a-button>
+      </a-space>
     </div>
   </div>
 </template>

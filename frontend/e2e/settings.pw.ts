@@ -38,6 +38,25 @@ const expectCircularSwatches = async (page: Page) => {
 }
 
 test.describe('@settings user preferences', () => {
+  test('opens first desktop sign-in from the Features card', async ({ app, page }) => {
+    await app.goto('/settings')
+    await page.evaluate(() => {
+      window.electronAPI.desktopSessionSupported = async () => true
+      window.electronAPI.desktopSessionOpen = async () => 'setup_required'
+      window.electronAPI.desktopSessionConnectForTask = async login =>
+        login?.password === '' && !login.forTask ? 'connected' : 'failed'
+    })
+    await page.getByRole('tab', { name: 'Features', exact: true }).click()
+    const open = page.getByRole('button', { name: 'Open desktop session', exact: true })
+    await open.click()
+    const dialog = page.getByRole('dialog', { name: 'Verify Windows password' })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('checkbox', { name: 'Connect without a password' }).check()
+    await dialog.getByRole('button', { name: 'Connect', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await expect(open).toBeVisible()
+  })
+
   test('anchors question hints to the icon for hover and keyboard focus', async ({ app, page }) => {
     await app.goto('/settings')
     const popup = page.locator('.ant-tooltip:visible')

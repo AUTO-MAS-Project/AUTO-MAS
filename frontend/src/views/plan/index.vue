@@ -109,15 +109,14 @@ onBeforeRouteUpdate((to, from) => to.query.planId === from.query.planId || canCh
 const currentPlan = computed(
   () => planList.value.find(plan => plan.id === activePlanId.value) || null
 )
-const currentPlanData = computed<PlanConfigData | null>(
-  () => planDataMap.value[activePlanId.value] ?? null
-)
+const currentPlanData = computed(() => planDataMap.value[activePlanId.value] ?? null)
 const registry = usePluginRegistry()
-const planClaims = computed(
-  () => indexPluginScriptTypes(registry.data.value?.data).frontendByPlanConfigType
-)
+const currentPlanHasPanel = computed(() => {
+  const type = currentPlan.value?.type ?? ''
+  const index = indexPluginScriptTypes(registry.data.value?.data)
+  return index.blockPlanConfigTypes.has(type) || index.frontendByPlanConfigType.has(type)
+})
 const currentPlanDescriptor = computed(() => getPlanTypeDescriptor(currentPlan.value?.type))
-const currentPlanHasPanel = computed(() => planClaims.value.has(currentPlan.value?.type ?? ''))
 const currentPlanSupportsSchedule = computed(
   () => !!currentPlanDescriptor.value || currentPlanData.value?.Info?.Mode != null
 )

@@ -1,10 +1,17 @@
 import { onScopeDispose, ref, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { useConfirm } from './useConfirm'
+import { createDeclarativeI18n } from '@/components/declarative/declarativeI18n'
+import { i18nRevision } from '@/i18n'
+import { isBrowserDevelopment } from '@/utils/environment'
 import { OpenAPI, TriggerUiState, type ComponentHint, type FrontendSurfaceMount } from '@/api'
 import type { SettingsValues } from '@/views/plugins/settings/usePluginSettingsDraft'
 import type { PluginPanelTheme } from './pluginPanelTheme'
 
 export interface PluginUiTarget {
-  kind: 'script' | 'setup' | 'user' | 'plan'
+  kind: 'script' | 'setup' | 'user' | 'plan' | 'settings' | 'notification'
+  pluginId?: string | null
+  channelId?: string | null
   scriptId: string | null
   userId: string | null
   planId: string | null
@@ -30,6 +37,7 @@ export interface PluginUiEditor {
   busy: boolean
   groups: { name: string; hints: ComponentHint[] }[]
   values: SettingsValues
+  fieldErrors?: Record<string, string>
   configRevision: number
   save: (changes: PluginUiChange[], commit: boolean) => Promise<PluginUiSaveResult>
   runAction: (
@@ -42,14 +50,48 @@ export interface PluginUiEditor {
 }
 
 const source = 'auto-mas-wheel'
-const targetKeys = ['kind', 'scriptId', 'userId', 'planId', 'configUid'] as const
+const shortText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max
+const optionalText = (v: unknown, max: number): v is string | undefined =>
+  v === undefined || shortText(v, max)
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype
+
+type TranslationKey = string | { key: string; params?: Record<string, unknown> }
+
+function isTranslationKey(value: unknown): value is TranslationKey {
+  return (
+    shortText(value, 256) ||
+    (isRecord(value) &&
+      shortText(value.key, 256) &&
+      (value.params === undefined || isRecord(value.params)))
+  )
+}
+
+function validFilters(value: unknown): value is Array<{ name: string; extensions: string[] }> {
+  return (
+    Array.isArray(value) &&
+    value.length <= 32 &&
+    value.every(
+      filter =>
+        isRecord(filter) &&
+        Object.keys(filter).length === 2 &&
+        shortText(filter.name, 100) &&
+        filter.name.trim() &&
+        Array.isArray(filter.extensions) &&
+        filter.extensions.length > 0 &&
+        filter.extensions.length <= 32 &&
+        filter.extensions.every(
+          extension => shortText(extension, 32) && /^(?:[a-z0-9][a-z0-9._+-]*|\*)$/i.test(extension)
+        )
+    )
+  )
+}
+
 const matchesTarget = (value: unknown, target: PluginUiTarget) =>
   isRecord(value) &&
-  Object.keys(value).length === targetKeys.length &&
-  targetKeys.every(
-    key => Object.prototype.hasOwnProperty.call(value, key) && value[key] === target[key]
+  Object.keys(value).length === Object.keys(target).length &&
+  Object.entries(target).every(
+    ([key, expected]) => Object.prototype.hasOwnProperty.call(value, key) && value[key] === expected
   )
 
 function isConfigValue(value: unknown, depth = 0): boolean {
@@ -61,19 +103,20 @@ function isConfigValue(value: unknown, depth = 0): boolean {
   return isRecord(value) && Object.values(value).every(item => isConfigValue(item, depth + 1))
 }
 
-const visible = (hint: ComponentHint) => hint.field && !hint.secret && !hint.masked
-
 function panelConfig({ groups, values }: PluginUiEditor) {
+  const configuredSecrets: string[] = []
   const config = Object.fromEntries(
     groups.map(({ name, hints }) => [
       name,
       Object.fromEntries(
-        hints.flatMap(hint => {
-          const field = hint.field
+        hints.flatMap(({ field, secret, masked, state }) => {
+          if (!field) return []
           const fields = values[name]
-          return field &&
-            visible(hint) &&
-            hint.state === undefined &&
+          if (secret || masked) {
+            if (masked || fields?.[field]) configuredSecrets.push(`${name}.${field}`)
+            return []
+          }
+          return state === undefined &&
             fields &&
             Object.prototype.hasOwnProperty.call(fields, field)
             ? [[field, fields[field]]]
@@ -82,7 +125,7 @@ function panelConfig({ groups, values }: PluginUiEditor) {
       ),
     ])
   )
-  return JSON.parse(JSON.stringify(config)) as SettingsValues
+  return { config: JSON.parse(JSON.stringify(config)) as SettingsValues, configuredSecrets }
 }
 
 const pathSegment = (value: string) =>
@@ -96,22 +139,40 @@ export function usePluginUiBridge(
   editor: () => PluginUiEditor,
   theme: () => PluginPanelTheme
 ) {
+  const { confirm } = useConfirm()
+  const { t, te } = useI18n()
   const iframeUrl = ref('')
   const frameHeight = ref(320)
   const status = shallowRef<'loading' | 'ready' | 'error'>('loading')
   let revoke: (() => void) | undefined
   let port: MessagePort | undefined
 
-  function state({ locked, busy, locale }: PluginUiEditor) {
-    return { locked, busy, locale, theme: theme() }
+  function state({ locked, busy, locale, fieldErrors }: PluginUiEditor) {
+    return {
+      locked,
+      busy,
+      locale,
+      i18nRevision: i18nRevision.value,
+      theme: theme(),
+      ...(fieldErrors && { fieldErrors: { ...fieldErrors } }),
+    }
   }
 
-  watch([() => editor().locked, () => editor().busy, () => editor().locale, theme], () =>
-    port?.postMessage({ event: 'stateChanged', payload: state(editor()) })
+  watch(
+    [
+      () => editor().locked,
+      () => editor().busy,
+      () => editor().locale,
+      i18nRevision,
+      theme,
+      () => editor().fieldErrors,
+    ],
+    () => port?.postMessage({ event: 'stateChanged', payload: state(editor()) }),
+    { deep: true }
   )
   watch(
     () => editor().configRevision,
-    () => port?.postMessage({ event: 'configReloaded', payload: { config: panelConfig(editor()) } })
+    () => port?.postMessage({ event: 'configReloaded', payload: panelConfig(editor()) })
   )
 
   function stop() {
@@ -134,6 +195,8 @@ export function usePluginUiBridge(
       byte.toString(16).padStart(2, '0')
     ).join('')
     const { pluginName, revision, entry } = mount
+    const scope =
+      target.kind === 'setup' ? 'script' : target.kind === 'notification' ? 'settings' : target.kind
     const envelope = { v: 1, mountToken, pluginName, target }
     const valid = (data: unknown): data is Record<string, unknown> =>
       isRecord(data) &&
@@ -146,10 +209,13 @@ export function usePluginUiBridge(
     let active = true
     const seen = new Set<string | number>()
 
-    function hintFor(group: string, field: string) {
+    function hintFor(group: string, field: string, allowSecret = false) {
       return editor()
         .groups.find(item => item.name === group)
-        ?.hints.find(hint => hint.field === field && visible(hint))
+        ?.hints.find(
+          hint =>
+            hint.field && hint.field === field && !hint.masked && (allowSecret || !hint.secret)
+        )
     }
 
     async function onRequest({ data }: MessageEvent<unknown>) {
@@ -178,12 +244,30 @@ export function usePluginUiBridge(
           target,
           surface: target.kind,
           ...state(current),
-          config: panelConfig(current),
+          ...panelConfig(current),
         })
         return
       }
 
       if (!isRecord(params)) return reject('invalid_params')
+      if (action === 'translate') {
+        const { keys } = params
+        if (!Array.isArray(keys) || keys.length > 512 || !keys.every(isTranslationKey))
+          return reject('invalid_params')
+        const { locale } = current
+        const resolver = createDeclarativeI18n(t, te, locale, `plugins.${pluginName}.config`, scope)
+        const messages = Object.fromEntries(
+          keys.flatMap((item: TranslationKey) => {
+            const { key, params } = typeof item === 'string' ? { key: item } : item
+            const message = key.startsWith('panel.')
+              ? resolver.panel(key, params)
+              : resolver.config(key, params)
+            return message === undefined ? [] : [[key, message]]
+          })
+        )
+        reply({ locale, revision: i18nRevision.value, messages })
+        return
+      }
       const writable = () => active && !editor().locked
       if (action === 'saveConfig') {
         const { phase, changes } = params
@@ -198,9 +282,11 @@ export function usePluginUiBridge(
               typeof change.field !== 'string'
             )
               return false
-            const hint = hintFor(change.group, change.field)
+            const hint = hintFor(change.group, change.field, true)
             return (
-              hint?.editable === true && hint.state === undefined && isConfigValue(change.value)
+              hint?.editable === true &&
+              hint.state === undefined &&
+              (hint.secret ? typeof change.value === 'string' : isConfigValue(change.value))
             )
           })
         )
@@ -218,6 +304,51 @@ export function usePluginUiBridge(
           return writable() && latest?.editable === true && latest.state === TriggerUiState.IDLE
         }
         reply(await current.runAction(group, hint, value, canRun))
+      } else if (action === 'confirm' || action === 'pickPath') {
+        if (!writable() || current.busy) return reject('read_only')
+        const { title } = params
+        if (!optionalText(title, 100)) return reject('invalid_params')
+        try {
+          if (action === 'confirm') {
+            const { message, confirmText, cancelText, danger } = params
+            if (
+              !shortText(message, 500) ||
+              !message.trim() ||
+              !optionalText(confirmText, 100) ||
+              !optionalText(cancelText, 100) ||
+              (danger !== undefined && typeof danger !== 'boolean')
+            )
+              return reject('invalid_params')
+            const confirmed = await confirm({
+              title: title ?? pluginName,
+              description: message,
+              ...(confirmText !== undefined && { okText: confirmText }),
+              ...(cancelText !== undefined && { cancelText }),
+              tone: danger ? 'danger' : 'info',
+            })
+            reply({ confirmed: writable() && confirmed })
+          } else {
+            const { mode, defaultPath, filters } = params
+            if (
+              (mode !== 'file' && mode !== 'folder') ||
+              !optionalText(defaultPath, 32767) ||
+              (filters !== undefined && !validFilters(filters))
+            )
+              return reject('invalid_params')
+            const api = window.electronAPI
+            if (isBrowserDevelopment() || !(mode === 'file' ? api?.selectFile : api?.selectFolder))
+              return reply({ ok: false, code: 'unavailable' })
+            const options = { title, defaultPath }
+            const path =
+              mode === 'file'
+                ? (await api.selectFile(filters, options))[0]
+                : await api.selectFolder(options)
+            if (!writable()) return reject('read_only')
+            reply({ cancelled: !path, path: path ?? null })
+          }
+        } catch {
+          reject('dialog_failed')
+        }
       } else if (action === 'notify') {
         const { severity, message } = params
         if (typeof message !== 'string' || !message.trim() || message.length > 500)

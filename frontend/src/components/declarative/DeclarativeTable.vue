@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { TableHint } from '@/api'
 import SectionCard from '@/components/ui/SectionCard.vue'
+import { createDeclarativeI18n, type DeclarativeI18nScope } from './declarativeI18n'
 
 export type DeclarativeTableHint = Pick<TableHint, 'rows' | 'columns'> &
   Partial<Pick<TableHint, 'key' | 'transpose'>>
@@ -11,6 +12,7 @@ const props = withDefaults(
   defineProps<{
     table: DeclarativeTableHint
     namespace: string
+    scope: DeclarativeI18nScope
     title: string
     collapsible?: boolean
     columnTypes?: Record<string, string>
@@ -19,15 +21,14 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ 'update:value': [group: string, field: string, value: unknown] }>()
 const collapsed = defineModel<boolean>('collapsed', { default: false })
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
+const i18n = computed(() =>
+  createDeclarativeI18n(t, te, locale.value, props.namespace, props.scope)
+)
 
 function label(key: string, groupAxis: boolean) {
-  const keys = groupAxis
-    ? []
-    : props.table.rows.map(group => `${props.namespace}.${group}.${key}.label`)
-  keys.push(`${props.namespace}.${key}.label`, `${props.namespace}.${key}`)
-  const translated = keys.find(path => te(path))
-  return translated ? t(translated) : key
+  const paths = groupAxis ? [] : props.table.rows.map(group => `${group}.${key}.label`)
+  return i18n.value.config([...paths, `${key}.label`]) ?? key
 }
 
 const columns = computed(() => [

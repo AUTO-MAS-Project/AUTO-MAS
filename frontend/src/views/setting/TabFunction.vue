@@ -15,6 +15,7 @@ const { t } = useI18n()
 const telemetryDetailOpen = ref(false)
 
 const { settings, handleSettingChange, handleSettingGroupChange } = defineProps<{
+  active: boolean
   settings: GlobalConfig
   handleSettingChange: SettingChangeHandler
   handleSettingGroupChange: SettingGroupChangeHandler
@@ -164,6 +165,7 @@ const handleHistoryOrderChange = (value: unknown) => {
 
     <!-- 双列时卡片按序号轮流放左右列：分身排第二张独占右列（清单会变长），功能与语音提示在左列 -->
     <DesktopSessionSettings
+      :active="active"
       :settings="settings"
       :handle-setting-group-change="handleSettingGroupChange"
     />

@@ -15,6 +15,7 @@ import { apiErrorMessage, requestApi } from '@/utils/apiResult'
 
 export type DeclarativeOption = OptionHint
 export type DeclarativeHint = ComponentHint
+export type DeclarativeOptions = ReturnType<typeof useDeclarativeOptions>
 
 interface OptionsTarget {
   uid: string
