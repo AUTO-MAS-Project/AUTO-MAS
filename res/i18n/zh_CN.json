@@ -2273,6 +2273,7 @@
   "core.signflow.activity.noteTasks": "任务与周期",
   "core.signflow.activity.platform.miyoushe": "米游社",
   "core.signflow.activity.platform.skland": "森空岛",
+  "core.signflow.activity.pluginMissing": "日常便笺插件未启用，安装并启用后即可查看",
   "core.signflow.activity.queriedAt": "查询于 {time}",
   "core.signflow.activity.queryFailed": "日常便笺查询失败",
   "core.signflow.activity.refresh": "刷新日常便笺",
