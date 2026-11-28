@@ -325,7 +325,7 @@ async def test_native_tasks_run_independently_in_one_queue(
             )
         if scenario == "essence_retry":
             assert [task["taskName"] for task in attempts[2][1]] == ["AutoEssence"]
-        assert all(proxy.run_book.values())
+        assert proxy.cur_user_log.status == "Success!"
 
 
 @pytest.mark.asyncio
