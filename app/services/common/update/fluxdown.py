@@ -108,13 +108,18 @@ async def download_file(
                     source=source,
                     http_download=http_download,
                 )
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as error:
                 # 续传预检跳过同源旧任务；等待下载准入时可能尚未进入底层
                 # 取消处理。保持目标锁直到完整停写探测结束，重复取消也不能
                 # 让调用方误删仍由旧 daemon 持有的文件。
                 cli = _find_download_cli(options)
                 if not await _can_downgrade(
-                    cli or Path(options.cli_path), url, destination
+                    cli or Path(options.cli_path),
+                    url,
+                    destination,
+                    other_only=isinstance(
+                        error, _utils_fluxdown_cli.FluxdownCancelConfirmed
+                    ),
                 ):
                     raise FluxdownWriterUnconfirmed(
                         "取消下载时，FluxDown 旧任务仍未确认停止"
