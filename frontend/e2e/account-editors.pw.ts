@@ -12,7 +12,6 @@ const adapters = [
   ['M9A', 'm9a'],
   ['MSS', 'mss'],
   ['HSR', 'hsr'],
-  ['BetterGI', 'bettergi'],
   ['ZzzOd', 'zzzod'],
   ['BAAH', 'baah'],
   ['Whimbox', 'whimbox'],

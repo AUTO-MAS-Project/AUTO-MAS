@@ -24,7 +24,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, field_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
 from app.config import (
     ConfigCollection,
@@ -42,6 +48,7 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
+from app.config.wire import reject_bool_as_int
 
 from .base import DomainEntry
 from .queue import Webhook
@@ -220,9 +227,9 @@ class GlobalConfig(DomainEntry):
     )
 
     class FunctionFields(ConfigGroup):
-        HistoryRetentionTime: Literal[7, 15, 30, 60, 90, 180, 365, 0] = Field(
-            default_factory=lambda: 0, description="历史记录保留时间（天）"
-        )
+        HistoryRetentionTime: Annotated[
+            Literal[7, 15, 30, 60, 90, 180, 365, 0], BeforeValidator(reject_bool_as_int)
+        ] = Field(default_factory=lambda: 0, description="历史记录保留时间（天）")
 
         HistoryOrder: Literal["desc", "asc"] = Field(
             default_factory=lambda: "desc",

@@ -126,7 +126,11 @@ const loadLocale = async locale => {
     { directory: RUNTIME_DIR, prefix: 'core' },
     ...PLUGIN_CATALOGS,
   ]) {
-    const file = join(directory, RUNTIME_FILES[locale] + '.json')
+    const pluginFile = join(directory, locale + '.json')
+    const file =
+      prefix !== 'core' && existsSync(pluginFile)
+        ? pluginFile
+        : join(directory, RUNTIME_FILES[locale] + '.json')
     const flat = JSON.parse(readFileSync(file, 'utf8'))
     for (const [key, value] of Object.entries(flat)) {
       const parts = key.split('.')

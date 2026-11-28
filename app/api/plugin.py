@@ -35,12 +35,18 @@ from typing import Any, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse, Response
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api._config_editors import FrontendWriteGuard, require_frontend_activation
+from app.api._config_editors import (
+    FrontendWriteGuard,
+    config_update_data,
+    require_frontend_activation,
+)
 from app.config import CollectionOrderItem, config_manager
 from app.config.errors import ConfigAggregateError
 from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
@@ -508,8 +514,10 @@ async def update_plugin_config(
             )
         if guard is not None:
             guard(cfg)
-        patch = type(cfg).model_validate(body.data)
-        await cfg.update(patch)
+        data = config_update_data(cfg, body.data, extra="forbid")
+        patch = type(cfg).model_validate(data)
+        async with config_manager.transaction():
+            await cfg.update(patch)
     except HTTPException:
         raise
     except KeyError:
@@ -706,9 +714,9 @@ async def dispatch_plugin_http(
             result = await result
         if isinstance(result, Response):
             return result
-        if isinstance(result, (dict, list)) or result is None:
-            return JSONResponse(content=result)
-        return PlainTextResponse(content=str(result))
+        return JSONResponse(content=jsonable_encoder(result))
+    except StarletteHTTPException:
+        raise
     except PluginBusyError:
         return JSONResponse(
             status_code=503,

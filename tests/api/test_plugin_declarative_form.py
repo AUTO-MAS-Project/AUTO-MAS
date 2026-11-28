@@ -1,6 +1,6 @@
 """插件声明经 HTTP 到达表单，保存和动作使用同一份字段声明。"""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 import pytest
@@ -33,6 +33,7 @@ class Settings(PluginConfig):
         upper: float = Field(default=0, le=0)
         positive: int = Field(default=1, gt=0)
         negative: int = Field(default=-1, lt=0)
+        retention: Literal[7, 15, 30] = 7
 
         @field_validator("ratio")
         @classmethod
@@ -87,6 +88,12 @@ async def test_numeric_and_plan_hints_reach_form(form):
     assert fields["lower"]["precision"] == 0 and fields["lower"]["min"] == 0
     assert fields["upper"]["max"] == 0
     assert fields["positive"]["min"] == fields["negative"]["max"] == 0
+    assert [item["value"] for item in fields["retention"]["options"]] == [7, 15, 30]
+    save_ok = await client.post(
+        "/api/plugin_config/update",
+        json={"recordId": record, "data": {"left": {"retention": 15}}},
+    )
+    assert save_ok.json()["code"] == 200
     actions = {item["field"]: item for item in hints["actions"]}
     assert actions["plan"]["plan_type"] == "FirstPlan"
     assert [item["value"] for item in actions["run"]["options"]] == [

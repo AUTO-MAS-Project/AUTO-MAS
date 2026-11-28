@@ -47,8 +47,19 @@ def _extra_packages() -> list[str]:
     )
 
 
+def _pypi_payload(response: httpx.Response, package: str) -> dict[str, Any]:
+    """读取并核对单包元数据的来源身份。"""
+    data = response.json()
+    if not isinstance(data, dict) or not isinstance(info := data.get("info"), dict):
+        raise ValueError(f"{package}: PyPI 响应缺少 info 元数据")
+    name = info.get("name")
+    if not isinstance(name, str) or package_key(name) != package:
+        raise ValueError(f"{package}: PyPI 返回的发行包身份不一致")
+    return data
+
+
 async def _extra_drafts(present: set[str]) -> list[PluginMeta]:
-    """按包名从 PyPI 读取目录里还没有的插件；读不到只记日志，不影响本次刷新。"""
+    """按包名从 PyPI 补充插件，访问失败记日志，格式无效中止刷新。"""
     names = [name for name in _extra_packages() if name not in present]
     if not names:
         return []
@@ -63,10 +74,10 @@ async def _extra_drafts(present: set[str]) -> list[PluginMeta]:
                     headers={"User-Agent": "AUTO-MAS-PluginMarket/2.0"},
                 )
                 response.raise_for_status()
-                draft = parse_to_plugin_meta(response.json())
-            except (httpx.HTTPError, ValueError) as error:
+            except httpx.HTTPError as error:
                 logger.warning(f"按包名补充插件目录失败：{name}: {error}")
                 continue
+            draft = parse_to_plugin_meta(_pypi_payload(response, name))
             if draft is None:
                 logger.warning(f"按包名补充插件目录跳过：{name} 不是插件发行包")
                 continue
@@ -220,14 +231,7 @@ async def _refresh_pypi() -> None:
                     if response.status_code == 404:
                         return None
                     response.raise_for_status()
-                    data = response.json()
-                    if not isinstance(data, dict) or not isinstance(
-                        data.get("info"), dict
-                    ):
-                        raise ValueError(f"{package}: PyPI 响应缺少 info 元数据")
-                    if package_key(str(data["info"].get("name", ""))) != package:
-                        raise ValueError(f"{package}: PyPI 返回的发行包身份不一致")
-                    return data
+                    return _pypi_payload(response, package)
             return None
 
         last_error: Exception | None = None

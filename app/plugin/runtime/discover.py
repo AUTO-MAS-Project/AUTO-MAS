@@ -219,6 +219,13 @@ async def refresh(
         for child in sorted(_source_projects()):
             try:
                 draft = await _parse_source_package(child)
+            except OSError as exc:
+                if isinstance(exc, FileNotFoundError) and not child.is_dir():
+                    continue
+                # 无法读取的工程身份未知，不能用不完整的发现结果更新注册表。
+                raise PluginPrecheckError(
+                    f"无法读取本地插件工程 {child}: {exc}"
+                ) from exc
             except Exception as exc:
                 logger.debug(f"解析本地插件失败: {child}: {exc}")
                 continue
