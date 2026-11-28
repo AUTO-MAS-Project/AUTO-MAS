@@ -25,18 +25,20 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import psutil
 
 from app.utils import (
     IS_ELEVATED,
+    IS_WINDOWS,
     UnsupportedPlatformError,
     get_logger,
     process_platform,
     window,
 )
 
+from .operations import iter_process_info
 from .runner import create_subprocess
 from .scope import current_process_scope
 from .session import desktop_process_target, process_in_scope
@@ -54,6 +56,17 @@ _RESEEK_TIMEOUT_SECONDS = 5.0
 # 存在的同 exe 无关实例（如用户手动打开的启动器 GUI）挡在改绑之外
 _RESEEK_MAX_SUCCESSOR_AGE_SECONDS = 180.0
 
+# 专项把「启动等待时间」填 0 时的兜底上限（秒）: 0 只表示不等画面, 不等窗口
+# 会让刚拉起的游戏当场被判「窗口未就绪」, 所以窗口还是要等到这个上限
+_WINDOW_READY_FALLBACK_SECONDS = 60.0
+
+# 窗口就绪轮询间隔（秒）: 游戏窗口从首次出现到画出客户区通常在数秒内, 0.5 秒
+# 足够跟手, 也不会让进程扫描占满事件循环
+_WINDOW_READY_POLL_SECONDS = 0.5
+
+# 桌面分身里等待窗口就绪时, 在用户上限之外再留给拉起 worker 进程的余量（秒）
+_DESKTOP_READY_GRACE_SECONDS = 30.0
+
 
 @dataclass
 class ProcessInfo:
@@ -63,35 +76,49 @@ class ProcessInfo:
     cmdline: list[str] | None = None
 
 
-def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
+def match_process(
+    proc: psutil.Process, target: ProcessInfo, *, info: dict[str, Any]
+) -> bool:
     """检查进程是否与目标进程信息匹配
 
-    ``proc`` 须来自预取了 name/exe/cmdline 的 ``psutil.process_iter``, 直接用
-    ``proc.info`` 里的字段比对, 不再逐个进程重新查询; 无权限读到的字段为 None,
-    按不匹配处理。
+    本轮扫描预取的字段直接比对; ``exe`` 与 ``cmdline`` 只在目标要求时
+    读取, 因为命令行在受保护进程上要等读超时, 不能整表预取。读不到的字段按
+    不匹配处理。
     """
 
-    info = proc.info
     if target.pid is not None and proc.pid != target.pid:
         return False
     if target.name is not None and info["name"] != target.name:
         return False
-    if target.exe is not None and (
-        not info["exe"] or Path(info["exe"]) != Path(target.exe)
+    if target.exe is not None:
+        exe = info.get("exe") or _read_field(proc, "exe")
+        if not exe or Path(exe) != Path(target.exe):
+            return False
+    if (
+        target.cmdline is not None
+        and (info.get("cmdline") or _read_field(proc, "cmdline")) != target.cmdline
     ):
-        return False
-    if target.cmdline is not None and info["cmdline"] != target.cmdline:
         return False
 
     return process_in_scope(proc.pid)
 
 
-def is_process_running(process_name: str) -> bool:
+def _read_field(proc: psutil.Process, field: str) -> object:
+    """按需读取未预取的进程字段; 无权访问或已退出时按读不到处理。"""
+
+    try:
+        return getattr(proc, field)()
+    except psutil.Error:
+        return None
+
+
+def is_process_running(process_name: str, *, exe: str | None = None) -> bool:
     """在调用者所在桌面查找指定进程的可见窗口。"""
 
-    for proc in psutil.process_iter(["name"]):
+    target = ProcessInfo(name=process_name, exe=exe)
+    for proc, info in iter_process_info(["name", "exe"] if exe else ["name"]):
         with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
+            if match_process(proc, target, info=info):
                 # 平台不支持窗口能力时 get_window_handles 返回空列表, 循环不进入
                 for hwnd in get_window_handles(proc.pid):
                     if window.is_visible(hwnd):
@@ -99,18 +126,135 @@ def is_process_running(process_name: str) -> bool:
     return False
 
 
-async def has_process_window(process_name: str) -> bool:
+async def has_process_window(process_name: str, *, exe: str | None = None) -> bool:
     """在任务所在桌面查找指定进程的可见窗口。"""
     desktop = desktop_process_target.get()
     if desktop is None:
-        return is_process_running(process_name)
+        return is_process_running(process_name, exe=exe)
 
     from app.utils.windows.desktop_session.process_runner import run_desktop_action
 
     code, _, _ = await run_desktop_action(
-        desktop, "has_process_window", {"name": process_name}
+        desktop, "has_process_window", {"name": process_name, "exe": exe}
     )
     return code == 0
+
+
+def _is_client_ready(hwnd: int) -> bool:
+    """窗口是否已经能看到内容: 可见且客户区有面积。
+
+    只判「窗口存在」不够: 游戏窗口刚创建时已经可见, 但引擎还在初始化, 客户区
+    仍是 0×0, 这时截图拿到空图会把脚本的识别结果带偏。
+    """
+
+    try:
+        if not window.is_visible(hwnd):
+            return False
+        size = window.get_client_size(hwnd)
+    except Exception:
+        # 轮询期间窗口被销毁属预期状态, 按「还没就绪」处理, 下一轮重新取句柄
+        return False
+    return size is not None and size[0] > 0 and size[1] > 0
+
+
+def _find_ready_window(target: ProcessInfo) -> int | None:
+    """在调用者所在桌面找第一个已就绪的主窗口句柄。"""
+
+    if target.pid is not None:
+        # MAS 自己拉起的进程: 精确到实例, 也不会被同名的旧实例抢先
+        hwnd = get_main_window_handle(target.pid)
+        return hwnd if hwnd is not None and _is_client_ready(hwnd) else None
+
+    for proc, info in iter_process_info(["name"]):
+        with suppress(psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            if not match_process(proc, target, info=info):
+                continue
+            hwnd = get_main_window_handle(proc.pid)
+            if hwnd is not None and _is_client_ready(hwnd):
+                return hwnd
+    return None
+
+
+def _describe_process(target: ProcessInfo) -> str:
+    if target.name is not None:
+        return target.name
+    if target.exe is not None:
+        return Path(target.exe).name
+    if target.pid is not None:
+        return f"PID {target.pid}"
+    return "目标进程"
+
+
+async def wait_process_window_ready(
+    target: ProcessInfo,
+    timeout_seconds: float,
+    *,
+    poll_interval: float = _WINDOW_READY_POLL_SECONDS,
+) -> bool:
+    """等目标进程的游戏窗口真正就绪, 等不到就报错。
+
+    「就绪」指主窗口可见且客户区有面积: 只等进程或只等窗口出现都太早, 引擎还在
+    初始化时窗口已经可见、客户区却仍是 0×0, 脚本此时开跑会拿到空截图。
+
+    Args:
+        target: 目标进程信息, 至少给 ``name`` 或 ``exe`` 之一
+        timeout_seconds: 等待上限（秒）。专项把「启动等待时间」填 0 时按
+            ``_WINDOW_READY_FALLBACK_SECONDS`` 兜底, 因为 0 只表示不等画面稳定,
+            不等窗口会让刚拉起的游戏当场被判未就绪
+        poll_interval: 轮询间隔（秒）
+
+    Returns:
+        找到就绪窗口返回 True; 本平台没有窗口概念、或目标信息为空（调用方没有
+        可等的东西）时返回 False, 两种情况下调用方都照常往下走
+
+    Raises:
+        RuntimeError: 超过上限仍未看到就绪窗口
+    """
+
+    if not IS_WINDOWS or not (
+        target.pid or target.name or target.exe or target.cmdline
+    ):
+        return False
+
+    timeout = timeout_seconds if timeout_seconds > 0 else _WINDOW_READY_FALLBACK_SECONDS
+
+    # 桌面分身里游戏在子会话中, 主会话的进程扫描看不到它; 整体交给分身的 worker
+    # 一次性等完, 避免每轮轮询都拉起一个进程
+    desktop = desktop_process_target.get()
+    if desktop is not None:
+        from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+        try:
+            async with asyncio.timeout(timeout + _DESKTOP_READY_GRACE_SECONDS):
+                code, _, _ = await run_desktop_action(
+                    desktop,
+                    "wait_process_window_ready",
+                    {
+                        "pid": target.pid,
+                        "name": target.name,
+                        "exe": target.exe,
+                        "timeout": timeout,
+                    },
+                )
+        except TimeoutError:
+            code = 1
+        if code == 0:
+            return True
+        raise RuntimeError(
+            f"游戏窗口在 {timeout:g} 秒内未就绪（{_describe_process(target)}）"
+        )
+
+    deadline = time.monotonic() + timeout
+    while True:
+        if await asyncio.to_thread(_find_ready_window, target) is not None:
+            return True
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(poll_interval)
+
+    raise RuntimeError(
+        f"游戏窗口在 {timeout:g} 秒内未就绪（{_describe_process(target)}）"
+    )
 
 
 def is_process_alive(process_name: str) -> bool:
@@ -121,10 +265,9 @@ def is_process_alive(process_name: str) -> bool:
     用本函数按进程名判断存活。
     """
 
-    for proc in psutil.process_iter(["name"]):
-        with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
-            if proc.info.get("name") == process_name and process_in_scope(proc.pid):
-                return True
+    for proc, info in iter_process_info(["name"]):
+        if info["name"] == process_name and process_in_scope(proc.pid):
+            return True
     return False
 
 
@@ -445,12 +588,15 @@ class ProcessManager:
         """
 
         def _scan() -> tuple[psutil.Process, float | None] | None:
-            for proc in psutil.process_iter(
-                ["pid", "name", "exe", "cmdline", "create_time"]
-            ):
-                if not match_process(proc, target_process):
+            # cmdline 对受保护进程每次都要等读超时，整表预取会把一次扫描拖到
+            # 数秒，发现游戏太晚；只预取轻量字段，cmdline 等筛选命中后再读。
+            attrs = ["name", "create_time"]
+            if target_process.exe is not None:
+                attrs.append("exe")
+            for proc, info in iter_process_info(attrs):
+                if not match_process(proc, target_process, info=info):
                     continue
-                create_time = proc.info["create_time"]
+                create_time = info["create_time"]
                 if min_create_time is not None and (
                     create_time is None or create_time < min_create_time - 2
                 ):
@@ -614,6 +760,8 @@ class ProcessManager:
             bool: 操作是否成功
         """
 
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("show_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -629,6 +777,8 @@ class ProcessManager:
         Returns:
             bool: 操作是否成功
         """
+        if desktop_process_target.get() is not None:
+            return await self._operate_desktop_window("hide_process_window")
         hwnd = self.main_hwnd
         if hwnd is None:
             return False
@@ -675,25 +825,36 @@ class ProcessManager:
             return False
 
     async def _operate_desktop_window(self, action: str) -> bool:
-        if (
-            desktop := desktop_process_target.get()
-        ) is not None and self.main_pid is not None:
-            from app.utils.windows.desktop_session.process_runner import (
-                run_desktop_action,
-            )
+        desktop = desktop_process_target.get()
+        pid = self.main_pid
+        if desktop is None or pid is None:
+            return False
+        try:
+            if self.target_process is not None:
+                created = self.target_process.create_time()
+            elif self._desktop_process is not None:
+                created = self._desktop_process.create_time
+            else:
+                return False
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+        if created is None:
+            return False
 
-            code, _, _ = await run_desktop_action(
-                desktop,
-                action,
-                {
-                    "pid": str(self.main_pid),
-                    "title": self.window_title,
-                    "class": self.window_class_name,
-                },
-                worker_module="app.utils.windows.desktop_session.process_worker",
-            )
-            return code == 0
-        return False
+        from app.utils.windows.desktop_session.process_runner import run_desktop_action
+
+        code, _, _ = await run_desktop_action(
+            desktop,
+            action,
+            {
+                "pid": str(pid),
+                "createTime": created,
+                "title": self.window_title,
+                "class": self.window_class_name,
+            },
+            worker_module="app.utils.windows.desktop_session.process_worker",
+        )
+        return code == 0
 
     async def close(self) -> None:
         """请被管理进程自行退出，等它走完退出时的配置保存
@@ -703,7 +864,11 @@ class ProcessManager:
         """
 
         while await self.is_running():
-            hwnd = self.main_hwnd
-            if hwnd is None or not window.close_window(hwnd):
+            if desktop_process_target.get() is not None:
+                accepted = await self._operate_desktop_window("close_process_window")
+            else:
+                hwnd = self.main_hwnd
+                accepted = hwnd is not None and window.close_window(hwnd)
+            if not accepted:
                 return
             await asyncio.sleep(0.2)

@@ -68,6 +68,7 @@ from app.config import ConfigEntry
 from app.utils import BASE_SOURCE_LABELS, get_logger
 from app.utils.common.config import archive as _utils_config_archive
 
+from .m7a_paths import resolve_m7a_config_path
 from .managed_config import SRA_REWARD_LABELS
 from .sra_runtime import build_sra_tasklist_description
 
@@ -83,7 +84,7 @@ _USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
         "Base",
         "Name",
         "Status",
-        "Server",
+        "Resource",
         "RemainedDay",
         "IfScriptBeforeTask",
         "ScriptBeforeTask",
@@ -136,7 +137,7 @@ _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("Info", "Base"): "配置来源",
     ("Info", "Name"): "账号名",
     ("Info", "Status"): "启用状态",
-    ("Info", "Server"): "服务器",
+    ("Info", "Resource"): "服务器",
     ("Info", "RemainedDay"): "剩余天数",
     ("Info", "IfScriptBeforeTask"): "任务前脚本",
     ("Info", "ScriptBeforeTask"): "任务前脚本路径",
@@ -187,7 +188,7 @@ _STAGE_WEEKDAY_LABELS = {
 """TaskOpt.EchoOfWarWeekday 取值（HSRUserConfig OptionsValidator 值域）"""
 
 _STAGE_SERVER_LABELS = {"CN-Official": "官服"}
-"""Info.Server 取值（HSRUserConfig 值域，与 getTags 同款映射）"""
+"""Info.Resource 取值（HSRUserConfig 值域，与 getTags 同款映射）"""
 
 _TASKSWITCH_MODULE_LABELS = {
     "Daily": "每日",
@@ -426,14 +427,14 @@ def native_backup_root(
 def collect_native_files(m7a_root: Path | None, sra_app_data: Path) -> dict[str, Path]:
     """收集两引擎原生配置文件集（相对键 → 文件路径；缺失项跳过）。
 
-    - ``M7A/config.yaml``：M7A 安装根下的配置文件；
+    - ``M7A/config.yaml``：M7A 当前数据目录的配置文件；
     - ``SRA/settings.json`` / ``SRA/cache.json`` / ``SRA/configs/``：SRA
       appdata 共享目录下的配置（configs 为目录，整目录归档）。
     """
 
     files: dict[str, Path] = {}
     if m7a_root is not None:
-        m7a_config = Path(m7a_root) / "config.yaml"
+        m7a_config = resolve_m7a_config_path(m7a_root)
         if m7a_config.is_file():
             files[_M7A_CONFIG_FILE] = m7a_config
     sra_settings = sra_app_data / "settings.json"
@@ -488,7 +489,7 @@ def get_native_backup_dir(
 def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) -> None:
     """把归档恢复到两引擎原生位置（恢复前自动归档当前，误恢复可找回）。
 
-    按归档内相对键写回：``M7A/*`` → M7A 安装根、``SRA/*`` → SRA appdata；
+    按归档内相对键写回：``M7A/*`` → M7A 当前数据目录、``SRA/*`` → SRA appdata；
     replace 语义：SRA ``configs/`` 子树整棵按备份替换，残留的同前缀文件
     一并清除（:func:`restore_files` 经 ``dir_map`` 双根管理，引擎根目录
     本身绝不删除）。
@@ -500,7 +501,7 @@ def restore_native_backup(m7a_root: Path | None, sra_app_data: Path, ts: str) ->
     archive_native_backup(m7a_root, sra_app_data, force=True)
     dir_map = {"SRA": Path(sra_app_data)}
     if m7a_root is not None:
-        dir_map["M7A"] = Path(m7a_root)
+        dir_map["M7A"] = resolve_m7a_config_path(m7a_root).parent
     rel_keys = (
         None
         if m7a_root is not None
@@ -606,8 +607,8 @@ def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> di
                 "value": "是" if overlay["Info.Status"] else "否",
             }
         )
-    if has("Info", "Server"):
-        server = str(overlay["Info.Server"])
+    if has("Info", "Resource"):
+        server = str(overlay["Info.Resource"])
         mas_rows.append(
             {
                 "key": "服务器",

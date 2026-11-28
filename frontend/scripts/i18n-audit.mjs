@@ -77,7 +77,7 @@ const DEV_ONLY = /(^|\/)(devtools|OCRdev|TestRouter|UpdateDownloadDev|OverlayMas
 // 按规则豁免的硬编码中文：游戏内容名称没有官方外文译名，翻错比不翻更糟
 const HARDCODED_ALLOWLIST = [
   {
-    file: 'src/views/SRCUserEdit/StageConfigSection.vue',
+    file: 'src/views/src/user/StageConfigSection.vue',
     reason: '遗器/饰品/关卡选项，名称沿用游戏简中原名',
   },
 ]
@@ -91,8 +91,18 @@ const RETAINED_UNUSED_KEYS = new Map([
 // desktopSessionHandlers.ts 的原生关闭对话框通过 JSON 属性读取这些键。
 const ELECTRON_MESSAGE_KEYS = [
   'bootstrap.desktopSession.closeTitle',
-  'bootstrap.desktopSession.closeConfirm',
-  'bootstrap.desktopSession.closeContinue',
+  'bootstrap.desktopSession.closeQuestion',
+  'bootstrap.desktopSession.closeAdoptedQuestion',
+  'bootstrap.desktopSession.closeLogoff',
+  'bootstrap.desktopSession.closeActiveTasksHint',
+  'bootstrap.desktopSession.closeUnmanagedProgramsHint',
+  'bootstrap.desktopSession.closeUnverifiedPrograms',
+  'bootstrap.desktopSession.quitWithDesktopTitle',
+  'bootstrap.desktopSession.quitWithDesktopQuestion',
+  'bootstrap.desktopSession.quitWithDesktopContinue',
+  'bootstrap.desktopSession.disconnectOnly',
+  'bootstrap.desktopSession.cancel',
+  'bootstrap.desktopSession.closeFailedTitle',
   'bootstrap.desktopSession.closeFailed',
 ]
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
-import { reactive } from 'vue'
+import { createApp, effectScope, reactive } from 'vue'
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import { message } from 'ant-design-vue'
 import {
   CancelablePromise,
@@ -9,6 +10,7 @@ import {
   type OutBase,
   type SettingGetOut,
 } from '@/api'
+import { queryClient } from '@/services/queryClient'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
@@ -31,7 +33,14 @@ function pending<T>() {
 }
 
 let useSettingPersistence: (typeof import('./useSettingPersistence'))['useSettingPersistence']
+let scope: ReturnType<typeof effectScope>
 const syncBackendConfig = vi.fn()
+
+function createPersistence(settings: GlobalConfig) {
+  const app = createApp({})
+  app.use(VueQueryPlugin, { queryClient })
+  return scope.run(() => app.runWithContext(() => useSettingPersistence(settings, vi.fn())))!
+}
 
 beforeEach(async () => {
   vi.clearAllMocks()
@@ -43,9 +52,12 @@ beforeEach(async () => {
     },
   })
   ;({ useSettingPersistence } = await import('./useSettingPersistence'))
+  scope = effectScope()
 })
 
 afterEach(() => {
+  scope.stop()
+  queryClient.clear()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -68,7 +80,7 @@ describe('settings persistence contract', () => {
     syncBackendConfig.mockImplementation(async data => {
       desktopConfigurations.push(structuredClone(data))
     })
-    const persistence = useSettingPersistence(settings, vi.fn())
+    const persistence = createPersistence(settings)
 
     const saved = persistence.handleSettingChange('Function', 'IfSilence', true)
     expect(persistence.loading.value).toBe(true)
@@ -139,7 +151,7 @@ describe('settings persistence contract', () => {
     const read = vi
       .spyOn(GetService, 'getScriptsApiSettingGetPost')
       .mockImplementation(() => reply<SettingGetOut>({ code: 200, data: settings }))
-    const persistence = useSettingPersistence(settings, vi.fn())
+    const persistence = createPersistence(settings)
 
     await expect(persistence.handleSettingChange('Function', 'IfSilence', true)).resolves.toBe(
       false
@@ -162,6 +174,32 @@ describe('settings persistence contract', () => {
     ])
     expect(read).not.toHaveBeenCalled()
     expect(message.error).toHaveBeenCalledTimes(2)
+    expect(persistence.loading.value).toBe(false)
+  })
+
+  it('serializes rapid setting updates and coalesces pending writes for the same field', async () => {
+    const settings = reactive<GlobalConfig>({
+      Function: { IfSilence: false, IfAllowSleep: false },
+    })
+    const firstGate = pending<OutBase>()
+    const write = vi
+      .spyOn(UpdateService, 'updateScriptApiSettingUpdatePost')
+      .mockReturnValueOnce(firstGate.promise)
+      .mockImplementation(() => reply(success))
+    const persistence = createPersistence(settings)
+
+    const p1 = persistence.handleSettingChange('Function', 'IfSilence', true)
+    const p2 = persistence.handleSettingChange('Function', 'IfAllowSleep', true)
+    const p3 = persistence.handleSettingChange('Function', 'IfAllowSleep', false)
+
+    expect(write).toHaveBeenCalledTimes(1)
+    firstGate.resolve(success)
+    await expect(Promise.all([p1, p2, p3])).resolves.toEqual([true, true, true])
+    expect(write.mock.calls.map(([request]) => request.data)).toEqual([
+      { Function: { IfSilence: true } },
+      { Function: { IfAllowSleep: false } },
+    ])
+    expect(settings.Function).toEqual({ IfSilence: true, IfAllowSleep: false })
     expect(persistence.loading.value).toBe(false)
   })
 })

@@ -7,6 +7,7 @@ import importlib
 import importlib.metadata as importlib_metadata
 import pkgutil
 import site
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from app.utils.common.io import read_file
 from app.utils.common.tools import to_pep440
 
 from ..errors import PluginPrecheckError
-from ..types import MARKET_GATE_TAG, PluginCodeDrift, SourceChange
+from ..types import LOCAL_LIBRARY_TAG, MARKET_GATE_TAG, PluginCodeDrift, SourceChange
 from .metadata import parse_to_plugin_record
 
 logger = get_logger("插件发现")
@@ -141,6 +142,43 @@ async def _parse_source_package(path: Path) -> PluginRecord | None:
     return record
 
 
+def _source_projects() -> set[Path]:
+    return {
+        child.resolve()
+        for root in (Config.plugins_path, Config.source_path / "plugins")
+        if root.is_dir()
+        for child in root.iterdir()
+    }
+
+
+def local_libraries() -> list[Path]:
+    """本地源码库的工程目录：与本地插件同一扫描范围，keywords 带库标记、不带插件标记。
+
+    库不进插件注册表；它参与依赖求解（自身不装进共享环境），``src`` 加入导入路径。
+    """
+    libraries: list[Path] = []
+    for child in sorted(_source_projects()):
+        if not child.is_dir() or child.name.startswith(".") or child.name == "pypi":
+            continue
+        pyproject, src = child / "pyproject.toml", child / "src"
+        if not pyproject.is_file() or not src.is_dir():
+            continue
+        try:
+            project = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]
+        except (OSError, ValueError, KeyError) as exc:
+            logger.debug(f"解析本地库失败: {child}: {exc}")
+            continue
+        keywords = project.get("keywords") or []
+        if LOCAL_LIBRARY_TAG not in keywords or MARKET_GATE_TAG in keywords:
+            continue
+        tops = [name for _, name, _ in pkgutil.iter_modules([str(src)])]
+        if len(tops) != 1 or not (src / tops[0] / "__init__.py").is_file():
+            logger.warning(f"本地库 src 下须恰好一个普通包，已忽略: {child}")
+            continue
+        libraries.append(child)
+    return libraries
+
+
 async def refresh(
     *, scope: RefreshScope | None = None, installed_path: Path | None = None
 ) -> None:
@@ -178,14 +216,7 @@ async def refresh(
                 seen.add(origin)
                 candidates.append(draft)
 
-        roots = (Config.plugins_path, Config.source_path / "plugins")
-        projects = {
-            child.resolve()
-            for root in roots
-            if root.is_dir()
-            for child in root.iterdir()
-        }
-        for child in sorted(projects):
+        for child in sorted(_source_projects()):
             try:
                 draft = await _parse_source_package(child)
             except Exception as exc:

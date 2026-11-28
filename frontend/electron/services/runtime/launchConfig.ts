@@ -1,4 +1,4 @@
-import { isDevelopmentEnvironment } from '../instanceConfig'
+import { getDeveloperBackendRepo, isDevelopmentEnvironment } from '../instanceConfig'
 /**
  * Runtime 启动模式与可执行文件定位。
  *
@@ -55,6 +55,8 @@ export interface RuntimeLaunchConfig {
   appRoot: string
   /** `development` 模式传给 `--repo`（源码根）；`managed` 模式不传。 */
   repo?: string
+  /** 显式开发入口复用 appRoot 的受管 venv。 */
+  reuseManagedEnvironment?: boolean
   /**
    * 用户数据根，即传入 `resolveRuntimeLaunchConfig` 的 `getAppRoot()`：`config/Config.json`、
    * `config/frontend_config.json` 等都在它下面。凡是读用户配置的地方一律用它，不用 `appRoot`。
@@ -73,6 +75,8 @@ function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
 
 /** 环境变量可覆盖构建默认值；存量界面设置不再参与启动模式判定。 */
 export function resolveRuntimeLaunchModeDetail(): RuntimeLaunchModeResolution {
+  // 显式源码路径拥有环境所有权；不能再让 managed 更新/修复这个目录。
+  if (getDeveloperBackendRepo()) return { mode: 'development', source: 'env' }
   const rawEnv = process.env[RUNTIME_MODE_ENV]
   if (rawEnv !== undefined && rawEnv.trim() !== '') {
     const normalizedEnv = rawEnv.trim().toLowerCase()
@@ -181,6 +185,9 @@ export const RUNTIME_DEVELOPMENT_ROOT_DIRNAME = 'auto-mas-runtime'
  * （`backendService`）在首次使用前创建。
  */
 export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
+  const configured = process.env.AUTO_MAS_BACKEND_RUNTIME_ROOT?.trim()
+  if (getDeveloperBackendRepo() && configured) return path.resolve(configured)
+  if (getDeveloperBackendRepo() && app?.isPackaged) return path.dirname(app.getPath('exe'))
   if (typeof app?.getPath === 'function') {
     return path.join(app.getPath('userData'), RUNTIME_DEVELOPMENT_ROOT_DIRNAME)
   }
@@ -198,12 +205,16 @@ export function resolveDevelopmentRuntimeRoot(dataRoot: string): string {
 export function resolveRuntimeLaunchConfig(appRoot: string): RuntimeLaunchConfig {
   const mode = resolveRuntimeLaunchMode()
   if (mode === 'development') {
+    const developerRepo = getDeveloperBackendRepo()
     return {
       mode,
       runtimePath: resolveRuntimeExecutable(),
       appRoot: resolveDevelopmentRuntimeRoot(appRoot),
-      repo: appRoot,
-      dataRoot: appRoot,
+      repo: developerRepo ?? appRoot,
+      dataRoot: developerRepo ?? appRoot,
+      reuseManagedEnvironment:
+        !!developerRepo &&
+        (!!app?.isPackaged || !!process.env.AUTO_MAS_BACKEND_RUNTIME_ROOT?.trim()),
     }
   }
 

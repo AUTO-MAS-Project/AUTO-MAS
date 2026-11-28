@@ -1,24 +1,40 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="bettergi"
-      :user-id="userId"
-      @cancel="handleCancel"
-    >
-      <template #extra-actions>
-        <a-tooltip
-          v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
-          placement="bottom"
-        >
-          <template #title>
-            <span style="white-space: normal">
-              {{ t('core.edit.bettergiMasConfigTooltip') }}
-            </span>
-          </template>
+  <ConfigEditShell :surface="false">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="bettergi"
+        :user-id="userId"
+        @cancel="handleCancel"
+      >
+        <template #extra-actions>
+          <a-tooltip
+            v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
+            placement="bottom"
+          >
+            <template #title>
+              <span style="white-space: normal">
+                {{ t('core.edit.bettergiMasConfigTooltip') }}
+              </span>
+            </template>
+            <a-button
+              type="primary"
+              ghost
+              size="middle"
+              :loading="bettergiConfigLoading"
+              :disabled="pageLoading || !userId || configLocked"
+              @click="handleBettergiConfig"
+            >
+              <template #icon>
+                <SettingOutlined />
+              </template>
+              {{ t('core.edit.bettergiConfigure') }}
+            </a-button>
+          </a-tooltip>
           <a-button
+            v-else-if="!showBettergiConfigMask"
             type="primary"
             ghost
             size="middle"
@@ -31,79 +47,24 @@
             </template>
             {{ t('core.edit.bettergiConfigure') }}
           </a-button>
-        </a-tooltip>
-        <a-button
-          v-else-if="!showBettergiConfigMask"
-          type="primary"
-          ghost
-          size="middle"
-          :loading="bettergiConfigLoading"
-          :disabled="pageLoading || !userId || configLocked"
-          @click="handleBettergiConfig"
-        >
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          {{ t('core.edit.bettergiConfigure') }}
-        </a-button>
-        <a-button v-else type="default" size="middle" disabled class="configuring-button">
-          <template #icon>
-            <SettingOutlined />
-          </template>
-          {{ t('core.edit.configuring') }}
-        </a-button>
-      </template>
-    </UserEditHeader>
-
-    <!-- ══ BetterGI 配置/查看会话遮罩（配置会话保存设置、查看会话只读）══ -->
-    <GuiSessionMask
-      :open="showBettergiConfigMask"
-      :icon="SettingOutlined"
-      :title="t('core.edit.bettergiConfiguringTitle')"
-      :description="`${t('core.edit.bettergiConfiguringDesc')}\n${t('core.edit.bettergiConfiguringDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="bettergiWebsocketId"
-          type="primary"
-          size="large"
-          :loading="stoppingBettergiConfig"
-          @click="handleSaveBettergiConfig"
-        >
-          {{ t('core.edit.saveSettings') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showBettergiViewMask"
-      :icon="EyeOutlined"
-      :title="t('core.edit.bettergiViewingTitle')"
-      :description="`${t('core.edit.bettergiViewingDesc')}\n${t('core.edit.bettergiViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          type="primary"
-          size="large"
-          :loading="stoppingBettergiConfig"
-          @click="handleSaveBettergiConfig"
-        >
-          {{ t('core.edit.bettergiViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
+          <a-button v-else type="default" size="middle" disabled class="configuring-button">
+            <template #icon>
+              <SettingOutlined />
+            </template>
+            {{ t('core.edit.configuring') }}
+          </a-button>
+        </template>
+      </UserEditHeader>
+    </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
-          <div class="form-section">
-            <UserAccountHeading
-              :user-name="formData.userName"
-              :options="{ isEdit, logoSrc: accountIcon }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-            </div>
-
+          <UserAccountHeading
+            :user-name="formData.userName"
+            :options="{ isEdit, logoSrc: accountIcon }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
             <!-- 基本信息布局：用户名:启用状态:剩余天数 = 2:1:1 -->
             <UserBasicInfoFields
               v-model:user-name="formData.userName"
@@ -230,7 +191,7 @@
                 </a-form-item>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
         </a-form>
       </a-card>
 
@@ -672,7 +633,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <BettergiTeamSettings
             :form-data="formData"
-            :editable="formData.Info.IfUseMasConfig"
+            :editable="masConfigEnabled"
             :strategy-options="strategyOptions"
             :domain-catalog="domainCatalog"
             :domain-catalog-error="domainCatalogError"
@@ -706,46 +667,86 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、BetterGI 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="BETTERGI_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('core.edit.bettergiConfigRestoreUserDesc')"
-      :script-desc="t('core.edit.bettergiConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    >
-      <!-- mas 备份为字段侧车分区 + 副本文件摘要、native 备份为文件粒度 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewSections(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="bettergi-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="bettergi-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- ══ BetterGI 配置/查看会话遮罩（配置会话保存设置、查看会话只读）══ -->
+      <GuiSessionMask
+        :open="showBettergiConfigMask"
+        :icon="SettingOutlined"
+        :title="t('core.edit.bettergiConfiguringTitle')"
+        :description="`${t('core.edit.bettergiConfiguringDesc')}\n${t('core.edit.bettergiConfiguringDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="bettergiWebsocketId"
+            type="primary"
+            size="large"
+            :loading="stoppingBettergiConfig"
+            @click="handleSaveBettergiConfig"
+          >
+            {{ t('core.edit.saveSettings') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showBettergiViewMask"
+        :icon="EyeOutlined"
+        :title="t('core.edit.bettergiViewingTitle')"
+        :description="`${t('core.edit.bettergiViewingDesc')}\n${t('core.edit.bettergiViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            type="primary"
+            size="large"
+            :loading="stoppingBettergiConfig"
+            @click="handleSaveBettergiConfig"
+          >
+            {{ t('core.edit.bettergiViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、BetterGI 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="BETTERGI_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.bettergiConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.bettergiConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      >
+        <!-- mas 备份为字段侧车分区 + 副本文件摘要、native 备份为文件粒度 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="bettergi-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="bettergi-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import accountIcon from '@/assets/bettergi.ico'
@@ -901,7 +902,6 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
     ScriptAfterTask: '',
     Notes: '',
     Tag: '',
-    IfUseMasConfig: true,
   },
   Task: {
     OneDragonConfigName: '默认配置',
@@ -1642,9 +1642,6 @@ const addProjects = (rows: unknown[]) =>
 @import './BetterGIUserEdit/bettergiGroupTags.css';
 
 @import './BetterGIUserEdit/bettergiFormControls.css';
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
 
 .user-edit-content {
   max-width: 1200px;

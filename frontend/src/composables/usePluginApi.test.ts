@@ -16,9 +16,10 @@ vi.mock('@/api', async importOriginal => ({
   ...(await importOriginal<typeof import('@/api')>()),
   Service: {
     updatePluginConfigApiPluginConfigUpdatePost: vi.fn(),
+    uninstallPluginApiPluginUninstallPost: vi.fn(),
     refreshPluginCatalogApiPluginCatalogRefreshPost: vi.fn(),
-    startOperationApiOperationsStartPost: boundary.start,
-    getOperationApiOperationsGetPost: boundary.get,
+    writeConfigTriggerApiConfigTriggersWritePost: boundary.start,
+    getConfigTriggerResultApiConfigTriggersResultPost: boundary.get,
     getPluginInstallationApiPluginInstallationGetPost: boundary.installation,
     preparePluginInstallationRestartApiPluginInstallationRestartPost: boundary.prepare,
     resumeAfterPluginInstallationRestartApiPluginInstallationResumePost: boundary.resume,
@@ -52,8 +53,9 @@ describe('插件安装的热加载与重启交接', () => {
     vi.clearAllMocks()
     boundary.start.mockResolvedValue({
       code: 200,
-      data: { operationId: 'operation', state: 'succeeded' },
+      data: 'task',
     })
+    boundary.get.mockResolvedValue({ code: 200, data: { state: 'succeeded' } })
     boundary.installation.mockResolvedValue(progress('succeeded'))
     boundary.prepare.mockResolvedValue({ code: 200, ready: true })
     boundary.resume.mockResolvedValue({ code: 200 })
@@ -134,6 +136,35 @@ describe('插件安装的热加载与重启交接', () => {
     }
   )
 
+  it.each([
+    [true, '插件环境启动未完成，已保留原环境，请检查后重试'],
+    [false, '新插件环境加载失败，下次启动将恢复原环境'],
+  ])('新环境启动失败后显示后端记下的原因（恢复成功：%s）', async (recovered, expected) => {
+    const failed = (message: string) => ({
+      code: 200,
+      data: { ...progress('failed').data, message },
+    })
+    boundary.installation
+      .mockResolvedValueOnce({ code: 200, data: null })
+      .mockResolvedValueOnce(progress('waiting_restart'))
+      .mockResolvedValueOnce(failed('新插件环境加载失败，下次启动将恢复原环境'))
+      .mockResolvedValue(failed('插件环境启动未完成，已保留原环境，请检查后重试'))
+    boundary.restart
+      .mockResolvedValueOnce({ success: false })
+      .mockResolvedValue({ success: recovered })
+    const scope = effectScope()
+    try {
+      const api = scope.run(usePluginApi)!
+      await expect(api.runCommand('install', request)).rejects.toMatchObject({
+        message: expected,
+      })
+      expect(boundary.restart).toHaveBeenCalledTimes(2)
+      expect(boundary.finish).toHaveBeenCalledWith({ action: 'install', outcome: 'failure' })
+    } finally {
+      scope.stop()
+    }
+  })
+
   it('外部后端保留待重启结果，不误报安装成功', async () => {
     boundary.installation.mockResolvedValue(progress('waiting_restart'))
     boundary.manages.mockReturnValue(false)
@@ -179,17 +210,11 @@ describe('插件安装的热加载与重启交接', () => {
   })
 })
 
-import { OperationInfo, Service } from '@/api'
+import { BackgroundTaskState, Service } from '@/api'
 const finish = boundary.finish
 describe('plugin commands and settings', () => {
   const scopes: ReturnType<typeof effectScope>[] = []
   const body = { configUid: 'config', group: 'info', field: 'enable', value: true }
-  const operation = {
-    operationId: 'operation',
-    configUid: 'config',
-    field: 'info.enable',
-    createdAt: '2026-11-12T00:00:00Z',
-  }
   const createApi = () => {
     // 在真实 Vue 作用域内创建业务封装，确保轮询释放使用正式生命周期。
     const scope = effectScope()
@@ -213,19 +238,20 @@ describe('plugin commands and settings', () => {
   })
 
   it.each([
-    [OperationInfo.state.SUCCEEDED, 'success'],
-    [OperationInfo.state.FAILED, 'failure'],
-    [OperationInfo.state.CANCELLED, 'cancelled'],
+    [BackgroundTaskState.SUCCEEDED, 'success'],
+    [BackgroundTaskState.FAILED, 'failure'],
+    [BackgroundTaskState.TIMED_OUT, 'failure'],
+    [BackgroundTaskState.CANCELLED, 'cancelled'],
   ] as const)(
     'records %s only after the command reaches its terminal state',
     async (state, outcome) => {
       // 后台受理与完成分开；不同终态必须保留独立结果且只观测一次。
       const start = vi
-        .spyOn(Service, 'startOperationApiOperationsStartPost')
-        .mockResolvedValue({ code: 200, data: { ...operation, state: OperationInfo.state.QUEUED } })
+        .spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost')
+        .mockResolvedValue({ code: 200, data: 'task' })
       const query = vi
-        .spyOn(Service, 'getOperationApiOperationsGetPost')
-        .mockResolvedValue({ code: 200, data: { ...operation, state } })
+        .spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
+        .mockResolvedValue({ code: 200, data: { state } })
       const settled = createApi()
         .runCommand('enable', body)
         .then(
@@ -237,18 +263,42 @@ describe('plugin commands and settings', () => {
       await vi.runAllTimersAsync()
       expect(await settled).toBe(state === 'succeeded' ? 'success' : 'error')
       expect(start).toHaveBeenCalledWith(body)
-      expect(query).toHaveBeenCalledWith({ operationId: 'operation' })
+      expect(query).toHaveBeenCalledWith({ taskId: 'task' })
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'enable', outcome })
     }
   )
 
+  it.each([
+    [
+      '已有插件安装等待重启或恢复，请先重启后端完成该操作',
+      '已有插件安装等待重启或恢复，请先重启后端完成该操作',
+    ],
+    [null, 'core.plugins.actionFailed'],
+  ])('命令失败时显示后端给的原因，没有原因时显示操作失败（%s）', async (reason, expected) => {
+    boundary.installation.mockResolvedValue({ code: 200, data: null })
+    vi.spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost').mockResolvedValue({
+      code: 200,
+      data: 'task',
+    })
+    vi.spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost').mockResolvedValue({
+      code: 200,
+      data: { state: BackgroundTaskState.FAILED, errorCode: 'PluginError', message: reason },
+    })
+    const settled = createApi()
+      .runCommand('install', { ...body, field: 'install' })
+      .catch(error => error)
+    await vi.runAllTimersAsync()
+    expect(await settled).toMatchObject({ message: expected })
+    expect(finish).toHaveBeenCalledExactlyOnceWith({ action: 'install', outcome: 'failure' })
+  })
+
   it('reports unknown after repeated query failures without resubmitting the command', async () => {
     // 轮询网络故障不能变成操作成功，也不能重复提交产生副作用的命令。
     const start = vi
-      .spyOn(Service, 'startOperationApiOperationsStartPost')
-      .mockResolvedValue({ code: 200, data: { ...operation, state: OperationInfo.state.QUEUED } })
+      .spyOn(Service, 'writeConfigTriggerApiConfigTriggersWritePost')
+      .mockResolvedValue({ code: 200, data: 'task' })
     const query = vi
-      .spyOn(Service, 'getOperationApiOperationsGetPost')
+      .spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
       .mockRejectedValue(new Error('disconnected'))
     const settled = createApi()
       .runCommand('enable', body)
@@ -265,7 +315,7 @@ describe('plugin commands and settings', () => {
     const save = vi
       .spyOn(Service, 'updatePluginConfigApiPluginConfigUpdatePost')
       .mockResolvedValue({ code: 200 })
-    const query = vi.spyOn(Service, 'getOperationApiOperationsGetPost')
+    const query = vi.spyOn(Service, 'getConfigTriggerResultApiConfigTriggersResultPost')
     const patch = { recordId: 'record', data: { info: { value: true } } }
     expect(await createApi().updateConfig(patch)).toEqual({ code: 200 })
     expect(save).toHaveBeenCalledWith(patch, 'en-US')
@@ -294,6 +344,20 @@ describe('plugin commands and settings', () => {
       expect(finish).toHaveBeenCalledExactlyOnceWith({ action, outcome: 'failure' })
     }
   )
+
+  it('卸载默认保留配置，清理请求被拒时展示原因并记录失败', async () => {
+    const uninstall = vi
+      .spyOn(Service, 'uninstallPluginApiPluginUninstallPost')
+      .mockResolvedValueOnce({ code: 200 })
+      .mockResolvedValueOnce({ code: 409, message: 'busy' })
+    const api = createApi()
+    await api.uninstallPlugin('record')
+    expect(uninstall).toHaveBeenLastCalledWith({ recordId: 'record', purge_config: false })
+    expect(finish).toHaveBeenLastCalledWith({ action: 'uninstall', outcome: 'success' })
+    await expect(api.uninstallPlugin('record', true)).rejects.toThrow('busy')
+    expect(uninstall).toHaveBeenLastCalledWith({ recordId: 'record', purge_config: true })
+    expect(finish).toHaveBeenLastCalledWith({ action: 'uninstall', outcome: 'failure' })
+  })
 
   it('shares catalog refreshes and observes only newly started manual batches', async () => {
     const refresh = vi

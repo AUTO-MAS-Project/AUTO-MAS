@@ -12,6 +12,7 @@ import psutil
 
 from app.core.script_update_recovery import InstallInspection
 from app.services import script_install
+from app.utils.common.process.operations import iter_process_info
 
 from .apply import journal_path, work_dir
 from .engines import get_spec, read_installed_version
@@ -28,10 +29,10 @@ def assert_idle(root: Path) -> None:
         "sra-cli.exe",
         "sra-server.exe",
     }
-    for process in psutil.process_iter(["exe", "name"]):
+    for _, info in iter_process_info(["exe", "name"]):
         try:
-            path = process.info.get("exe")
-            name = str(process.info.get("name") or "").casefold()
+            path = info.get("exe")
+            name = str(info.get("name") or "").casefold()
             if not path and name in names:
                 raise script_install.InstallUnsafeError(
                     "无法确认原生脚本进程是否退出，拒绝修改安装"

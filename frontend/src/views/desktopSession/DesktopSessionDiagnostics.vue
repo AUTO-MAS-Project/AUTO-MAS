@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
+import { AppModal } from '@/components/ui'
 import type {
   DesktopSessionRepair,
   DesktopSessionSnapshot,
@@ -16,6 +17,7 @@ const { snapshot } = defineProps<{
 const emit = defineEmits<{
   check: []
   'repair-finished': [code: string | undefined]
+  'repair-cancelled': []
 }>()
 const repairing = defineModel<boolean>('repairing', { required: true })
 const confirming = defineModel<boolean>('confirming', { required: true })
@@ -42,6 +44,11 @@ const diagnosticGroups = computed(() => {
     { title: 'accountSection', items: checks.filter(check => isAccountCheck(check.code)) },
   ].filter(group => group.items.length)
 })
+
+function cancelRepair() {
+  confirming.value = false
+  emit('repair-cancelled')
+}
 
 async function repairEnvironment() {
   const plan = repairConfirmation.value
@@ -119,14 +126,15 @@ async function exportLogs() {
       </a-flex>
     </template>
   </template>
-  <a-modal
+  <AppModal
     :open="confirming"
+    size="sm"
     :title="t('bootstrap.desktopSession.repairTitle')"
     :ok-text="t('bootstrap.desktopSession.repairContinue')"
     :cancel-text="t('bootstrap.desktopSession.cancel')"
-    :ok-button-props="{ danger: true }"
+    ok-danger
     @ok="repairEnvironment"
-    @cancel="confirming = false"
+    @cancel="cancelRepair"
   >
     <a-alert type="warning" show-icon :message="t('bootstrap.desktopSession.repairConfirm')" />
     <ul>
@@ -134,5 +142,5 @@ async function exportLogs() {
         {{ t(`bootstrap.desktopSession.repairs.${item}`) }}
       </li>
     </ul>
-  </a-modal>
+  </AppModal>
 </template>

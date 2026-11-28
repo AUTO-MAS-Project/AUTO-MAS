@@ -56,8 +56,8 @@ function isFile(target: string): boolean {
   }
 }
 
-// 与 app/task/MaaFW/tools/core/runner/environment.py 的 _RID_ARCHITECTURE_ALIASES /
-// runtime_identifier_matches_host 同步：rid 最后一段是架构，其余是系统前缀（win10-x64 也算本机）
+// 与 app/task/MaaFW/tools/core/native/architecture.py 的 RID_ARCHITECTURE_ALIASES、
+// native/project_runtime.py 的 runtime_identifier_matches_host 同步：rid 最后一段是架构，其余是系统前缀（win10-x64 也算本机）
 const RID_ARCHITECTURE_ALIASES: Record<string, string> = {
   x64: 'x64',
   amd64: 'x64',
@@ -83,7 +83,7 @@ export function ridMatchesHost(rid: string): boolean {
   return architecture === hostArchitecture() && lowered.slice(0, separator).startsWith('win')
 }
 
-// 与 app/task/MaaFW/tools/core/runner/environment.py 的 _MAAFW_DLL_VERSION_RE 同步
+// 与 app/task/MaaFW/tools/core/native/project_runtime.py 的 _MAAFW_DLL_VERSION_RE 同步
 const DLL_VERSION_RE = /(?<![0-9A-Za-z.])v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?![0-9A-Za-z.])/g
 
 /** 原生库里内嵌的版本串（如 5.14.0、5.13.0-beta.2）；不是恰好一个时为 null。 */

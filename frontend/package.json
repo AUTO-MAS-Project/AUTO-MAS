@@ -2,7 +2,7 @@
   "name": "frontend",
   "productName": "AUTO-MAS",
   "private": true,
-  "version": "v5.9.0-beta.1",
+  "version": "v5.10.0-beta.1",
   "description": "A Multi-Script, Multi-Config Management and Automation Software",
   "author": "AUTO-MAS Team",
   "main": "dist-electron/main.js",
@@ -14,7 +14,7 @@
     "watch:main": "tsc -p tsconfig.electron.json --watch",
     "electron-dev": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "electron-dev:frontend": "wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron . --connect-existing-backend",
-    "build:main": "tsc -p tsconfig.electron.json",
+    "build:main": "tsc -p tsconfig.electron.json && node scripts/build-startup-probe.cjs",
     "build": "vp build && yarn build:main && electron-builder --publish never",
     "web": "vp dev",
     "release": "vp build && yarn build:main && electron-builder --win --publish always",
@@ -51,7 +51,9 @@
   },
   "build": {
     "asar": true,
-    "asarUnpack": [],
+    "asarUnpack": [
+      "dist-electron/startup-probe.exe"
+    ],
     "extraMetadata": {
       "env": "prod"
     },

@@ -57,13 +57,15 @@ _ERROR_MARK = "❌ 运行出错: "
 ## 命中的规则，所以最具体的整体失败规则必须排在最前：失败原因里可能含任务名
 ## （真实日志中的「运行出错: 任务InCafe执行后条件不成立或超时，且无法正确
 ## 返回主页，程序退出」），排在任务规则之后会被任务正则当成普通节点行吞掉
-BAAH_PUSH_RULES: list[tuple[str, str]] = [
+BAAH_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str, str]] = [
     # ── 整体运行失败（顶层异常，本次运行在执行某个任务的中途终止）──
     (r"运行出错: (.+)", rf'"{_ERROR_MARK}" + $((?:运行出错: )(.+))'),
     # ── 任务跳过（执行条件不成立或超时）──
     (
         rf"任务{_TASK_NAME}执行前条件不成立或超时",
         rf'"⏭ 跳过: " + $((?:任务)({_TASK_NAME})(?:执行前条件不成立或超时))',
+        LOG_TYPE_NORMAL,
+        "baah.task_not_ready",
     ),
     # ── 任务正常结束 ──
     (

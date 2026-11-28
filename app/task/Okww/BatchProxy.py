@@ -12,7 +12,7 @@ from app.utils import constants as _utils_constants
 from app.utils import io as _utils_io
 
 from . import push_log
-from .AutoProxy import AutoProxyTask
+from .AutoProxy import _OKWW_ERROR_PREFIX, AutoProxyTask
 from .tools.batch_config import (
     DAILY_TASK,
     completed_accounts,
@@ -27,6 +27,7 @@ from .tools.batch_logs import (
 from .tools.config_paths import _okww_mas_config_dir
 
 logger = get_logger("OK-WW 批次")
+_BATCH_FAILURE_LOG = "MultiAccountConfigTask:info_set 状态 执行失败"
 
 
 class BatchProxyTask(AutoProxyTask):
@@ -36,11 +37,19 @@ class BatchProxyTask(AutoProxyTask):
         return super().run_timeout_seconds * len(self.participants)
 
     def __init__(
-        self, script_info, script_config, user_config, game_manager, *, participants
+        self,
+        script_info,
+        script_config,
+        user_config,
+        game_manager,
+        *,
+        participants,
+        panel_snapshots: dict[str, dict[str, dict]] | None = None,
     ):
         super().__init__(script_info, script_config, user_config, game_manager)
         # 准入检查始终保留真实账号节点；运行节点在 prepare 中另建。
         self.participants = participants
+        self.panel_snapshots = panel_snapshots or {}
         self.succeeded = set()
         self.pending = set()
         self.accounts = []
@@ -56,11 +65,21 @@ class BatchProxyTask(AutoProxyTask):
             return super()._build_run_arguments()
         return ["-t", "MultiAccountConfigTask", "-e"]
 
-    def native_config_key(self) -> dict:
+    def snapshot_panels(self, now: datetime) -> dict[str, dict]:
+        from .tools.config_fields import runtime_panels
+        from .tools.plan import plan_panels
+
+        user = self.cur_user_config
+        return runtime_panels(user, planned=plan_panels(user, now=now))
+
+    def _runtime_panels(self) -> dict[str, dict]:
+        return self.panel_snapshots[str(self.cur_user_uid)]
+
+    def native_config_key(self, overrides: dict[str, dict]) -> dict:
         """批次间接调用的配置必须一致；基础来源差异同样参与分组。"""
         from app.utils.common.io import read_dict_file
 
-        from .tools.config_fields import PANEL_FILES, panel_values
+        from .tools.config_fields import PANEL_FILES
 
         config = self.cur_user_config
         root = (
@@ -76,8 +95,7 @@ class BatchProxyTask(AutoProxyTask):
                 continue
             path = root / filename
             values = read_dict_file(path) if path.exists() else {}
-            if config.Info.IfQuickConfig:
-                values.update(panel_values(config, kind))
+            values.update(overrides.get(filename, {}))
             result[filename] = values
         return result
 
@@ -125,6 +143,10 @@ class BatchProxyTask(AutoProxyTask):
                 enabled=True,
                 rotated_name=f"{self.script_log_path.stem}.%Y-%m-%d{self.script_log_path.suffix}",
             )
+        if not self.panel_snapshots:
+            # 逐账号切号路径只有一个参与者，无需在调度层分组。
+            self.panel_snapshots[str(self.cur_user_uid)] = self.snapshot_panels(today)
+
         for user in self.participants:
             config = self.user_config[uuid.UUID(user.user_id)]
             root = (
@@ -142,12 +164,7 @@ class BatchProxyTask(AutoProxyTask):
             )
             if not isinstance(values, dict):
                 raise ValueError(f"日常配置格式错误: {daily}")
-            from .tools.plan import task_config
-
-            task = task_config(config)
-            if config.Info.IfQuickConfig:
-                values.update(config.Task.DailyConfig)
-            values.update(task)
+            values.update(self.panel_snapshots[user.user_id].get("DailyTask.json", {}))
             key = normalize_account_key(config.Info.Id)
             self.account_users[key] = user
             self.accounts.append(
@@ -205,20 +222,26 @@ class BatchProxyTask(AutoProxyTask):
         # 完成账号归档和整批判定后再唤醒主流程，避免日志监控提前被取消。
         await super().check_log(log_content, latest_time, signal_completion=False)
         # 失败原因独立于节点采集开关，关闭详情时仍须保留账号结论。
+        failed_key = None
         for key, stage, line in account_log_context(log_content):
             if key in self.account_users:
                 self.attempted_accounts.add(key)
-                if "MultiAccountConfigTask:info_set 状态 执行失败" in line:
+            if _BATCH_FAILURE_LOG in line:
+                failed_key = key if key in self.account_users else None
+                if failed_key is not None:
                     self.account_failures[key] = f"OK-WW {stage}失败"
+        if failed_key is not None and self.cur_user_log.status.startswith(
+            _OKWW_ERROR_PREFIX
+        ):
+            self.account_failures[failed_key] = self.cur_user_log.status
         completed = completed_accounts(self.script_config_path, self.pending)
         self.succeeded.update(completed)
         for key in completed:
             await self.account_users[key].set_state(status="完成")
-        if "info_set 状态 执行失败" in "".join(log_content):
-            await self.cur_user_log.set_state(status="OK-WW 部分账号执行失败")
         if self.cur_user_log.status == "Success!" and not self.pending.issubset(
             self.succeeded
         ):
+            self._log_result_key = "batch_missing_results"
             await self.cur_user_log.set_state(
                 status="OK-WW 未取得全部账号的本轮成功结果"
             )
@@ -251,8 +274,8 @@ class BatchProxyTask(AutoProxyTask):
                 if current in pipelines:
                     self.attempted_accounts.add(current)
                     # OCR 回退警告不能代替上游终态失败。
-                    if "MultiAccountConfigTask:info_set 状态 执行失败" in line:
-                        self.account_failures[current] = f"OK-WW {stage}失败"
+                    if _BATCH_FAILURE_LOG in line:
+                        self.account_failures.setdefault(current, f"OK-WW {stage}失败")
                         pipelines[current].results.append(
                             (LOG_TYPE_NORMAL, f"❌ 失败: {stage}", None)
                         )
@@ -295,15 +318,15 @@ class BatchProxyTask(AutoProxyTask):
                 self.cur_user_log = await user.add_log_record(
                     datetime.now().astimezone(), LogRecord()
                 )
-            self.run_book = (
+            self.run_complete = (
                 normalize_account_key(self.cur_user_config.Info.Id) in self.succeeded
             )
-            skipped = maintenance_skipped and not self.run_book
+            skipped = maintenance_skipped and not self.run_complete
             self.user_state(user).maintenance_skipped = skipped
             await user.set_state(
-                status="完成" if self.run_book else "跳过" if skipped else "异常"
+                status="完成" if self.run_complete else "跳过" if skipped else "异常"
             )
-            if self.run_book:
+            if self.run_complete:
                 status = "Success!"
             elif skipped:
                 status = self._maintenance_reason or "鸣潮正在维护"

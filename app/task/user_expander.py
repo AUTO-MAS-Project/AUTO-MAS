@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from abc import abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol
 from uuid import UUID
 
 from app.config import LockTicket
@@ -16,6 +17,7 @@ from app.task.lifecycle import TaskBase
 from app.utils.common.process.scope import process_finalizer_scope
 
 if TYPE_CHECKING:
+    from app.task.game import BoundEmulator, GameSession
     from app.task.history_core import TaskHistorySession
     from app.task.mode_worker import ModeWorker
 
@@ -26,8 +28,18 @@ class _UserLookup(Protocol):
         ...
 
 
+@dataclass(frozen=True)
+class ScriptSkip:
+    """``check()`` 返回它表示整个托管良性跳过：托管记「跳过」、发 warning，不算异常。"""
+
+    reason: str
+
+
 class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
     history: TaskHistorySession
+    # 为真时 L2 不在派发本层之前选定托管级游戏会话，改由本层确认有可运行账号之后
+    # 调 ``select_game_session()``（同旧专项的 after_config_lock）；没有账号就不占游戏、不排队。
+    defer_game_session: ClassVar[bool] = False
 
     def __init__(self, script: TaskScriptItem, config: ScriptConfigT) -> None:
         """绑定托管运行节点及已锁脚本配置，建立 L3 参数上下文并初始化用户锁和准备阶段状态。"""
@@ -41,7 +53,17 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         self.script_config = config
         self._user_config: UserConfigType | UserEntry | None = None
         self._user_ticket: LockTicket | None = None
+        self.game_session: GameSession | None = None
+        self._emulator_override: BoundEmulator | None = None
         self._entered = False
+        self._skipped: str | None = None
+
+    @property
+    def emulator(self) -> BoundEmulator | None:
+        """借用 L2 持有的当前账号设备；不签发或释放游戏票据。"""
+        if self.game_session is not None and self.game_session.control is not None:
+            return self.game_session.emulator
+        return self._emulator_override
 
     def user_collection(self, script: ScriptConfigT) -> _UserLookup:
         # 插件配置接入位置：由真实插件声明提供公开配置访问，不推断私有格式。
@@ -66,6 +88,23 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
             entry.Info.Status and entry.Info.RemainedDay != 0
         )
 
+    async def select_game_session(self, config: Any = None) -> None:
+        """选定 L2 交来的托管级游戏会话（游戏 / 模拟器），可能要等串行游戏或设备。
+
+        供声明了 ``defer_game_session`` 的插件在确认有可运行账号之后调用；``config``
+        不使用，只为能直接当旧专项管理器的 ``after_config_lock`` 回调。已选定时不重复订阅。
+        失败照原样抛出，由调用方按托管级检查失败处理（交回锁、账号记「异常」、说明原因）。
+        """
+        if self.game_session is not None:
+            await self.game_session.select()
+
+    def on_stop_requested(self) -> None:
+        """用户停止本次任务时由 L2 同步调用，早于取消送达本层；默认什么都不做。
+
+        受保护的收尾（``finish()`` 等）收不到取消，需要提前结束的（运行后更新、
+        环境确认）在这里置停止标记。只做同步的轻量动作，不得抛出；可能被调用多次。
+        """
+
     async def record_user_state(
         self, user: TaskUserItem, *, status: str, reason: str
     ) -> None:
@@ -80,6 +119,9 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
         await self.script_info.set_state(status="运行")
         self._entered = True
         reason = await self.check()
+        if isinstance(reason, ScriptSkip):
+            await self._skip_script(reason.reason)
+            return
         if reason:
             raise ValueError(reason)
         # 游戏接入位置：取得托管锁后、派发用户前订阅游戏/设备；资源由真实提供方负责。
@@ -134,6 +176,15 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                             user, status="跳过", reason="用户已禁用或剩余天数不足"
                         )
                         continue
+                if self.game_session is not None:
+                    try:
+                        await self.game_session.select(self._user_config)
+                    except Exception as error:
+                        await self.game_session.release()
+                        await self.record_user_state(
+                            user, status="异常", reason=str(error)
+                        )
+                        continue
                 worker = self.build_worker(user, self._user_config)
                 if (
                     worker.expander is not self
@@ -143,7 +194,11 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                     raise ValueError("插件执行器未绑定当前用户及已锁配置")
                 await self.spawn(worker)
             finally:
-                await self._release_user_lock()
+                try:
+                    if self.game_session is not None:
+                        await self.game_session.release_account()
+                finally:
+                    await self._release_user_lock()
 
     async def _release_user_lock(self) -> None:
         if self._user_ticket is not None:
@@ -152,8 +207,25 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
             self._user_ticket = None
             self._user_config = None
 
-    async def check(self) -> str | None:
-        """插件托管级检查。"""
+    async def _skip_script(self, reason: str) -> None:
+        """良性跳过：未开始的账号记「跳过」，向任务发一条 warning；托管状态由收尾写。"""
+        from app.core import Publisher
+        from app.core.ws import protocol
+        from app.models.schema import WSTaskNoticeData
+
+        self._skipped = reason
+        await self.script_info.set_log(reason)
+        for user in self.script_info.users.values():
+            if user.info.status == "等待":
+                await user.set_state(status="跳过")
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=reason),
+        )
+
+    async def check(self) -> str | ScriptSkip | None:
+        """插件托管级检查：返回原因字符串记「异常」，返回 ``ScriptSkip`` 记「跳过」。"""
         return None
 
     async def prepare(self) -> None:
@@ -194,6 +266,9 @@ class UserExpander[ScriptConfigT: ScriptConfigType | ScriptEntry](TaskBase):
                 if self.cancelled
                 else "异常"
                 if self.error
+                or (self.game_session is not None and self.game_session.cleanup_failed)
                 or any("异常" in u.status for u in self.script_info.users.values())
+                else "跳过"
+                if self._skipped is not None
                 else "完成"
             )

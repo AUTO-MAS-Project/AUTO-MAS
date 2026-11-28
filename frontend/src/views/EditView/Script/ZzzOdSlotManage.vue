@@ -140,13 +140,11 @@
     </a-collapse>
 
     <!-- 恢复落到某个用户的绑定槽：只物化到裸槽号的恢复没有出口，MAS 不会认领它 -->
-    <a-modal
+    <AppModal
       v-model:open="restoreTarget.open"
+      size="sm"
       :title="t('core.edit.zzzodRecycleRestore')"
-      :confirm-loading="restoring"
-      :closable="!restoring"
-      :mask-closable="!restoring"
-      :keyboard="!restoring"
+      :submitting="restoring"
       :ok-text="t('core.edit.zzzodRecycleRestore')"
       @ok="submitRestore"
     >
@@ -186,13 +184,14 @@
           })
         }}
       </a-typography-text>
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ClearOutlined, QuestionCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
 import { useZzzOdSlotManage } from '@/composables/useZzzOdSlotManage'
 
 const props = defineProps<{
@@ -237,6 +236,16 @@ const {
 /* 与页面其它 section 同节奏 */
 .slot-manage-section {
   margin-bottom: 12px;
+  padding: 20px 24px 8px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--app-appearance-surface-bg, var(--ant-color-bg-container));
+}
+
+html:not(.dark):not(.appearance-custom) .slot-manage-section {
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.04),
+    0 4px 12px -4px rgba(16, 24, 40, 0.06);
 }
 
 .help-icon {
@@ -257,8 +266,9 @@ const {
 
 .slot-manage-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 8px;

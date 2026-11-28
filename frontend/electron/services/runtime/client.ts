@@ -17,6 +17,7 @@
 import { ChildProcessWithoutNullStreams, spawn } from 'child_process'
 import { randomBytes } from 'crypto'
 import { EventEmitter } from 'events'
+import { runtimeStartupSample } from '../startupHardware/pipe'
 import * as fs from 'fs'
 
 import { getLogger } from '../logger'
@@ -193,6 +194,8 @@ export interface RuntimeSuperviseOptions extends RuntimeRunOptions {
   mode: 'managed' | 'development'
   /** development 模式的源码目录。 */
   repo?: string
+  /** 复用 app-root 已初始化的受管虚拟环境。 */
+  reuseManagedEnvironment?: boolean
   /** 受监督后端端口；未提供时由 Runtime 按模式决定。 */
   port?: number
   /** 后端清理预算（秒），未提供时沿用 Runtime 默认值。 */
@@ -486,6 +489,7 @@ class RuntimeSession {
   private stopFlight: Promise<void> | null = null
   private cancelSent = false
   private closeConfirmed = false
+  private readonly hardware?: ReturnType<typeof runtimeStartupSample>
   private readonly sessionId = randomBytes(8).toString('hex')
   readonly command: string
   private readonly requestedAt = performance.now()
@@ -558,9 +562,13 @@ class RuntimeSession {
     // bootstrap / doctor 等一次性命令跟随宿主退出即可，也避免 Windows 为 detached 控制台程序
     // 分配空白控制台窗口。三路 stdio 始终保留给 NDJSON 事件与 stdin 控制；不 unref。
     const detached = command[0] === 'backend' && command[1] === 'supervise'
+    this.hardware = runtimeStartupSample()
+    const env = mergeEnv(clientOptions.env)
+    delete env.AUTO_MAS_STARTUP_SAMPLE
+    if (this.hardware) env.AUTO_MAS_STARTUP_SAMPLE = this.hardware.token
     this.child = spawn(clientOptions.runtimePath, this.argv, {
       cwd: clientOptions.cwd,
-      env: mergeEnv(clientOptions.env),
+      env,
       windowsHide: true,
       detached,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -738,6 +746,7 @@ class RuntimeSession {
   }
 
   private dispatch(event: RuntimeEvent): void {
+    this.hardware?.event(event)
     if (event.type === 'log') {
       this.recentLogs.push(event)
     } else {
@@ -840,6 +849,7 @@ class RuntimeSession {
 
   private onClose(exitCode: number | null, signal: NodeJS.Signals | null): void {
     this.closeConfirmed = true
+    this.hardware?.close()
     this.diagnose('close', { processExited: true, exitCode, signal })
     this.resolveClosed()
     for (const item of this.stdoutStream.flush()) {
@@ -1049,6 +1059,7 @@ export class RuntimeClient extends EventEmitter {
     if (options.repo) {
       command.push('--repo', options.repo)
     }
+    if (options.reuseManagedEnvironment) command.push('--reuse-managed-environment')
 
     if (options.port !== undefined) command.push('--port', String(options.port))
     if (options.shutdownTimeoutSeconds !== undefined) {

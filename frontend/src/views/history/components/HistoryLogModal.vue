@@ -1,9 +1,9 @@
 <template>
-  <a-modal
+  <AppModal
     :open="open"
-    :title="null"
-    :footer="null"
-    :width="'90vw'"
+    size="full"
+    footer="none"
+    scroll="none"
     :style="{ maxWidth: '1400px' }"
     :body-style="{ padding: 0, height: 'calc(100vh - 104px)' }"
     :destroy-on-close="true"
@@ -170,8 +170,18 @@
       <HistoryAttachments :attachments="attachments" />
       <!-- 日志内容 -->
       <div class="modal-body">
-        <a-spin :spinning="loading" style="height: 100%">
-          <div v-if="logContent" class="log-editor">
+        <StateView
+          :loading="loading"
+          :empty="!logContent"
+          :empty-description="t('core.history.log.emptyLog')"
+          overlay-loading
+        >
+          <template #empty-action>
+            <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
+              logUnavailableReason ? t('core.history.log.unavailable') : errorMessage
+            }}</span>
+          </template>
+          <div class="log-editor">
             <vue-monaco-editor
               :value="displayLogContent"
               :theme="editorTheme"
@@ -181,17 +191,10 @@
               @before-mount="registerLogLanguage"
             />
           </div>
-          <div v-else class="empty-log">
-            <NoData v-if="!loading" :description="t('core.history.log.emptyLog')">
-              <span v-if="logUnavailableReason || errorMessage" class="error-message">{{
-                logUnavailableReason ? t('core.history.log.unavailable') : errorMessage
-              }}</span>
-            </NoData>
-          </div>
-        </a-spin>
+        </StateView>
       </div>
     </div>
-  </a-modal>
+  </AppModal>
 </template>
 
 <script setup lang="ts">
@@ -203,6 +206,7 @@ import {
   InboxOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
+import { AppModal, StateView } from '@/components/ui'
 import VueMonacoEditor from '@/components/LocalMonacoEditor'
 import { computed, ref } from 'vue'
 import type { PullCountStatistics } from '@/types/history'
@@ -455,16 +459,16 @@ const displayLogContent = computed(() => {
 
 .modal-body {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: 0;
 }
 
-.modal-body :deep(.ant-spin-nested-loading),
-.modal-body :deep(.ant-spin-container) {
-  height: 100%;
-}
-
 .log-editor {
+  flex: 1;
+  min-height: 0;
   height: 100%;
 }
 
@@ -474,16 +478,6 @@ const displayLogContent = computed(() => {
 
 .log-editor :deep(.monaco-editor .monaco-editor-background) {
   background-color: var(--ant-color-bg-container);
-}
-
-.empty-log {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: var(--ant-color-text-secondary);
 }
 
 .error-message {

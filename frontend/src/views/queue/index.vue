@@ -45,14 +45,12 @@
     <!-- 队列内容 -->
     <div v-else class="queue-content">
       <!-- 队列选择卡片 -->
-      <a-card class="queue-selector-card app-page-surface" :bordered="false">
+      <SectionCard class="queue-selector-card">
         <template #title>
-          <div class="card-title">
-            <span>{{ t('core.queue.selectLabel') }}</span>
-            <a-tag :color="queueList.length > 0 ? 'success' : 'default'">
-              {{ t('core.queue.count', { count: queueList.length }, queueList.length) }}
-            </a-tag>
-          </div>
+          <span>{{ t('core.queue.selectLabel') }}</span>
+          <a-tag color="success">
+            {{ t('core.queue.count', { count: queueList.length }, queueList.length) }}
+          </a-tag>
         </template>
 
         <div class="queue-selection-container">
@@ -72,34 +70,37 @@
             </a-space>
           </div>
         </div>
-      </a-card>
+      </SectionCard>
 
       <!-- 队列配置卡片 -->
-      <a-card class="queue-config-card app-page-surface" :bordered="false">
+      <SectionCard class="queue-config-card">
         <template #title>
-          <div class="queue-title-container">
-            <div v-if="!isEditingQueueName" class="queue-title-display">
-              <span class="queue-title-text">{{
-                currentQueueName || t('core.queue.configTitle')
-              }}</span>
-              <a-button type="text" size="small" class="queue-edit-btn" @click="startEditQueueName">
-                <template #icon>
-                  <EditOutlined />
-                </template>
-              </a-button>
-            </div>
-            <div v-else class="queue-title-edit">
-              <a-input
-                ref="queueNameInputRef"
-                v-model:value="currentQueueName"
-                :placeholder="t('core.queue.namePlaceholder')"
-                class="queue-title-input"
-                :maxlength="50"
-                @blur="finishEditQueueName"
-                @press-enter="finishEditQueueName"
-              />
-            </div>
-          </div>
+          <span v-if="!isEditingQueueName" class="queue-title-display">
+            <span class="queue-title-text">{{
+              currentQueueName || t('core.queue.configTitle')
+            }}</span>
+            <a-button
+              type="text"
+              size="small"
+              class="queue-edit-btn"
+              :aria-label="t('core.comp.edit')"
+              @click="startEditQueueName"
+            >
+              <template #icon>
+                <EditOutlined />
+              </template>
+            </a-button>
+          </span>
+          <a-input
+            v-else
+            ref="queueNameInputRef"
+            v-model:value="currentQueueName"
+            :placeholder="t('core.queue.namePlaceholder')"
+            class="queue-title-input"
+            :maxlength="50"
+            @blur="finishEditQueueName"
+            @press-enter="finishEditQueueName"
+          />
         </template>
 
         <QueueTriggerSettings
@@ -129,30 +130,27 @@
           :queue-items="currentQueueItems"
           @refresh="refreshQueueItems"
         />
-        <a-card :title="t('core.comp.extraScripts')" class="queue-extra-settings">
-          <a-form layout="vertical">
-            <ExtraScriptSection
-              :key="activeQueueId"
-              v-model:form-data="extraScriptFormData"
-              :loading="
-                queueConfigLoading ||
-                extraScriptSaving ||
-                extraScriptConfigQueueId !== activeQueueId
-              "
-              scope="queue"
-              hide-section-header
-              @save="handleExtraScriptSave"
-            />
-          </a-form>
-        </a-card>
-      </a-card>
+        <a-form layout="vertical" class="queue-extra-settings">
+          <ExtraScriptSection
+            :key="activeQueueId"
+            v-model:form-data="extraScriptFormData"
+            :loading="
+              queueConfigLoading || extraScriptSaving || extraScriptConfigQueueId !== activeQueueId
+            "
+            scope="queue"
+            @save="handleExtraScriptSave"
+          />
+        </a-form>
+      </SectionCard>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useConfigLoader } from '@/services/configUiSync'
 import { useI18n } from 'vue-i18n'
-import { Service, type QueueConfig_Info } from '@/api'
+import type { QueueConfig_Info } from '@/api'
+import { useQueueTimeSets } from './useQueueTimeSets'
 import { queueApi } from '@/composables/useQueueApi'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import QueueDeleteButton from './components/QueueDeleteButton.vue'
@@ -160,6 +158,7 @@ import QueueTriggerSettings from './components/QueueTriggerSettings.vue'
 import QueueCycleSettings from './components/QueueCycleSettings.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
+import { SectionCard } from '@/components/ui'
 import { EditOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
@@ -195,16 +194,17 @@ const extraScriptConfigQueueId = ref('')
 const isEditingQueueName = ref<boolean>(false)
 
 // 当前队列的定时项和队列项
-const currentTimeSets = ref<any[]>([])
+const { currentTimeSets, refreshTimeSets } = useQueueTimeSets(activeQueueId)
 const currentQueueItems = ref<any[]>([])
 
 const loading = ref(true)
 
 // 获取队列列表
-const fetchQueues = async () => {
-  loading.value = true
+const fetchQueues = useConfigLoader(['config', 'queues'], async read => {
+  if (!queueList.value.length) loading.value = true
   try {
     const response = await queueApi.getQueues({})
+    read(response)
     if (!isMounted) return
     if (response.code === 200) {
       // 处理队列数据
@@ -218,7 +218,7 @@ const fetchQueues = async () => {
         }))
 
         // 如果有队列且没有选中的队列，默认选中第一个
-        if (queueList.value.length > 0 && !activeQueueId.value) {
+        if (!queueList.value.some(queue => queue.id === activeQueueId.value)) {
           activeQueueId.value = queueList.value[0].id
           logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
           // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
@@ -247,7 +247,7 @@ const fetchQueues = async () => {
   } finally {
     loading.value = false
   }
-}
+})
 
 // 加载队列数据；调用方手里已有整份队列数据时直接传入，省一次请求
 const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) => {
@@ -296,120 +296,67 @@ const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) 
   }
 }
 
-// 刷新定时项数据
-const refreshTimeSets = async () => {
-  if (!activeQueueId.value) {
-    currentTimeSets.value = []
-    return
-  }
-
-  try {
-    // 使用专门的定时项API获取数据
-    const response = await Service.getTimeSetApiQueueTimeGetPost({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取定时项数据失败: ${JSON.stringify(response)}`)
-      // 不清空数组，避免骨架屏闪现
-      return
-    }
-
-    const timeSets: any[] = []
-
-    // 处理定时项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const timeSetId = item.uid
-          if (!timeSetId || !response.data || !response.data[timeSetId]) return
-
-          const timeSetData = response.data[timeSetId]
-          if (timeSetData?.Info) {
-            const timeString = timeSetData.Info.Time || '00:00'
-
-            timeSets.push({
-              id: timeSetId,
-              time: timeString,
-              enabled: Boolean(timeSetData.Info.Enabled),
-              days: timeSetData.Info.Days || [],
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个定时项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
-      })
-    }
-
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentTimeSets.value.splice(0, currentTimeSets.value.length, ...timeSets)
-    logger.debug(`刷新后的定时项数据: ${JSON.stringify(timeSets)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新定时项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
-  }
-}
-
 // 刷新队列项数据
-const refreshQueueItems = async () => {
-  if (!activeQueueId.value) {
-    // 不清空数组，避免骨架屏闪现
-    return
-  }
-
-  try {
-    // 使用专门的队列项API获取数据
-    const response = await queueApi.getItems({
-      queueId: activeQueueId.value,
-    })
-
-    if (response.code !== 200) {
-      logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
+const refreshQueueItems = useConfigLoader(
+  () => ['config', 'queue-items', activeQueueId.value],
+  async read => {
+    if (!activeQueueId.value) {
       // 不清空数组，避免骨架屏闪现
       return
     }
 
-    const queueItems: any[] = []
-
-    // 处理队列项数据
-    if (response.index && Array.isArray(response.index)) {
-      response.index.forEach((item: any) => {
-        try {
-          const queueItemId = item.uid
-          if (!queueItemId || !response.data || !response.data[queueItemId]) return
-
-          const queueItemData = response.data[queueItemId]
-          if (queueItemData?.Info) {
-            queueItems.push({
-              id: queueItemId,
-              script: queueItemData.Info.ScriptId || '',
-              schedule: { ...(queueItemData.Schedule || {}) },
-            })
-          }
-        } catch (itemError) {
-          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-          logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-        }
+    const selected = activeQueueId.value
+    try {
+      // 使用专门的队列项API获取数据
+      const response = await queueApi.getItems({
+        queueId: selected,
       })
-    }
 
-    // 使用nextTick确保数据更新不会导致渲染问题
-    await nextTick()
-    if (!isMounted) return
-    // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
-    currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
-    logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新队列项列表失败: ${errorMsg}`)
-    // 不清空数组，避免骨架屏闪现
+      read(response)
+      if (selected !== activeQueueId.value) return
+      if (response.code !== 200) {
+        logger.error(`获取队列项数据失败: ${JSON.stringify(response)}`)
+        // 不清空数组，避免骨架屏闪现
+        return
+      }
+
+      const queueItems: any[] = []
+
+      // 处理队列项数据
+      if (response.index && Array.isArray(response.index)) {
+        response.index.forEach((item: any) => {
+          try {
+            const queueItemId = item.uid
+            if (!queueItemId || !response.data || !response.data[queueItemId]) return
+
+            const queueItemData = response.data[queueItemId]
+            if (queueItemData?.Info) {
+              queueItems.push({
+                id: queueItemId,
+                script: queueItemData.Info.ScriptId || '',
+                schedule: { ...(queueItemData.Schedule || {}) },
+              })
+            }
+          } catch (itemError) {
+            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+            logger.warn(`解析单个队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
+          }
+        })
+      }
+
+      // 使用nextTick确保数据更新不会导致渲染问题
+      await nextTick()
+      if (!isMounted || selected !== activeQueueId.value) return
+      // 直接替换数组内容，而不是清空再赋值，避免骨架屏闪现
+      currentQueueItems.value.splice(0, currentQueueItems.value.length, ...queueItems)
+      logger.debug(`刷新后的队列项数据: ${JSON.stringify(queueItems)}`) // 调试日志
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`刷新队列项列表失败: ${errorMsg}`)
+      // 不清空数组，避免骨架屏闪现
+    }
   }
-}
+)
 
 // 队列名称编辑失焦处理 - 保存到后端
 const onQueueNameBlur = async () => {
@@ -671,13 +618,6 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.page-description {
-  margin: 0;
-  font-size: 16px;
-  color: var(--ant-color-text-secondary);
-  line-height: 1.5;
-}
-
 .header-actions {
   flex-shrink: 0;
 }
@@ -702,10 +642,8 @@ onUnmounted(() => {
   gap: var(--app-page-content-gap);
 }
 
-.card-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.queue-content > .ui-section-card {
+  margin-bottom: 0;
 }
 
 /* 队列按钮组 */
@@ -727,19 +665,7 @@ onUnmounted(() => {
   min-height: 600px;
 }
 
-.status-label {
-  color: var(--ant-color-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
 /* 队列名称编辑 */
-.queue-title-container {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .queue-title-display {
   display: flex;
   align-items: center;
@@ -763,31 +689,12 @@ onUnmounted(() => {
   transition: all 0.2s ease;
 }
 
-/* 定时项与队列项上下布局 */
-.managers-row {
-  margin-bottom: 24px;
-}
-
-.manager-col {
-  display: flex;
-  flex-direction: column;
-}
-
-.queue-extra-settings :deep(.ant-card-head-title) {
-  font-size: var(--app-page-card-title-size);
-  font-weight: var(--app-page-card-title-weight);
-  line-height: var(--app-page-card-title-line-height);
-}
 .queue-extra-settings :deep(.form-section) {
   margin-bottom: 0;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .page-description {
-    font-size: 14px;
-  }
-
   .queue-title-input {
     max-width: 100%;
   }
@@ -799,14 +706,6 @@ onUnmounted(() => {
   }
 }
 
-.queue-title-input :deep(.ant-input) {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.queue-title-input :deep(.ant-input:focus) {
-  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
-}
 .empty-title {
   color: var(--ant-color-text);
   font-size: 18px;

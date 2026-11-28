@@ -3,21 +3,25 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-r
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
-import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
-import { buildMaaFWRoutes } from './maafwFlavorRoutes'
-import { buildScriptEditorRoutes } from './scriptEditorRoutes'
-import { SCRIPT_PLUGIN_ROUTES } from '@/plugins/scriptAdapters'
+import { buildMaaFWRoutes } from './maafwRoutes'
+import { buildScriptEditorRoutes, genericEditorRoutes } from './scriptEditorRoutes'
+import { isBuiltinScriptType } from '@/utils/scriptMetadata'
+import {
+  MAAFW_FAMILY_ADAPTERS,
+  SCRIPT_PLUGIN_BINDINGS,
+  SCRIPT_PLUGIN_ROUTES,
+} from '@/plugins/scriptAdapters'
 import { registerRouterAnalytics } from './analytics'
 import { measureStartup } from '@/utils/startupTiming'
 import { translate as t } from '@/i18n'
 import { fetchScriptCapabilities } from '@/composables/useScriptCapabilities'
 const logger = window.electronAPI.getLogger('路由管理')
 
-// MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
+// MaaFW 家族的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按适配条目生成；
 // 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
 const maafwRoutes = buildMaaFWRoutes(
-  MAAFW_FLAVORS,
-  () => import('../views/EditView/MaaFWFlavor/MaaFWPageHost.vue')
+  MAAFW_FAMILY_ADAPTERS,
+  () => import('../views/EditView/MaaFW/MaaFWPageHost.vue')
 )
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
@@ -51,31 +55,41 @@ const devRoutes =
       ]
     : []
 
+// 插件中心三个页签共用一个外壳；viewKey 相同，切换页签时外壳实例与进行中的安装不被重建。
+const PluginCenterView = () => import('@/views/Plugins.vue')
+const PLUGIN_CENTER_VIEW_KEY = 'plugin-center'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** 同值的路由在内容区复用同一页面实例；缺省按路径区分。 */
+    viewKey?: string
+  }
+}
+
 const routes = [
   {
     path: '/plugins',
     name: 'Plugins',
-    component: () => /* 进入插件中心时按需加载已安装插件页面。 */ import('@/views/Plugins.vue'),
-    meta: { title: '插件' },
+    component: PluginCenterView,
+    meta: { title: '插件', viewKey: PLUGIN_CENTER_VIEW_KEY },
   },
   {
     path: '/plugins/market',
     name: 'PluginMarket',
-    component: () => /* 进入插件市场时按需加载市场页面。 */ import('@/views/PluginMarket.vue'),
-    meta: { title: '插件市场' },
+    component: PluginCenterView,
+    meta: { title: '插件市场', viewKey: PLUGIN_CENTER_VIEW_KEY },
+  },
+  {
+    path: '/plugins/updates',
+    name: 'PluginUpdates',
+    component: PluginCenterView,
+    meta: { title: '插件更新', viewKey: PLUGIN_CENTER_VIEW_KEY },
   },
   {
     path: '/plugins/:pluginId/settings',
     name: 'PluginSettings',
     component: () =>
       /* 进入插件配置路由时按需加载声明式设置页面。 */ import('@/views/PluginSettingsPage.vue'),
-    meta: { title: '插件设置' },
-  },
-  {
-    path: '/plugins/:pluginId/:pageId',
-    name: 'PluginPage',
-    component: () =>
-      /* 通过兼容配置路由进入时复用同一插件设置页面。 */ import('@/views/PluginSettingsPage.vue'),
     meta: { title: '插件设置' },
   },
   {
@@ -107,6 +121,7 @@ const routes = [
     meta: { title: '脚本管理' },
   },
   ...buildScriptEditorRoutes(),
+  ...genericEditorRoutes,
   ...maafwRoutes.script,
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
@@ -119,16 +134,22 @@ const routes = [
     meta: { title: 'core.plan.oknte.detail' },
   },
   {
+    path: '/plans/:planId/okww/:day',
+    name: 'OkwwPlanDetail',
+    component: () => import('@/views/plan/OkwwPlanDetail.vue'),
+    meta: { title: 'core.plan.oknte.detail' },
+  },
+  {
     path: '/plans',
     name: 'Plans',
     component: () => import('../views/plan/index.vue'),
     meta: { title: '计划管理' },
   },
   {
-    path: '/emulators',
-    name: 'Emulators',
-    component: () => import('../views/Emulator.vue'),
-    meta: { title: '模拟器管理' },
+    path: '/games',
+    name: 'Games',
+    component: () => import('../views/games/index.vue'),
+    meta: { title: '游戏管理' },
   },
   {
     path: '/queue',
@@ -320,14 +341,21 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
-// MAA 页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+// 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
 router.beforeResolve(async to => {
-  if (to.meta.scriptType !== 'MAA') return
+  const type = to.meta.scriptType ?? to.params.scriptType
+  if (typeof type !== 'string') return
+  // 随宿主提供的编辑器可以直接打开；静态插件入口和新插件路由都检查实际能力。
+  if (
+    isBuiltinScriptType(type) &&
+    !SCRIPT_PLUGIN_BINDINGS.some(binding => binding.scriptType === type)
+  )
+    return
   try {
     const types = await fetchScriptCapabilities()
-    if (types.includes('MAA')) return
+    if (types.includes(type)) return
   } catch (error) {
-    logger.warn(`读取 MAA 插件能力失败: ${String(error)}`)
+    logger.warn(`读取 ${type} 插件能力失败: ${String(error)}`)
   }
   return { path: '/plugins/market' }
 })

@@ -3,167 +3,50 @@ name: mas-skills
 description: Use when a task needs AUTO-MAS engineering conventions across frontend, UI, code style, validation and failure handling, test design, schema naming, module boundaries, function design, API contracts, data modeling, task scheduling, script adapters (MAA, SRC, MaaEnd, General, ok-script family such as Okww and OkNte, multi-engine HSR), anonymous telemetry, E2E flows, plan schedules, or game community sign-in.
 ---
 
-# MAS Skills
+# MAS Skills (Router)
 
-## Objective
+Load this hub first, then load **only the minimum sub-skills** needed for the task. Process rules (branching, commits, changelog, PR) live in `AGENTS.md` and <https://doc.auto-mas.top/developer/> — do not duplicate them here.
 
-Provide one routing entrypoint for MAS engineering standards and keep implementation decisions consistent with current project maintainer review preferences.
+## Cross-Cutting Red Lines
 
-## Repository Authority
+1. **Branching**: Always branch from latest `origin/dev` (`git fetch` first). Never branch from stale local `dev`.
+2. **Release cherry-picks**: Cherry-picks to `release/{version}` MUST be small **pure-backend** fixes (judge by touched files, never commit message). Released apps hot-update backend only; never help cherry-pick or push frontend code to `release/*`.
+3. **Generated OpenAPI**: Backend schema changes MUST regenerate `frontend/src/api` via the project generator. NEVER hand-edit generated files.
+4. **CI pinning**: Every external GitHub Action `uses:` MUST pin a full 40-char commit SHA (`# <tag>`), and container `image:` MUST pin `@sha256:<digest>`. Only `./.github/actions/...` is exempt.
+5. **Changelog**: User-visible changes MUST add one fragment via `python scripts/changelog.py add <type> <project> "<sentence>"` (rules in `AGENTS.md` / `changelog.d/README.md`).
+6. **Telemetry**: Any new or changed user-visible workflow, page, lifecycle, or adapter flow MUST load `mas-telemetry` (reuse existing boundary or add collection; prose/style/read-only tasks do not add collection).
+7. **Testing & Failure Integrity**: Load `mas-testing` before choosing verification or adding/editing/reviewing tests. NEVER silently swallow errors (`except Exception: pass`), overwrite corrupted config with defaults, or turn failures into success.
+8. **Local Preflight**: Before committing or opening a PR, run `uv run --no-sync python scripts/pr_check.py` (pass `--skip-changelog` for docs/tests/CI-only changes) to run matching CI gates locally.
 
-AUTO-MAS splits responsibilities across repositories:
+## Sub-Skill Routing Table
 
-1. `AUTO-MAS-Project/AUTO-MAS` keeps application code and a minimal `AGENTS.md` entrypoint.
-2. `AUTO-MAS-Project/AUTO-MAS-docs` / <https://doc.auto-mas.top/developer/> owns branch, contribution, commit, version, Issue, and PR writing rules.
-3. Local `.agents/skills` owns the project-affiliated Agent Skill behavior and engineering routing rules for this checkout.
+| Task involves | Load |
+| --- | --- |
+| Vue, TS, Vite, Electron renderer, routing, composables, state, styles, frontend tests | `mas-frontend-standards` |
+| UI layout, Ant Design Vue, forms, tables, modals, drawers, dark mode, visual polish | `mas-frontend-ui` + `mas-frontend-standards` |
+| Writing, fixing, refactoring, or reviewing non-generated code / commit style | `mas-code-standards` |
+| Backend layer ownership, imports, module placement | `mas-module-boundary` |
+| Function splitting, signatures, side effects, return contracts | `mas-function-design` |
+| FastAPI HTTP/WS payloads, error envelopes, client compatibility | `mas-api-contract` |
+| `app/models`, `app/config`, stage/commit, transactions, locks, persistence | `mas-data-model` (+ `references/config-framework.md`) |
+| Shared schema / config group canonical naming | `mas-schema-naming` |
+| Task trees, L1–L4 execution, `TaskBase`, scheduler locks/cancel, queue triggers | `mas-task-scheduler` |
+| Script adapters (MAA, SRC, MaaEnd, General, Okww, OkNte, HSR, BetterGI, BAAH, ZzzOd, Whimbox) | `mas-script-specialized-adapter` (+ `references/blackbox-boundary.md`) |
+| Script adapter Desktop Session support, saved execution session, or child-session process ownership | `mas-script-specialized-adapter` (+ `references/desktop-session.md`) and `mas-task-scheduler` |
+| Plan schedule types, `PlanConfig`, `PLAN_BOOK`, plan tables | `mas-plan-schedule` |
+| Game community sign-in (`app/core/community/`, `app/tools/common/community/`; Skland/Miyoushe/Kuro/Taygedo) | `mas-game-community` |
+| Observable user workflows, anonymous analytics | `mas-telemetry` |
+| Choosing verification or adding/editing/reviewing tests | `mas-testing` |
+| E2E, Playwright, real game/emulator runs, PR verification hand-off | `mas-e2e` |
+| User tutorials, Playwright screenshot refresh | `mas-doc-tutorial` (+ `mas-e2e`) |
+| Red CI, PR gates, `skip-changelog`, `.github/workflows` | `mas-ci-checks` |
 
-When these areas overlap, use this skill for engineering decisions and use the docs site for contribution-process decisions.
-
-## Project Rule Areas
-
-Apply these project rules directly when they overlap with a task:
-
-1. Cherry-picks to an already released `release/{version}` branch must be small **pure-backend** fixes that touch no frontend code, because released apps hot-update only backend code from that branch while the frontend ships inside the installer. Cherry-picking a commit that carries frontend logic is a violation: close the related PR and revert the related commit. Judge by the files the commit actually touches, not by the `type` / `scope` in its message. Never help prepare or push such a cherry-pick.
-2. API work establishes contracts before route behavior: endpoint-specific models live at the top of the owning `app/api/` module; cross-module contracts live in single-file `app/models/schema.py`. Config payloads derive from their config classes through `app/config/wire.py`, then frontend clients are regenerated.
-3. Config work loads `mas-data-model` and its [configuration framework reference](../mas-data-model/references/config-framework.md). Fields use `ConfigEntry`/`ConfigGroup` with Pydantic declarations; collections use `ConfigCollection[T]`. Preserve stage/commit, per-op and explicit transaction boundaries, signal rollback, business locks, stable persistence and UTC serialization; unapproved framework design changes need a user decision before implementation.
-4. Script adaptation must be complete across config, schema, API, task dispatch, task folder, and frontend entry points, and must respect the black-box boundary: lower the configuration barrier before filling any gap, then decide capability ownership: work the script owns (in-game actions, task execution and verdicts, script config semantics) may only be reused through upstream entry points; when upstream lacks such work, consider contributing it upstream first and only fill in inside MAS as a temporary measure (marked for removal once upstream ships it) when that is not viable; MAS-owned domains (accounts, scheduling, plans, notifications, statistics, emulator lifecycle, cross-script orchestration) may be implemented in MAS but must not read or infer upstream internal state; upstream private formats may only be passed through, never modeled on, and no self-invented verdicts for upstream-executed tasks. Once upstream ships an entry point for such work, existing implementations become violations and must be replaced by reuse. After this skill is loaded, self-check the task and, on a hit, report "This may violate the MAS development norms" with file:line evidence and an alternative; the warning does not block work. Read `.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md` before designing.
-5. Frontend work follows the dedicated frontend skills in this directory.
-6. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
-7. CI must pin every external reference to immutable content: GitHub Actions `uses` entries use a full 40-character commit SHA with a `# <tag>` version comment (resolve annotated tags to the peeled commit), and container images use `@sha256:<digest>`. Apply this across GitHub workflows, composite actions, and CNB pipelines; local actions such as `./.github/actions/...` are the only exception. Never leave a mutable tag, branch, or short hash. When changing CI, scan every `uses:` and `image:` reference and verify that all external references remain pinned.
-
-8. Start every branch from the latest upstream `dev` (`git fetch` first; in a fork, branch off upstream `dev`), never from a stale local `dev`: a branch built on an old baseline silently overwrites other people's merged work when it is synced, with no conflict and green type checks. Branch rules: <https://doc.auto-mas.top/developer/development-specifications.html>.
-
-9. Adding or changing a user-visible workflow requires [mas-telemetry](../mas-telemetry/SKILL.md), even when the user does not mention analytics. Reuse an existing observation boundary or implement missing anonymous telemetry in the same change. Check actual result ownership, finite fields, privacy, deduplication and off/on behavior; do not report skipped work or request acceptance as completion. For prose/style/internal changes with no new observable behavior, explain existing coverage or why no event is appropriate instead of adding noise.
-
-## Sub-Skills
-
-Use these skills as needed:
-
-1. `mas-frontend-standards`: Vue 3, TypeScript, Vite, Electron renderer, routing, API composables, state, styles, forms, validation, and frontend verification.
-2. `mas-frontend-ui`: Ant Design Vue UI, desktop business layout, visual tokens, forms, tables, dialogs, feedback, drag interactions, dark mode, and UX constraints.
-3. `mas-code-standards`: project code standards derived from representative `dev` commits and existing AUTO-MAS modules.
-4. `mas-schema-naming`: canonical naming for shared schema semantics in future domain work.
-5. `mas-module-boundary`: module ownership and dependency direction across backend layers.
-6. `mas-function-design`: function-level design for responsibility, signatures, side effects, and errors.
-7. `mas-api-contract`: endpoint contract standards for HTTP/WS request-response behavior.
-8. `mas-data-model`: modeling standards for schema/config/task layers and compatibility evolution.
-9. `mas-script-specialized-adapter`: specialized script integration by script frontend architecture line; requires intake before implementation.
-10. `mas-plan-schedule`: plan schedule type registration, backend/frontend plan dispatch, plan combobox consumers, and per-type table integration.
-11. `mas-e2e`: author-local real script/game/account runs, isolated browser flows, PR-specific selection, sanitized evidence, the command matrix, and the post-PR hand-off that offers those commands to the developer.
-12. `mas-game-community`: game community sign-in providers, credential encryption and login routes, sign-in locks and trigger paths, and result/notification contracts.
-13. `mas-ci-checks`: every gate that runs on a PR to `dev` (format, lint, typecheck, full pytest suite, changelog fragment, `uv.lock`, revert hints, CNB mirror, unsigned Windows build) and the exact local command for each.
-14. `mas-telemetry`: proactive anonymous telemetry for new or changed business workflows, safe field contracts, result ownership, operation deduplication and isolated validation.
-15. `mas-task-scheduler`: task requirements and runtime identities, L1-L4 dispatch, parent-owned locks, cancellation and finalization, task updates, queue triggers and legacy-manager boundaries; use its confirmed target design rather than treating migration code as the specification.
-16. `mas-testing`: required before choosing verification or designing, adding, changing or reviewing tests; selects checks by reachable behavior and total cost, reuses automation and requires execution evidence.
-17. `mas-doc-tutorial`: documentation tutorials produced or refreshed from verified UI flows, versioned screenshots, and per-topic preview evidence.
-18. `mas-defensive-programming`: validation, guards, exception handling, fallbacks, retries and compatibility paths based on reachable inputs and existing guarantees.
-
-## Global Constraints
-
-Apply these constraints before selecting or combining sub-skills.
-
-1. Make minimal necessary changes first; avoid broad refactors unless explicitly requested. Required extraction under the frontend [Component Size Policy](../mas-frontend-standards/SKILL.md#component-size-policy) is part of the affected task, not unrelated cleanup.
-2. Align with current code style and existing project conventions in the touched module.
-3. Avoid over-engineering and over-abstraction; validation and failure-handling decisions follow [mas-defensive-programming](../mas-defensive-programming/SKILL.md).
-4. Study similar existing implementations deeply before coding and follow established local patterns.
-5. Generated OpenAPI files are updated only through the project generator. Run regeneration within the authorized task; report a concrete blocker if the required backend or toolchain is unavailable. Do not hand-edit generated code or stop at a regeneration reminder when the generation step is executable.
-6. For frontend work, load `mas-frontend-standards`; for UI or user-facing component behavior, also load `mas-frontend-ui`.
-7. When local patterns and generalized guidance differ, prefer concrete maintainer review comments and fold them back into the selected sub-skills.
-8. Before completing a user-visible feature or fix, add exactly one changelog fragment under `changelog.d/` (`<PR number or branch>.<feat|change|fix|breaking|remove|security|dev>.md`; first line `project: <key>` from the project table in `changelog.d/README.md` — 14 adapters plus home / scheduler / emulator / notify / tools / settings / update / runtime, no catch-all, pick the nearest per the README; only `dev` fragments may omit it; then one user-facing sentence of at most 50 characters without project prefix, PR number or signature; `python scripts/changelog.py add <type> <project> "<sentence>"` creates it, with `-` as the project for `dev`). Before writing a fix or change fragment, decide which release introduced the feature you touch: a feature absent from the previous stable release's notes was introduced in the current X.Y.0 cycle (for 5.5.0: Runtime initialization, virtual display, Emulator 2.0, MFW, BetterGI, BAAH, ZZZ-OD, config restore, operator cultivation). Every later fix, maintenance or supplementary change to such a feature (bug fixes, turning something into a prompt, extra hints, default tweaks, layout changes, i18n wiring, cleanup) is beta-only: if the feature's entry is still in the top `## [未发布]` section or its fragment is still in `changelog.d/`, add no fragment and label the PR `skip-changelog` (describe any wording change in the PR for a maintainer to apply); if it shipped in an earlier beta of the cycle, add the header line `beta-only: true` so the entry is dropped from the stable roll-up. Sub-features added to it later are beta-only as well: in the stable notes a new adapter is exactly one line (`【bgi】新增 bgi 专项`) and a new feature is its single introduction entry; fixes and changes to features that shipped in the previous stable are normal. Project keys use the short names `bgi` (BetterGI) and `end` (MaaEnd). A PR with several human authors lists them all in the header line `author: a, b` (the script never reads Co-authored-by). Maintainers may add `highlight: true` to route an entry into 「本次亮点」 as part of the implementation; do not merely remind the developer. Condense all changes of the PR into that one sentence. Never edit `CHANGELOG.md`, `res/version.json` or any version number: they are written only by the release PR. Do not create a commit unless the user explicitly asks for one.
-
-9. Treat telemetry coverage as part of feature completion: load `mas-telemetry` for observable workflow changes and state whether the change reuses, extends or intentionally omits collection. Existing wrappers must not be double-instrumented. An event declaration or coverage-table entry is not proof that its real caller is observed.
-
-## Routing Rules
-
-For every new or changed user-visible operation, page, lifecycle path or script-adapter flow, load `mas-telemetry` in addition to the domain skills below. Do not wait for an explicit telemetry request. Pure prose/style/generated-only edits and read-only tasks do not authorize new collection or implementation.
-Choose sub-skills by task intent.
-
-Before choosing verification or designing, adding, changing or reviewing any test, load [mas-testing](../mas-testing/SKILL.md), including verification planned during feature or bug-fix work and tests outside `tests/`. Apply it before deciding to add tests; running existing tests alone does not trigger it.
-
-Before designing, changing or reviewing production validation, guards, exception handling, fallbacks, retries or compatibility paths, load [mas-defensive-programming](../mas-defensive-programming/SKILL.md). It applies independently of test work.
-
-1. Task mentions field names, shared terms, schema key consistency:
-Use `mas-schema-naming`.
-2. Task touches `frontend`, `src/views`, `src/components`, `src/composables`, `src/router`, `src/types`, `src/utils`, Vue, TypeScript, Vite, Electron renderer, API composables, forms, validation, or frontend verification:
-Use `mas-frontend-standards`.
-3. Task touches UI, layout, style, Ant Design Vue, components, forms, tables, modals, drawers, feedback, loading, empty, error states, drag interactions, dark mode, or visual polish:
-Use `mas-frontend-ui` with `mas-frontend-standards`.
-4. Task implements, fixes, refactors, or reviews repository code:
-Use `mas-code-standards` as the baseline, then add the minimum domain-specific `mas-*` skills. Skip it for read-only work unless code conventions or commit wording are requested.
-5. Task mentions layer ownership, imports, coupling, or where code should live:
-Use `mas-module-boundary` and its **后端源码组织规范**.
-6. Task mentions function splitting, signature quality, return/error behavior:
-Use `mas-function-design`.
-7. Task mentions endpoint payloads, response model, error contract, websocket payloads:
-Use `mas-api-contract`.
-8. Task mentions model structure, typing/defaults/constraints, config declarations or callers, transactions, signals, locks, persistence or config upgrades:
-Use `mas-data-model`; for configuration work also load its linked configuration framework reference. This includes API/task/frontend integration that changes config semantics, even when no config class itself is edited.
-9. Task mentions adding a new script, script-specific adaptation, task lifecycle, or a specific adapter such as MAA / SRC / MaaEnd / General / Okww / OkNte（异环）/ HSR (M9A is not an adapter: it is a MaaFW flavor, see `app/task/M9A/AGENTS.md`):
-Use `mas-script-specialized-adapter` first, then combine `mas-module-boundary`, `mas-data-model`, `mas-function-design`, and `mas-api-contract` as needed.
-10. Task mentions E2E, Playwright, real game runs, emulator/account scheduling evidence, PR-specific test selection, screenshot/trace evidence, or a PR is open and awaiting review while the change still needs E2E proof:
-Use `mas-e2e`; combine `mas-script-specialized-adapter` when the flow depends on a particular script line.
-11. Task mentions commit messages, docstrings, config comments, or project contribution style:
-Use `mas-code-standards` for code-style decisions; use the docs site for contribution-process wording.
-12. Task mentions plan schedules, schedule types, `PlanConfig`, `PLAN_BOOK`, plan comboboxes, or adding a new plan table:
-Use `mas-plan-schedule`.
-13. Task mentions game community sign-in, `app/tools/game_sign*`, a sign-in platform such as Skland/Miyoushe/Kuro/Taygedo, sign-in credentials or QR login, or sign-in result and notification behavior:
-Use `mas-game-community`.
-14. Task mentions cherry-picking a fix to a `release/{version}` branch, backporting to a released version, or hot-updating released backend code:
-Apply the cherry-pick rule in **Project Rule Areas** before touching git; confirm the commit is small and pure backend by inspecting the files it actually touches.
-15. Task mentions a red PR, a CI failure, GitHub Actions, format / lint / typecheck gates, the `skip-changelog` or `changelog-maintenance` labels, or editing `.github/workflows`, `.github/actions`, `scripts/changelog.py`, `scripts/check_reverts.py`:
-Use `mas-ci-checks`.
-16. Task mentions task creation or requirement trees, runtime task nodes, L1-L4 execution, TaskBase, scheduler locks or cancellation, task snapshots/WS updates, queue startup/timed/cycle triggers, or legacy-manager migration:
-Use [mas-task-scheduler](../mas-task-scheduler/SKILL.md). Combine data-model and API skills for model/contract changes; script-owned capabilities still follow the specialized-adapter boundary. Plan-type registration alone stays with `mas-plan-schedule`.
-17. Task creates or refreshes user tutorials, batches documentation screenshots, or corrects drift between article instructions and the application UI:
-Use `mas-doc-tutorial`; combine `mas-e2e` when defining or running its capture flows.
-
-## Combined Execution Order
-
-When multiple concerns appear, apply this order:
-
-1. `mas-frontend-standards`, when the task touches frontend code or docs.
-2. `mas-frontend-ui`, when the task touches UI or user-facing component behavior.
-3. `mas-code-standards`
-   Load `mas-defensive-programming` here when the task involves validation or failure handling.
-4. `mas-module-boundary`
-5. `mas-data-model`
-6. `mas-schema-naming`
-7. `mas-function-design`
-8. `mas-api-contract`
-9. `mas-task-scheduler`, for execution-tree, lifecycle, dispatch or queue-trigger changes.
-10. `mas-script-specialized-adapter` after architecture intake, when the task is a specialized adapter.
-11. `mas-plan-schedule`
-12. `mas-game-community`
-13. `mas-telemetry`, for new or changed observable workflows; establish the real result owner before observing it.
-14. `mas-e2e`, when the task requires an E2E flow or evidence.
-15. `mas-ci-checks`, when the work ends by making a PR pass CI.
-
-Reason: frontend tasks need their engineering and UI constraints loaded before implementation decisions; then establish local conventions, place code correctly, stabilize model structure, then naming, function behavior, and transport contract. Runtime scheduler rules assign creation, locks, execution and finalization to their owning layers; specialized adapters add a mandatory architecture-intake step. Plan schedule rules cover plan-type registration, and game sign rules constrain credential handling and external request behavior inside an already-placed module. CI checks come after everything else because they only push finished work through the PR gates.
+**Combined order** (when multiple apply): `mas-frontend-standards` → `mas-frontend-ui` → `mas-code-standards` → `mas-module-boundary` → `mas-data-model` → `mas-schema-naming` → `mas-function-design` → `mas-api-contract` → `mas-task-scheduler` → `mas-script-specialized-adapter` → `mas-plan-schedule` / `mas-game-community` → `mas-telemetry` → `mas-e2e` → `mas-ci-checks`.
 
 ## Output Requirements
 
-When using this hub:
-
-1. State which sub-skills are selected.
-2. Explain why each selected sub-skill is needed.
-3. Apply only the minimum set required by the task.
-4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
-5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
-6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
-7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
-8. For observable workflow changes, state the actual telemetry boundary and whether it was reused, extended or intentionally omitted; report verification without claiming unexecuted production or real-device coverage.
-
-## Review Checklist
-
-1. Selected sub-skills match the user request scope.
-2. Frontend tasks loaded the correct frontend skill pair; added or modified Vue components have measured baseline/final line counts and satisfy the linked component size policy.
-3. No layer-boundary violations are introduced.
-4. Shared schema semantics remain canonical.
-5. Function behavior and API contract stay consistent after changes.
-6. Relevant project rules were considered for API, config, script task, frontend task, and contribution-style changes.
-7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
-8. Every user-visible feature or fix includes exactly one changelog fragment under `changelog.d/`, and leaves `CHANGELOG.md`, `res/version.json` and the version numbers untouched.
-9. Any cherry-pick to a released branch was verified to touch backend files only.
-10. Observable workflows loaded `mas-telemetry`, preserve privacy and off/on isolation, and have one result owner without duplicate observation.
-11. Every external CI action and container image is pinned to a full commit SHA or digest, with an updater-readable version comment where applicable; no mutable reference remains.
-12. CI failures were diagnosed from the run log first, and reproduced locally with the `uv.lock`-pinned toolchain rather than a system-installed one.
+1. State which sub-skills were selected and why (keep to the minimum set).
+2. Prefer compatibility-first changes on legacy modules unless broad refactoring is requested.
+3. For frontend tasks, explicitly note whether `mas-frontend-standards` and `mas-frontend-ui` were loaded; report Vue baseline/final line counts.
+4. For observable workflow changes, state the telemetry boundary (reused / extended / intentionally omitted) and report only executed verification.
+5. On black-box adapter boundary hits, warn `"This may violate the MAS development norms"` with `file:line` evidence and an alternative (non-blocking).

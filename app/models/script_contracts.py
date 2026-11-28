@@ -1,4 +1,8 @@
-"""[兼容旧专项] 旧配置 CRUD 回调契约，专项完成插件化后移除；新插件不使用。"""
+"""宿主内部的配置 CRUD 回调契约。
+
+旧专项经登记绑定；插件不直接使用它，而是覆盖 ``ScriptAdapterPlugin`` 的托管生命周期钩子，
+由宿主包装成这里的回调。
+"""
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -78,35 +82,8 @@ class UserUpdatePreparer(Protocol):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ScriptEmulatorBinding:
-    """存量设备字段映射。"""
-
-    group: str
-    id_field: str
-    index_field: str
-
-    def read(self, script: ConfigEntry) -> tuple[str | UUID, str]:
-        """按声明的字段位置读取持久设备绑定。"""
-        fields = getattr(script, self.group)
-        return getattr(fields, self.id_field), getattr(fields, self.index_field)
-
-    def read_patch(
-        self, script: ConfigEntry, patch: dict[str, Any]
-    ) -> tuple[Any, Any] | None:
-        """仅在提交设备号时合成候选，兼容 Id、Index 分步保存。"""
-        changes = patch.get(self.group) if isinstance(patch, dict) else None
-        # 页面先存 Id、再存 Index。单存 Id 时不能用旧设备号检查新配置；运行时门面仍负责兜底。
-        if not isinstance(changes, dict) or self.index_field not in changes:
-            return None
-        emulator_id, index = self.read(script)
-        return changes.get(self.id_field, emulator_id), changes.get(
-            self.index_field, index
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
 class ScriptConfigHandler:
-    """[兼容旧专项] 存量配置回调与设备字段映射，不属于插件 SDK。"""
+    """存量配置回调与设备字段映射，不属于插件 SDK；插件钩子由宿主转接成它。"""
 
     initialize: Callable[[ConfigEntry], Awaitable[None]] | None = None
     # 复制事务成功后、通用数据复制前执行；失败与取消由专项维持既有语义。
@@ -123,5 +100,15 @@ class ScriptConfigHandler:
     prepare_user_read: UserReadPreparer | None = None
     initialize_user: UserInitializer | None = None
     prepare_user_removal: UserRemovalPreparer | None = None
-    emulator_binding: ScriptEmulatorBinding | None = None
     supports_mod_avd: bool = False
+    game_kinds: tuple[str, ...] = ("client",)
+    expected_game_kind: Callable[[ConfigEntry, dict[str, Any]], str | None] | None = (
+        None
+    )
+    supports_game_binding: Callable[[ConfigEntry, dict[str, Any]], bool] | None = None
+    supports_account_game_override: bool = True
+
+
+def game_management_enabled(script: Any, patch: dict[str, Any]) -> bool:
+    """读取存量专项的 MAS 游戏托管开关，编辑时以传入值为准。"""
+    return bool(patch.get("Game", {}).get("Enabled", script.Game.Enabled))

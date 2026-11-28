@@ -40,6 +40,8 @@ from app.models.config import HSRConfig, HSRUserConfig
 from app.models.notification.report import TaskResultData, TaskResultReport
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.task.client import client_executable_path
+from app.task.run_flow import begin_attempt, point
 from app.utils import TASK_MODE_ZH, get_logger, is_admin
 from app.utils import io as _utils_io
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
@@ -76,6 +78,7 @@ from .tools.external_locks import (
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config, load_m7a_yaml
+from .tools.m7a_paths import prepare_m7a_config, resolve_m7a_config_path
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
     native_provider,
@@ -134,18 +137,20 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
 class _DirectUserFinalizer(TaskExecuteBase):
     """原生运行复用任务基座的取消保护，收尾结束后才允许下一账号。"""
 
-    def __init__(self, *, manager, user_item, user_config):
+    def __init__(self, *, manager, user_item, user_config, run_after_script: bool):
         super().__init__()
         self.manager = manager
         self.user_item = user_item
         self.user_config = user_config
+        self.run_after_script = run_after_script
 
     async def main_task(self):
         raise RuntimeError("原生账号收尾不支持独立运行")
 
     async def final_task(self):
         try:
-            await run_script_after_task(self.user_config)
+            if self.run_after_script:
+                await run_script_after_task(self.user_config)
         except Exception as error:
             await self.user_item.set_state(status="异常")
             if self.user_item.log_record:
@@ -191,6 +196,7 @@ class HSRManager(NotificationTaskBase):
         )
         self.temp_path: Path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
         self._external_config_targets: list[tuple[str, Path, Path, bool]] = []
+        self._m7a_config_prepared: bool = False
         # 同一上游 M7A/SRA 路径可能被多个 HSR 脚本共享；持有至恢复完成。
         self._external_path_lock: HSRExternalPathLockLease | None = None
         self._recovered_update_engines: set[str] = set()
@@ -204,24 +210,13 @@ class HSRManager(NotificationTaskBase):
         if lease is not None:
             lease.release()
 
-    def _backup_external_configs(self) -> None:
-        """运行前备份 M7A/SRA 的真实配置文件。"""
+    def _backup_external_config(
+        self, *, label: str, source: Path, backup: Path
+    ) -> None:
+        """备份成功后登记恢复目标，记录原先不存在的路径以便清理。"""
 
-        if self.script_config is None:
-            return
-
-        backup_root = self.temp_path / "ExternalConfig"
-        shutil.rmtree(backup_root, ignore_errors=True)
-        backup_root.mkdir(parents=True, exist_ok=True)
-        self._external_config_targets = []
-
-        def backup_path(label: str, source: Path, backup: Path) -> None:
-            existed = source.exists()
-            self._external_config_targets.append((label, source, backup, existed))
-            if not existed:
-                logger.info(f"{label} 原配置不存在，记录为缺失：{source}")
-                return
-
+        existed = source.exists()
+        if existed:
             backup.parent.mkdir(parents=True, exist_ok=True)
             if source.is_dir():
                 shutil.copytree(source, backup, dirs_exist_ok=True)
@@ -230,35 +225,75 @@ class HSRManager(NotificationTaskBase):
             else:
                 raise RuntimeError(f"{label} 既不是文件也不是目录：{source}")
             logger.info(f"{label} 已备份：{source} -> {backup}")
+        else:
+            logger.info(f"{label} 原配置不存在，记录为缺失：{source}")
+        self._external_config_targets.append((label, source, backup, existed))
+
+    async def _prepare_m7a_runtime_config(self) -> None:
+        """首个实际使用三月七的账号开跑前完成迁移，并更新运行期备份的恢复目标。"""
+
+        if self._m7a_config_prepared:
+            return
+        m7a_root = resolve_script_path(self.script_config, "M7A")
+        if not m7a_root:
+            raise RuntimeError("请先设置三月七路径")
+        target = self._m7a_backup_target()
+        if target is not None:
+            label, source, backup, existed = target
+            # 先跑纯 SRA 账号时，其前置脚本可能同时改写过旧位置的 config.yaml；
+            # 触发上游迁移前先还原成启动前原件，避免把临时配置迁进 userdata。
+            if existed and (
+                not source.is_file() or source.read_bytes() != backup.read_bytes()
+            ):
+                _restore_path_from_backup(label, source, backup)
+        config_path = await prepare_m7a_config(Path(m7a_root))
+        if target is None:
+            self._backup_external_config(
+                label=_M7A_CONFIG_LABEL,
+                source=config_path,
+                backup=self.temp_path / "ExternalConfig" / "M7A" / "config.yaml",
+            )
+        else:
+            label, source, backup, existed = target
+            if source != config_path:
+                self._external_config_targets = [
+                    (label, config_path, backup, existed)
+                    if item[0] == _M7A_CONFIG_LABEL
+                    else item
+                    for item in self._external_config_targets
+                ]
+        self._m7a_config_prepared = True
+
+    def _backup_external_configs(self) -> None:
+        """运行前备份 M7A/SRA 当前已有的真实配置文件，不触发三月七迁移。"""
+
+        if self.script_config is None:
+            return
+
+        backup_root = self.temp_path / "ExternalConfig"
+        shutil.rmtree(backup_root, ignore_errors=True)
+        self._external_config_targets = []
+        self._m7a_config_prepared = False
 
         m7a_path = resolve_script_path(self.script_config, "M7A")
         if m7a_path:
-            backup_path(
-                _M7A_CONFIG_LABEL,
-                Path(str(m7a_path)) / "config.yaml",
-                backup_root / "M7A" / "config.yaml",
+            self._backup_external_config(
+                label=_M7A_CONFIG_LABEL,
+                source=resolve_m7a_config_path(m7a_path),
+                backup=backup_root / "M7A" / "config.yaml",
             )
 
-        sra_path = resolve_script_path(self.script_config, "SRA")
-        if sra_path:
+        if resolve_script_path(self.script_config, "SRA"):
             sra_app_data = get_sra_app_data_dir()
-            backup_path(
-                "SRA settings.json",
-                sra_app_data / "settings.json",
-                backup_root / "SRA" / "settings.json",
-            )
-            backup_path(
-                "SRA cache.json",
-                sra_app_data / "cache.json",
-                backup_root / "SRA" / "cache.json",
-            )
-            backup_path(
-                "SRA configs",
-                sra_app_data / "configs",
-                backup_root / "SRA" / "configs",
-            )
+            for name in ("settings.json", "cache.json", "configs"):
+                self._backup_external_config(
+                    label=f"SRA {name}",
+                    source=sra_app_data / name,
+                    backup=backup_root / "SRA" / name,
+                )
 
-        logger.info(f"HSR 外部配置备份完成，共 {len(self._external_config_targets)} 项")
+        if self._external_config_targets:
+            self._append_log("HSR 外部脚本配置已备份")
 
     def _restore_external_config_targets(self) -> None:
         """运行后恢复 M7A/SRA 配置，并清理备份目录。"""
@@ -278,6 +313,14 @@ class HSRManager(NotificationTaskBase):
                     logger.info(f"{label} 原配置不存在，已清理任务期新增路径：{source}")
                     continue
 
+                if (
+                    backup.is_file()
+                    and source.is_file()
+                    and source.read_bytes() == backup.read_bytes()
+                ):
+                    logger.info(f"{label} 未变化，跳过恢复：{source}")
+                    continue
+
                 _restore_path_from_backup(label, source, backup)
             except Exception as e:  # noqa: BLE001
                 errors.append(f"{label}: {e}")
@@ -293,6 +336,7 @@ class HSRManager(NotificationTaskBase):
             pass
 
         self._external_config_targets = []
+        self._m7a_config_prepared = False
         if errors:
             raise RuntimeError("；".join(errors))
 
@@ -469,6 +513,7 @@ class HSRManager(NotificationTaskBase):
             if not root:
                 continue
             source = str(getattr(script_config.Update, f"{engine}Source") or "")
+            point(self, "script_update", key=engine)
             try:
                 outcome = await run_script_update(
                     ScriptUpdateRequest(str(self.script_info.script_id), "HSR", engine),
@@ -484,17 +529,32 @@ class HSRManager(NotificationTaskBase):
                     should_abort=self._update_aborted,
                     prepared=getattr(self, "_prefetched_updates", {}).get(engine),
                 )
+            except asyncio.CancelledError:
+                point(self, "script_update", state="cancelled", key=engine)
+                raise
             except FluxdownCancelUnconfirmed:
+                point(self, "script_update", state="failed", key=engine)
                 raise
             except Exception as e:  # noqa: BLE001 - 未知安装状态不能沿用旧版运行
+                point(self, "script_update", state="failed", key=engine)
                 name = engine_label(engine, left=False)
                 logger.opt(exception=True).warning(f"HSR 更新：{name}更新时出错")
                 self._append_log(f"{name}更新状态无法确认，已停止任务：{e}")
                 raise RuntimeError(f"{name}更新状态无法确认，不能开始任务") from e
             if outcome.blocking:
+                point(self, "script_update", state="failed", key=engine)
                 return outcome.message or f"{engine_label(engine)}更新未完成"
             if self._update_aborted():
+                point(self, "script_update", state="cancelled", key=engine)
                 raise asyncio.CancelledError
+            if outcome.updated or (
+                outcome.checked and not outcome.update_available and not outcome.message
+            ):
+                point(self, "script_update", state="succeeded", key=engine)
+            elif not outcome.checked and outcome.message:
+                point(self, "script_update", state="failed", key=engine)
+            else:
+                point(self, "script_update", state="skipped", key=engine)
 
         return None
 
@@ -732,7 +792,7 @@ class HSRManager(NotificationTaskBase):
             )
 
         if game_management_enabled and (enabled_module_keys or has_direct_user):
-            if not str(script_config.Game.Path or "").strip():
+            if not str(client_executable_path(script_config) or "").strip():
                 return "请设置游戏路径"
             game_exe_path = resolve_game_executable_path(script_config)
             if not game_exe_path.exists():
@@ -1006,7 +1066,7 @@ class HSRManager(NotificationTaskBase):
         logger.info(f"云·星穹铁道登录时间已写回：{sorted(pending)}")
 
     async def prepare(self):
-        """锁定配置、加载账号列表（不启动外部程序）"""
+        """锁定配置并完成外部脚本的任务前准备。"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         self.config_locks[
@@ -1035,12 +1095,11 @@ class HSRManager(NotificationTaskBase):
             if update_error:
                 self.check_result = update_error
                 raise RuntimeError(update_error)
+            m7a_root = resolve_script_path(self.script_config, "M7A")
             self._backup_external_configs()
-            self._append_log("HSR 外部脚本配置已备份")
             # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
             # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
             # 失败不阻断任务）
-            m7a_root = resolve_script_path(self.script_config, "M7A")
             try:
                 archive_native_backup(
                     Path(m7a_root) if m7a_root else None,
@@ -1152,6 +1211,7 @@ class HSRManager(NotificationTaskBase):
                             self.user_config,
                             user_item,
                             self._runtime,
+                            prepare_m7a_config=self._prepare_m7a_runtime_config,
                         )
                         await self.spawn(proxy)
                         steps_count += getattr(proxy, "steps_count", 0)
@@ -1235,15 +1295,19 @@ class HSRManager(NotificationTaskBase):
         log_item = await user_item.add_log_record(started_at, log_item)
         await user_item.set_state(status="运行")
         self._direct_user_log = log_item
+        extra_scripts_started = False
 
         try:
+            begin_attempt(self, 1)
             if "M7A" in control.engines:
+                await self._prepare_m7a_runtime_config()
                 # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
                 # 必须在任务前脚本之前：原生来源多账号共用一份 config.yaml，按账号改它的
                 # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
                 self._reset_m7a_config_for_direct(user_name)
 
             # 执行任务前脚本（每账号仅一次）
+            extra_scripts_started = True
             await run_script_before_task(user_config)
 
             switcher = HSRAccountSwitcher(
@@ -1314,7 +1378,21 @@ class HSRManager(NotificationTaskBase):
                         m7a_before_run = (
                             self._read_m7a_config_bytes() if engine == "M7A" else None
                         )
-                        result = await session.run(timeout_seconds)
+                        point(self, "run", key=engine)
+                        try:
+                            result = await session.run(timeout_seconds)
+                        except asyncio.CancelledError:
+                            point(self, "run", state="cancelled", key=engine)
+                            raise
+                        except Exception:
+                            point(self, "run", state="failed", key=engine)
+                            raise
+                        point(
+                            self,
+                            "run",
+                            state="succeeded" if result.success else "failed",
+                            key=engine,
+                        )
                         if engine == "M7A":
                             # 成败都刷新：跑失败时三月七已经写回的状态同样是真实状态。
                             self._refresh_m7a_backup_after_direct(
@@ -1364,7 +1442,10 @@ class HSRManager(NotificationTaskBase):
                 failed=user_item.status == "异常" and not self.stopped_manually,
             )
             finalizer = _DirectUserFinalizer(
-                manager=self, user_item=user_item, user_config=user_config
+                manager=self,
+                user_item=user_item,
+                user_config=user_config,
+                run_after_script=extra_scripts_started,
             )
             try:
                 await finalizer._run_final_task()
@@ -1378,7 +1459,7 @@ class HSRManager(NotificationTaskBase):
         直接写进真实 config.yaml，整轮结束才按运行期备份还原；三月七自己也会
         把运行状态（各任务时间戳等）写回同一个文件。同一轮里排在别的用户之后的
         原生来源账号不还原，跑的就是上一个账号留下的配置，而不是「原样跑原生配置」。
-        备份在 ``prepare`` 里取，还原不动备份，收尾照常再还原一次。
+        备份在 ``prepare`` 里取（不触发迁移），迁移在首个使用三月七的账号开跑前执行并更新恢复路径，还原不动备份，收尾照常再还原一次。
         """
 
         for label, source, backup, existed in self._external_config_targets:

@@ -97,7 +97,7 @@ async def test_script_breakaway_survives_task_cleanup(
                     and access & win32con.PROCESS_SET_QUOTA
                     and not early_gate.exists()
                 ):
-                    # 旧实现此时已经拍完快照，但尚未真正登记根进程。
+                    # 此时已发现父进程但尚未登记，包装进程趁机再派生一个后代。
                     early_gate.touch()
                     deadline = time.monotonic() + 5
                     while not early_pid.exists():
@@ -107,7 +107,7 @@ async def test_script_breakaway_survives_task_cleanup(
 
             def assign_and_start(job, handle):
                 assign(job, handle)
-                # 登记时放行；生产暂停期间不能等子进程，恢复后再核对结果。
+                # 登记后补扫能找到登记前出生的后代，无需暂停进程等待。
                 early_gate.touch()
                 gate.touch()
 
@@ -155,8 +155,10 @@ async def test_script_breakaway_survives_task_cleanup(
 
 
 @pytest.mark.asyncio
-async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch):
-    """登记失败也必须恢复脚本，不能留下被 MAS 暂停的线程。"""
+async def test_failed_adoption_is_reported_without_touching_the_process(
+    tmp_path, monkeypatch
+):
+    """登记失败须上抛给调用方判定，既不吞成成功，也不干预脚本自身运行。"""
     import psutil
     import win32job
 
@@ -183,11 +185,65 @@ async def test_failed_adoption_resumes_the_running_script(tmp_path, monkeypatch)
         monkeypatch.setattr(win32job, "AssignProcessToJobObject", deny_assignment)
         with pytest.raises(PermissionError, match="injected Job assignment failure"):
             scope.track(psutil.Process(parent.pid))
+        # 接管失败只影响归属登记，脚本仍按自己的节奏运行。
         before = heartbeat.read_text()
         async with asyncio.timeout(3):
             while heartbeat.read_text() in ("", before):
                 await asyncio.sleep(0.01)
         assert parent.returncode is None
+    finally:
+        await scope.force_close()
+        with suppress(ProcessLookupError):
+            parent.kill()
+        await asyncio.wait_for(parent.wait(), 3)
+
+
+def read_heartbeat(path):
+    """读心跳计数。
+
+    子进程用 ``write_text`` 写，会先截断再写，读到空的瞬间说明正好撞上一次写入，
+    不是故障；返回 ``None`` 让调用方跳过这一拍。
+    """
+
+    text = path.read_text().strip()
+    return int(text) if text else None
+
+
+@pytest.mark.asyncio
+async def test_adoption_does_not_suspend_the_target_process(tmp_path):
+    """接管不得暂停目标进程：受保护的游戏线程会拒绝挂起，登记仍须完成。"""
+    import psutil
+
+    from app.utils.common.process.scope import TaskProcessScope
+
+    heartbeat = tmp_path / "heartbeat"
+    parent = await asyncio.create_subprocess_exec(
+        sys._base_executable,
+        "-I",
+        "-c",
+        "import sys,time; from pathlib import Path; p=Path(sys.argv[1]); "
+        "\nfor i in range(600):\n p.write_text(str(i)); time.sleep(.02)",
+        str(heartbeat),
+    )
+    scope = TaskProcessScope()
+    try:
+        async with asyncio.timeout(5):
+            while not heartbeat.exists():
+                await asyncio.sleep(0.01)
+
+        scope.track(psutil.Process(parent.pid))
+
+        # 计数继续推进说明接管全程没有把目标进程挂起过；只要求推进，
+        # 不对采样间隔做假设，避免机器繁忙时误报。
+        started = read_heartbeat(heartbeat)
+        async with asyncio.timeout(3):
+            while True:
+                current = read_heartbeat(heartbeat)
+                if current is not None and current > started + 2:
+                    break
+                await asyncio.sleep(0.01)
+        assert scope.kill_process_tree(parent.pid)
+        await asyncio.wait_for(parent.wait(), 3)
     finally:
         await scope.force_close()
         with suppress(ProcessLookupError):
@@ -472,12 +528,7 @@ async def test_adoption_reaps_descendants_but_never_a_looked_up_foreign_process(
         # 只隔离宿主进程目录；身份、后代查询与 Job 操作仍使用真实进程。
         known = [psutil.Process(unrelated.pid), psutil.Process(parent.pid)]
 
-        def iter_known(attrs):
-            for process in known:
-                process.info = process.as_dict(attrs=attrs)
-                yield process
-
-        monkeypatch.setattr(psutil, "process_iter", iter_known)
+        monkeypatch.setattr(psutil, "process_iter", lambda: iter(known))
         if child_before_registration:
             async with asyncio.timeout(5):
                 while not pid_file.exists():

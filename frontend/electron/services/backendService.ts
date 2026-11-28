@@ -9,7 +9,9 @@ import { captureScheduledWakeupContext, scheduledWakeupBackendReady } from './sc
  */
 
 import * as fs from 'fs'
-import { resolveHttpPort } from './instanceConfig'
+import { app } from 'electron'
+import { upgradeBackupToken } from '../ipc/upgradeBackupHandlers'
+import { getBackendOwnership, isDevelopmentEnvironment, resolveHttpPort } from './instanceConfig'
 import { desktopSessionControlToken, getDesktopSessionChildId } from './desktopSessionControl'
 
 import {
@@ -35,6 +37,13 @@ import { analyticsDuration } from './analyticsPolicy'
 import type { AnalyticsRuntimeMode } from '../../src/types/analytics'
 import { runtimeFailureContext, type StartupFailureContext } from './startupRecovery'
 const logger = getLogger('后端服务')
+
+export function resolveUpgradeBackupVersion(mode: RuntimeLaunchConfig['mode']): string | undefined {
+  if (mode !== 'managed' || isDevelopmentEnvironment() || getBackendOwnership() !== 'owned')
+    return undefined
+  const version = app.getVersion()
+  return toRuntimeVersion(version) === resolveRuntimeTargetVersion() ? version : undefined
+}
 
 // Runtime 链路等待 state:running 的兜底上限。正常情况下 Runtime 自己的健康超时会先给出
 // BACKEND_HEALTH_TIMEOUT，这个上限只防止 Runtime 既不就绪也不给终态时把启动流程挂死。
@@ -293,7 +302,7 @@ export class BackendService {
       const definition = RUNTIME_CLIENT_ERROR_DEFINITIONS.RUNTIME_NOT_FOUND
       const message =
         `找不到 Runtime 可执行文件，无法以 ${config.mode} 模式启动后端` +
-        (config.mode === 'development'
+        (config.mode === 'development' && !config.reuseManagedEnvironment
           ? '；请设置 AUTO_MAS_RUNTIME_EXE 指向 Runtime，并先运行 uv sync --locked 准备 .venv'
           : '')
       logger.error(message)
@@ -333,6 +342,8 @@ export class BackendService {
       dataRoot: config.dataRoot,
       env: {
         AUTO_MAS_RUNTIME_DEFER_BUSINESS_START: '1',
+        AUTO_MAS_UPGRADE_BACKUP_TOKEN: upgradeBackupToken,
+        AUTO_MAS_DESKTOP_VERSION: resolveUpgradeBackupVersion(config.mode),
         ...getFluxdownInstallEnvironment(),
         AUTO_MAS_DESKTOP_CONTROL_TOKEN: desktopSessionControlToken,
         AUTO_MAS_DESKTOP_PARENT_CHILD_SESSION: getDesktopSessionChildId()?.toString(),
@@ -343,8 +354,10 @@ export class BackendService {
     })
 
     if (config.mode === 'development') {
-      const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
-      if (failure) return failure
+      if (!config.reuseManagedEnvironment) {
+        const failure = await this.ensureDevelopmentRuntimeEnvironment(client, config)
+        if (failure) return failure
+      }
     } else {
       const stdoutLines: string[] = []
       const stderrLines: string[] = []
@@ -408,6 +421,7 @@ export class BackendService {
       handle = await client.supervise({
         mode: config.mode,
         repo: config.repo,
+        reuseManagedEnvironment: config.reuseManagedEnvironment,
         // 端口按应用环境隔离，不随 Runtime 托管模式改变；端点仍采纳 running 事件。
         port,
         shutdownTimeoutSeconds: BACKEND_SHUTDOWN_SECONDS,
@@ -473,12 +487,14 @@ export class BackendService {
     }
 
     if (outcome !== 'timeout' && 'baseUrl' in outcome) {
-      // 采纳句柄前必须确认这次跑起来的后端就是期望版本（issue #30）；
-      // 不匹配时先关闭 Runtime 再报错，绝不静默接管旧版本后端。
+      // 发行链路确认后端版本（issue #30）。显式复用环境时，Runtime 已监督指定源码的进程，
+      // 这份源码自报的版本可能与发行通道为 bootstrap 选择的版本标识不同。
       try {
-        this.assertBackendVersionMatches(
-          await this.fetchRunningBackendVersion(outcome.baseUrl, 5000)
-        )
+        if (!config.reuseManagedEnvironment) {
+          this.assertBackendVersionMatches(
+            await this.fetchRunningBackendVersion(outcome.baseUrl, 5000)
+          )
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error(`后端版本校验失败，关闭 Runtime: ${message}`)

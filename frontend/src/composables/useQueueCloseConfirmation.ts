@@ -1,4 +1,4 @@
-import { Modal } from 'ant-design-vue'
+import { openConfirm } from './useConfirm'
 import { translate as t } from '@/i18n'
 import { getTaskRuntimeStates } from './useTaskRuntimeState'
 
@@ -9,16 +9,11 @@ export const hasRunningTasks = (): boolean =>
 export const confirmCloseIfRunningTasks = (): Promise<boolean> => {
   if (!hasRunningTasks()) return Promise.resolve(true)
 
-  return new Promise(resolve => {
-    Modal.confirm({
-      title: t('bootstrap.comp.confirmExit'),
-      content: t('bootstrap.comp.queueStillRunningClose'),
-      okText: t('bootstrap.comp.confirmExit'),
-      cancelText: t('bootstrap.comp.cancel'),
-      okType: 'danger',
-      centered: true,
-      onOk: () => resolve(true),
-      onCancel: () => resolve(false),
-    })
+  return openConfirm({
+    tone: 'danger',
+    title: t('bootstrap.comp.confirmExit'),
+    description: t('bootstrap.comp.queueStillRunningClose'),
+    okText: t('bootstrap.comp.confirmExit'),
+    cancelText: t('bootstrap.comp.cancel'),
   })
 }

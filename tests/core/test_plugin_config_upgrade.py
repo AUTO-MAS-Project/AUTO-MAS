@@ -11,6 +11,8 @@ import pytest
 from maa_adapter.config.script import MaaConfig
 
 from app.core.config.plugin_upgrade import (
+    backup_legacy_adapter_users,
+    backup_legacy_maafw_documents,
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
@@ -19,17 +21,72 @@ from app.utils import io as config_io
 
 
 @pytest.mark.parametrize("filename", ["scripts.yaml", "ScriptConfig.json"])
-def test_whimbox_upgrade_detects_only_collection_types(tmp_path, filename):
-    """已有奇想盒托管必须先补齐插件，普通业务文本不能触发安装。"""
+@pytest.mark.parametrize(
+    ("config_type", "name", "package"),
+    [
+        ("WhimboxConfig", "whimbox_adapter", "auto-mas-whimbox-adapter"),
+        ("BetterGIConfig", "bettergi_adapter", "auto-mas-bettergi-adapter"),
+        ("SrcConfig", "src_adapter", "auto-mas-src-adapter"),
+        ("MaaFWConfig", "maafw_adapter", "auto-mas-maafw-adapter"),
+        ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
+        ("MSSConfig", "mss_adapter", "auto-mas-mss-adapter"),
+        ("MSSPlanConfig", "mss_adapter", "auto-mas-mss-adapter"),
+    ],
+)
+def test_upgrade_detects_only_collection_types(
+    tmp_path, filename, config_type, name, package
+):
+    """仅实际旧托管触发安装，普通业务字符串不触发。"""
     path = tmp_path / filename
-    config_io.write_file(
-        path, {"order": [{"uid": str(uuid4()), "type": "WhimboxConfig"}]}
-    )
-    assert required_adapter_plugins(tmp_path) == {
-        "whimbox_adapter": "auto-mas-whimbox-adapter"
-    }
-    config_io.write_file(path, {"order": [], "notes": "WhimboxConfig"})
+    config_io.write_file(path, {"order": [{"uid": str(uuid4()), "type": config_type}]})
+    assert required_adapter_plugins(tmp_path) == {name: package}
+    config_io.write_file(path, {"order": [], "notes": config_type})
     assert required_adapter_plugins(tmp_path) == {}
+
+
+@pytest.mark.parametrize(
+    ("adapter", "config_type"), [("src", "SrcConfig"), ("bettergi", "BetterGIConfig")]
+)
+def test_adapter_backup_preserves_original_even_without_indexed_body(
+    tmp_path, adapter, config_type
+):
+    path = tmp_path / "scripts.yaml"
+    sid = str(uuid4())
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {}}
+    )
+    original = path.read_bytes()
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_adapter_users(tmp_path, adapter, config_type)
+    assert (tmp_path / f"legacy-{adapter}-plugin" / path.name).read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    ("filename", "config_type"),
+    [("scripts.yaml", "M9AConfig"), ("plans.yaml", "MSSPlanConfig")],
+)
+def test_maafw_backup_preserves_first_original(tmp_path, filename, config_type):
+    """MFW 一族首次接手前按字节备份，重试不覆盖；别的类型不备份。"""
+    path = tmp_path / filename
+    sid = str(uuid4())
+    config_io.write_file(path, {"order": [{"uid": sid, "type": "OkwwConfig"}]})
+    backup_legacy_maafw_documents(tmp_path)
+    assert not (tmp_path / "legacy-maafw-plugin").exists()
+    config_io.write_file(
+        path, {"order": [{"uid": sid, "type": config_type}], "data": {sid: {}}}
+    )
+    original = path.read_bytes()
+    backup_legacy_maafw_documents(tmp_path)
+    config_io.write_file(
+        path,
+        {"order": [{"uid": sid, "type": config_type}], "data": {sid: {"users": {}}}},
+    )
+    backup_legacy_maafw_documents(tmp_path)
+    assert (tmp_path / "legacy-maafw-plugin" / filename).read_bytes() == original
 
 
 @pytest.mark.parametrize("legacy", [False, True])
@@ -79,6 +136,8 @@ def test_plugin_upgrade_preserves_documents_and_backup(tmp_path, legacy):
         ("none", True, False),
         ("none", False, True),
         ("install", False, True),
+        ("disabled", False, True),
+        ("uninstalled", False, True),
     ],
 )
 def test_startup_installs_before_loading_and_commits_upgrade(
@@ -111,6 +170,14 @@ from app.plugin.runtime import discover
 from app.plugin.types import PluginState
 from app.utils import io
 
+# 发行包安装测试不应命中开发者源码目录中的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (source / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+
 sid = "e1821d2b-bbb8-4ac5-ad7c-e445c8324aa0"
 uid = "0896c0be-e2a8-4c38-bb3b-10eca7768405"
 pid = "5924194a-fcc0-49b6-8a2b-f1d1875def93"
@@ -119,7 +186,10 @@ if fresh:
     native = Path.cwd().with_name(Path.cwd().name + "-maa") / "config"
     native.mkdir(parents=True)
     io.write_file(native / "gui.new.json", {"Update": {"VersionType": "Beta"}})
-    io.write_file(Config.config_path / "setting.yaml", {"Update": {"MirrorChyanCDK": "test-cdk"}})
+    setting = {"Update": {"MirrorChyanCDK": "test-cdk"}}
+    if failure == "uninstalled":
+        setting["plugin"] = {"uninstalled": ["maa_adapter"]}
+    io.write_file(Config.config_path / "setting.yaml", setting)
     io.write_file(Config.config_path / "scripts.yaml", {
         "order": [{"uid": sid, "type": "MaaConfig" if current else "MaaPluginConfig"}],
         "data": {sid: {
@@ -145,14 +215,14 @@ if fresh:
                 document[sid]["SubConfigsInfo"] = {"UserData": {"instances": user["order"], **user["data"]}}
             io.write_file(Config.config_path / old, document)
             (Config.config_path / new).unlink()
-    if failure == "install" or current:
+    if failure == "install" or (current and failure != "uninstalled"):
         # 已升级用户曾使用随附源码，来源移除后也应保留配置并改用发行包。
         rid = "95a9f348-8d8e-4d09-9eb8-d954bfdb4cc3"
         io.write_file(Config.config_path / "plugin_registry.yaml", {
             "order": [{"uid": rid, "type": "PluginRecord"}],
             "data": {rid: {"info": {
                 "plugin_name": "maa_adapter", "package_name": "auto-mas-maa-adapter",
-                "import_name": "maa_adapter", "source": "local" if current else "installed", "enabled": current,
+                "import_name": "maa_adapter", "source": "local" if current else "installed", "enabled": current and failure != "disabled",
             }}},
         })
     with sqlite3.connect(Config.database_path) as db:
@@ -161,6 +231,7 @@ if fresh:
 
 script_file = Config.config_path / ("ScriptConfig.json" if fresh and legacy else "scripts.yaml")
 original = script_file.read_bytes()
+original_document = io.read_dict_file(script_file)
 installed_marker = Path.cwd() / "adapter-installed"
 visible = installed_marker.exists()
 installed_before = visible
@@ -168,9 +239,9 @@ with sqlite3.connect(Config.database_path) as db:
     pending = db.execute("SELECT v FROM version").fetchone()[0] != "v2.2"
 installs = []
 
-async def install(spec, *, plugin_name, meta_id, dry_run=False):
+async def install(spec, *, plugin_name, meta_id, dry_run=False, minimum=None):
     global visible
-    assert spec == "auto-mas-maa-adapter"
+    assert spec == "auto-mas-maa-adapter>=0.1.4"
     installs.append(spec)
     if failure == "install":
         raise OSError("installation unavailable")
@@ -204,6 +275,23 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
+            if current and failure in {"install", "disabled", "uninstalled"}:
+                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
+                await Config.check_data(prepare_plugins=prepare)
+                assert Config.ScriptConfig.is_unresolved(sid)
+                assert Config.PlanConfig.is_unresolved(pid)
+                if failure != "install":
+                    assert not installs
+                    record = Config.plugin_registry.by_name("maa_adapter")
+                    if failure == "uninstalled":
+                        assert record is None
+                    else:
+                        assert record is not None and not record.info.enabled
+                assert not Config.managed_configs_loaded()
+                assert io.read_dict_file(script_file) == original_document
+                with sqlite3.connect(Config.database_path) as db:
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
+                return
             try:
                 await Config.check_data(prepare_plugins=prepare)
             except OSError as exc:
@@ -223,7 +311,7 @@ async def run():
                 assert (backup / ("ScriptConfig.json" if legacy else "scripts.yaml")).is_file()
                 with sqlite3.connect(backup / Config.database_path.name) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] in ("v1.11", "v2.1")
-            assert installs == ([] if installed_before else ["auto-mas-maa-adapter"])
+            assert installs == ([] if installed_before else ["auto-mas-maa-adapter>=0.1.4"])
             script = Config.ScriptConfig[sid]
             assert script.Info.Name == "原托管"
             assert list(map(str, script.users.keys())) == [uid]
@@ -244,7 +332,10 @@ async def run():
 
 asyncio.run(run())
 """
-    for attempt in ["none", "none"] if failure == "none" else [failure, "none", "none"]:
+    attempts = ["none", "none"] if failure == "none" else [failure, "none", "none"]
+    if failure in {"disabled", "uninstalled"}:
+        attempts = [failure, failure]
+    for attempt in attempts:
         result = subprocess.run(
             [
                 sys.executable,

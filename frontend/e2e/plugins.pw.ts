@@ -1,7 +1,15 @@
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 test.describe('@plugins plugin foundation', () => {
   const refreshEndpoint = '**/api/plugin_catalog/refresh?*'
+  // 插件中心的三个页签、市场卡片与已安装行；文字定位，不依赖表格结构。
+  const centerTab = (page: Page, name: 'Installed' | 'Market' | 'Updates') =>
+    page.locator('.plugin-center .ant-segmented-item').filter({ hasText: new RegExp(`^${name}`) })
+  const marketCard = (page: Page, name: string) =>
+    page.locator('.market-card').filter({ hasText: name })
+  const installedRow = (page: Page, name: string | RegExp) =>
+    page.locator('.installed-row').filter({ hasText: name })
 
   test.beforeEach(async ({ page }) => {
     await page.route(refreshEndpoint, route => route.fulfill({ json: { code: 200 } }))
@@ -35,16 +43,17 @@ test.describe('@plugins plugin foundation', () => {
       await route.fulfill({ json: { code: 200 } })
     })
 
+    const cardVersion = () => marketCard(page, 'Test adapter').locator('.market-card-sub')
     try {
       const refreshing = page.waitForRequest(refreshEndpoint)
       await app.goto('/plugins/market')
       await refreshing
-      await expect(page.getByRole('cell', { name: '1.0', exact: true })).toBeVisible()
-      await page.getByRole('button', { name: /Refresh$/ }).click()
+      await expect(cardVersion()).toHaveText('1.0')
+      await page.getByRole('button', { name: /Refresh catalog$/ }).click()
     } finally {
       releaseRefresh?.()
     }
-    await expect(page.getByRole('cell', { name: '2.0', exact: true })).toBeVisible()
+    await expect(cardVersion()).toHaveText('2.0')
     await expect(page.getByText('Plugin market refreshed', { exact: true })).toBeVisible()
     expect(refreshes).toBe(1)
 
@@ -53,11 +62,11 @@ test.describe('@plugins plugin foundation', () => {
     const refreshFailed = page.waitForResponse(refreshEndpoint)
     await app.goto('/plugins/market')
     await refreshFailed
-    await expect(page.getByRole('cell', { name: '2.0', exact: true })).toBeVisible()
+    await expect(cardVersion()).toHaveText('2.0')
     await expect(page.getByText('Offline', { exact: true })).toHaveCount(0)
   })
 
-  test('updates the installed page when a market refresh outlives navigation', async ({
+  test('updates the installed page when a market refresh outlives navigation and leaving the center', async ({
     app,
     page,
   }) => {
@@ -73,7 +82,14 @@ test.describe('@plugins plugin foundation', () => {
           code: 200,
           order: [{ uid, type: 'PluginMeta' }],
           data: {
-            [uid]: { uid, info: { plugin_name: 'maa_adapter', version, update_available: true } },
+            [uid]: {
+              uid,
+              info: { plugin_name: 'maa_adapter', version, update_available: true },
+              ui: {
+                hints: { info: [{ field: 'install', component: 'button', editable: true }] },
+                tables: [],
+              },
+            },
           },
         },
       })
@@ -89,12 +105,110 @@ test.describe('@plugins plugin foundation', () => {
       const refreshing = page.waitForRequest(refreshEndpoint)
       await app.goto('/plugins/market')
       await refreshing
-      await page.getByRole('button', { name: 'Back', exact: true }).click()
-      await expect(page.getByText('Update to 0.1.4', { exact: true })).toBeVisible()
+      // 市场的「返回」已并入页签：切回「已安装」，刷新仍在进行。
+      await centerTab(page, 'Installed').click()
+      await expect(page).toHaveURL(/#\/plugins$/)
+      await expect(page.getByRole('button', { name: 'Update to 0.1.4', exact: true })).toBeVisible()
+      // 三个页签共用一个外壳实例，切页签不算离开：再真正离开插件中心，刷新仍在进行。
+      await page.evaluate(() => {
+        window.location.hash = '#/scripts'
+      })
+      await expect(page).toHaveURL(/#\/scripts$/)
+      await expect(page.locator('.plugins-page')).toHaveCount(0)
+      // 放行后刷新在页外完成，并回读目录。
+      const readBack = page.waitForResponse('**/api/plugin_catalog/get?*')
+      releaseRefresh?.()
+      await readBack
+      await page.evaluate(() => {
+        window.location.hash = '#/plugins'
+      })
+      await expect(page).toHaveURL(/#\/plugins$/)
     } finally {
       releaseRefresh?.()
     }
-    await expect(page.getByText('Update to 0.1.5', { exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Update to 0.1.5', exact: true })).toBeVisible()
+  })
+
+  test('restores a running option trigger after leaving and returning to settings', async ({
+    app,
+    page,
+  }) => {
+    const recordId = '47b17e9c-e285-4ef7-9002-676643210820'
+    const configUid = '47b17e9c-e285-4ef7-9002-676643210821'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210822'
+    const activeField = {
+      taskId,
+      configUid,
+      group: 'options',
+      field: 'refresh_sources',
+      cancelling: false,
+    }
+    let started = false
+    let finished = false
+    let submissions = 0
+
+    await page.route('**/api/plugin_registry/get?*', route =>
+      route.fulfill({
+        json: {
+          code: 200,
+          data: {
+            [recordId]: {
+              info: { plugin_name: 'trigger_fixture', display_name: 'Trigger fixture' },
+            },
+          },
+        },
+      })
+    )
+    await page.route('**/api/plugin_config/get?*', route => {
+      const busy = started && !finished
+      return route.fulfill({
+        json: {
+          code: 200,
+          data: {
+            uid: configUid,
+            options: { refresh_sources: busy ? taskId : null },
+            ui: {
+              hints: {
+                options: [
+                  {
+                    field: 'refresh_sources',
+                    component: 'button',
+                    state: busy ? 'busy' : 'idle',
+                    editable: !busy,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      })
+    })
+    await page.route('**/api/config/triggers/write', route => {
+      submissions++
+      started = true
+      return route.fulfill({ json: { code: 200, data: taskId } })
+    })
+    await page.route('**/api/config/triggers/active', route =>
+      route.fulfill({ json: { code: 200, data: started && !finished ? [activeField] : [] } })
+    )
+    await page.route('**/api/config/triggers/result', route =>
+      route.fulfill({
+        json: { code: 200, data: { state: finished ? 'succeeded' : 'running' } },
+      })
+    )
+
+    const settings = `/plugins/${recordId}/settings`
+    await app.goto(settings)
+    const trigger = page.getByRole('button', { name: /refresh_sources/ })
+    await trigger.click()
+    await expect(trigger).toHaveClass(/ant-btn-loading/)
+    await app.goto('/settings')
+    await app.goto(settings)
+    await expect(trigger).toBeDisabled()
+    await expect(trigger).toHaveClass(/ant-btn-loading/)
+    finished = true
+    await expect(trigger).toBeEnabled()
+    expect(submissions).toBe(1)
   })
 
   test('upgrades market plugins from both pages and preserves retry after rejection', async ({
@@ -104,7 +218,7 @@ test.describe('@plugins plugin foundation', () => {
     // 两页复用市场触发器，防止误用注册 UID，并检查后台失败后仍可重试。
     const recordId = '47b17e9c-e285-4ef7-9002-676643210881'
     const metaId = '47b17e9c-e285-4ef7-9002-676643210882'
-    const operationId = '47b17e9c-e285-4ef7-9002-676643210883'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210883'
     let installed = '1.0'
     let reject = true
     const info = {
@@ -127,6 +241,16 @@ test.describe('@plugins plugin foundation', () => {
                   ? {
                       ...info,
                       version: '2.0',
+                      changelog: [
+                        { version: '2.0', body: '- New release change' },
+                        { version: '1.5', body: '- Intermediate release change' },
+                        { version: '1.0', body: '- Installed release change' },
+                      ],
+                      changelog_versions: {
+                        target: '2.0',
+                        installed,
+                        updates: installed === '2.0' ? [] : ['2.0', '1.5'],
+                      },
                       installed_version: installed,
                       update_available: installed !== '2.0',
                     }
@@ -156,7 +280,7 @@ test.describe('@plugins plugin foundation', () => {
         })
       })
     }
-    await page.route('**/api/operations/start', route => {
+    await page.route('**/api/config/triggers/write', route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid: metaId,
         group: 'info',
@@ -164,28 +288,33 @@ test.describe('@plugins plugin foundation', () => {
         value: true,
       })
       return route.fulfill({
-        json: { code: 200, data: { operationId, configUid: metaId, state: 'queued' } },
+        json: { code: 200, data: taskId },
       })
     })
-    await page.route('**/api/operations/get', route => {
+    await page.route('**/api/config/triggers/result', route => {
       if (!reject) installed = '2.0'
       return route.fulfill({
         json: {
           code: 200,
           data: {
-            operationId,
-            configUid: metaId,
             state: reject ? 'failed' : 'succeeded',
             errorCode: reject ? 'PluginPrecheckError' : null,
           },
         },
       })
     })
+    await app.goto('/plugins/updates')
+    const updateRow = page.locator('.update-row').filter({ hasText: 'Upgrade fixture' })
+    await updateRow.getByRole('button', { name: 'Release notes' }).click()
+    await expect(updateRow.getByText('New release change', { exact: true })).toBeVisible()
+    await expect(updateRow.getByText('Intermediate release change', { exact: true })).toBeVisible()
+    await expect(updateRow.getByText('Installed release change', { exact: true })).toHaveCount(0)
+    await app.evidence('plugin-update-notes')
     for (const path of ['/plugins', '/plugins/market']) {
       installed = '1.0'
       reject = true
       await app.goto(path)
-      const upgrade = page.getByRole('button', { name: /Upgrade$/ })
+      const upgrade = page.getByRole('button', { name: 'Update to 2.0', exact: true })
       await expect(upgrade).toBeEnabled()
       await upgrade.click()
       await expect(page.locator('.ant-message')).toContainText('Action failed')
@@ -194,11 +323,17 @@ test.describe('@plugins plugin foundation', () => {
       await upgrade.click()
       await expect(upgrade).toHaveCount(0)
       if (path === '/plugins/market')
-        await expect(page.getByRole('button', { name: /Installed$/ })).toBeDisabled()
-      else
-        await expect(page.getByRole('row').filter({ hasText: 'Upgrade fixture' })).toContainText(
-          '2.0'
-        )
+        await expect(
+          marketCard(page, 'Upgrade fixture').getByText('Installed', { exact: true })
+        ).toBeVisible()
+      else {
+        const row = installedRow(page, 'Upgrade fixture')
+        await expect(row).toContainText('2.0')
+        await row.locator('.installed-row-main').click()
+        await row.getByRole('button', { name: 'Release notes' }).click()
+        await expect(row.getByText('New release change', { exact: true })).toBeVisible()
+        await expect(row.getByText('Intermediate release change', { exact: true })).toHaveCount(0)
+      }
     }
   })
 
@@ -248,38 +383,50 @@ test.describe('@plugins plugin foundation', () => {
     await context.route('https://example.org/metadata-guide', route =>
       route.fulfill({ body: '<h1>Plugin documentation</h1>', contentType: 'text/html' })
     )
+    const links = [
+      ['Docs', info.docs_url],
+      ['Homepage', info.homepage],
+      ['Repository', info.repository],
+    ] as const
+    // 市场从卡片的「详情」打开弹层，已安装点行展开；名称与版本在标题区，其余字段在信息块。
+    const openDetails = async (route: string) => {
+      if (route === '/plugins/market') {
+        const card = marketCard(page, info.display_name)
+        await card.getByRole('button', { name: 'Details', exact: true }).click()
+        return page.getByRole('dialog')
+      }
+      const row = installedRow(page, info.display_name)
+      await row.locator('.installed-row-main').click()
+      return row
+    }
     for (const route of ['/plugins/market', '/plugins']) {
       await app.goto(route)
       if (route === '/plugins/market') {
-        await expect(page.getByRole('columnheader', { name: 'Tags', exact: true })).toBeVisible()
-        await expect(page.getByRole('columnheader', { name: 'Source', exact: true })).toHaveCount(0)
-        const row = page.locator('.ant-table-tbody > tr').first()
-        for (const tag of info.tags) await expect(row.getByText(tag, { exact: true })).toBeVisible()
+        const card = marketCard(page, info.display_name)
+        for (const tag of info.tags)
+          await expect(card.getByText(tag, { exact: true })).toBeVisible()
+        await expect(card.getByText('Source', { exact: true })).toHaveCount(0)
       }
-      await page.locator('.ant-table-row-expand-icon').first().click()
-      const details = page.locator('.plugin-metadata')
+      const container = await openDetails(route)
+      const details = container.locator('.plugin-metadata')
       await expect(details).toBeVisible()
+      for (const value of [info.display_name, info.version])
+        await expect(container.getByText(value, { exact: true }).first()).toBeVisible()
       for (const value of [
-        info.display_name,
-        info.plugin_name,
         info.package_name,
-        info.version,
         info.description,
         info.author,
         info.license,
-        info.tags.join(', '),
-        info.requires_dist.join(', '),
+        ...info.tags,
+        ...info.requires_dist,
       ]) {
         await expect(details.getByText(value, { exact: true })).toBeVisible()
       }
-      for (const url of [info.docs_url, info.homepage, info.repository]) {
-        await expect(details.getByRole('link', { name: url, exact: true })).toHaveAttribute(
-          'href',
-          url
-        )
+      for (const [name, url] of links) {
+        await expect(details.getByRole('link', { name, exact: true })).toHaveAttribute('href', url)
       }
       const popupPromise = page.waitForEvent('popup')
-      await details.getByRole('link', { name: info.docs_url, exact: true }).click()
+      await details.getByRole('link', { name: 'Docs', exact: true }).click()
       const popup = await popupPromise
       await expect(popup).toHaveURL(info.docs_url)
       await popup.close()
@@ -295,14 +442,26 @@ test.describe('@plugins plugin foundation', () => {
           `${route === '/plugins' ? 'plugins' : 'market'}-complete-metadata-${mode}`
         )
       }
+      if (route === '/plugins/market')
+        await page
+          .getByRole('dialog')
+          .locator('.ant-modal-footer')
+          .getByRole('button', { name: 'Close', exact: true })
+          .click()
     }
+    // 缺声明回落：非 http 链接当作没有，缺失的作者、许可证整格不显示，不放占位。
     invalid = true
+    // 进入市场页签会重新读取目录，不必整页刷新。
     await app.goto('/plugins/market')
-    await page.locator('.ant-table-row-expand-icon').first().click()
-    const details = page.locator('.plugin-metadata')
-    await expect(details.getByText('javascript:alert(1)', { exact: true })).toBeVisible()
-    await expect(details.getByRole('link', { name: 'javascript:alert(1)' })).toHaveCount(0)
-    await expect(details.getByText('-', { exact: true })).toHaveCount(2)
+    const details = (await openDetails('/plugins/market')).locator('.plugin-metadata')
+    await expect(details.getByText(info.description, { exact: true })).toBeVisible()
+    await expect(details.getByText('javascript:alert(1)')).toHaveCount(0)
+    await expect(details.getByRole('link', { name: 'Docs', exact: true })).toHaveCount(0)
+    for (const [name, url] of links.slice(1))
+      await expect(details.getByRole('link', { name, exact: true })).toHaveAttribute('href', url)
+    for (const label of ['Author', 'License'])
+      await expect(details.getByText(label, { exact: true })).toHaveCount(0)
+    await expect(details.getByText('-', { exact: true })).toHaveCount(0)
   })
 
   test('blocks creation on capability failure and reloads available types on retry', async ({
@@ -342,7 +501,12 @@ test.describe('@plugins plugin foundation', () => {
         json: { code: 200, data: null },
       })
     )
-    for (const path of ['/plugins', '/plugins/market', '/plugins/empty/settings']) {
+    for (const path of [
+      '/plugins',
+      '/plugins/market',
+      '/plugins/updates',
+      '/plugins/empty/settings',
+    ]) {
       await app.goto(path)
       await expect(page.locator('main .ant-empty img')).toHaveAttribute(
         'src',
@@ -358,10 +522,11 @@ test.describe('@plugins plugin foundation', () => {
     await expect(page.locator('main .ant-empty')).toHaveCount(0)
   })
 
-  test('confirms uninstall before submitting a disabled adapter command', async ({ app, page }) => {
-    // 隔离注册表与命令接口，验证已禁用适配器仍提示清空配置，取消不提交，确认仅提交一次。
+  test('uninstalls a disabled adapter with the confirmed configuration choice', async ({
+    app,
+    page,
+  }) => {
     const configUid = '8f34836e-8498-4a6d-8fbe-a5d4db9d8ca6'
-    const operationId = '9545fe42-3ef9-40d6-a0f0-b1b178bfb58b'
     let installed = true
     const submissions: unknown[] = []
     await page.route('**/api/plugin_registry/get?*', route =>
@@ -389,20 +554,13 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', route => {
+    await page.route('**/api/plugin/uninstall?*', route => {
       submissions.push(route.request().postDataJSON())
-      return route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'queued' } },
-      })
-    })
-    await page.route('**/api/operations/get', route => {
       installed = false
-      return route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'succeeded' } },
-      })
+      return route.fulfill({ json: { code: 200 } })
     })
     await app.goto('/plugins')
-    const row = page.getByRole('row').filter({ hasText: 'Installed adapter' })
+    const row = installedRow(page, 'Installed adapter')
     const uninstall = async () => {
       // 从插件中心的现有更多操作菜单打开卸载确认。
       await row.getByRole('button', { name: 'More actions', exact: true }).hover()
@@ -411,9 +569,9 @@ test.describe('@plugins plugin foundation', () => {
     await uninstall()
     const confirm = page.getByRole('dialog').filter({ hasText: 'Uninstall plugin?' })
     await expect(confirm).toContainText('Installed adapter')
-    await expect(confirm).toContainText('permanently delete')
-    await expect(confirm).toContainText('managed scripts')
-    await expect(confirm).toContainText('accounts')
+    const purge = confirm.getByRole('checkbox', { name: /permanently delete/i })
+    await expect(purge).not.toBeChecked()
+    await purge.check()
     expect(submissions).toEqual([])
     await app.evidence('plugins-uninstall-confirm')
     await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
@@ -421,12 +579,24 @@ test.describe('@plugins plugin foundation', () => {
     await expect(row).toBeVisible()
     expect(submissions).toEqual([])
     await uninstall()
+    await expect(purge).not.toBeChecked()
     await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click()
     await expect(row).toHaveCount(0)
-    expect(submissions).toEqual([{ configUid, group: 'info', field: 'uninstall', value: true }])
+    expect(submissions).toEqual([{ recordId: configUid, purge_config: false }])
+
+    installed = true
+    await page.reload()
+    await uninstall()
+    await purge.check()
+    await confirm.getByRole('button', { name: 'Uninstall', exact: true }).click()
+    await expect(row).toHaveCount(0)
+    expect(submissions).toEqual([
+      { recordId: configUid, purge_config: false },
+      { recordId: configUid, purge_config: true },
+    ])
   })
 
-  test('confirms adapter data deletion and updates an open creation dialog after real toggles', async ({
+  test('preserves adapter data and updates an open creation dialog after real toggles', async ({
     app,
     page,
   }) => {
@@ -441,7 +611,7 @@ test.describe('@plugins plugin foundation', () => {
     const command = async (field: 'enable' | 'disable') => {
       // 经公开命令接口模拟窗口打开期间的外部能力变化，等待真正完成。
       const accepted = await (
-        await page.request.post(`${backend}/api/operations/start`, {
+        await page.request.post(`${backend}/api/config/triggers/write`, {
           data: { configUid: record.uid, group: 'info', field, value: true },
         })
       ).json()
@@ -451,8 +621,8 @@ test.describe('@plugins plugin foundation', () => {
           async () =>
             (
               await (
-                await page.request.post(`${backend}/api/operations/get`, {
-                  data: { operationId: accepted.data.operationId },
+                await page.request.post(`${backend}/api/config/triggers/result`, {
+                  data: { taskId: accepted.data },
                 })
               ).json()
             ).data.state
@@ -471,38 +641,53 @@ test.describe('@plugins plugin foundation', () => {
     expect((await stageOptions.json()).data).toEqual(
       expect.arrayContaining([expect.objectContaining({ value: '1-7' })])
     )
+    const submissions: unknown[] = []
+    page.on('request', request => {
+      if (request.url().endsWith('/api/config/triggers/write'))
+        submissions.push(request.postDataJSON())
+    })
     try {
       await app.goto('/plugins')
-      const toggle = page.getByRole('switch', { name: /^MAA Adapter / })
-      await expect(toggle).toBeChecked()
-      await toggle.click()
+      // 带数据的专项不用行内开关，启停在「更多」里；状态看行内状态位。
+      const row = installedRow(page, 'MAA Adapter')
+      await expect(row.getByText('Running', { exact: true })).toBeVisible()
+      await expect(row.getByRole('switch')).toHaveCount(0)
+      const disable = async () => {
+        await row.getByRole('button', { name: 'More actions', exact: true }).hover()
+        await page.getByRole('menuitem', { name: 'Disable', exact: true }).click()
+      }
+      await expect(row).toContainText('Managed scripts: 1')
+      await disable()
       const confirm = page.getByRole('dialog').filter({ hasText: 'Disable plugin?' })
-      await expect(confirm).toContainText('permanently delete')
+      await expect(confirm).toContainText('temporarily unavailable')
       await expect(confirm).toContainText('managed scripts')
       await confirm.getByRole('button', { name: 'Cancel', exact: true }).click()
-      await expect(toggle).toBeChecked()
-      const preserved = await (
-        await page.request.post(`${backend}/api/scripts/get`, {
-          data: { scriptId: created.scriptId },
-        })
-      ).json()
-      expect(preserved.code).toBe(200)
-      await toggle.click()
+      await expect(confirm).not.toBeVisible()
+      await expect(row.getByText('Running', { exact: true })).toBeVisible()
+      expect(submissions).toEqual([])
+      await disable()
       await page
         .getByRole('dialog')
         .filter({ hasText: 'Disable plugin?' })
         .getByRole('button', { name: 'Disable', exact: true })
         .click()
-      await expect(toggle).not.toBeChecked()
+      await expect(row.getByText('Disabled', { exact: true })).toBeVisible()
+      await expect(row.getByRole('button', { name: 'Enable', exact: true })).toBeVisible()
+      expect(submissions).toEqual([
+        { configUid: record.uid, group: 'info', field: 'disable', value: true },
+      ])
       expect(
         (
           await page.request.post(`${backend}/api/plugin/maa_adapter/stages/options`, { data: {} })
         ).status()
       ).toBe(404)
-      const removed = await (
+      const detached = await (
         await page.request.post(`${backend}/api/scripts/get`, { data: {} })
       ).json()
-      expect(removed.data[created.scriptId]).toBeUndefined()
+      expect(detached.unavailable).toContainEqual(
+        expect.objectContaining({ uid: created.scriptId })
+      )
+      expect(detached.data[created.scriptId]).toBeUndefined()
       // 静态 MAA 页面仍随宿主交付，未提供能力时直达路由和计划创建入口均关闭。
       await page.goto(`/#/scripts/${created.scriptId}/users/missing/cultivate/maa`)
       await expect(page).toHaveURL(/#\/plugins\/market$/)
@@ -522,6 +707,12 @@ test.describe('@plugins plugin foundation', () => {
       await expect(dialog.getByRole('radio', { name: /^General / })).toBeChecked()
       await command('enable')
       await expect(dialog.getByRole('radio', { name: /^MAA / })).toBeVisible()
+      const restored = await (
+        await page.request.post(`${backend}/api/scripts/get`, {
+          data: { scriptId: created.scriptId },
+        })
+      ).json()
+      expect(restored.data[created.scriptId]).toBeDefined()
       await app.evidence('plugins-live-script-capabilities')
       await app.goto('/plans')
       await page.getByRole('button', { name: /^New plan/ }).click()
@@ -544,6 +735,7 @@ test.describe('@plugins plugin foundation', () => {
       }
     }
   })
+
   // 组织插件基础能力的浏览器验证，覆盖插件中心、市场、主题和失败重试。
   test('shows bundled core and market in both themes', async ({ app, page }) => {
     // 通过真实页面检查 core 插件与市场入口，并在浅色和深色主题下保留展示证据。
@@ -552,23 +744,29 @@ test.describe('@plugins plugin foundation', () => {
     await expect(navigation.nth(3)).toContainText('Resource store')
     await expect(navigation.nth(4)).toContainText('Plugin center')
     await expect(page.getByRole('heading', { name: /Plugin center/ })).toBeVisible()
-    await expect(page.getByRole('cell', { name: /AUTO-MAS Core/ }).first()).toBeVisible()
+    await expect(installedRow(page, 'AUTO-MAS Core').first()).toBeVisible()
+    await expect(page.locator('.plugins-page .installed-skeleton')).toHaveCount(0)
     await expect(page.locator('.plugins-page .ant-spin-blur')).toHaveCount(0)
-    await expect(page.locator('.plugins-page .ant-spin-container')).toHaveCSS('opacity', '1')
-    const coreSwitch = page.getByRole('switch', { name: /AUTO-MAS Core/ })
-    await expect(coreSwitch).toBeChecked()
-    await expect(coreSwitch).toBeDisabled()
+    // 核心插件不能停用：不放永远点不了的开关；版本是普通文字，来源标识为「Official」。
+    const coreRow = installedRow(page, 'AUTO-MAS Core').first()
+    await expect(page.getByRole('switch', { name: /AUTO-MAS Core/ })).toHaveCount(0)
+    await expect(coreRow.locator('span.installed-row-version')).toBeVisible()
+    await expect(coreRow.getByText('Official', { exact: true })).toBeVisible()
+    await expect(coreRow.getByText('Local', { exact: true })).toHaveCount(0)
+    await expect(page.locator('.installed-group-list .installed-row').first()).toBeVisible()
+    await expect(page.locator('.installed-row-chevron')).toHaveCount(0)
     await expect(page.locator('.plugins-page h1')).toHaveClass('app-page-title')
     await app.evidence('plugins-core-light')
     await app.goto('/settings')
     await page.locator('.theme-mode-control').getByText('Dark', { exact: true }).click()
     await app.goto('/plugins')
-    await expect(page.getByRole('cell', { name: /AUTO-MAS Core/ }).first()).toBeVisible()
+    await expect(installedRow(page, 'AUTO-MAS Core').first()).toBeVisible()
+    await expect(page.locator('.plugins-page .installed-skeleton')).toHaveCount(0)
     await expect(page.locator('.plugins-page .ant-spin-blur')).toHaveCount(0)
-    await expect(page.locator('.plugins-page .ant-spin-container')).toHaveCSS('opacity', '1')
     await app.evidence('plugins-core-dark')
     await app.goto('/plugins/market')
-    await expect(page.getByRole('heading', { name: /Plugin market/ })).toBeVisible()
+    await expect(page.getByRole('heading', { name: /Plugin center/ })).toBeVisible()
+    await expect(centerTab(page, 'Market')).toHaveClass(/ant-segmented-item-selected/)
   })
   test('shows load failure and retries through the public registry API', async ({ app, page }) => {
     // 让公开注册接口暂时失败，验证错误提示和重试按钮可恢复插件列表。
@@ -586,7 +784,7 @@ test.describe('@plugins plugin foundation', () => {
       .locator('.plugins-page .ant-alert-error')
       .getByRole('button', { name: /Retry/ })
       .click()
-    await expect(page.getByRole('cell', { name: /AUTO-MAS Core/ }).first()).toBeVisible()
+    await expect(installedRow(page, 'AUTO-MAS Core').first()).toBeVisible()
     await expect(page.locator('.plugins-page .ant-alert-error')).toHaveCount(0)
   })
 
@@ -624,7 +822,7 @@ test.describe('@plugins plugin foundation', () => {
   }) => {
     // 仅替换公开接口边界，验证命令身份、轮询和安装完成后的 UI 禁用，不安装真实插件。
     const configUid = '47b17e9c-e285-4ef7-9002-676643210111'
-    const operationId = '47b17e9c-e285-4ef7-9002-676643210222'
+    const taskId = '47b17e9c-e285-4ef7-9002-676643210222'
     let installed = false
     await page.route('**/api/plugin_catalog/get?*', route =>
       route.fulfill({
@@ -644,7 +842,7 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', async route => {
+    await page.route('**/api/config/triggers/write', async route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid,
         group: 'info',
@@ -652,14 +850,14 @@ test.describe('@plugins plugin foundation', () => {
         value: true,
       })
       await route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'queued' } },
+        json: { code: 200, data: taskId },
       })
     })
-    await page.route('**/api/operations/get', async route => {
-      expect(route.request().postDataJSON()).toEqual({ operationId })
+    await page.route('**/api/config/triggers/result', async route => {
+      expect(route.request().postDataJSON()).toEqual({ taskId })
       installed = true
       await route.fulfill({
-        json: { code: 200, data: { operationId, configUid, state: 'succeeded' } },
+        json: { code: 200, data: { state: 'succeeded' } },
       })
     })
     await app.goto('/plugins/market')
@@ -698,7 +896,7 @@ test.describe('@plugins plugin foundation', () => {
           code: 200,
           data: {
             uid: configUid,
-            setup: { run: false },
+            setup: { run: null },
             ui: {
               hints: { setup: [{ field: 'run', component: 'button', editable: !completed }] },
               tables: [],
@@ -707,7 +905,7 @@ test.describe('@plugins plugin foundation', () => {
         },
       })
     )
-    await page.route('**/api/operations/start', async route => {
+    await page.route('**/api/config/triggers/write', async route => {
       expect(route.request().postDataJSON()).toEqual({
         configUid,
         group: 'setup',
@@ -718,14 +916,13 @@ test.describe('@plugins plugin foundation', () => {
       await route.fulfill({
         json: {
           code: 200,
-          data: {
-            operationId: '47b17e9c-e285-4ef7-9002-676643210555',
-            configUid,
-            state: 'succeeded',
-          },
+          data: '47b17e9c-e285-4ef7-9002-676643210555',
         },
       })
     })
+    await page.route('**/api/config/triggers/result', route =>
+      route.fulfill({ json: { code: 200, data: { state: 'succeeded' } } })
+    )
     await app.goto(`/plugins/${recordId}/settings`)
     const run = page.getByRole('button', { name: 'run', exact: true })
     await expect(run).toBeEnabled()

@@ -36,26 +36,22 @@
     </div>
     <div class="header-actions">
       <a-space size="middle">
-        <a-tooltip :title="t('core.scripts.collapseAllTip')">
-          <a-button
-            size="large"
-            :disabled="scripts.length === 0 || isSearching"
-            @click="handleCollapseAll"
-          >
-            <template #icon><UpOutlined /></template>
-            {{ t('core.scripts.collapseAll') }}
-          </a-button>
-        </a-tooltip>
-        <a-tooltip :title="t('core.scripts.expandAllTip')">
-          <a-button
-            size="large"
-            :disabled="scripts.length === 0 || isSearching"
-            @click="handleExpandAll"
-          >
-            <template #icon><DownOutlined /></template>
-            {{ t('core.scripts.expandAll') }}
-          </a-button>
-        </a-tooltip>
+        <a-button
+          size="large"
+          :disabled="scripts.length === 0 || isSearching"
+          @click="handleCollapseAll"
+        >
+          <template #icon><UpOutlined /></template>
+          {{ t('core.scripts.collapseAll') }}
+        </a-button>
+        <a-button
+          size="large"
+          :disabled="scripts.length === 0 || isSearching"
+          @click="handleExpandAll"
+        >
+          <template #icon><DownOutlined /></template>
+          {{ t('core.scripts.expandAll') }}
+        </a-button>
         <a-button type="primary" size="large" class="link" @click="handleAddScript">
           <template #icon>
             <PlusOutlined />
@@ -87,16 +83,16 @@
   </div>
   <div
     v-else-if="
-      !scriptListError && !listLoading && !addLoading && loadedOnce && scripts.length === 0
+      !scriptListError &&
+      !listLoading &&
+      !addLoading &&
+      loadedOnce &&
+      scripts.length === 0 &&
+      unavailableScripts.length === 0
     "
     class="empty-state"
   >
-    <NoData :image-style="{ height: '120px' }">
-      <template #description>
-        <h3 class="empty-title">{{ t('core.scripts.empty.title') }}</h3>
-        <p class="empty-description">{{ t('core.scripts.empty.desc') }}</p>
-      </template>
-    </NoData>
+    <ScriptsEmptyState />
   </div>
 
   <div
@@ -124,7 +120,7 @@
     @delete="handleDeleteScript"
     @add-user="handleAddUser"
     @edit-user="handleEditUser"
-    @delete-user="handleDeleteUser"
+    :delete-user="handleDeleteUser"
     @start-maa-config="handleStartMAAConfig"
     @start-src-config="handleStartSRCConfig"
     @start-maa-end-config="handleStartMaaEndConfig"
@@ -133,6 +129,8 @@
     @toggle-user-status="handleToggleUserStatus"
     @scripts-reordered="handleScriptsReordered"
   />
+
+  <UnavailableScriptCards v-model:items="unavailableScripts" />
 
   <ScriptCreateDialog
     v-model:open="scriptCreateVisible"
@@ -158,7 +156,6 @@ import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTas
 
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
   DownOutlined,
@@ -168,12 +165,13 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import ScriptTable from '@/views/scripts/components/ScriptTable.vue'
+import ScriptsEmptyState from '@/views/scripts/components/ScriptsEmptyState.vue'
+import UnavailableScriptCards from '@/views/scripts/components/UnavailableScriptCards.vue'
 import { getApiErrorMessage } from '@/utils/apiError'
 import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vue'
-import type { ScriptType } from '@/types/script'
 import type { ScriptListItem, ScriptListUser } from '@/views/scripts/scriptListModel'
-import { isMfwFamily, type TemplateRequest } from '@/views/scripts/components/scriptCreateFlow'
-import { scriptEditorLocation } from '@/router/scriptEditorRoutes'
+import type { TemplateRequest } from '@/views/scripts/components/scriptCreateFlow'
+import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptList } from '@/views/scripts/useScriptList'
 import { useUserApi } from '@/composables/useUserApi'
@@ -207,10 +205,13 @@ defineOptions({ name: 'ScriptsPage' })
 
 const logger = window.electronAPI.getLogger('脚本管理')
 
-const router = useRouter()
+const openEditor = useScriptEditorNavigation()
 const { deleteScript } = useScriptApi()
 const {
-  getScriptsWithUsers,
+  scripts,
+  unavailable: unavailableScripts,
+  loadedOnce,
+  loadScripts,
   getScriptUsers,
   loading: listLoading,
   error: scriptListError,
@@ -221,7 +222,6 @@ const { subscribe, unsubscribe } = useWebSocket()
 const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
 const { listEmbeddedSources, cloneEmbedded } = useMaaFWEmbeddedApi()
 
-const scripts = ref<ScriptListItem[]>([])
 const scriptSearchKeyword = ref('')
 const isSearching = computed(() => Boolean(scriptSearchKeyword.value.trim()))
 const filteredScripts = computed(() =>
@@ -229,7 +229,6 @@ const filteredScripts = computed(() =>
 )
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
-const loadedOnce = ref(false)
 const scriptCreateVisible = ref(false)
 const templates = ref<ShareTemplateItem[]>([])
 const templatePage = ref(1)
@@ -367,20 +366,6 @@ onUnmounted(() => {
   activeConnections.value.clear()
 })
 
-const loadScripts = async () => {
-  try {
-    const result = await getScriptsWithUsers()
-    if (!scriptListError.value) scripts.value = result
-  } catch (error) {
-    const errorMsg = getApiErrorMessage(error, t('core.apiErrors.scriptListFailed'))
-    logger.error(`加载脚本列表失败: ${errorMsg}`)
-    scriptListError.value = errorMsg
-  } finally {
-    // 首次加载结束（不论成功失败）后置位，避免初始闪烁
-    loadedOnce.value = true
-  }
-}
-
 const retryScriptUsers = async (scriptId: string) => {
   const script = scripts.value.find(item => item.id === scriptId)
   if (!script || retryingUsers.value.has(scriptId)) return
@@ -418,6 +403,7 @@ const {
   copyingScriptId,
   submit: handleSubmitScriptCreate,
   copy: handleCopyScript,
+  createUser: handleAddUser,
 } = useScriptCreation({
   reloadScripts: () => loadScripts(),
   closeDialog: () => {
@@ -466,7 +452,7 @@ const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) 
 }
 
 const handleEditScript = (script: ScriptListItem) => {
-  router.push(scriptEditorLocation(script.type, 'script', { id: script.id }))
+  openEditor(script.type, 'script', { id: script.id })
 }
 
 const handleDeleteScript = async (script: ScriptListItem) => {
@@ -477,16 +463,10 @@ const handleDeleteScript = async (script: ScriptListItem) => {
   }
 }
 
-const handleAddUser = (script: ScriptListItem) => {
-  router.push(scriptEditorLocation(script.type, 'userAdd', { scriptId: script.id }))
-}
-
 const handleEditUser = (user: ScriptListUser) => {
   const script = scripts.value.find(item => item.id === user.scriptId)
   if (script) {
-    router.push(
-      scriptEditorLocation(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
-    )
+    openEditor(script.type, 'user', { scriptId: script.id, userId: user.id })
   } else {
     message.error(t('core.scripts.toast.scriptNotFound'))
   }
@@ -849,19 +829,6 @@ const handleToggleUserStatus = async (user: ScriptListUser) => {
   justify-content: center;
   height: calc(100vh - 200px);
   text-align: center;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0;
-  color: var(--ant-color-text);
-}
-
-.empty-description {
-  font-size: 14px;
-  color: var(--ant-color-text-secondary);
-  margin: 0;
 }
 
 .header-left {

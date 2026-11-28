@@ -1,16 +1,22 @@
-import { ref } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { storeToRefs } from 'pinia'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openAlert, openConfirm } from '@/composables/useConfirm'
 import { translate as t } from '@/i18n'
 import { Service, PowerSignal } from '@/api'
 import { useSchedulerStore } from '@/stores/scheduler'
-import { useTaskApi } from '@/composables/useTaskApi'
+import { TaskStartCancelled, useTaskApi } from '@/composables/useTaskApi'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { scopeRequest, reconcileScope } from '@/composables/taskSelection'
-import { fetchTaskTargets, fetchTaskScope, type TaskTarget } from '@/composables/useTaskOptions'
+import {
+  fetchTaskTargetSnapshot,
+  fetchTaskScope,
+  type TaskTargetSnapshot,
+} from '@/composables/useTaskOptions'
 import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import { WS_ID_MAIN, WS_POWER_SIGN_UPDATED } from '@/services/websocket/types'
+import { useConfigLoader } from '@/services/configUiSync'
 import type { SchedulerTab } from './schedulerConstants'
 
 /** 页面只编排草稿、请求和局部界面；运行数据与订阅不随页面挂载变化。 */
@@ -22,7 +28,8 @@ export function useSchedulerLogic() {
     panels: schedulerPanels,
   } = storeToRefs(store)
   const taskApi = useTaskApi()
-  const taskOptions = ref<TaskTarget[]>([])
+  const taskTargets = shallowRef<TaskTargetSnapshot>({ targets: [], unavailableScriptIds: [] })
+  const taskOptions = computed(() => taskTargets.value.targets)
   const taskOptionsLoading = ref(false)
   const powerAction = ref(PowerSignal.NO_ACTION)
   const latestScopeRequest = new WeakMap<SchedulerTab, object>()
@@ -44,9 +51,9 @@ export function useSchedulerLogic() {
     tab.scopeLoading = true
     tab.scopeError = undefined
     try {
-      const fresh = await fetchTaskScope(target, taskOptions.value)
+      const { scope, unavailableItems } = await fetchTaskScope(target, taskTargets.value)
       if (latestScopeRequest.get(tab) === request && tab.selectedTaskId === target.value)
-        tab.scope = reconcileScope(fresh, tab.scope)
+        tab.scope = reconcileScope(scope, tab.scope, unavailableItems)
     } catch (error) {
       if (latestScopeRequest.get(tab) === request)
         tab.scopeError =
@@ -61,16 +68,17 @@ export function useSchedulerLogic() {
     tab.selectedTaskId = taskId
     await loadTaskScope(tab)
   }
-  async function loadTaskOptions() {
+  const loadTaskOptions = useConfigLoader(['config', 'scheduler-targets'], async read => {
     const request = (optionsRequest = {})
-    taskOptionsLoading.value = true
+    if (!taskOptions.value.length) taskOptionsLoading.value = true
     try {
-      const options = await fetchTaskTargets()
+      const snapshot = await fetchTaskTargetSnapshot()
+      read(snapshot)
       if (optionsRequest !== request) return
-      taskOptions.value = options
+      taskTargets.value = snapshot
       for (const tab of schedulerTabs.value) {
         if (store.statusFor(tab) === '运行' || tab.starting) continue
-        if (!options.some(option => option.value === tab.selectedTaskId)) {
+        if (!snapshot.targets.some(option => option.value === tab.selectedTaskId)) {
           tab.selectedTaskId = null
           tab.scope = undefined
         } else if (viewActive) void loadTaskScope(tab)
@@ -83,7 +91,7 @@ export function useSchedulerLogic() {
     } finally {
       if (optionsRequest === request) taskOptionsLoading.value = false
     }
-  }
+  })
   async function startTask(tab: SchedulerTab) {
     if (tab.starting || store.statusFor(tab) === '运行') return
     const target = taskOptions.value.find(item => item.value === tab.selectedTaskId)
@@ -101,6 +109,7 @@ export function useSchedulerLogic() {
       await useAudioPlayer().playSound('task_started')
       message.success(t('core.scheduler.toast.taskStarted'))
     } catch (error) {
+      if (error instanceof TaskStartCancelled) return
       message.error(
         error instanceof Error ? error.message : t('core.scheduler.toast.startTaskFailed')
       )
@@ -121,9 +130,10 @@ export function useSchedulerLogic() {
     const tab = schedulerTabs.value.find(tab => tab.key === key)
     if (!tab) return
     if (store.statusFor(tab) === '运行' || tab.starting) {
-      Modal.warning({
+      void openAlert({
+        tone: 'warning',
         title: t('core.scheduler.modal.cannotDeleteTitle'),
-        content: t('core.scheduler.modal.cannotDeleteContent', { title: store.titleFor(tab) }),
+        description: t('core.scheduler.modal.cannotDeleteContent', { title: store.titleFor(tab) }),
         okText: t('core.scheduler.modal.gotIt'),
       })
       return
@@ -132,13 +142,12 @@ export function useSchedulerLogic() {
       message.warning(t('core.scheduler.toast.mainTabUndeletable'))
       return
     }
-    Modal.confirm({
-      centered: true,
+    void openConfirm({
+      tone: 'danger',
       title: t('core.scheduler.modal.deleteTitle'),
-      content: t('core.scheduler.modal.deleteContent', { title: store.titleFor(tab) }),
+      description: t('core.scheduler.modal.deleteContent', { title: store.titleFor(tab) }),
       okText: t('core.scheduler.modal.deleteOk'),
       cancelText: t('core.common.cancel'),
-      okType: 'danger',
       onOk() {
         store.removeTab(key)
       },
@@ -152,13 +161,12 @@ export function useSchedulerLogic() {
       message.info(t('core.scheduler.toast.noIdleTabs'))
       return
     }
-    Modal.confirm({
-      centered: true,
+    void openConfirm({
+      tone: 'danger',
       title: t('core.scheduler.modal.batchDeleteTitle'),
-      content: t('core.scheduler.modal.batchDeleteContent', { count: idle.length }),
+      description: t('core.scheduler.modal.batchDeleteContent', { count: idle.length }),
       okText: t('core.scheduler.modal.deleteOk'),
       cancelText: t('core.common.cancel'),
-      okType: 'danger',
       onOk() {
         idle.forEach(tab => store.removeTab(tab.key))
         message.success(t('core.scheduler.toast.batchDeleted', { count: idle.length }))

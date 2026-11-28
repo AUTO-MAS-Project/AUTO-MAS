@@ -9,15 +9,17 @@ import {
 const screens: Record<string, AnalyticsScreen> = {
   Plugins: 'plugins',
   PluginMarket: 'plugin_market',
+  // 更新页签暂归入插件中心，单列页面类别需同步扩展主进程白名单。
+  PluginUpdates: 'plugins',
   PluginSettings: 'plugin_settings',
-  PluginPage: 'plugin_settings',
   Tools: 'tools',
   Initialization: 'initialization',
   Home: 'home',
   Scripts: 'scripts',
   Plans: 'plans',
   OkNtePlanDetail: 'plans',
-  Emulators: 'emulators',
+  OkwwPlanDetail: 'plans',
+  Games: 'games',
   Queue: 'queue',
   Scheduler: 'scheduler',
   History: 'history',
@@ -36,13 +38,14 @@ const scriptScreens: Record<string, AnalyticsScreen> = {
 }
 
 /** 页面分类来自真实路由登记，新增专项无需再同步类型正则。 */
-function routeScreen(route: Pick<RouteLocationNormalizedLoaded, 'name' | 'meta'>) {
+function routeScreen(route: Pick<RouteLocationNormalizedLoaded, 'name' | 'meta' | 'params'>) {
   const name = route.name
   if (typeof name !== 'string') return null
   if (screens[name]) return { screen: screens[name], script_type: 'none' as const }
   const kind = route.meta.scriptPage ?? route.meta.maafwPage
-  return kind && route.meta.scriptType
-    ? { screen: scriptScreens[kind], script_type: analyticsScriptType(route.meta.scriptType) }
+  const type = route.meta.scriptType ?? route.params.scriptType
+  return kind && type
+    ? { screen: scriptScreens[kind], script_type: analyticsScriptType(type) }
     : null
 }
 

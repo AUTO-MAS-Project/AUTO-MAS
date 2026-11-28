@@ -18,8 +18,10 @@ import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
 import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import AppearanceTryOnDock from './components/AppearanceTryOnDock.vue'
 import NewYearCelebration from './components/NewYearCelebration.vue'
 import ThemeTokenBridge from './components/ThemeTokenBridge'
+import DesktopSessionPromptDialog from './views/desktopSession/components/DesktopSessionPromptDialog.vue'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
 import { useLocale } from './composables/useLocale.ts'
@@ -173,6 +175,7 @@ onMounted(async () => {
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale" :render-empty="renderEmpty">
     <ThemeTokenBridge />
+    <DesktopSessionPromptDialog />
     <AppearanceDecoration />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
@@ -203,6 +206,7 @@ onMounted(async () => {
         @page-ready="pageReady = true"
       />
       <I18nResourceGate v-else @retry="retryLanguageResources" @recover="recoverInitialization" />
+      <AppearanceTryOnDock v-if="languageResources.ready && performanceStore.initialized" />
     </div>
 
     <!-- 开发构建才带调试面板；独立小窗口（日志、虚拟显示器询问）里它会盖住内容，不挂 -->

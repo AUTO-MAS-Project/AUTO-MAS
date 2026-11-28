@@ -1,6 +1,5 @@
-import { computed, type ComputedRef, type Ref } from 'vue'
+import { computed, type Ref } from 'vue'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
 import { isUnselectableMaaFWTask } from '../maafwUnselectableTasks'
@@ -18,7 +17,8 @@ interface MaaFWUserTaskContextOptions {
   /** 脚本配了模拟器时默认控制器优先选 ADB */
   preferAdbController: Ref<boolean>
   interfaceLoading: Ref<boolean>
-  flavor: ComputedRef<MaaFWFlavor>
+  /** 受管任务（interface 里任务的 entry）：由后端专项控制，不进「添加任务」与预设模板 */
+  managedEntries: readonly string[]
 }
 
 /**
@@ -33,7 +33,7 @@ export function useMaaFWUserTaskContext({
   scriptConfig,
   preferAdbController,
   interfaceLoading,
-  flavor,
+  managedEntries,
 }: MaaFWUserTaskContextOptions) {
   const controllerOptions = computed(() =>
     (previewData.value?.controllers || []).filter(controller =>
@@ -100,10 +100,8 @@ export function useMaaFWUserTaskContext({
   const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) =>
     isMaaFWTaskActiveFor(task, effectiveControllerName.value, effectiveResourceName.value)
 
-  // 特调受管的任务（M9A 的启动 / 切号 / 关闭）由后端控制，不进「添加任务」与预设模板
-  const managedTaskEntries = computed<ReadonlySet<string>>(
-    () => new Set(flavor.value.userPage.managed.entries)
-  )
+  // 受管的任务（M9A 的启动 / 切号 / 关闭）由后端控制，不进「添加任务」与预设模板
+  const managedTaskEntries = computed<ReadonlySet<string>>(() => new Set(managedEntries))
   const isManagedTaskId = (taskId: string) =>
     isManagedMaaFWTask(getTaskInfoById(taskId), managedTaskEntries.value)
   // 特调声明不可选的任务（后端给了 unselectableReason）同样不进「添加任务」与预设模板

@@ -1,45 +1,15 @@
 <template>
-  <div ref="pageRef" class="user-edit-container">
-    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-ww / ok-nte） -->
-    <GuiSessionMask
-      :open="showMaaConfigMask"
-      :icon="SettingOutlined"
-      :title="t('plugins.maa_adapter.edit.maaConfigurationProgress')"
-      :description="`${t('plugins.maa_adapter.edit.maaConfigurationThisUser')}\n${t('core.edit.clickSaveSettingsWhen')}`"
-    >
-      <template #actions>
-        <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
-          {{ t('core.edit.saveConfiguration') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <GuiSessionMask
-      :open="showMaaViewMask"
-      :icon="EyeOutlined"
-      :title="t('plugins.maa_adapter.edit.maaViewingTitle')"
-      :description="`${t('plugins.maa_adapter.edit.maaViewingDesc')}\n${t('plugins.maa_adapter.edit.maaViewingDesc2')}`"
-    >
-      <template #actions>
-        <a-button
-          v-if="maaTaskId"
-          type="primary"
-          size="large"
-          :loading="stoppingMaaConfig"
-          @click="handleCloseMaaView"
-        >
-          {{ t('plugins.maa_adapter.edit.maaViewClose') }}
-        </a-button>
-      </template>
-    </GuiSessionMask>
-    <MAAUserEditHeader
-      v-if="!cultivationPage"
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      :user-id="userId"
-      :cancel-loading="leavingPage"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell ref="shellRef" :surface="false">
+    <template v-if="!cultivationPage" #header>
+      <MAAUserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        :user-id="userId"
+        :cancel-loading="leavingPage"
+        @cancel="handleCancel"
+      />
+    </template>
 
     <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
     <CultivationPage
@@ -214,38 +184,73 @@
       </a-card>
     </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MAA 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked || editorBusy"
-      :script-name="MAA_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :script-desc="t('plugins.maa_adapter.edit.maaConfigRestoreScriptDesc')"
-      :on-detail="handleRestoreView"
-    >
-      <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewFiles(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="f in previewFiles(raw)" :key="f.name">
-            <h4 class="maa-preview-title">{{ f.label }}</h4>
-            <a-descriptions :column="1" size="small" bordered class="maa-preview-box">
-              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-ww / ok-nte） -->
+      <GuiSessionMask
+        :open="showMaaConfigMask"
+        :icon="SettingOutlined"
+        :title="t('plugins.maa_adapter.edit.maaConfigurationProgress')"
+        :description="`${t('plugins.maa_adapter.edit.maaConfigurationThisUser')}\n${t('core.edit.clickSaveSettingsWhen')}`"
+      >
+        <template #actions>
+          <a-button v-if="maaTaskId" type="primary" size="large" @click="handleSaveMAAConfig">
+            {{ t('core.edit.saveConfiguration') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+      <GuiSessionMask
+        :open="showMaaViewMask"
+        :icon="EyeOutlined"
+        :title="t('plugins.maa_adapter.edit.maaViewingTitle')"
+        :description="`${t('plugins.maa_adapter.edit.maaViewingDesc')}\n${t('plugins.maa_adapter.edit.maaViewingDesc2')}`"
+      >
+        <template #actions>
+          <a-button
+            v-if="maaTaskId"
+            type="primary"
+            size="large"
+            :loading="stoppingMaaConfig"
+            @click="handleCloseMaaView"
+          >
+            {{ t('plugins.maa_adapter.edit.maaViewClose') }}
+          </a-button>
+        </template>
+      </GuiSessionMask>
+
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MAA 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked || editorBusy"
+        :script-name="MAA_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :script-desc="t('plugins.maa_adapter.edit.maaConfigRestoreScriptDesc')"
+        :on-detail="handleRestoreView"
+      >
+        <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewFiles(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="f in previewFiles(raw)" :key="f.name">
+              <h4 class="maa-preview-title">{{ f.label }}</h4>
+              <a-descriptions :column="1" size="small" bordered class="maa-preview-box">
+                <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell } from '@/components/ui'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import MAAUserEditHeader from '@maa/user/MAAUserEditHeader.vue'
 import CultivationPage from '@maa/user/CultivationPage.vue'
@@ -310,7 +315,7 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
-const pageRef = ref<HTMLElement>()
+const shellRef = ref<InstanceType<typeof ConfigEditShell>>()
 const isInitializing = ref(true)
 // 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
 const loading = computed(
@@ -1065,7 +1070,7 @@ const {
   restoreConfiguration,
   trackEdit,
 } = useMAAEditorLifecycle({
-  pageRef,
+  pageRef: computed<HTMLElement | undefined>(() => shellRef.value?.$el),
   canStart: () => !configLocked.value && !isInitializing.value && !!userId,
   flushEdits: async () => {
     // 结清纯读取的候选等待，让换材料或导入预设的编辑按当前结果保存。
@@ -1402,44 +1407,13 @@ onMounted(async () => {
 })
 </script>
 
+<style scoped src="@/styles/userEditForm.css"></style>
+
 <style scoped>
 .cultivation-page-loading {
   display: grid;
   place-items: center;
   min-height: 240px;
-}
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
-.float-button {
-  width: 60px;
-  height: 60px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .user-edit-content {
-    max-width: 100%;
-  }
 }
 
 /* 配置预览：逐文件的摘要标题与摘要表 */

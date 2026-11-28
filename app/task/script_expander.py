@@ -10,16 +10,20 @@ from typing import TYPE_CHECKING
 
 from app.config import LockTicket
 from app.core import Config, Notify, Publisher
+from app.core.desktop_session.lifecycle import require_task_support
 from app.core.ws import protocol
 from app.models.config import ScriptEntry
 from app.models.schema import WSTaskCompletedData, WSTaskNoticeData
 from app.models.task import TaskItem, TaskMode, TaskScriptItem, TaskTriggerReason
 from app.services import execute_script_task
 from app.task.context import TaskContext
+from app.task.game import GameSession, current_game_session
 from app.task.history_core import TaskHistorySession
 from app.task.lifecycle import TaskBase
 from app.task.script_update import ScriptRecoverySession
+from app.utils import get_logger
 from app.utils.common.fluxdown_cli import FluxdownCancelUnconfirmed
+from app.utils.common.process.session import desktop_process_target
 from app.utils.contracts.power import PowerSignal
 
 if TYPE_CHECKING:
@@ -30,12 +34,15 @@ if TYPE_CHECKING:
     from app.models.task import TaskExecuteBase
     from app.task.user_expander import UserExpander
 
+logger = get_logger("任务调度")
+
 
 class ScriptExpander(TaskBase):
     def __init__(self, info: TaskItem, dispatcher: _TaskManager) -> None:
         """绑定 L2 任务与调度器，建立历史、恢复和预下载会话，并初始化新旧专项执行与锁状态。"""
         super().__init__()
         self.task_info = info
+        self.target_id: str | None = None
         self.dispatcher = dispatcher
         self.context = TaskContext()
         self._manager: TaskExecuteBase | None = None
@@ -44,6 +51,7 @@ class ScriptExpander(TaskBase):
         self._plugin_stop_checks: asyncio.Task | None = None
         self._script_ticket: LockTicket | None = None
         self._script_config: ScriptConfigType | None = None
+        self._game_session: GameSession | None = None
         self._started_at = time.perf_counter()
         # [兼容旧专项] 隐藏的手动更新标记；新代码按标准 TaskMode 分派。
         self.maintenance = False
@@ -59,7 +67,18 @@ class ScriptExpander(TaskBase):
     async def stop(self) -> None:
         """先确认插件更新停写及原生配置保存，再取消任务并等待级联收尾。"""
         self.history.cancelled = True
+        if self.running:
+            # 插件路径先确认停写再送取消；通知到了的插件可能在确认期间就收尾完，
+            # 先记下停止，L2 照停止处理、不再往下派发（同旧专项执行桥）。
+            self.cancelled = True
         await self.task_info.set_state(status="cancelled")
+        if self._plugin is not None:
+            # 同旧专项的 stopped_manually / _on_finalize_cancel_requested：受保护的收尾
+            # 收不到取消，插件靠这条同步通知提前结束运行后更新、环境确认等。
+            try:
+                self._plugin.on_stop_requested()
+            except Exception:
+                logger.opt(exception=True).warning("插件停止通知失败，继续停止")
         if self._plugin_process_scope is not None:
             if self._plugin_stop_checks is None:
                 self._plugin_stop_checks = asyncio.create_task(
@@ -171,6 +190,9 @@ class ScriptExpander(TaskBase):
         from app.services import telemetry
 
         entry: ScriptConfigType
+        game_token = None
+        # 插件路径从解析执行对象起、到进入 L3 为止都还没有账号开始；这段失败按托管级检查失败处理。
+        pre_dispatch_failed = False
         try:
             candidate: ScriptConfigType | None = Config.ScriptConfig.get(
                 script.script_id
@@ -180,6 +202,8 @@ class ScriptExpander(TaskBase):
             ):
                 raise ValueError("托管配置已删除或替换")
             entry = candidate
+            self._game_session = GameSession(script, entry)
+            game_token = current_game_session.set(self._game_session)
             await script.set_current_index(-1)
             await script.set_state(status="等待")
             if Config.ScriptConfig.get(script.script_id) is not entry:
@@ -191,7 +215,9 @@ class ScriptExpander(TaskBase):
             ):
                 # 插件接入位置：真实解析器在托管锁内接收当前配置，提供 L3 与模式能力。
                 plugin = None
-                if not self.maintenance and self.dispatcher.plugin_expander is not None:
+                if self.dispatcher.plugin_expander is not None and (
+                    not self.maintenance or isinstance(entry, ScriptEntry)
+                ):
                     last_wait_message = None
                     while True:
                         candidate = Config.ScriptConfig.get(script.script_id)
@@ -224,8 +250,23 @@ class ScriptExpander(TaskBase):
                         await asyncio.sleep(1)
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
-                    plugin = self.dispatcher.plugin_expander(script, entry)
+                    pre_dispatch_failed = True
+                    if (
+                        not self.maintenance
+                        and desktop_process_target.get() is not None
+                        and isinstance(entry, ScriptEntry)
+                    ):
+                        require_task_support(entry)
+                    if self.maintenance:
+                        from app.core import Plugin
+
+                        plugin = Plugin.resolve_script_expander(
+                            script, entry, maintenance=True
+                        )
+                    else:
+                        plugin = self.dispatcher.plugin_expander(script, entry)
                     if plugin is None:
+                        pre_dispatch_failed = False
                         # 旧 manager 自持递归锁，必须先归还探测锁，不能叠加持锁等待。
                         await self._release_script_lock()
                 if plugin is not None:
@@ -237,11 +278,32 @@ class ScriptExpander(TaskBase):
                         or plugin.script_config is not entry
                     ):
                         raise TypeError("插件必须绑定当前托管运行节点及已锁配置")
-                    await self._prefetch.prepare(script, entry)
+                    if not self.maintenance:
+                        await self._prefetch.prepare(script, entry)
+                    from app.core import Plugin
+                    from app.plugin.errors import PluginPrecheckError
+
+                    declaration = Plugin.script_decl(entry)
+                    if declaration is None:
+                        # 准备期间插件被停用，声明已摘掉。
+                        raise PluginPrecheckError("托管所属插件当前不可用")
+                    if declaration.expect_builder is not None:
+                        self._game_session.expect = declaration.expect_builder(entry)
+                    if not self.maintenance and not plugin.defer_game_session:
+                        # 声明了的插件在确认有可运行账号之后自己选定（同旧专项
+                        # after_config_lock），没有账号就不占游戏、不排队。
+                        await self._game_session.select()
+                    plugin.game_session = self._game_session
                     plugin.context = self.context.with_params(script.info.params)
                     plugin.history = self.history
                     self._plugin = plugin
+                    pre_dispatch_failed = False
                     await self._run_plugin(plugin)
+                    # L3 的异常由生命周期接住；停写未确认同旧专项一样中止整个队列。
+                    if isinstance(plugin.error, FluxdownCancelUnconfirmed):
+                        raise plugin.error
+                    if self.cancelled:
+                        raise asyncio.CancelledError
                 else:
                     if Config.ScriptConfig.get(script.script_id) is not entry:
                         raise ValueError("托管配置已删除或替换")
@@ -257,7 +319,11 @@ class ScriptExpander(TaskBase):
 
                         async def after_lock(locked_config):
                             """在旧专项取得配置锁后复查并等待预下载，将任务参数和 URL 路径映射绑定到专项运行上下文。"""
+                            if desktop_process_target.get():
+                                require_task_support(locked_config)
+                            self._game_session.config = locked_config
                             paths = await self._prefetch.prepare(script, locked_config)
+                            await self._game_session.select()
                             manager.context = self.context.with_params(
                                 script.info.params
                             )
@@ -287,6 +353,11 @@ class ScriptExpander(TaskBase):
                     finally:
                         await manager.callbacks.close()
                         self._callback_failed |= bool(manager.callbacks.errors)
+                        if (
+                            not self.maintenance
+                            and self.task_info.mode == TaskMode.AUTO_PROXY
+                        ):
+                            manager.finalize_completion_details(script)
                 if any("异常" in u.status for u in script.users.values()):
                     await script.set_state(status="异常")
         except FluxdownCancelUnconfirmed:
@@ -303,8 +374,22 @@ class ScriptExpander(TaskBase):
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(level="error", message=str(error)),
             )
+            if pre_dispatch_failed:
+                # 同旧专项托管级检查失败：一个账号都没开始，账号记「异常」，不留在「等待」。
+                for user in script.user_list:
+                    if user.status == "等待":
+                        await user.set_state(status="异常")
         finally:
-            await self._release_script_lock()
+            try:
+                if self._game_session is not None:
+                    await self._game_session.release()
+                    if self._game_session.cleanup_failed:
+                        await script.set_state(status="异常")
+            finally:
+                await self._release_script_lock()
+                if game_token is not None:
+                    current_game_session.reset(game_token)
+                self._game_session = None
             self._manager = None
             self._plugin = None
             self.history.observe(script)
@@ -326,10 +411,38 @@ class ScriptExpander(TaskBase):
             await self.spawn(plugin)
         finally:
             try:
-                await scope.force_close()
+                try:
+                    await scope.force_close()
+                finally:
+                    # 作用域由本层建立，结束标记也由本层置位（同旧专项根的
+                    # _stop_after_checks）：等它的预约释放、安装锁、进程退出
+                    # 观察者都只认 finished，正常、停止、异常三条路都不能漏。
+                    self._finish_plugin_scope(scope)
+                    await scope.close_desktop_processes()
             finally:
                 current_process_scope.reset(token)
                 self._plugin_process_scope = None
+
+    @staticmethod
+    def _finish_plugin_scope(scope) -> None:
+        """强制清理后收束作用域：停止时取消残留的作用域内异步工作，再置结束标记。"""
+        from app.utils.common.process.scope import current_process_scope
+
+        try:
+            if scope.requested:
+                keep = {
+                    asyncio.current_task(),
+                    *scope.pending_creations,
+                    *scope.retained_workers,
+                }
+                for task in asyncio.all_tasks():
+                    if (
+                        task not in keep
+                        and task.get_context().get(current_process_scope) is scope
+                    ):
+                        task.cancel()
+        finally:
+            scope.finished.set()
 
     async def _release_script_lock(self) -> None:
         if self._script_ticket is not None:

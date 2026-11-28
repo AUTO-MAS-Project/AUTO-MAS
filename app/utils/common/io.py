@@ -187,19 +187,20 @@ def replace_dir(src: Path, dst: Path) -> None:
     """
     用 ``src`` 整目录替换 ``dst``（先清后拷, 不做改名的双份拷贝）
 
-    只删一次且用 ``force_rmtree``: 目录带只读文件（如脚本自带的 ``.git`` 对象）
-    或删除前仍有残留时都能清干净, 不需要先拷到 .tmp 再改名的中间副本——
-    改名在 Windows 上并不原子, 目标存在时直接失败, 失败还会把用户的配置
-    留在半删状态。
-
-    删不掉的条目按 ``force_rmtree`` 语义忽略, 随后 ``copytree`` 就地补回被删的
-    部分: 宁可留下几个多余文件, 也不让目标停在半删状态。
+    删除走 ``force_rmtree``: 目录带只读文件（如脚本自带的 ``.git`` 对象）
+    时仍能清理。目标未清空则直接报错, 不能把残留旧文件混进新目录后继续
+    声称替换成功。
 
     Args:
         src: 内容来源目录。
         dst: 目标目录, 会被替换成 ``src`` 的内容。
+
+    Raises:
+        OSError: 目录未被清空, 通常是有文件仍被占用。
     """
     force_rmtree(dst)
+    if dst.exists() or dst.is_symlink() or dst.is_junction():
+        raise OSError(f"目标目录未能清空，仍有文件被占用: {dst}")
     shutil.copytree(src, dst, dirs_exist_ok=True)
 
 
@@ -244,6 +245,7 @@ class NativeConfigSnapshot:
         original_exists: 快照时原生配置目录是否存在。
         baseline: 原始配置指纹, 用于识别「尚未被 MAS 改动」。
         injected: MAS 注入后的预期指纹, None 表示本次运行未注入。
+        pending_injected: 待换入的配置指纹，换入确认前与旧注入指纹一并保留。
         fingerprint_version: 写快照时的指纹算法版本, 与当前版本不符即不可比较。
     """
 
@@ -252,6 +254,10 @@ class NativeConfigSnapshot:
     baseline: str
     injected: str | None = None
     fingerprint_version: int = 0
+    pending_injected: str | None = None
+
+    def matches_injected(self, fingerprint: str) -> bool:
+        return fingerprint in (self.injected, self.pending_injected)
 
 
 def _snapshot_ready_path(snapshot_path: Path) -> Path:
@@ -276,6 +282,7 @@ def write_native_config_snapshot(
     original_exists: bool,
     baseline: str,
     injected: str | None = None,
+    pending_injected: str | None = None,
 ) -> None:
     """
     原子写出快照归属信息, 标记该快照已完整提交
@@ -286,6 +293,7 @@ def write_native_config_snapshot(
         original_exists: 快照时原生配置目录是否存在。
         baseline: 原始配置指纹。
         injected: MAS 注入后的预期指纹, 未注入传 None。
+        pending_injected: 已准备但未确认换入的配置指纹。
     """
 
     write_file(
@@ -295,6 +303,11 @@ def write_native_config_snapshot(
             "original_exists": original_exists,
             "baseline": baseline,
             "injected": injected,
+            **(
+                {"pending_injected": pending_injected}
+                if pending_injected is not None
+                else {}
+            ),
             "fingerprint_version": NATIVE_CONFIG_FINGERPRINT_VERSION,
         },
     )
@@ -331,12 +344,14 @@ def read_native_config_snapshot(
         return None
 
     injected = state.get("injected")
+    pending = state.get("pending_injected")
     fingerprint_version = state.get("fingerprint_version")
     return NativeConfigSnapshot(
         script_id=script_id,
         original_exists=bool(state.get("original_exists", False)),
         baseline=str(state.get("baseline") or ""),
         injected=injected if isinstance(injected, str) else None,
+        pending_injected=pending if isinstance(pending, str) else None,
         fingerprint_version=(
             fingerprint_version if isinstance(fingerprint_version, int) else 0
         ),
@@ -517,13 +532,21 @@ def recover_native_config(
         处置结果: restored / intact / skipped / cleared / legacy。
     """
 
-    staging_path, backup_path = _snapshot_swap_paths(live_path)
-    force_rmtree(staging_path)
-    force_rmtree(backup_path)
-
     state = read_native_config_snapshot(
         snapshot_path, expected_script_id=expected_script_id
     )
+    staging_path, backup_path = _snapshot_swap_paths(live_path)
+    # 若中断发生在两次改名之间，先取回现场，再判断它是否属于 MAS。
+    if (
+        state is not None
+        and state.pending_injected is not None
+        and not live_path.exists()
+        and backup_path.is_dir()
+    ):
+        backup_path.rename(live_path)
+    force_rmtree(staging_path)
+    force_rmtree(backup_path)
+
     if state is None:
         result = "cleared"
     elif state.fingerprint_version != NATIVE_CONFIG_FINGERPRINT_VERSION:
@@ -537,11 +560,13 @@ def recover_native_config(
             result = "cleared"
     else:
         live = dir_fingerprint(live_path)
-        if state.injected is not None and live == state.injected:
+        if state.matches_injected(live):
             if state.original_exists:
                 swap_in_dir(snapshot_path, live_path)
             else:
                 force_rmtree(live_path)
+                if live_path.exists():
+                    raise OSError(f"未能清理任务期注入的配置目录: {live_path}")
             result = "restored"
         elif live == state.baseline:
             result = "intact"

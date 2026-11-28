@@ -31,7 +31,10 @@ import psutil
 
 from app.utils import ProcessManager, compare_mirrorchyan_versions, get_logger
 from app.utils import io as _utils_io
-from app.utils.common.process.operations import iter_processes, terminate_process
+from app.utils.common.process.operations import (
+    iter_scoped_process_info,
+    terminate_process,
+)
 
 if TYPE_CHECKING:
     from app.utils.windows.desktop_session.process_runner import DesktopProcess
@@ -165,9 +168,8 @@ def _find_executable_processes(executable: Path) -> list[psutil.Process]:
     expected = os.path.normcase(os.path.abspath(executable))
     return [
         process
-        for process in iter_processes(["exe"])
-        if process.info["exe"]
-        and os.path.normcase(os.path.abspath(process.info["exe"])) == expected
+        for process, info in iter_scoped_process_info(["exe"])
+        if info["exe"] and os.path.normcase(os.path.abspath(info["exe"])) == expected
     ]
 
 

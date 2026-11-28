@@ -142,71 +142,6 @@ export class MaaFwService {
         });
     }
     /**
-     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
-     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
-     * @param requestBody
-     * @returns MaaFWShellInstancesOut Successful Response
-     * @throws ApiError
-     */
-    public static listMaafwShellInstancesApiScriptsMaafwShellInstancesPost(
-        requestBody: MaaFWShellInstancesIn,
-    ): CancelablePromise<MaaFWShellInstancesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 把选中的外壳配置实例导入成用户
-     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
-     *
-     * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
-     * @param requestBody
-     * @returns MaaFWShellInstanceImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost(
-        requestBody: MaaFWShellInstanceImportIn,
-    ): CancelablePromise<MaaFWShellInstanceImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 把一份外壳配置的任务队列覆盖到已有账号
-     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
-     *
-     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
-     * 覆盖的是任务队列与任务选项，账号名称不动。
-     * @param requestBody
-     * @returns MaaFWShellInstanceApplyOut Successful Response
-     * @throws ApiError
-     */
-    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
-        requestBody: MaaFWShellInstanceApplyIn,
-    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/maafw/shell-instances/apply',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
      * 托管编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
@@ -399,6 +334,71 @@ export class MaaFwService {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
+     * 新建托管引导最后一步用：外壳里配好的每份实例都可以导入成一个账号。只读外壳文件。
+     * @param requestBody
+     * @returns MaaFWShellInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwShellInstancesApiScriptsMaafwShellInstancesPost(
+        requestBody: MaaFWShellInstancesIn,
+    ): CancelablePromise<MaaFWShellInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把选中的外壳配置实例导入成用户
+     * 每个实例建一个账号：账号名称取实例名，任务队列与任务选项一起导入。
+     *
+     * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
+     * @param requestBody
+     * @returns MaaFWShellInstanceImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost(
+        requestBody: MaaFWShellInstanceImportIn,
+    ): CancelablePromise<MaaFWShellInstanceImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把一份外壳配置的任务队列覆盖到已有账号
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个账号。
+     *
+     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+     * 覆盖的是任务队列与任务选项，账号名称不动。
+     * @param requestBody
+     * @returns MaaFWShellInstanceApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
+        requestBody: MaaFWShellInstanceApplyIn,
+    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/apply',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

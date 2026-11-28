@@ -29,17 +29,19 @@
           <template #icon><PlusOutlined /></template>
           {{ t('core.edit.addItem') }}
         </a-button>
-        <a-popconfirm
+        <ConfirmActionButton
+          risk="low"
+          tone="danger"
+          size="small"
           :title="t('core.edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
           :ok-text="t('core.edit.ok')"
           :cancel-text="t('core.edit.cancel')"
-          @confirm="removeSelectedPlans"
+          :disabled="loading || selectedRowKeys.length === 0"
+          :confirm="removeSelectedPlans"
         >
-          <a-button danger size="small" :disabled="loading || selectedRowKeys.length === 0">
-            <template #icon><DeleteOutlined /></template>
-            {{ t('core.edit.deleteSelected') }}
-          </a-button>
-        </a-popconfirm>
+          <template #icon><DeleteOutlined /></template>
+          {{ t('core.edit.deleteSelected') }}
+        </ConfirmActionButton>
       </a-space>
     </div>
     <!-- 行顺序即 MAA 执行顺序：vuedraggable 拖拽排序（QueueItemManager 先例：
@@ -188,6 +190,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import { ConfirmActionButton } from '@/components/ui'
 import { handleExternalLink } from '@/utils/openExternal'
 import { computed, onMounted } from 'vue'
 import draggable from 'vuedraggable'

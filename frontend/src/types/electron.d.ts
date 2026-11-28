@@ -1,8 +1,14 @@
 import type { FluxdownInstallOut, GlobalConfig_UI, GlobalConfig_Update } from '@/api'
 import type { AnalyticsContext, RendererAnalyticsEvent } from '@/types/analytics'
 import type { FrontendCloseRequest } from '@/types/appLifecycle'
+import type { UpgradeBackupDirectory, UpgradeBackupSelection } from '@/types/upgradeBackup'
 import type {
+  DesktopSessionPendingRequest,
+  DesktopSessionPrompt,
+  DesktopSessionPromptAction,
   DesktopSessionRequest,
+  DesktopSessionStartRequest,
+  DesktopSessionConnectResult,
   DesktopSessionRepair,
   DesktopSessionSnapshot,
   DesktopSessionStartResult,
@@ -23,6 +29,7 @@ import type {
   OnlineAppearanceDetailResult,
   OnlineAppearanceInstallResult,
   OnlineAppearanceListResult,
+  OnlineAppearancePrepareProgress,
   OnlineAppearancePrepareResult,
   OnlineAppearanceQuery,
 } from '@/types/appearance'
@@ -59,6 +66,11 @@ export interface ElectronConfig {
     [key: string]: unknown
   }
   [key: string]: unknown
+}
+
+export interface MysteryAccessContext {
+  deviceHash: string
+  backendHash: string
 }
 
 export type ElectronApiEndpointKey = 'local' | 'websocket'
@@ -242,6 +254,12 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   ): () => void
   analytics?: {
     getContext: () => Promise<AnalyticsContext>
+    beginInitialization: () => Promise<{ generation: AnalyticsContext; attempt: number | null }>
+    finishInitialization: (
+      context: AnalyticsContext,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => void
     trackEvent: (context: number, event: RendererAnalyticsEvent) => void
   }
   isMacOS: boolean
@@ -320,7 +338,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   // 配置文件操作
   // 仅覆盖 config 中的字段；defaults 只补齐文件中缺失的字段。
   saveConfig: (config: unknown, defaults?: unknown) => Promise<void>
-  loadConfig: () => Promise<ElectronConfig | null>
+  loadConfig: (strict?: boolean) => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 
   // 应用初始化版本（保存前端版本号用于比对）
@@ -394,7 +412,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
-  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType）；同项目的脚本合成一组 */
+  /** configTypes：要列出的脚本配置类名（MaaFW 家族适配条目上的 scriptConfigType）；同项目的脚本合成一组 */
   listMaaFWIssueReportProjects: (configTypes: string[]) => Promise<
     Array<{
       /** 组键，原样传给 exportMaaFWIssueReport */
@@ -436,6 +454,10 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath?: string
     error?: string
   }>
+  getUpgradeBackupDirectory: () => Promise<UpgradeBackupDirectory | null>
+  chooseUpgradeBackupDirectory: (reset: boolean) => Promise<UpgradeBackupSelection | null>
+  confirmUpgradeBackupDirectory: (id: string) => Promise<UpgradeBackupDirectory>
+  cancelUpgradeBackupDirectory: (id: string) => Promise<void>
   /** 不传 fromOffset 返回整份字符串；传了只返回该字节偏移之后的新增部分。 */
   getLogs: {
     (lines?: number, fileName?: string): Promise<string>
@@ -477,6 +499,7 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   readFileBase64: (filePath: string, maxBytes?: number) => Promise<{ base64: string; size: number }>
 
   getAppPath: (name: string) => Promise<string>
+  verifyMysteryAccessCode: (accessCode: string, context: MysteryAccessContext) => Promise<boolean>
 
   // 自定义外观包
   listAppearances?: () => Promise<InstalledAppearance[]>
@@ -515,9 +538,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
     zipPath: string,
     category?: AppearanceCategory
   ) => Promise<LocalAppearanceInspectResult>
-  inspectAppearanceCover?: (
-    imagePath: string
-  ) => Promise<{ success: boolean; dataUrl?: string; error?: string }>
+  inspectAppearanceCover?: (imagePath: string) => Promise<{
+    success: boolean
+    dataUrl?: string
+    width?: number
+    height?: number
+    error?: string
+  }>
+  onOnlineAppearancePrepareProgress?: (
+    callback: (progress: OnlineAppearancePrepareProgress) => void
+  ) => () => void
   onAppearanceChanged?: (callback: () => void) => () => void
   onThemeConfigChanged?: (callback: (config: unknown) => void) => () => void
 
@@ -539,11 +569,16 @@ export interface ElectronAPI extends DesktopMascotHostAPI, DesktopMascotTaskHost
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
   desktopSessionSupported?: () => Promise<boolean>
   desktopSessionOpen?: (input: DesktopSessionRequest) => Promise<void>
+  desktopSessionConnectForTask?: () => Promise<DesktopSessionConnectResult>
+  desktopSessionCancelTaskConnect?: (id: number) => Promise<void>
   desktopSessionCheck?: () => Promise<DesktopSessionSnapshot | null>
+  desktopSessionGetPrompt?: () => Promise<DesktopSessionPrompt | null>
+  desktopSessionRespondToPrompt?: (id: number, action: DesktopSessionPromptAction) => Promise<void>
+  onDesktopSessionPrompt?: (callback: () => void) => () => void
   desktopSessionRepair?: (plan: DesktopSessionRepair[]) => Promise<string | undefined>
   desktopSessionExportLogs?: () => Promise<boolean>
-  desktopSessionPending?: () => Promise<DesktopSessionRequest | null>
-  desktopSessionStart?: (request: DesktopSessionRequest) => Promise<DesktopSessionStartResult>
+  desktopSessionPending?: () => Promise<DesktopSessionPendingRequest | null>
+  desktopSessionStart?: (request: DesktopSessionStartRequest) => Promise<DesktopSessionStartResult>
   desktopSessionBounds?: (bounds: { x: number; y: number; width: number; height: number }) => void
   desktopSessionWindow?: (action: 'show' | 'hide') => void
   desktopSessionVolume?: (volume: number) => void

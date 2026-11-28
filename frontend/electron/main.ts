@@ -44,6 +44,7 @@ import {
 } from './ipc/initializationHandlers'
 import { registerFileHandlers } from './ipc/fileHandlers'
 import { registerAppUpdateHandlers, stopAppUpdateForShutdown } from './ipc/appUpdateHandlers'
+import { registerUpgradeBackupHandlers } from './ipc/upgradeBackupHandlers'
 import { recoverUpdateMaterials } from './services/updateStaging'
 import { registerFluxdownInstallHandlers } from './ipc/fluxdownInstallHandlers'
 import {
@@ -70,6 +71,7 @@ import { DEFAULT_MASCOT_MENU } from './services/mascotMenuDefinition'
 import { getAppearance } from './services/appearanceService'
 import { getMascot } from './services/mascotPackageService'
 import { registerOkwwPathDiscoveryHandlers } from './ipc/okwwPathDiscoveryHandlers'
+import { registerMysteryHandlers } from './ipc/mysteryHandlers'
 import { registerDesktopSession } from './ipc/desktopSessionHandlers'
 import {
   canElectronExitImmediately,
@@ -109,10 +111,14 @@ import {
   resolveStopAllTasksShortcut,
   isDevelopmentEnvironment,
   getDevelopmentServerUrl,
+  getDeveloperBackendRepo,
   getRendererEnvironmentArguments,
   getBackendOwnership,
 } from './services/instanceConfig'
 import { resolveRuntimeLaunchModeDetail } from './services/runtime'
+import { resolveUpgradeBackupVersion } from './services/backendService'
+import { setupStartupHardware, localStartupAttempt } from './services/startupHardware/monitor'
+import { startupProbeConfig, flushStartupHardwareLog } from './services/startupHardware/config'
 import AdmZip = require('adm-zip')
 import { migrateUserData, selectUserDataLock } from './services/userDataMigration'
 import { recordDesktopStartup } from './services/startupTiming'
@@ -312,6 +318,7 @@ const isAutoStart = process.argv.includes('--auto-start') || isScheduledWakeup
 // 配置接口
 interface AppConfig extends DesktopMascotHostPreferences {
   confirmBeforeClose: boolean
+  upgradeBackup?: { enabled?: boolean; directory?: string | null }
   lastCloseAction: 'quit' | 'tray'
   UI: {
     IfShowTray: boolean
@@ -821,7 +828,7 @@ function parseConfigInteger(value: string | undefined, fallback: number): number
  * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
  */
 function assertDevelopmentRuntime(): void {
-  if (!isDevelopmentEnvironment()) return
+  if (app.isPackaged) return
   if (getDevelopmentServerUrl()) return
 
   const message =
@@ -956,6 +963,7 @@ function createWindow() {
     typeof beginMainFeature<'renderer_responsiveness_changed'>
   > | null = null
   win.on('unresponsive', () => {
+    desktopSession?.setRendererResponsive(win, false)
     if (!responseIncident) {
       responseIncident = beginMainFeature('renderer_responsiveness_changed')
       beginMainFeature('renderer_responsiveness_changed').finish({
@@ -968,6 +976,7 @@ function createWindow() {
   })
 
   win.on('responsive', () => {
+    desktopSession?.setRendererResponsive(win, true)
     responseIncident?.finish({ state: 'responsive', outcome: 'success' })
     responseIncident = null
     logger.info('渲染进程已恢复响应')
@@ -1547,6 +1556,7 @@ ipcMain.handle('log:export', async (_event, rawDialogLabels?: unknown) => {
       }
 
       const zipPath = result.filePath
+      await flushStartupHardwareLog()
 
       // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
       const zip = new AdmZip()
@@ -2184,6 +2194,19 @@ ipcMain.handle('save-config', (event, patch, defaults) => {
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
+    if (patch?.upgradeBackup) {
+      const { enabled } = patch.upgradeBackup
+      patch = {
+        ...patch,
+        upgradeBackup: {
+          ...loadConfig().upgradeBackup,
+          ...(typeof enabled === 'boolean' ? { enabled } : {}),
+        },
+      }
+    }
+    if (defaults?.upgradeBackup)
+      defaults = { ...defaults, upgradeBackup: loadConfig().upgradeBackup ?? { enabled: true } }
+
     const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
@@ -2334,7 +2357,7 @@ ipcMain.handle('sync-backend-config', async (event, backendSettings) => {
   }
 })
 
-ipcMain.handle('load-config', async () => {
+ipcMain.handle('load-config', async (_event, strict?: boolean) => {
   try {
     const appRoot = getAppRoot()
     const configPath = path.join(appRoot, 'config', 'frontend_config.json')
@@ -2346,8 +2369,9 @@ ipcMain.handle('load-config', async () => {
     }
 
     return null
-  } catch {
+  } catch (error) {
     logger.error('加载配置文件失败')
+    if (strict === true) throw error
     return null
   }
 })
@@ -2445,7 +2469,11 @@ app.whenReady().then(async () => {
   keepAwakeForScheduledWakeup(process.argv)
   recordDesktopStartup('Electron 就绪')
   const startupConfig = loadConfig()
-  await recoverUpdateMaterials(getAppRoot())
+  const updateRoot = app.isPackaged ? path.dirname(app.getPath('exe')) : getAppRoot()
+  refreshAnalyticsPreference()
+  setupStartupHardware(startupProbeConfig, () => analyticsService.getContext())
+  const desktopUpdatesEnabled = !getDeveloperBackendRepo()
+  if (desktopUpdatesEnabled) await recoverUpdateMaterials(updateRoot)
   void startDesktopStartup({
     version: app.getVersion(),
     initializedVersion:
@@ -2454,13 +2482,28 @@ app.whenReady().then(async () => {
         : undefined,
     autoUpdate: startupConfig.Update.IfAutoUpdate,
   }).then(result => {
-    if (!result.success) logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+    if (!result.success) {
+      const attempt = localStartupAttempt()
+      attempt?.logResult(
+        'desktop',
+        result.code === 'OPERATION_CANCELLED' ? 'cancelled' : 'failure',
+        result.code?.match(/^[A-Z_]{1,64}$/) ? result.code : 'unknown'
+      )
+      attempt?.stop()
+      logger.warn(`桌面启动未完成: ${result.error ?? result.code}`)
+    }
   })
   const handlersStartedAt = performance.now()
   registerAnalyticsHandlers(() => mainWindow)
   registerFluxdownInstallHandlers(() => mainWindow, getLocalApiEndpoint)
+  registerUpgradeBackupHandlers(
+    () => mainWindow,
+    getLocalApiEndpoint,
+    () => resolveUpgradeBackupVersion(resolveRuntimeLaunchModeDetail().mode) !== undefined
+  )
   registerAppUpdateHandlers({
-    root: getAppRoot(),
+    installRoot: updateRoot,
+    updatesEnabled: desktopUpdatesEnabled,
     window: () => mainWindow,
     backendUrl: getLocalApiEndpoint,
     backend: getBackendService,
@@ -2469,7 +2512,6 @@ app.whenReady().then(async () => {
       'owned',
     quit: finishCoordinatedQuit,
   })
-  refreshAnalyticsPreference()
   analyticsService.recordAppStarted({
     launch_kind: isScheduledWakeup ? 'scheduled_wakeup' : isAutoStart ? 'auto_start' : 'manual',
     runtime_mode:
@@ -2492,6 +2534,7 @@ app.whenReady().then(async () => {
 
   // 注册 OK-WW 与鸣潮安装路径发现处理器
   registerOkwwPathDiscoveryHandlers()
+  registerMysteryHandlers()
   logger.info('OK-WW 路径发现处理器已注册')
 
   registerStopAllTasksShortcut()

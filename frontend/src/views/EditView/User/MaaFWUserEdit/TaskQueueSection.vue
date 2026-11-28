@@ -107,7 +107,7 @@
                     :entry="queuedTask"
                     :selected="!globalPanelActive && selectedTaskId === queuedTask.id"
                     :skipped="taskSnapshot.taskChecked[queuedTask.id] === false"
-                    :disabled="interfaceDependentDisabled"
+                    :disabled="interfaceDependentDisabled || deletingTask"
                     :can-move-up="canMoveTaskByOffset(index, -1)"
                     :can-move-down="canMoveTaskByOffset(index, 1)"
                     :option-issue="checkboxIssueTaskIds.has(queuedTask.id)"
@@ -132,7 +132,11 @@
                     {{ t('core.edit.queueTaskRename') }}
                   </a-menu-item>
                 </template>
-                <a-menu-item key="delete" danger :disabled="interfaceDependentDisabled">
+                <a-menu-item
+                  key="delete"
+                  danger
+                  :disabled="interfaceDependentDisabled || deletingTask"
+                >
                   {{ t('core.edit.queueTaskDelete') }}
                 </a-menu-item>
               </a-menu>
@@ -167,6 +171,7 @@
           :effective-resource-name="effectiveResourceName"
           :managed-task-entries="managedTaskEntries"
           :disabled="interfaceDependentDisabled"
+          :deleting="deletingTask"
           @task-option-update="(taskId, payload) => emit('taskOptionUpdate', taskId, payload)"
           @weekdays-update="(taskId, weekdays) => emit('taskWeekdaysUpdate', taskId, weekdays)"
           @delete-selected-task="emit('deleteSelectedTask')"
@@ -187,13 +192,10 @@
       @delete-queue-template="name => emit('deleteQueueTemplate', name)"
     />
 
-    <a-modal
+    <AppModal
       v-model:open="renameOpen"
+      size="sm"
       :title="t('core.edit.queueTaskRenameTitle')"
-      width="480px"
-      :ok-text="t('core.edit.ok')"
-      :cancel-text="t('core.edit.cancel')"
-      destroy-on-close
       @ok="confirmRename"
     >
       <!-- antd 受控输入只绑 :value 会被重渲染清空，必须 v-model:value -->
@@ -204,16 +206,17 @@
         autofocus
         @press-enter="confirmRename"
       />
-    </a-modal>
+    </AppModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import { PlusOutlined } from '@ant-design/icons-vue'
+import { AppModal } from '@/components/ui'
+import { useConfirm } from '@/composables/useConfirm'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import { isManagedMaaFWTask } from '../maafwManagedTasks'
 import { findMaaFWCheckboxCountViolations } from '../maafwOptionValues'
@@ -234,12 +237,10 @@ import {
 } from './maafwTaskSnapshot'
 import { MAAFW_MAX_TASK_REPEAT_COUNT } from '@/utils/maafwTaskInstance'
 import type { MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
-import type {
-  MaaFWUserTaskQueueSectionEmits,
-  MaaFWUserTaskQueueSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import type { MaaFWUserTaskQueueSectionEmits, MaaFWUserTaskQueueSectionProps } from './sectionProps'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 /** 「添加任务」下拉每一栏的最小宽度：分组名、任务名不至于被截成几个字 */
 const ADD_TASK_MENU_COLUMN_STYLE = { minWidth: '180px' }
@@ -250,7 +251,7 @@ type AddTaskCascaderPathOption = {
   value?: string | number
 }
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWUserTaskQueueSectionProps>()
 
 const emit = defineEmits<MaaFWUserTaskQueueSectionEmits>()
@@ -369,11 +370,9 @@ const handleContextMenuClick = ({ key }: { key: string | number }) => {
   if (key === 'delete') {
     // 菜单项里挂不了气泡确认，改用确认弹窗，文案与删除按钮的气泡相同
     const taskId = item.id
-    Modal.confirm({
+    void confirm({
+      tone: 'danger',
       title: t('core.edit.deleteThisTask2'),
-      okText: t('core.edit.ok'),
-      okButtonProps: { danger: true },
-      cancelText: t('core.edit.cancel'),
       onOk: () => emit('deleteTask', taskId),
     })
   }
@@ -407,18 +406,7 @@ const canDragTask = (event: {
     : event.draggedContext.futureIndex >= pretaskCount
 }
 
-const uniqueOptionNames = (optionGroups: string[][]) => {
-  const optionNames: string[] = []
-  const seen = new Set<string>()
-  for (const group of optionGroups) {
-    for (const optionName of group) {
-      if (seen.has(optionName)) continue
-      seen.add(optionName)
-      optionNames.push(optionName)
-    }
-  }
-  return optionNames
-}
+const uniqueOptionNames = (optionGroups: string[][]) => [...new Set(optionGroups.flat())]
 
 const getTaskOptionNames = (task: MaaFWTaskInfo) => {
   if (task.entry === 'MXU_PRETASK') {

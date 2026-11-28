@@ -1,23 +1,18 @@
 import { translate as t } from '@/i18n'
 import { SCRIPT_LOGOS, SCRIPT_LABELS } from '@/utils/scriptLogos'
-import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+import { SCRIPT_METADATA, isBuiltinScriptType } from '@/utils/scriptMetadata'
 import type { ScriptListItem, ScriptListUser } from './scriptListModel'
-import {
-  isMaaFWFamily,
-  resolveMaaFWFlavor,
-  usesMaaFWProjectIcon,
-} from '@/composables/useMaaFWFlavor'
+import { isMaaFWFamily, maafwLabel, maafwLogo, maafwUsesProjectIcon } from '@/plugins/maafwFamily'
 import { buildMaaFWScriptIconUrl } from '@/utils/maafwProjectIcon'
-export const getScriptLogo = (type: ScriptListItem['type']) => SCRIPT_LOGOS[type]
+export const getScriptLogo = (type: ScriptListItem['type']) =>
+  isBuiltinScriptType(type) ? SCRIPT_LOGOS[type] : SCRIPT_METADATA.General.logo
 
-/** MaaFW 家族的头像：特调用注册表里声明的图标；通用 MaaFW 用项目自己的图标，取不到由调用方回退 */
-export const getMaaFWScriptLogo = (script: Pick<ScriptListItem, 'id' | 'type'>) => {
-  const flavor = resolveMaaFWFlavor(script.type)
-  return usesMaaFWProjectIcon(flavor) ? buildMaaFWScriptIconUrl(script.id) : flavor.logo
-}
+/** MaaFW 家族的头像：M9A、MSS 用适配条目上的图标；通用 MFW 用项目自己的图标，取不到由调用方回退 */
+export const getMaaFWScriptLogo = (script: Pick<ScriptListItem, 'id' | 'type'>) =>
+  maafwUsesProjectIcon(script.type) ? buildMaaFWScriptIconUrl(script.id) : maafwLogo(script.type)
 
 export const getScriptLogoAlt = (type: ScriptListItem['type']) =>
-  type === 'OkNte' ? 'ok-nte' : SCRIPT_LABELS[type]
+  type === 'OkNte' ? 'ok-nte' : isBuiltinScriptType(type) ? SCRIPT_LABELS[type] : type
 
 const CONFIG_SOURCE_KEYS: Record<string, string> = {
   shared: 'core.comp.configSourceShared',
@@ -66,13 +61,13 @@ export const getScriptTypeLabel = (script: ScriptListItem) => {
   // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示
   // 类型标签（MFW / M9A …，不是内部类型名 MaaFW）
   if (isMaaFWFamily(type)) {
-    return script.projectLabel?.trim() || resolveMaaFWFlavor(type).typeTagLabel
+    return script.projectLabel?.trim() || maafwLabel(type)
   }
   return type
 }
 
 export const getScriptTypeTagColor = (type: ScriptListItem['type']) =>
-  SCRIPT_METADATA[type]?.typeTagColor ?? 'green'
+  isBuiltinScriptType(type) ? SCRIPT_METADATA[type].typeTagColor : 'default'
 
 export const getMaaEndResourceLabel = (user: ScriptListUser): string => {
   return user.Info?.Resource || '官服'
@@ -183,6 +178,6 @@ export const getZzzOdRegionLabel = (user: ScriptListUser): string => {
   return labels[getZzzOdRegion(user)] ?? labels.cn
 }
 
-// ZzzOd：B服账号名存 BilibiliAccountName，其余区服存 Account
+// ZzzOd：B服账号名存 BilibiliAccountName，其余区服存账号（Info.Id）
 export const getZzzOdAccountValue = (user: ScriptListUser): string =>
-  getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Game?.Account || ''
+  getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Info?.Id || ''

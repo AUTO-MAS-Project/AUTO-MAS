@@ -15,6 +15,7 @@ export type ScriptLockOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     /**
      * 目标配置当前是否被锁定
      */

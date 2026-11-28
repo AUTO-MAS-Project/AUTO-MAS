@@ -1,8 +1,9 @@
 import { requestMaintenanceStart } from '@/composables/useTaskApi'
 import { onScopeDispose, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import { Service } from '@/api'
+import { openConfirm } from '@/composables/useConfirm'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
@@ -296,9 +297,10 @@ export function useMaaEndUpdate(getScriptId: () => string) {
   const handleUpdateModalCancel = () => {
     // 中止会白下这一轮已下载的部分（下一轮能续传，但这一轮到此为止），先问一句
     if (updateModal.running) {
-      Modal.confirm({
+      void openConfirm({
+        tone: 'warning',
         title: t('core.edit.endfieldUpdateAbortTitle'),
-        content: t('core.edit.endfieldUpdateCloseConfirm'),
+        description: t('core.edit.endfieldUpdateCloseConfirm'),
         okText: t('core.edit.endfieldUpdateAbortConfirm'),
         cancelText: t('core.edit.cancel'),
         onOk: closeAndStop,

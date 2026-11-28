@@ -255,12 +255,25 @@ def _resolve_supervised_port() -> int:
     return DEFAULT_HTTP_PORT
 
 
+def _check_dev_port_available(port: int) -> bool:
+    """独立开发模式下快速探测端口是否已被占用，避免启动后才抛出冗长 OSError。"""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) != 0
+
+
 @logger.catch(reraise=True)
 def main():
     """准备后端权限、运行目录和应用依赖，装配 FastAPI 服务并启动事件循环。"""
-    from app.utils.common.asyncio_compat import install_windows_connection_cleanup
+    from app.utils.common.asyncio_compat import (
+        install_websockets_connection_cleanup,
+        install_windows_connection_cleanup,
+    )
 
     install_windows_connection_cleanup()
+    install_websockets_connection_cleanup()
 
     raw_environment = os.getenv("AUTO_MAS_ENV", "").strip().lower()
     if raw_environment not in {"", "dev", "development", "production"}:
@@ -291,7 +304,7 @@ def main():
     with startup_stage("后端/配置组件导入与构造"):
         from app.core import Config
     with startup_stage("后端/模拟器组件导入与构造"):
-        from app.core import EmulatorManager
+        from app.core import GameManager
     with startup_stage("后端/通知组件导入与构造"):
         from app.core import Notify
     with startup_stage("后端/专项能力导入"):
@@ -299,12 +312,12 @@ def main():
         from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
         from app.task.MaaEnd.api_service import MaaEndConfigService
-        from app.task.MaaFW.tools.embedded.game_resolution import (
+        from app.task.ZzzOd.config_context import ZzzOdContext
+        from app.task.ZzzOd.recovery import ZzzOdRecovery
+        from app.utils.common.game_resolution import (
             read_unity_display_type,
             read_unity_resolution,
         )
-        from app.task.ZzzOd.config_context import ZzzOdContext
-        from app.task.ZzzOd.recovery import ZzzOdRecovery
 
     with startup_stage("后端/专项能力绑定"):
         with startup_stage("后端/专项能力绑定/BAAH 服务"):
@@ -354,7 +367,10 @@ def main():
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from app.core import Startup
+        from app.config import config_manager
+        from app.core import Publisher, Startup
+
+        config_manager.bind_ui_listener(Publisher.config_ui_listener())
 
         Startup.prepare(
             deferred=is_supervised()
@@ -377,9 +393,13 @@ def main():
 
         async def prepare_plugins() -> None:
             """初始化插件操作与统一下载中心，加载插件并接入专项任务展开器。"""
-            from app.core import Downloads, Operations, Plugin
+            from app.core import Downloads, Plugin
 
-            Operations.initialize(max_running=Config.setting.plugin.max_operations)
+            config_manager.initialize_triggers(
+                BackgroundTaskManager,
+                max_running=Config.setting.plugin.max_operations,
+                resolve_owner=Plugin.trigger_owner,
+            )
             options = Config.setting.download
             Downloads.initialize(
                 directory=Config.data_path / "downloads",
@@ -393,7 +413,6 @@ def main():
             app.state.business_message = "正在加载业务配置"
             TaskManager.plugin_expander = Plugin.resolve_script_expander
 
-        from app.config import config_manager
         from app.core import MCP, BackgroundTaskManager, History
         from app.services import obs_replay as _service_obs_replay
 
@@ -446,12 +465,70 @@ def main():
             async def init_avd_update() -> None:
 
                 # 每个纳管的根目录跑一次 modavd update status（不联网），上次换上被打断的再 recover
-                await EmulatorManager.startup_avd_update()
+                await GameManager.startup_maintenance()
 
             app.state.background_status = "running"
             try:
+                upgrade_backup = None
+                backup_warning = None
+                desktop_version = os.getenv("AUTO_MAS_DESKTOP_VERSION")
+                if supervised and not development_environment and desktop_version:
+                    from app.core.config.upgrade_backup import UpgradeBackup
+
+                    loop = asyncio.get_running_loop()
+                    with startup_stage("后端/升级前数据备份"):
+                        try:
+                            upgrade_backup = UpgradeBackup(
+                                root=Config.work_path, desktop_version=desktop_version
+                            )
+                            backup_warning = await asyncio.to_thread(
+                                upgrade_backup.prepare,
+                                on_backup=lambda: loop.call_soon_threadsafe(
+                                    setattr,
+                                    app.state,
+                                    "business_message",
+                                    "bootstrap.init.msg.backingUpUpgrade",
+                                ),
+                            )
+                            if upgrade_backup.error is not None:
+                                logger.info("升级前备份失败，继续启动")
+                                logger.debug("升级前备份错误：{}", upgrade_backup.error)
+                            if upgrade_backup.outcome is not None:
+                                _service_telemetry.record_count(
+                                    "auto_mas.upgrade_backup.attempts",
+                                    attributes={"outcome": upgrade_backup.outcome},
+                                )
+                        except Exception:
+                            logger.info("无法准备升级前备份，继续启动")
+                            logger.opt(exception=True).debug("准备升级前备份失败")
+                            backup_warning = "backup_failed"
+                    if upgrade_backup is not None:
+                        guarded = await asyncio.to_thread(
+                            upgrade_backup.begin_migration
+                        )
+                        if not guarded:
+                            logger.info("升级备份状态暂不可写，已使用独立迁移标记")
+                            backup_warning = "backup_failed"
+                        app.state.upgrade_backup = upgrade_backup
+                    app.state.business_message = "正在初始化配置与插件"
+
                 with startup_stage("后端/必要配置初始化"):
                     await Config.init_config(prepare_plugins=prepare_plugins)
+
+                if backup_warning is not None:
+                    from app.core.config.upgrade_backup import (
+                        BACKUP_WARNING_LINES,
+                        BACKUP_WARNING_TITLE,
+                    )
+
+                    line_key, line = BACKUP_WARNING_LINES[backup_warning]
+                    await Notify.push_system_notice(
+                        level="warning",
+                        title="更新前备份提示",
+                        title_key=BACKUP_WARNING_TITLE,
+                        line_keys=[line_key],
+                        lines=[line],
+                    )
 
                 MCP.configure(enabled=Config.setting.Function.IfEnableMCP)
                 startup_mark("后端/必要配置就绪")
@@ -481,33 +558,6 @@ def main():
                 BackgroundTaskManager.register_group(
                     "maaend-resource-preload", max_running=1, max_retained=1
                 ).spawn(preload_maaend_resources, retain_result=False)
-
-                async def _maafw_startup_maintenance() -> None:
-                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
-                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
-                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
-                    try:
-                        with startup_stage("后端/MFW 后台维护/旧副本迁移"):
-                            await Config.maafw_maintenance.migrate_embedded_copies_to_payloads()
-                        with startup_stage("后端/MFW 后台维护/Agent 环境清理"):
-                            await Config.maafw_maintenance.clean_agent_venvs()
-                        with startup_stage("后端/MFW 后台维护/副本清理"):
-                            await Config.maafw_maintenance.clean_embedded_copies()
-                        with startup_stage("后端/MFW 后台维护/Runtime 文件清理"):
-                            await Config.maafw_maintenance.clean_runtime_blobs()
-                        with startup_stage("后端/MFW 后台维护/更新缓存清理"):
-                            await Config.maafw_maintenance.clean_update_cache()
-                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                        with startup_stage("后端/MFW 后台维护/Runtime 池清理"):
-                            await Config.maafw_maintenance.clean_runtime_pool()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("MFW 启动期维护失败，下次启动再试")
-
-                app.state.maafw_startup_maintenance = asyncio.create_task(
-                    _maafw_startup_maintenance()
-                )
 
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
@@ -556,6 +606,13 @@ def main():
                     if not warnings:
                         logger.info("后端后台初始化完成")
                     startup_mark("后端/主业务就绪")
+                    if upgrade_backup is not None:
+                        await Startup.wait()
+                        try:
+                            await asyncio.to_thread(upgrade_backup.finish)
+                        except Exception:
+                            logger.info("无法确认更新备份或清理旧备份")
+                            logger.opt(exception=True).debug("更新备份确认或清理失败")
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
@@ -581,15 +638,16 @@ def main():
                 Dispatcher,
                 Downloads,
                 MainConnection,
-                Operations,
                 Plugin,
                 Power,
             )
 
             Startup.close()
-            Operations.seal()
+            config_manager.seal_triggers()
             Downloads.seal()
-            Plugin.seal()
+            # 这里只封插件的外部入口；插件之间的服务调用要留给停任务时的收尾（停 worker、
+            # 关游戏、恢复分辨率），由后面的 Plugin.shutdown() 在停完任务后再封。
+            Plugin.seal_entries()
             await Plugin.stop_watching()
 
             # 同步封禁新加载，独立回收 MCP；不能让不可取消线程挡住停止主业务。
@@ -600,14 +658,6 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
-            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
-            # 被打断的切换有 journal，下次启动收尾。
-            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
-            if maintenance is not None and not maintenance.done():
-                maintenance.cancel()
-                with suppress(asyncio.CancelledError):
-                    await maintenance
-
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
             await Dispatcher.shutdown()
@@ -634,9 +684,9 @@ def main():
                 await Power.cancel_power_task()
 
             await _service_obs_replay.ObsReplay.stop()
-            from app.core import Downloads, Operations, Plugin
+            from app.core import Downloads, Plugin
 
-            await Operations.shutdown()
+            await config_manager.shutdown_triggers()
             await Plugin.shutdown()
             downloads_clean = await Downloads.shutdown_all()
             if not downloads_clean:
@@ -666,6 +716,7 @@ def main():
             startup_mark("后端/ASGI 初始化完成，交还服务器监听")
             yield
         finally:
+            config_manager.bind_ui_listener(None)
             # 覆盖 taskkill 等未经 /close 的退出路径；已由 /close 执行过则跳过
             await ShutdownCoordinator.run_teardown()
             logger.info("AUTO-MAS 后端程序关闭")
@@ -675,16 +726,17 @@ def main():
 
         from app.api import (
             community_router,
+            config_triggers_router,
             core_router,
             dispatch_router,
             downloads_router,
-            emulator_router,
+            games_router,
             history_router,
             i18n_router,
             info_router,
+            mystery_router,
             ocr_router,
             openclaw_qq_router,
-            operations_router,
             plan_router,
             plugin_router,
             queue_router,
@@ -747,11 +799,33 @@ def main():
                 )
             return await call_next(request)
 
+        from fastapi.exception_handlers import http_exception_handler
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        @app.exception_handler(StarletteHTTPException)
+        async def explain_missing_maafw_plugin(request: Request, exc):
+            """/api/scripts/maafw/* 由 MFW 插件挂载；插件没装或没启用时 404 说清楚该装什么。"""
+            if exc.status_code == 404 and request.url.path.startswith(
+                "/api/scripts/maafw/"
+            ):
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "code": 404,
+                        "status": "error",
+                        "message": "这个接口由 MFW 插件提供，插件还没装上或没启用："
+                        "请在插件中心安装并启用 auto-mas-maafw-adapter（依赖的积木会一并装上）；"
+                        "M9A、MSS 托管另需 auto-mas-m9a-adapter、auto-mas-mss-adapter",
+                    },
+                )
+            return await http_exception_handler(request, exc)
+
         app.include_router(core_router)
         app.include_router(info_router)
+        app.include_router(mystery_router)
         app.include_router(scripts_router)
         app.include_router(plan_router)
-        app.include_router(emulator_router)
+        app.include_router(games_router)
         app.include_router(queue_router)
         app.include_router(dispatch_router)
         app.include_router(history_router)
@@ -762,7 +836,7 @@ def main():
         app.include_router(update_router)
         app.include_router(ocr_router)
         app.include_router(openclaw_qq_router)
-        app.include_router(operations_router)
+        app.include_router(config_triggers_router)
         app.include_router(downloads_router)
         app.include_router(plugin_router)
 
@@ -779,6 +853,17 @@ def main():
 
     async def run_server():
         http_port = resolve_http_port(development_environment)
+        if (
+            development_environment
+            and not supervised
+            and not _check_dev_port_available(http_port)
+        ):
+            logger.error(
+                f"开发后端端口 {http_port} 已被占用，取消启动。"
+                "可运行 `uv run --no-sync python scripts/dev_doctor.py` 查看占用情况，"
+                "加 `--kill-dev` 清理当前仓库残留后端，或通过 AUTO_MAS_HTTP_PORT 指定其他端口。"
+            )
+            sys.exit(1)
         logger.info(f"后端监听端口: {http_port}")
         # 主 WebSocket 心跳依赖协议层 ping/pong，显式配置底层参数
         config = uvicorn.Config(

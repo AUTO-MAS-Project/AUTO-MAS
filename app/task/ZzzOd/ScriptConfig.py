@@ -249,10 +249,10 @@ class ScriptConfigTask(TaskExecuteBase):
         cfg.Game.BilibiliAccountName = account_fields.BilibiliAccountName
         await cfg.commit()
         if str(account.get("account") or "").strip():
-            cfg.Game.Account = str(account.get("account"))
+            cfg.Info.Id = str(account.get("account"))
             await cfg.commit()
         if str(account.get("password") or "").strip():
-            cfg.Game.Password = str(account.get("password"))
+            cfg.Info.Password = str(account.get("password"))
             await cfg.commit()
         # 启动参数：客观字段无条件回读（GUI 内改了 -use-d3d12 等也要同步回
         # MAS 字段，否则下次注入会被本页旧值覆盖）；缺失键合并上游默认值；

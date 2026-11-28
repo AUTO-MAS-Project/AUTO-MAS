@@ -165,6 +165,7 @@ export type RuntimeKnownCapability =
   | 'stdin.shutdown'
   | 'stdin.status'
   | 'stdin.activate'
+  | 'startup.resources.v1'
 
 export type RuntimeCapability = OpenUnion<RuntimeKnownCapability>
 
@@ -175,6 +176,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeKnownCapability[] = [
   'stdin.shutdown',
   'stdin.status',
   'stdin.activate',
+  'startup.resources.v1',
 ]
 
 /** 稳定的处置动作标识（errors.go: Remediation）。 */

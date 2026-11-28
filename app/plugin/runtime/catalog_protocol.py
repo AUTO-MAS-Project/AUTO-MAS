@@ -1,4 +1,4 @@
-"""插件目录 v1 线协议；宿主与生成器通过相同样例校验契约。"""
+"""插件目录 v2 线协议；宿主与生成器通过相同样例校验契约。"""
 
 import hashlib
 import json
@@ -6,6 +6,8 @@ import re
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+
+from packaging.version import Version
 
 from app.plugin.types import PLUGIN_ID_PATTERN
 
@@ -22,6 +24,7 @@ TEXT_FIELDS = (
 )
 ENTRY_FIELDS = {
     *TEXT_FIELDS,
+    "changelog",
     "requires_dist",
     "display_name_i18n",
     "description_i18n",
@@ -53,7 +56,7 @@ def validate_entries(raw: object) -> list[dict]:
     entries = []
     for item in raw:
         if not isinstance(item, dict) or set(item) != ENTRY_FIELDS:
-            raise ValueError("plugin fields do not match catalog v1")
+            raise ValueError("plugin fields do not match catalog v2")
         if any(not isinstance(item[field], str) for field in TEXT_FIELDS):
             raise ValueError("plugin text fields must be strings")
         package, identity = item["package_name"], item["plugin_name"]
@@ -67,6 +70,25 @@ def validate_entries(raw: object) -> list[dict]:
             raise ValueError("duplicate package or plugin identity")
         packages.add(package_key(package))
         identities.add(identity)
+        notes = item["changelog"]
+        if not isinstance(notes, list) or len(notes) > 5:
+            raise ValueError("changelog must contain at most five releases")
+        previous_version = None
+        for note in notes:
+            if not isinstance(note, dict) or set(note) != {"version", "body"}:
+                raise ValueError("invalid changelog entry")
+            if not all(
+                isinstance(value, str) and value.strip() for value in note.values()
+            ):
+                raise ValueError("empty changelog version or body")
+            version = Version(note["version"])
+            if version > Version(item["version"]) or (
+                previous_version is not None and version >= previous_version
+            ):
+                raise ValueError(
+                    "changelog must contain published versions in descending order"
+                )
+            previous_version = version
         requirements = item["requires_dist"]
         if not isinstance(requirements, list) or not all(
             isinstance(v, str) for v in requirements
@@ -93,7 +115,7 @@ def validate_entries(raw: object) -> list[dict]:
 def content_revision(entries: list[dict]) -> str:
     """只计算协议版本和插件业务内容的摘要，不将轮询时间作为变更。"""
     return hashlib.sha256(
-        canonical_bytes({"schema_version": 1, "plugins": entries})
+        canonical_bytes({"schema_version": 2, "plugins": entries})
     ).hexdigest()
 
 
@@ -106,7 +128,7 @@ def validate_catalog(raw: object) -> dict:
         "plugins",
     }:
         raise ValueError("invalid catalog envelope")
-    if type(raw["schema_version"]) is not int or raw["schema_version"] != 1:
+    if type(raw["schema_version"]) is not int or raw["schema_version"] != 2:
         raise ValueError("unsupported catalog schema version")
     if not isinstance(raw["updated_at"], str):
         raise ValueError("updated_at must be a timestamp")

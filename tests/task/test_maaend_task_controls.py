@@ -294,10 +294,12 @@ async def test_native_tasks_run_independently_in_one_queue(
         await proxy.check_log(lines, datetime.now().astimezone(), if_stream_end=True)
 
     monkeypatch.setattr(proxy, "_wait_maaend_stage", upstream_result)
-    await proxy.main_task()
+    await proxy.execution.run()
+    assert proxy.cur_user_item.status == (
+        "异常" if scenario == "delivery_failure" else "完成"
+    )
     if scenario == "delivery_failure":
         assert [mode for mode, _ in attempts] == ["Delivery", "Delivery"]
-        assert proxy.run_book["Routine"] is False
     else:
         assert [mode for mode, _ in attempts] == (
             ["Delivery", "Routine", "Routine"]
@@ -325,7 +327,49 @@ async def test_native_tasks_run_independently_in_one_queue(
             )
         if scenario == "essence_retry":
             assert [task["taskName"] for task in attempts[2][1]] == ["AutoEssence"]
-        assert proxy.cur_user_log.status == "Success!"
+
+
+@pytest.mark.asyncio
+async def test_no_runnable_task_fails_before_launching_game(proxy_fixture):
+    """一个业务任务都没开：拉起游戏之前就报「没有可执行任务」，不白拉一次游戏，也不重试。"""
+    proxy, attempts = proxy_fixture
+    user = proxy.cur_user_config
+    user.Info.IfQuickConfig = False
+    await user.commit()
+    path = proxy.maaend_config_file
+    original = json.loads(path.read_text())
+    for task in original["instances"][0]["tasks"]:
+        task["enabled"] = False
+    path.write_text(json.dumps(original))
+
+    await proxy.execution.run()
+
+    proxy._start_game.assert_not_awaited()
+    assert attempts == []
+    assert proxy.cur_user_item.status == "异常"
+    assert proxy.cur_user_log.status == "MaaEnd 没有可执行任务，请检查任务配置"
+
+
+@pytest.mark.asyncio
+async def test_no_runnable_task_fails_before_opening_emulator(proxy_fixture):
+    """模拟器路径一个业务任务都没开：开模拟器之前就报「没有可执行任务」，也不重试。"""
+    proxy, attempts = proxy_fixture
+    proxy.emulator_manager = SimpleNamespace(open=AsyncMock(return_value=None))
+    user = proxy.cur_user_config
+    user.Info.IfQuickConfig = False
+    await user.commit()
+    path = proxy.maaend_config_file
+    original = json.loads(path.read_text())
+    for task in original["instances"][0]["tasks"]:
+        task["enabled"] = False
+    path.write_text(json.dumps(original))
+
+    await proxy.execution.run()
+
+    proxy.emulator_manager.open.assert_not_awaited()
+    assert attempts == []
+    assert proxy.cur_user_item.status == "异常"
+    assert proxy.cur_user_log.status == "MaaEnd 没有可执行任务，请检查任务配置"
 
 
 @pytest.mark.asyncio
@@ -410,7 +454,7 @@ async def test_same_task_failure_then_retry_completion_is_not_a_parse_failure(
     await proxy.main_task()
 
     assert proxy.cur_user_log.status != "MaaEnd 任务执行情况解析失败"
-    assert all(proxy.run_book.values())
+    assert proxy.cur_user_log.status == "Success!"
 
 
 @pytest.mark.asyncio

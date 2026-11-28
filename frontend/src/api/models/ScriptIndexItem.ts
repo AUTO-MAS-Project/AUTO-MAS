@@ -15,6 +15,15 @@ export type ScriptIndexItem = {
      * 对应的游戏活动标识，无游戏归属时为空
      */
     activityGame?: (string | null);
+    desktopSessionReason?: ('admin_required' | 'unsupported_config' | 'plugin_unavailable' | null);
+    /**
+     * 所属插件当前是否可用；插件托管的插件不在已启用状态时为 false
+     */
+    pluginAvailable?: boolean;
+    /**
+     * 查询单个托管时返回当前配置是否支持桌面分身
+     */
+    desktopSessionSupported?: (boolean | null);
 };
 export namespace ScriptIndexItem {
     /**
@@ -24,16 +33,16 @@ export namespace ScriptIndexItem {
         GENERAL_CONFIG = 'GeneralConfig',
         OKWW_CONFIG = 'OkwwConfig',
         OK_NTE_CONFIG = 'OkNteConfig',
-        SRC_CONFIG = 'SrcConfig',
         MAA_END_CONFIG = 'MaaEndConfig',
-        M9ACONFIG = 'M9AConfig',
-        MAA_FWCONFIG = 'MaaFWConfig',
         HSRCONFIG = 'HSRConfig',
-        BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
         BAAHCONFIG = 'BAAHConfig',
-        MSSCONFIG = 'MSSConfig',
+        BETTER_GICONFIG = 'BetterGIConfig',
+        M9ACONFIG = 'M9AConfig',
         MAA_CONFIG = 'MaaConfig',
+        MAA_FWCONFIG = 'MaaFWConfig',
+        MSSCONFIG = 'MSSConfig',
+        SRC_CONFIG = 'SrcConfig',
         WHIMBOX_CONFIG = 'WhimboxConfig',
     }
 }

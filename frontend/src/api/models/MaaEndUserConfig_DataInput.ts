@@ -4,20 +4,20 @@
 /* eslint-disable */
 export type MaaEndUserConfig_DataInput = {
     /**
+     * 上次代理状态
+     */
+    LastProxyStatus?: ('未知' | '成功' | '失败' | '维护中' | '运行中' | null);
+    /**
      * 上次代理日期
      */
     LastProxyDate?: (string | null);
     /**
-     * 上次代理状态
+     * 代理次数
      */
-    LastProxyStatus?: ('未知' | '成功' | '失败' | null);
+    ProxyTimes?: (number | null);
     /**
      * MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期
      */
     PeriodTaskRecords?: (string | null);
-    /**
-     * 代理次数
-     */
-    ProxyTimes?: (number | null);
 };
 

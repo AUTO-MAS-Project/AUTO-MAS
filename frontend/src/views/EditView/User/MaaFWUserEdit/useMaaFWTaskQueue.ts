@@ -81,6 +81,8 @@ export function useMaaFWTaskQueue({
 
   const selectedTaskId = ref('')
   const showPresetModal = ref(false)
+  let deletingTaskCount = 0
+  const deletingTask = ref(false)
 
   // 副本序号按队列里显示出来的「基础名」文字分组编（maafwQueueEntryBaseName）：改过显示名的用
   // 显示名，否则用 interface 的 label（没有 label 用 name），虚影没改过名时用原任务名。显示一样的
@@ -351,15 +353,22 @@ export function useMaaFWTaskQueue({
   }
 
   const deleteTask = async (taskId: string) => {
-    const nextOrder = taskSnapshot.value.taskOrder.filter(item => item !== taskId)
-    taskSnapshot.value.taskOrder = nextOrder
-    delete taskSnapshot.value.taskChecked[taskId]
-    delete taskSnapshot.value.taskOptions[taskId]
-    // 队列行上直接删虚影时，右侧正在看的任务不跟着跳
-    if (selectedQueuedTask.value?.id === taskId || !nextOrder.includes(selectedTaskId.value)) {
-      selectedTaskId.value = nextOrder[0] || ''
+    deletingTaskCount += 1
+    deletingTask.value = true
+    try {
+      const nextOrder = taskSnapshot.value.taskOrder.filter(item => item !== taskId)
+      taskSnapshot.value.taskOrder = nextOrder
+      delete taskSnapshot.value.taskChecked[taskId]
+      delete taskSnapshot.value.taskOptions[taskId]
+      // 队列行上直接删虚影时，右侧正在看的任务不跟着跳
+      if (selectedQueuedTask.value?.id === taskId || !nextOrder.includes(selectedTaskId.value)) {
+        selectedTaskId.value = nextOrder[0] || ''
+      }
+      await persistQueuedSnapshot()
+    } finally {
+      deletingTaskCount -= 1
+      deletingTask.value = deletingTaskCount > 0
     }
-    await persistQueuedSnapshot()
   }
 
   /**
@@ -499,6 +508,7 @@ export function useMaaFWTaskQueue({
     replaceQueueWith,
     deleteSelectedTask,
     deleteTask,
+    deletingTask,
     duplicateTask,
     renameTask,
     updateTaskWeekdays,

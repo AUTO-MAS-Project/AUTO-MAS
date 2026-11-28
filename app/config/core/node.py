@@ -53,6 +53,8 @@ class ExportContext:
     audience: Literal["api", "persist", "export"] = "api"
     """api：明文、含响应式、尊重 UI；persist：密文完整文档；export：明文完整文档。"""
 
+    use_workspace: bool = False
+
     @classmethod
     def from_dump(cls, context: object | None) -> ExportContext:
         """从 ``model_dump(context=…)`` 归一化；无 context 时默认 ``audience=api``。"""
@@ -302,6 +304,8 @@ class ConfigNode(BaseModel):
         ExecutionOwner, dict[UUID | None, list[StagedOp]]
     ] = PrivateAttr(default_factory=weakref.WeakKeyDictionary)
     _commit_lock: asyncio.Lock | None = PrivateAttr(default=None)
+    # 激活出过错的节点只加载了一部分；整根写回会把没加载上的内容从盘上抹掉。
+    _persist_blocked: str | None = PrivateAttr(default=None)
     # ──────────────── 子类信号隔离 ────────────────
 
     @classmethod
@@ -499,7 +503,7 @@ class ConfigNode(BaseModel):
             ctx = ctx.parent
         return self
 
-    def _build_workspace(self) -> None:
+    def _build_workspace(self, *, persist: bool = True) -> None:
         ctx = config_manager.current
         if ctx is None:
             return
@@ -510,6 +514,9 @@ class ConfigNode(BaseModel):
         workspaces: dict[UUID, ConfigNode] = cast(
             "dict[str, Any]", self.__pydantic_private__
         )["_workspace"]
+        if persist:
+            root = self.root
+            ctx.persist_roots[root.uid] = (root, False)
         if ctx.scope_id not in workspaces:
             workspaces[ctx.scope_id] = self._make_workspace_shell(self.effective)
             config_manager._register_workspace(self)
@@ -748,6 +755,8 @@ class ConfigNode(BaseModel):
                         activate_error = exc
                     self.effective._activation_state = NodeState.ACTIVE
                     self.effective._pending_payload = None
+                    if self._pending_payload is None and self.persist_path is not None:
+                        ctx.persist_roots[self.uid] = (self, True)
             finally:
                 if owns_activation and activation is not None:
                     activation.active = False
@@ -755,19 +764,36 @@ class ConfigNode(BaseModel):
                     for node, old in previous:
                         node._activation = old
             if activate_error is not None:
+                # 根已置为 ACTIVE，只能另加标记：之后的保存、flush、导出都跳过它。
+                # 摘要只留异常类型：校验错误的原文可能带配置值。
+                self._persist_blocked = (
+                    "、".join(
+                        dict.fromkeys(type(e).__name__ for e in activate_error.errors)
+                    )
+                    or type(activate_error).__name__
+                )
                 raise activate_error
+
+    @property
+    def persist_blocked(self) -> str | None:
+        """激活出错时的错误摘要；非空表示内存里缺了盘上的内容，不能整根写回。"""
+        return self._persist_blocked
 
     async def _activate_from_payload(
         self, payload: dict[str, Any], *, regenerate_uuids: bool = False
     ) -> None:
         raise NotImplementedError
 
-    async def _delete(self) -> None:
+    async def _delete(self, *, persist: bool = True) -> None:
         """内部软删；外部请用 Collection.remove / 框架生命周期，勿直接调用。"""
         if config_manager.is_registered_collection(self):
             raise RuntimeError("已登记 name 的 Collection 不可 delete")
         assert config_manager.in_transaction, "_delete 须在事务内"
-        self._build_workspace()
+        if not persist and any(
+            any(scopes.values()) for scopes in self._staged_by_owner.values()
+        ):
+            raise ValueError(f"配置有尚未提交的修改，无法旁挂: {self.uid}")
+        self._build_workspace(persist=persist)
         if self.deleted:
             raise DeletedNodeError(self.uid)
         # 先递归子节点再给自己打标记：Collection.iter_children 经 values()/__getitem__
@@ -775,8 +801,9 @@ class ConfigNode(BaseModel):
         # 非空嵌套集合的 Entry（ScriptEntry.users / GameEntry.devices）连自己的成员
         # 都枚举不出来，remove 与 remove_type 的级联会整笔 commit 失败。
         for child in self.iter_children():
-            await child._delete()
+            await child._delete(persist=persist)
         self.effective._deleted = True
+        config_manager.mark_ui_changed(self)
 
     async def lock_s(self, *, cascade: bool = True) -> LockTicket:
         """共享锁：可叠加；禁一切热写；与 X 互斥。
@@ -794,8 +821,11 @@ class ConfigNode(BaseModel):
         if any(node._lock_x is not None for node in nodes):
             raise ValueError("已有 X 锁，无法加 S")
         token = uuid4()
-        for node in nodes:
-            node._lock_s.add(token)
+        with config_manager.runtime_transaction(
+            *(node for node in nodes if not node._lock_s)
+        ):
+            for node in nodes:
+                node._lock_s.add(token)
         return LockTicket(mode="s", token=token, issuer=self.uid, cascade=cascade)
 
     async def lock_x(self, *, cascade: bool = True) -> LockTicket:
@@ -814,9 +844,10 @@ class ConfigNode(BaseModel):
         if any(node._lock_x is not None or node._lock_s for node in nodes):
             raise ValueError("已有锁，无法加 X")
         token = uuid4()
-        for node in nodes:
-            node._lock_x = token
-        add_x_token(token)
+        with config_manager.runtime_transaction(*nodes):
+            for node in nodes:
+                node._lock_x = token
+            add_x_token(token)
         return LockTicket(mode="x", token=token, issuer=self.uid, cascade=cascade)
 
     async def try_lock_x(self, *, cascade: bool = True) -> LockTicket | None:
@@ -833,11 +864,14 @@ class ConfigNode(BaseModel):
         self._require_lifecycle_access()
         if ticket.issuer != self.uid:
             raise ValueError("须在签发节点解锁")
+        changed: list[ConfigNode] = []
         if ticket.mode == "s":
             if ticket.token not in self._lock_s:
                 raise ValueError("无效或未持有的 S 锁凭证")
 
             def unregister(node: ConfigNode) -> None:
+                if node._lock_s == {ticket.token}:
+                    changed.append(node)
                 node._lock_s.discard(ticket.token)
                 if not ticket.cascade:
                     return
@@ -845,6 +879,7 @@ class ConfigNode(BaseModel):
                     unregister(child)
 
             unregister(self)
+            config_manager.runtime_committed(*changed)
             return
         if ticket.mode == "x":
             if self._lock_x != ticket.token:
@@ -854,6 +889,7 @@ class ConfigNode(BaseModel):
                 # 树结构可能已变化，只释放本票据登记的锁。
                 if node._lock_x == ticket.token:
                     node._lock_x = None
+                    changed.append(node)
                 if not ticket.cascade:
                     return
                 for child in node.iter_children():
@@ -862,6 +898,7 @@ class ConfigNode(BaseModel):
             unregister(self)
             # 差集移除：跨上下文 unlock 合法，勿用 ContextVar.reset
             discard_x_token(ticket.token)
+            config_manager.runtime_committed(*changed)
             return
         raise ValueError(f"未知锁模式: {ticket.mode!r}")
 
@@ -893,7 +930,8 @@ class ConfigNode(BaseModel):
         落盘请用 ``to_dict`` 或显式 ``ExportContext(audience="persist")``。
         """
         ctx = ExportContext.from_dump(context)
-        return super().model_dump(
+        source = self.effective if ctx.use_workspace else self
+        return super(ConfigNode, source).model_dump(
             mode=mode,
             include=include,
             exclude=exclude,

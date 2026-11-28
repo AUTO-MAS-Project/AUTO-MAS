@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type ScriptCreateIn = {
     /**
-     * 托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
+     * 托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
      */
     type: ScriptCreateIn.type;
     /**
@@ -14,22 +14,22 @@ export type ScriptCreateIn = {
 };
 export namespace ScriptCreateIn {
     /**
-     * 托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
+     * 托管类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本
      */
     export enum type {
-        SRC = 'SRC',
         GENERAL = 'General',
         OKWW = 'Okww',
         OK_NTE = 'OkNte',
         MAA_END = 'MaaEnd',
-        M9A = 'M9A',
-        MAA_FW = 'MaaFW',
         HSR = 'HSR',
-        BETTER_GI = 'BetterGI',
         ZZZ_OD = 'ZzzOd',
         BAAH = 'BAAH',
-        MSS = 'MSS',
+        BETTER_GI = 'BetterGI',
+        M9A = 'M9A',
         MAA = 'MAA',
+        MAA_FW = 'MaaFW',
+        MSS = 'MSS',
+        SRC = 'SRC',
         WHIMBOX = 'Whimbox',
     }
 }

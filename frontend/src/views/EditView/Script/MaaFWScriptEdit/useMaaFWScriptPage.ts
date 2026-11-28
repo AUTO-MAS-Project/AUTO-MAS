@@ -5,11 +5,7 @@ import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useMaaFWControlConfig } from '@/composables/useMaaFWScriptConfig'
-import {
-  prepareMaaFWFlavorPage,
-  useMaaFWFlavor,
-  type MaaFWScriptSlotContext,
-} from '@/composables/useMaaFWFlavor'
+import { maafwLabel, resolveMaaFWAdapter, type MaaFWFamilyType } from '@/plugins/maafwFamily'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 import { useMaaFWScriptDraft } from './useMaaFWScriptDraft'
 import { useMaaFWPeriodTasks } from './useMaaFWPeriodTasks'
@@ -20,10 +16,12 @@ import { useMaaFWProjectIdentity } from './useMaaFWProjectIdentity'
 import { useMaaFWEmbeddedImport } from './useMaaFWEmbeddedImport'
 import { useMaaFWUpdatePanel } from './useMaaFWUpdatePanel'
 import { useMaaFWGamePackage } from './useMaaFWGamePackage'
-import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
+import { useMaaFWPageHostContext } from '../../MaaFW/pageHostContext'
 
 export interface MaaFWScriptPageOptions {
   scriptId: string
+  /** 页面自己的类型（MaaFW / M9A / MSS）：卡片右上角的类型标签按它取 */
+  type: MaaFWFamilyType
 }
 
 /**
@@ -34,7 +32,7 @@ export interface MaaFWScriptPageOptions {
  * 读 interface（期间的控制器 / 资源同步与项目名同步因 `isInitializing` 仍为 true 而只改草稿）
  * → 再读一次内嵌状态 → finally 放开 `isInitializing` → 最后才项目名同步、CDK 预填、包名推断。
  */
-export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
+export function useMaaFWScriptPage({ scriptId, type }: MaaFWScriptPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
   const router = useRouter()
@@ -53,30 +51,13 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     applyScriptConfig: applyDraftConfig,
   } = useMaaFWScriptDraft(scriptId)
 
-  // flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
-  // 而导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，其它 → MaaFW，uid 不变）。
-  // 在页面宿主里时类型是宿主的那一份：写回去宿主才知道要不要换页面。
+  // 脚本类型，不看路由 meta：在页面宿主里时以宿主读到的为初值，读到脚本详情后以它为准。
+  // 托管类型在新建时就定了，导入什么项目都不换类型。
   const host = useMaaFWPageHostContext()
-  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
-  const flavor = useMaaFWFlavor(scriptType)
-  const refreshScriptType = async () => {
-    try {
-      const detail = await getScript(scriptId)
-      if (detail?.type) {
-        const typeChanged = detail.type !== scriptType.value
-        scriptType.value = detail.type
-        formData.type = detail.type
-        // 换成了另一个特调：把它在脚本页的替换分节与插入点备好（不等，不挡后续流程）
-        if (typeChanged) void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
-      }
-    } catch (error) {
-      logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
+  const scriptType = ref<ScriptType>(host?.scriptType.value ?? 'MaaFW')
 
   const control = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
-  const { syncControllerResourceSelection, loadEmulatorOptions, loadEmulatorDeviceOptions } =
-    control
+  const { syncControllerResourceSelection } = control
 
   const periodTasks = useMaaFWPeriodTasks(maafwConfig, previewData, handleChange)
   const { prunePeriodTaskSelections, syncPeriodTasksFromConfig } = periodTasks
@@ -113,7 +94,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     handleChange,
     envReady: env.envReady,
     enqueue,
-    flavor,
+    scriptType,
     host,
     isPageUnmounted: () => pageUnmounted,
   })
@@ -124,21 +105,10 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     previewData,
     isInitializing,
     handleChange,
-    flavor,
+    typeTagLabel: maafwLabel(type),
     isWizard: wizard.isWizard,
   })
   const { syncProjectName } = identity
-
-  // 特调插入点的上下文：独有区块可以直接改 maafwConfig 草稿，落盘走 change 事件回到 handleChange
-  const flavorSlotContext = computed<MaaFWScriptSlotContext>(() => ({
-    scriptId,
-    maafwConfig,
-    previewData: previewData.value,
-    effectiveControllerType: control.effectiveControllerType.value,
-    interfaceDisabled: control.interfaceDependentDisabled.value,
-    loading: pageLoading.value,
-    isWizard: wizard.isWizard.value,
-  }))
 
   // 基础信息里那一行计数：只列用户看得懂的几项（引用文件数、Agent 数偏开发者，不常驻显示）
   const interfaceStats = computed(() => [
@@ -210,7 +180,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     maafwConfig,
     formData,
     channel,
-    refreshScriptType,
     runPreviewOnNewRoot,
     isPageUnmounted: () => pageUnmounted,
   })
@@ -259,7 +228,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       const initialScript = host?.takeInitialScript()
       const [scriptDetail] = await Promise.all([
         initialScript !== undefined ? initialScript : getScript(scriptId),
-        loadEmulatorOptions(),
+        control.prepareBinding(),
       ])
       if (!scriptDetail) {
         if (!scriptApiError.value && !host?.scriptLoadError.value)
@@ -270,19 +239,15 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
       scriptType.value = scriptDetail.type
       formData.type = scriptDetail.type
-      // 特调在脚本页的替换分节与插入点：与后面的加载并行备好，不等它，不改动请求顺序
-      void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
       // 接回后台还在跑或刚跑完的手动更新；不等它，可能要几分钟
       void resumeManualUpdate()
       if (!maafwConfig.Info.Name) {
-        maafwConfig.Info.Name = scriptDetail.name ?? flavor.value.defaultScriptName
+        maafwConfig.Info.Name =
+          scriptDetail.name ?? resolveMaaFWAdapter(scriptType.value).maafw.defaultScriptNames[0]
         formData.name = maafwConfig.Info.Name
       }
 
-      if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
-        await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
-      }
       await refreshEmbeddedStatus()
       if (maafwConfig.Info.Path) {
         await runPreview()
@@ -319,8 +284,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     handleChange,
     applyScriptConfig,
     scriptType,
-    flavor,
-    refreshScriptType,
     ...control,
     handleResourceChangeWithPackage,
     ...periodTasks,
@@ -329,7 +292,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     ...update,
     ...wizard,
     ...identity,
-    flavorSlotContext,
     interfaceStats,
     handlePreviewInterface,
     handleCancel,

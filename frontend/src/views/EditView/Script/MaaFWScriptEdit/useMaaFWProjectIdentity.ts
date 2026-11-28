@@ -1,6 +1,6 @@
 import { computed, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { maafwDefaultScriptNames, type MaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { maafwDefaultScriptNames } from '@/plugins/maafwFamily'
 import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import type { MaaFWScriptChangeHandler, MaaFWScriptFormData } from './useMaaFWScriptDraft'
@@ -11,7 +11,8 @@ interface MaaFWProjectIdentityOptions {
   previewData: Ref<MaaFWInterfacePreviewData | null>
   isInitializing: Ref<boolean>
   handleChange: MaaFWScriptChangeHandler
-  flavor: ComputedRef<MaaFWFlavor>
+  /** 没有项目名时卡片右上角显示的类型标签（MFW / M9A / MSS） */
+  typeTagLabel: string
   isWizard: ComputedRef<boolean>
 }
 
@@ -22,7 +23,7 @@ export function useMaaFWProjectIdentity({
   previewData,
   isInitializing,
   handleChange,
-  flavor,
+  typeTagLabel: fallbackTypeTagLabel,
   isWizard,
 }: MaaFWProjectIdentityOptions) {
   const { t } = useI18n()
@@ -46,9 +47,9 @@ export function useMaaFWProjectIdentity({
   )
 
   // 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
-  const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
+  const typeTagLabel = computed(() => projectName.value || fallbackTypeTagLabel)
 
-  // 新建托管时后端给的默认名（各配置类 Info.Name 的默认值，登记在特调注册表；含改名前的旧默认名）
+  // 新建托管时后端给的默认名（各配置类 Info.Name 的默认值，登记在适配条目上；含改名前的旧默认名）
   const DEFAULT_SCRIPT_NAMES = maafwDefaultScriptNames()
 
   // 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
@@ -73,13 +74,12 @@ export function useMaaFWProjectIdentity({
     }
   }
 
-  // 引导一律「<项目名> 项目引导」；编辑页默认「<项目名> 项目配置」（三种类型都用这句），特调声明了
-  // titleKey 时用它自己那句——那句只用于编辑页，放在引导里与所处步骤不符
+  // 引导一律「<项目名> 项目引导」；编辑页「<项目名> 项目配置」（三种类型都用这句）
   const pageTitle = computed(() => {
     const name = projectDisplayName.value
-    if (isWizard.value) return t('core.edit.maafwPageTitleSetup', { name })
-    const titleKey = flavor.value.scriptPage.text.titleKey
-    return titleKey ? t(titleKey) : t('core.edit.maafwPageTitleConfig', { name })
+    return isWizard.value
+      ? t('core.edit.maafwPageTitleSetup', { name })
+      : t('core.edit.maafwPageTitleConfig', { name })
   })
 
   return { previewProjectTitle, typeTagLabel, pageTitle, syncProjectName }

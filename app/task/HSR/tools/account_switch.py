@@ -25,6 +25,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from app.task.client import client_executable_path
 from app.utils import ProcessInfo, get_logger, process
 from app.utils.common.process.manager import has_process_window
 from app.utils.common.process.session import desktop_process_target
@@ -332,7 +333,7 @@ def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
 def resolve_game_executable_path(script_config: Any) -> Path:
     """从配置解析实际要启动的 StarRail.exe 路径。"""
 
-    raw_path = str(script_config.Game.Path or "").strip()
+    raw_path = str(client_executable_path(script_config) or "").strip()
     path = Path(raw_path) if raw_path else Path(HSR_GAME_PROCESS_NAME)
     if path.suffix.lower() == ".exe":
         return path
@@ -533,10 +534,9 @@ async def close_game_if_needed(
     if not runtime.game_started_by_mas:
         return
 
-    game_exe_path = runtime.game_exe_path or resolve_game_executable_path(script_config)
     append_log("任务结束，正在关闭由 MAS 启动的游戏")
     try:
-        await process.kill_process(game_exe_path)
+        await runtime.game_process_manager.kill()
         await runtime.game_process_manager.clear()
         append_log("游戏进程已关闭")
     except Exception as e:  # noqa: BLE001
@@ -710,7 +710,7 @@ class HSRAccountSwitcher:
         self.runtime.game_transitioning = True
 
         try:
-            await process.kill_process(game_exe_path)
+            await self.runtime.game_process_manager.kill()
             await self.runtime.game_process_manager.clear()
             self._append_log(
                 f"已请求关闭游戏，等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重新启动"
@@ -827,7 +827,7 @@ class HSRAccountSwitcher:
                     f"正在关闭游戏并等待 {HSR_GAME_READY_DELAY_SECONDS}s 后重启"
                 )
                 try:
-                    await process.kill_process(game_exe_path)
+                    await self.runtime.game_process_manager.kill()
                     await self.runtime.game_process_manager.clear()
                     await asyncio.sleep(HSR_GAME_READY_DELAY_SECONDS)
                 except Exception as e:  # noqa: BLE001

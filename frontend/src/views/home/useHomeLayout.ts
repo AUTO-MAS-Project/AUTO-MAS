@@ -66,7 +66,6 @@ export const useHomeLayout = () => {
   // 首页便笺：总开关默认关（在游戏社区设置里打开），每游戏单独开关默认全开
   const activityNotesVisible = ref(false)
   const hiddenActivityNotes = ref<HomeModuleKey[]>([])
-  let saveQueue = Promise.resolve()
 
   const homeModuleOrder = computed(() =>
     composeModuleOrder(homeTopLevelOrder.value, homeActivityOrder.value)
@@ -113,14 +112,14 @@ export const useHomeLayout = () => {
       activityNotesVisible: layout.activityNotesVisible === true,
       hiddenActivityNotes: [...(layout.hiddenActivityNotes ?? [])],
     }
-    const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
+    const saveTask = saveConfig({ homeLayout: snapshot })
     void saveTask.then(
       () => telemetry?.finish({ action: action!, layout_preset: 'custom', outcome: 'success' }),
-      () => telemetry?.finish({ action: action!, layout_preset: 'custom', outcome: 'unknown' })
+      error => {
+        telemetry?.finish({ action: action!, layout_preset: 'custom', outcome: 'unknown' })
+        logWarning('保存首页布局配置失败', error)
+      }
     )
-    saveQueue = saveTask.catch(error => {
-      logWarning('保存首页布局配置失败', error)
-    })
     return saveTask.catch(() => undefined)
   }
 

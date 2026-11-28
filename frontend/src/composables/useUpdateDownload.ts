@@ -1,6 +1,7 @@
 import { translate as t } from '@/i18n'
 import { computed, ref } from 'vue'
-import { Modal, message } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { connectionState, onConnected } from '@/services/websocket/connection'
 import type { WSUpdateProgressData } from '@/services/websocket/types'
 import { createLowSpeedDetector } from '@/composables/updateDownloadSpeed'
@@ -202,17 +203,17 @@ const receiveProgress = (data: UpdateDownloadProgress) => {
   downloadAnalytics?.started(source.value)
 
   if (lowSpeedDetector.update(data.source, data.speed)) {
-    Modal.confirm({
+    void openConfirm({
       title: t('bootstrap.comp.downloadSlow', {
         source: sourceLabel.value || t('bootstrap.comp.currentSource'),
       }),
-      content: t('bootstrap.misc.downloadHasBeenUnder'),
+      description: t('bootstrap.misc.downloadHasBeenUnder'),
       okText: t('bootstrap.misc.switchCnbSource'),
       cancelText: t('bootstrap.misc.continueDownload'),
       zIndex: 10001,
-      centered: true,
       onOk: () => switchDownloadSource('low_speed'),
-      onCancel: () => lowSpeedDetector.suppress(),
+    }).then(confirmed => {
+      if (!confirmed) lowSpeedDetector.suppress()
     })
   }
 }

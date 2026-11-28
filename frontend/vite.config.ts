@@ -132,6 +132,9 @@ export default defineConfig(({ command }) => {
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用
     },
     test: {
+      alias: {
+        'vitest-environment-vue-client': path.resolve(__dirname, 'tests/vueClientEnvironment.ts'),
+      },
       // Vitest v4 compatibility: preserve mock call history.
       // Remove after tests no longer rely on calls from setup or earlier tests.
       // https://viteplus.dev/guide/vitest-v5#remove-unneeded-compatibility-settings
@@ -140,7 +143,7 @@ export default defineConfig(({ command }) => {
       // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
       // 编译后的 require('vite-plus/test') 无法运行，不排除会让 yarn test 随构建必然失败
       // debug 是本地日志与临时验证目录，不属于单元测试源。
-      include: ['src/**/*.test.ts', 'electron/**/*.test.ts'],
+      include: ['src/**/*.test.ts', 'electron/**/*.test.ts', 'scripts/**/*.test.ts'],
       exclude: [...configDefaults.exclude, '**/dist-electron/**', '**/debug/**'],
     },
   }

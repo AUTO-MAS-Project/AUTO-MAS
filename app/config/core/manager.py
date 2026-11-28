@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import json
 import os
 import threading
 import weakref
-from collections import deque
-from collections.abc import Iterator
+from collections import OrderedDict, deque
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from time import monotonic
-from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Generator, Literal, cast
 from uuid import UUID, uuid4
 
 from app.utils import get_logger
 from app.utils import io as _utils_io
 
-from ..errors import ConfigAggregateError, ConfigPersistenceError
+from ..errors import ConfigAggregateError, ConfigPersistenceError, ReportableError
 
 logger = get_logger("配置持久化")
+trigger_logger = get_logger("配置触发器")
 
 # 当前 asyncio 上下文持有的 X 锁 token。判定用差集而非 Token.reset：
 # 收尾兜底可能在另一个上下文里 unlock，reset 会抛 LookupError。
@@ -42,7 +46,17 @@ def discard_x_token(token: UUID) -> None:
 
 
 if TYPE_CHECKING:
+    from app.core.background_tasks import (
+        BackgroundTaskGroup,
+        BackgroundTaskHandle,
+        BackgroundTaskRegistry,
+        BackgroundTaskState,
+        TaskOutcome,
+    )
+
+    from ..fields.hints import OptionValue
     from .collection import ConfigCollection
+    from .entry import ConfigEntry
     from .node import ConfigNode, NodeState
 
 type WorkspaceUnit = ConfigNode | type[ConfigNode]
@@ -60,18 +74,20 @@ def execution_owner() -> ExecutionOwner:
     return task if task is not None else threading.current_thread()
 
 
-@dataclass
 class TransactionContext:
     """一个事务提交与回退边界；普通嵌套调用直接复用当前上下文。"""
 
-    parent: TransactionContext | None = None
-    registered: list[WorkspaceUnit] = field(default_factory=list)
-    owner: ExecutionOwner = field(default_factory=execution_owner)
-    scope_id: UUID = field(default_factory=uuid4)
-    active: bool = True
-    staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = field(
-        default_factory=dict
-    )
+    def __init__(self, *, parent: TransactionContext | None = None) -> None:
+        self.parent = parent
+        self.registered: list[WorkspaceUnit] = []
+        self.owner = execution_owner()
+        self.scope_id = uuid4()
+        self.active = True
+        self.staged_nodes: dict[int, weakref.ReferenceType[ConfigNode]] = {}
+        self.persist_roots: dict[UUID, tuple[ConfigNode, bool]] = {}
+        self.ui_nodes: set[UUID] = set()
+        self.triggers: list[tuple[ConfigEntry, str, str, bool]] = []
+        self.committed = False
 
     @property
     def is_current(self) -> bool:
@@ -104,6 +120,8 @@ class RootRecord:
     node: ConfigNode
     path: Path
     revision: int = 0
+    persisted_revision: int = -1
+    loaded_revision: int = -1
 
 
 @dataclass(frozen=True)
@@ -127,12 +145,81 @@ class _SaveFailure:
     next_retry_at: float | None
 
 
+class TriggerUnavailable(RuntimeError):
+    """触发器请求无法受理。"""
+
+
+@dataclass(frozen=True)
+class TriggerResult:
+    state: BackgroundTaskState
+    error_code: str | None = None
+    # 仅 ReportableError 填写：写给用户的原因及其附加信息（已保证可 JSON 序列化）。
+    message: str | None = None
+    detail: dict[str, Any] | None = None
+
+
+def _reportable(error: BaseException | None) -> tuple[str | None, dict | None]:
+    """取出可展示异常的原因；其他异常不外露文本，只留类名给 ``error_code``。"""
+    if not isinstance(error, ReportableError):
+        return None, None
+    try:
+        detail = json.loads(json.dumps(error.payload, default=str))
+    except (TypeError, ValueError):
+        detail = None
+    # 包着配置校验错误正文的原因（如插件生命周期包装的异常）同样不带输入值。
+    message = error.message
+    if str(error) == message:
+        message = _trigger_error_text(error)
+    return message, detail if isinstance(detail, dict) else None
+
+
+def _trigger_error_text(error: BaseException | None) -> str:
+    """触发器失败告警里的异常文本：配置校验错误不带输入值，其余异常照原文。
+
+    pydantic 校验错误的正文带着配置原值（密码、令牌、Webhook 地址），换成只有错误类型、
+    字段路径和错误类别的描述（同 ``collection._describe_error``）；聚合错误逐条处理；
+    把校验错误正文原样拼进自己消息的包装异常（如 ``PluginOperationError(str(exc))``），
+    把那段正文换成描述。
+    """
+    from pydantic import ValidationError
+
+    from .collection import _describe_error
+
+    if isinstance(error, ValidationError):
+        return _describe_error(error)
+    if isinstance(error, ConfigAggregateError) and error.errors:
+        return "; ".join(
+            _describe_error(sub)
+            if isinstance(sub, ValidationError)
+            else f"{type(sub).__name__}: {_trigger_error_text(sub)}"
+            for sub in error.errors
+        )
+    text = str(error)
+    cause = error.__cause__ if error is not None else None
+    if isinstance(cause, (ValidationError, ConfigAggregateError)):
+        raw = str(cause)
+        if raw and raw in text:
+            return text.replace(raw, _trigger_error_text(cause))
+    return text
+
+
+@dataclass
+class _RunningTrigger:
+    handle: BackgroundTaskHandle[None]
+    entry: ConfigEntry
+    group: str
+    field: str
+    owner: UUID | None
+    finish_on_cancel: bool
+
+
 class ConfigManager:
     """全局配置管理器单例。"""
 
     def __init__(self) -> None:
         self._collections: dict[str, ConfigCollection[Any]] = {}
         self._roots: dict[UUID, RootRecord] = {}
+        self._ui_listener: Callable[[frozenset[UUID]], None] | None = None
         self._txn: ContextVar[TransactionContext | None] = ContextVar(
             "config_framework_v2_txn", default=None
         )
@@ -154,7 +241,336 @@ class ConfigManager:
         self._save_loop: asyncio.AbstractEventLoop | None = None
         self._save_event: asyncio.Event | None = None
         self._save_failures: dict[UUID, _SaveFailure] = {}
+        self._persist_blocked_logged: set[UUID] = set()
         self._save_retry_delays = (1.0, 2.0, 4.0, 8.0, 16.0)
+        self._trigger_group: BackgroundTaskGroup | None = None
+        self._trigger_background: BackgroundTaskRegistry | None = None
+        self._trigger_owner: Callable[[ConfigEntry], UUID | None] = lambda _: None
+        self._triggers: dict[UUID, _RunningTrigger] = {}
+        self._trigger_results: OrderedDict[UUID, TriggerResult] = OrderedDict()
+        self._paused_trigger_owners: dict[UUID, int] = {}
+        self._trigger_current: ContextVar[UUID | None] = ContextVar(
+            "config_trigger", default=None
+        )
+        self._triggers_closed = False
+        self._triggers_restarting = False
+
+    def bind_ui_listener(
+        self, listener: Callable[[frozenset[UUID]], None] | None
+    ) -> None:
+        """登记宿主对已提交配置快照变化的监听。"""
+        self._ui_listener = listener
+
+    @staticmethod
+    def _ui_sources(nodes: Iterable[ConfigNode]) -> frozenset[UUID]:
+        sources: set[UUID] = set()
+        for node in nodes:
+            parent: ConfigNode | None = node
+            while parent is not None and parent.uid not in sources:
+                sources.add(parent.uid)
+                parent = parent.parent
+        return frozenset(sources)
+
+    def _publish_ui_commit(self, sources: frozenset[UUID]) -> None:
+        if sources and (listener := self._ui_listener) is not None:
+            listener(sources)
+
+    @contextmanager
+    def runtime_transaction(self, *nodes: ConfigNode) -> Iterator[None]:
+        """提交一次同步的内存状态切换。操作执行和等待都在此边界之外。"""
+        yield
+        self.runtime_committed(*nodes)
+
+    def runtime_committed(self, *nodes: ConfigNode) -> None:
+        """登记已原子生效的运行态，例如 asyncio.Lock 的获取。"""
+        if self._ui_listener is not None:
+            self._publish_ui_commit(self._ui_sources(nodes))
+
+    def is_persisted(self, node: ConfigNode) -> bool:
+        """当前工作区、已提交内存与根文件是否同步。"""
+        record = self._roots.get(node.uid)
+        if record is None or record.node is not node:
+            return False
+        ctx = self.current
+        while ctx is not None:
+            pending = ctx.persist_roots.get(node.uid)
+            if pending is not None:
+                return pending[1] and record.path.is_file()
+            ctx = ctx.parent
+        return (
+            record.revision in (record.persisted_revision, record.loaded_revision)
+            and record.path.is_file()
+        )
+
+    def mark_ui_changed(self, node: ConfigNode) -> None:
+        """记录工作区变化，随所属根事务提交或丢弃。"""
+        if self._ui_listener is not None and (ctx := self.current) is not None:
+            ctx.ui_nodes.update(self._ui_sources((node,)))
+
+    def initialize_triggers(
+        self,
+        background: BackgroundTaskRegistry,
+        *,
+        max_running: int,
+        resolve_owner: Callable[[ConfigEntry], UUID | None] = lambda _: None,
+        execution_timeout: float = 900,
+    ) -> None:
+        """在宿主启动时登记配置触发器的背景任务组。"""
+        self._trigger_group = background.register_group(
+            "config-triggers",
+            max_running=max_running,
+            max_retained=max_running,
+            execution_timeout=execution_timeout,
+        )
+        self._trigger_background = background
+        self._trigger_owner = resolve_owner
+
+    def write_trigger(
+        self,
+        config_uid: UUID,
+        *,
+        group: str,
+        field: str,
+        value: bool | None,
+        option: OptionValue | None = None,
+    ) -> UUID | None:
+        """定位实时配置，写入指定触发器字段。"""
+        from .entry import ConfigEntry
+
+        pending = list(self.iter_persist_roots())
+        while pending:
+            node = pending.pop()
+            if node.uid == config_uid and isinstance(node, ConfigEntry):
+                return self.submit_trigger(
+                    node, group=group, field=field, value=value, option=option
+                )
+            pending.extend(node.iter_children())
+        raise TriggerUnavailable("trigger_target_not_found")
+
+    def apply_trigger_field(
+        self, entry: ConfigEntry, group: str, field: str, value: bool | None
+    ) -> None:
+        """配置字段写入无需返回任务 UID，事务内推迟到根提交之后受理。"""
+        if value is None:
+            return
+        if (ctx := self.current) is not None:
+            ctx.triggers.append((entry, group, field, value))
+        else:
+            self.submit_trigger(entry, group=group, field=field, value=value)
+
+    def submit_trigger(
+        self,
+        entry: ConfigEntry,
+        *,
+        group: str,
+        field: str,
+        value: bool | None,
+        option: OptionValue | None = None,
+    ) -> UUID | None:
+        """None 跳过，True 请求启动，False 请求取消当前字段的任务。"""
+        from app.core.background_tasks import wait_until_settled
+
+        from ..fields.hints import UiVisibility
+        from ..fields.ref import _TriggerTimeout, validate_trigger_command
+        from .group import ConfigGroup
+
+        value = validate_trigger_command(value)
+        handler_name = type(entry)._cfg_trigger_specs.get((group, field))
+        if handler_name is None:
+            raise TriggerUnavailable("trigger_field_not_found")
+        if option is not None and value is not True:
+            raise TriggerUnavailable("trigger_option_requires_start")
+        if value is None:
+            return None
+        if self.current is not None:
+            raise TriggerUnavailable("trigger_requires_committed_configuration")
+        if entry.deleted or entry._is_workspace or not entry._activation_ready:
+            raise TriggerUnavailable("trigger_target_unavailable")
+
+        target = cast(ConfigGroup, entry.__dict__[group])
+        uid = target._trigger_uids.get(field)
+        if value is False:
+            if uid is not None:
+                if uid == self._trigger_current.get():
+                    raise TriggerUnavailable("trigger_cannot_cancel_itself")
+                handle = self._triggers[uid].handle
+                if not handle.cancelling():
+                    with self.runtime_transaction(entry):
+                        handle.cancel()
+            return uid
+        if uid is not None:
+            if option is not None:
+                raise TriggerUnavailable("trigger_busy")
+            return uid
+
+        background = self._trigger_group
+        if self._triggers_closed or self._triggers_restarting or background is None:
+            raise TriggerUnavailable("trigger_unavailable")
+        if entry.is_locked:
+            raise TriggerUnavailable("trigger_target_locked")
+        owner = self._trigger_owner(entry)
+        if owner in self._paused_trigger_owners:
+            raise TriggerUnavailable("trigger_owner_stopping")
+        if entry._ui_visibility(group, field) in (
+            UiVisibility.HIDE,
+            UiVisibility.DISABLE,
+        ):
+            raise TriggerUnavailable("trigger_not_editable")
+        handler = getattr(entry, handler_name)
+        finish_on_cancel = bool(getattr(handler, "__trigger_finish_on_cancel__", False))
+        if option is not None:
+            hint = next(
+                (
+                    item
+                    for item in entry._get_ui_hints().get(group, [])
+                    if item.get("field") == field
+                ),
+                None,
+            )
+            if not hint or hint.get("component") != "dropdown-button":
+                raise TriggerUnavailable("trigger_invalid_option")
+            if not hint.get("endpoint") and not any(
+                choice["value"] == option
+                and isinstance(choice["value"], bool) == isinstance(option, bool)
+                for choice in hint.get("options") or ()
+            ):
+                raise TriggerUnavailable("trigger_invalid_option")
+            # 兼容原来仅用 true 启动的无参处理器。
+            if option is not True or inspect.signature(handler).parameters:
+                handler = partial(handler, option)
+
+        async def invoke() -> None:
+            result = (
+                handler()
+                if inspect.iscoroutinefunction(handler)
+                else await background.run_sync(handler)
+            )
+            if inspect.isawaitable(result):
+                await result
+
+        async def execute() -> None:
+            if entry.deleted or not entry._activation_ready or entry.is_locked:
+                raise TriggerUnavailable("trigger_target_changed")
+            assert task is not None
+            token = self._trigger_current.set(task.uid)
+            try:
+                if finish_on_cancel:
+                    await wait_until_settled(asyncio.create_task(invoke()))
+                else:
+                    await invoke()
+            finally:
+                self._trigger_current.reset(token)
+
+        timeout = next(
+            (
+                option.seconds
+                for option in type(target).model_fields[field].metadata
+                if isinstance(option, _TriggerTimeout)
+            ),
+            None,
+        )
+        task = background.spawn(execute, execution_timeout=timeout)
+        if task is None:
+            raise TriggerUnavailable("trigger_busy")
+        uid = task.uid
+
+        def finished(handle: BackgroundTaskHandle[None]) -> None:
+            outcome = cast("TaskOutcome[None]", handle.group.try_take(handle))
+            error_code = (
+                type(outcome.error).__name__ if outcome.error is not None else None
+            )
+            message, detail = _reportable(outcome.error)
+            with self.runtime_transaction(entry):
+                target._trigger_uids.pop(field)
+                self._triggers.pop(handle.uid)
+                self._trigger_results[handle.uid] = TriggerResult(
+                    outcome.state, error_code, message, detail
+                )
+                if len(self._trigger_results) > 200:
+                    self._trigger_results.popitem(last=False)
+            if outcome.state in ("failed", "timed_out"):
+                trigger_logger.warning(
+                    f"{entry.uid} {group}.{field}: {_trigger_error_text(outcome.error)}"
+                )
+
+        with self.runtime_transaction(entry):
+            self._triggers[uid] = _RunningTrigger(
+                task, entry, group, field, owner, finish_on_cancel
+            )
+            target._trigger_uids[field] = uid
+            task.add_done_callback(finished)
+        return uid
+
+    def trigger_result(self, uid: UUID) -> TriggerResult | None:
+        from app.core.background_tasks import BackgroundTaskState
+
+        running = self._triggers.get(uid)
+        if running is not None:
+            state = (
+                BackgroundTaskState.CANCELLING
+                if running.handle.cancelling()
+                else BackgroundTaskState.RUNNING
+            )
+            return TriggerResult(state)
+        return self._trigger_results.get(uid)
+
+    def active_triggers(self) -> list[tuple[UUID, str, str, UUID, bool]]:
+        return [
+            (item.entry.uid, item.group, item.field, uid, item.handle.cancelling())
+            for uid, item in self._triggers.items()
+        ]
+
+    async def _drain_triggers(self, owners: set[UUID] | None = None) -> None:
+        selected = [
+            item
+            for uid, item in self._triggers.items()
+            if uid != self._trigger_current.get()
+            and (owners is None or item.owner in owners)
+        ]
+        for item in selected:
+            if not item.finish_on_cancel and not item.handle.cancelling():
+                with self.runtime_transaction(item.entry):
+                    item.handle.cancel()
+        await asyncio.gather(*(item.handle.wait_done() for item in selected))
+
+    @asynccontextmanager
+    async def pause_trigger_owners(
+        self, owners: Iterable[UUID]
+    ) -> AsyncGenerator[None]:
+        """等待旧插件的触发器退出后再卸载其代码。"""
+        selected = set(owners)
+        for owner in selected:
+            self._paused_trigger_owners[owner] = (
+                self._paused_trigger_owners.get(owner, 0) + 1
+            )
+        try:
+            await self._drain_triggers(selected)
+            yield
+        finally:
+            for owner in selected:
+                count = self._paused_trigger_owners[owner] - 1
+                if count:
+                    self._paused_trigger_owners[owner] = count
+                else:
+                    del self._paused_trigger_owners[owner]
+
+    def prepare_trigger_restart(self) -> bool:
+        if self._triggers:
+            return False
+        self._triggers_restarting = True
+        return True
+
+    def cancel_trigger_restart(self) -> None:
+        self._triggers_restarting = False
+
+    def seal_triggers(self) -> None:
+        self._triggers_closed = True
+
+    async def shutdown_triggers(self) -> None:
+        self.seal_triggers()
+        await self._drain_triggers()
+        if self._trigger_background is not None and self._trigger_group is not None:
+            await self._trigger_background.unregister_group(self._trigger_group)
 
     # ──────────────── ref 池（仅 Collection）────────────────
 
@@ -249,6 +665,12 @@ class ConfigManager:
             if not records:
                 target.mkdir(parents=True, exist_ok=True)
                 return
+            blocked = [r.path for r in records if r.node.persist_blocked is not None]
+            if blocked:
+                # 备份不能静默少条目。
+                raise ValueError(
+                    "配置未完整加载，不能导出：" + "、".join(str(p) for p in blocked)
+                )
             paths = [Path(os.path.abspath(record.path)) for record in records]
             base = Path(os.path.commonpath([path.parent for path in paths]))
             destinations = [target / path.relative_to(base) for path in paths]
@@ -407,6 +829,23 @@ class ConfigManager:
                 node._discard_stage_scope(ctx.scope_id)
         ctx.staged_nodes.clear()
         ctx.registered.clear()
+        ctx.persist_roots.clear()
+
+    def _finish_root_transaction(
+        self, ctx: TransactionContext, need_save: bool
+    ) -> None:
+        self._transaction_settled(need_save=need_save)
+        if not ctx.committed:
+            return
+        self._publish_ui_commit(frozenset(ctx.ui_nodes))
+        errors: list[Exception] = []
+        for entry, group, field_name, value in ctx.triggers:
+            try:
+                self.submit_trigger(entry, group=group, field=field_name, value=value)
+            except Exception as error:
+                errors.append(error)
+        if errors:
+            raise ConfigAggregateError(errors)
 
     @asynccontextmanager
     async def transaction(
@@ -434,7 +873,7 @@ class ConfigManager:
                     self._txn.reset(token)
         finally:
             if ctx is not None and parent is None:
-                self._transaction_settled(need_save=need_save)
+                self._finish_root_transaction(ctx, need_save)
 
     @contextmanager
     def transaction_sync(
@@ -462,7 +901,7 @@ class ConfigManager:
                     self._txn.reset(token)
         finally:
             if ctx is not None and parent is None:
-                self._transaction_settled(need_save=need_save)
+                self._finish_root_transaction(ctx, need_save)
 
     def _register_workspace(self, unit: WorkspaceUnit) -> None:
         ctx = self.current
@@ -471,23 +910,30 @@ class ConfigManager:
 
     def COMMIT(self, ctx: TransactionContext) -> bool:
         self._check_staged(ctx)
-        roots: dict[UUID, RootRecord] = {}
         for unit in ctx.registered:
             if isinstance(unit, type):
                 unit._COMMIT_signal(ctx)
             else:
-                if ctx.parent is None:
-                    record = self._roots.get(unit.root.uid)
-                    if record is not None and record.node is unit.root:
-                        roots[unit.root.uid] = record
                 unit._COMMIT(ctx)
             if ctx.parent is not None and not any(
                 item is unit for item in ctx.parent.registered
             ):
                 ctx.parent.registered.append(unit)
-        for record in roots.values():
-            record.revision += 1
-        return bool(roots)
+        need_save = False
+        if ctx.parent is not None:
+            ctx.parent.persist_roots.update(ctx.persist_roots)
+            ctx.parent.triggers.extend(ctx.triggers)
+            ctx.parent.ui_nodes.update(ctx.ui_nodes)
+        else:
+            for uid, (root, from_file) in ctx.persist_roots.items():
+                record = self._roots.get(uid)
+                if record is not None and record.node is root:
+                    record.revision += 1
+                    if from_file:
+                        record.loaded_revision = record.revision
+                    need_save = True
+        ctx.committed = True
+        return need_save
 
     def ROLLBACK(self, ctx: TransactionContext) -> None:
         for unit in ctx.registered:
@@ -692,6 +1138,9 @@ class ConfigManager:
             if record is None or record.node is not root:
                 continue
             failure = self._save_failures.get(root.uid)
+            if failure is None and record.persisted_revision == record.revision:
+                if not force or record.path.is_file():
+                    continue
             if not force:
                 if failure is not None:
                     if isinstance(failure.error.cause, OSError):
@@ -707,13 +1156,28 @@ class ConfigManager:
             # 构造先登记、激活在后；未激活根没有可保存状态。
             if root.activation_state != NodeState.ACTIVE:
                 continue
+            if root.persist_blocked is not None:
+                # 不抛：退出时的 flush 还要接着收尾；按根只记一次。
+                if root.uid not in self._persist_blocked_logged:
+                    self._persist_blocked_logged.add(root.uid)
+                    logger.error(
+                        f"配置加载出错，不写回以免丢失未加载的内容：{record.path}"
+                        f"（{root.persist_blocked}）"
+                    )
+                continue
             phase: Literal["export", "write"] = "export"
             try:
                 payload = await root.to_dict()
                 if self._roots.get(root.uid) is not record:
                     continue
                 phase = "write"
-                _utils_io.write_file(record.path, payload)
+                # 激活、还原也会推进修订号，内容相同就保留原文件。
+                if (
+                    not record.path.is_file()
+                    or _utils_io.read_dict_file(record.path, allow_empty=True)
+                    != payload
+                ):
+                    _utils_io.write_file(record.path, payload)
             except Exception as exc:
                 if self._roots.get(root.uid) is not record:
                     continue
@@ -721,6 +1185,7 @@ class ConfigManager:
                 self._record_save_failure(record, error, force=force)
                 errors.append(error)
             else:
+                record.persisted_revision = record.revision
                 with self._execution_condition:
                     recovered = self._save_failures.pop(root.uid, None)
                 if recovered is not None:

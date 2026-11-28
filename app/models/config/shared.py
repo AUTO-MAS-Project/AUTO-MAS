@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from pydantic import BeforeValidator, Field, TypeAdapter
 
-from app.config import ConfigGroup
+from app.config import ConfigGroup, Virtual, encrypted, tz, ui
+from app.config.types import FilePath, WindowsNameString
 
 if TYPE_CHECKING:
     from .script import UserConfigType
@@ -54,6 +55,108 @@ def none_as(value: str | int | float) -> BeforeValidator:
         return value if input_value is None else input_value
 
     return BeforeValidator(normalize)
+
+
+ProxyStatus = Literal["未知", "成功", "失败", "维护中", "运行中"]
+"""账号上次运行结果：全部专项共用一套取值，写入方与展示方按此对齐。"""
+
+
+class AccountNameFields(ConfigGroup):
+    """账号名称与启用状态、剩余天数、备注、标签。全部专项都有。"""
+
+    Name: WindowsNameString = Field(
+        default_factory=lambda: "新账号", description="账号名称"
+    )
+
+    Notes: str = Field(default_factory=lambda: "无", description="备注")
+
+    RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
+        default_factory=lambda: -1, description="剩余天数"
+    )
+
+    Status: bool = Field(default_factory=lambda: True, description="是否启用")
+
+    Tag: Virtual[str] = Field(default_factory=lambda: None, description="账号标签信息")
+
+
+class AccountCredentialFields(ConfigGroup):
+    """账号 / 密码。没有账号概念的专项（General、BAAH、Whimbox）不继承。"""
+
+    Id: Annotated[str, encrypted()] = Field(
+        default_factory=lambda: "", description="账号"
+    )
+
+    Password: Annotated[str, encrypted()] = Field(
+        default_factory=lambda: "", description="密码"
+    )
+
+
+class AccountScriptHookFields(ConfigGroup):
+    """任务前后执行脚本。BAAH 无此项。"""
+
+    IfScriptAfterTask: bool = Field(
+        default_factory=lambda: False, description="是否在任务后执行脚本"
+    )
+
+    IfScriptBeforeTask: bool = Field(
+        default_factory=lambda: False, description="是否在任务前执行脚本"
+    )
+
+    ScriptAfterTask: FilePath = Field(
+        default_factory=lambda: None, description="任务后脚本路径"
+    )
+
+    ScriptBeforeTask: FilePath = Field(
+        default_factory=lambda: None, description="任务前脚本路径"
+    )
+
+
+class AccountRunFields(ConfigGroup):
+    """上次代理日期与代理次数。全部专项都有。"""
+
+    LastProxyDate: Annotated[datetime, tz(UTC4), ui(format="date")] = Field(
+        default_factory=lambda: datetime(2000, 1, 1, tzinfo=UTC4),
+        description="上次代理日期",
+    )
+
+    ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
+        default_factory=lambda: 0, description="代理次数"
+    )
+
+
+class AccountRunStatusFields(ConfigGroup):
+    """上次运行结果。没有「上次状态」概念的专项（General、BAAH、HSR、Src）不继承。"""
+
+    LastProxyStatus: ProxyStatus = Field(
+        default_factory=lambda: "未知", description="上次代理状态"
+    )
+
+
+AccountFields = (AccountNameFields, AccountCredentialFields, AccountScriptHookFields)
+"""账号 Info 的常用切片组合，供各类按需多继承。"""
+
+AccountDataFields = (AccountRunFields, AccountRunStatusFields)
+"""账号 Data 的切片组合。"""
+
+
+class AccountNotifyFields(ConfigGroup):
+    """账号通知：全部专项都有，服务端推送与邮件收件人。"""
+
+    Enabled: bool = Field(default_factory=lambda: False, description="是否启用通知")
+
+    IfSendMail: bool = Field(default_factory=lambda: False, description="是否发送邮件")
+
+    IfSendStatistic: bool = Field(
+        default_factory=lambda: False, description="是否发送统计信息"
+    )
+
+    IfServerChan: bool = Field(
+        default_factory=lambda: False, description="是否启用 Server 酱"
+    )
+
+    ServerChanKey: str = Field(default_factory=lambda: "", description="Server 酱密钥")
+
+    ToAddress: str = Field(default_factory=lambda: "", description="收件地址")
 
 
 def local_timezone(_model: object = None) -> timezone:
@@ -258,91 +361,6 @@ def _tag_notes(config: UserConfigType) -> dict:
     }
 
 
-BAAH_PLAN_KEY_SHAPE = {
-    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
-    # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
-    "Wanted": ([1, -1, -1], 2, 4),
-    "Special": ([1, -1, -1], 2, 4),
-    "Exchange": ([1, -1, -1], 2, 4),
-    "Hard": ([1, 1, -1], 2, 4),
-    "Normal": ([1, 1, -1], 2, 4),
-}
-
-
-def default_baah_plan_key() -> dict[str, Any]:
-    """默认拉满悬赏通缉和交流会、关闭特别委托，其余沿用 BAAH。"""
-    return {"Wanted": [1, -1, -1], "Special": [], "Exchange": [1, -1, -1]}
-
-
-def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。
-
-    输入里没有的字段，结果里**也不会出现**：缺席表示「今天这一类不干预」，由 BAAH
-    沿用自己配置里的关卡与开关；在这里补齐默认值会把它静默改成「按默认关卡打」。
-
-    越界的位按 schema 的逐位规则修正到最近的合法值（困难图关卡 0/-1 修成 1、
-    次数小于 -1 修成 -1、开关位非 0/1 修成 1），存量的脏配置因此也能过校验。
-    """
-
-    if isinstance(raw_key, dict) and "Key" in raw_key:
-        raw_key = raw_key["Key"]
-    data = raw_key if isinstance(raw_key, dict) else {}
-
-    result: dict[str, Any] = {}
-    for field, (default, minimum, maximum) in BAAH_PLAN_KEY_SHAPE.items():
-        if field not in data:
-            continue
-
-        value = data[field]
-        if value is None:
-            # 显式 null 与字段缺失同义：都不干预这一类
-            continue
-
-        if not isinstance(value, list):
-            result[field] = list(default)
-            continue
-
-        if not value:
-            # 空数组表示「今天不打这一类」，补成默认值就变成照默认关卡打了
-            result[field] = []
-            continue
-
-        try:
-            items = [int(item) for item in value]
-        except (TypeError, ValueError):
-            # 每一位都有固定含义（如「地区、关卡、次数」），丢掉一位会让后面的
-            # 位整体错位，所以只要有一位转不成 int，整项就回落到默认值。
-            result[field] = list(default)
-            continue
-
-        if len(items) > maximum:
-            items = items[:maximum]
-        elif len(items) < minimum:
-            # 缺位用默认值补齐，已经写明的位保持不动。
-            items = items + default[len(items) :]
-
-        # 存量配置里可能存着越界的位（如困难图关卡写成 0），按 schema 的规则表
-        # 修正到最近的合法值：这一步只修不问，任何输入都不抛异常。
-        result[field] = [
-            schema_model.fix_baah_plan_slot(field, index, item)
-            for index, item in enumerate(items)
-        ]
-
-    return result
-
-
-def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。
-
-    ``exclude_none=True`` 是必需的：缺席字段不能被 dump 成 ``None``，否则
-    「今天不干预这一类」会跟着 key 一起落盘，语义与「不打这一类」混在一起。
-    """
-
-    return schema_model.BAAHPlanKey.model_validate(raw_key).model_dump(
-        exclude_none=True, exclude={"Event"}
-    )
-
-
 def normalize_mss_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 MSS key。"""
 
@@ -372,25 +390,6 @@ def _clamp_plan_number(value: object, default: int) -> int:
     return number if 1 <= number <= 99 else default
 
 
-_BGI_BUILTIN_ONE_DRAGON_GROUPS = [
-    "领取邮件",
-    "合成树脂",
-    "自动幽境危战",
-    "自动地脉花",
-    "自动首领讨伐",
-    "自动秘境",
-    "领取尘歌壶奖励",
-    "领取每日奖励",
-]
-
-_BGI_LEGACY_SERVERS_TO_RESOURCE = {
-    "Asia": "亚服",
-    "Europe": "欧服",
-    "America": "美服",
-    "TW,HK,MO": "港澳台服",
-}
-
-
 def _migrate_oknte_launch_mode_default(data: dict) -> tuple[dict, bool]:
     """为存量 OK-NTE 脚本固化升级前的启动方式「启动器界面」。
 
@@ -416,79 +415,19 @@ def _migrate_oknte_launch_mode_default(data: dict) -> tuple[dict, bool]:
     return normalized_data, False
 
 
-def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:
-    """为存量 BetterGI 脚本固化旧默认切号方式 BGI。
-
-    ``Run.AccountSwitchMethod`` 是 v5.6.0 新增字段且类默认值定为 MAS；
-    5.5.0 升级上来的存量脚本配置里没有该键，若不补值会随新默认落到 MAS，
-    使国际服/第三方登录等不被 MAS 切号支持的用户从「能跑」变「报错」。
-    故 load 前缺键注入 ``BGI``（升级前的唯一切号路径）：Run 段缺失（手工
-    编辑/截断文件）同样按存量处理；Run 段损坏（非 dict）时跳过注入交给
-    load 的纠错路径重建，不在此崩掉启动。显式保存过该键的配置原样保留。
-
-    Returns:
-        (迁移后的配置字典, 是否发生了注入)
-    """
-    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-    if "Run" not in normalized_data:
-        normalized_data["Run"] = {}
-    run = normalized_data["Run"]
-    if isinstance(run, dict) and "AccountSwitchMethod" not in run:
-        run["AccountSwitchMethod"] = "BGI"
-        return normalized_data, True
-    return normalized_data, False
-
-
-def _migrate_baah_event_first(data: dict) -> tuple[dict, bool]:
-    """把存量配置里的「活动适配」开关接到新的「活动关优先」。
-
-    ``Info.IfActivityAdapt`` 与 ``Info.ActivityConfigName`` 随 5.5.0 / 5.6.0
-    发出去过，本版改成计划表 + 活动关优先后两个字段都被删除。若直接删字段，
-    当年开着活动适配的用户升级后 ``IfEventFirst`` 仍取默认的关，活动期间不再
-    有任何动作，等于静默失效；这里把那时开着的适配开关迁移到 ``IfEventFirst``，
-    保持升级前后的行为一致。
-
-    ``ActivityConfigName`` 指向的是 BAAH 的配置文件名，新方案里没有对应概念
-    （换成按周排的计划表），无法自动迁移，只能留在旧文件里不再读取。
-
-    Returns:
-        (迁移后的配置字典, 是否发生了迁移)
-    """
-
-    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-    info = normalized_data.get("Info")
-    if not isinstance(info, dict):
-        return normalized_data, False
-
-    ## 已经写过新键的配置不动，避免把用户后来的选择覆盖回 True
-    if "IfEventFirst" in info or not info.get("IfActivityAdapt"):
-        return normalized_data, False
-
-    info["IfEventFirst"] = True
-    return normalized_data, True
-
-
 __all__ = [
     "SRAProfileName",
-    "BAAH_PLAN_KEY_SHAPE",
-    "_BGI_BUILTIN_ONE_DRAGON_GROUPS",
-    "_BGI_LEGACY_SERVERS_TO_RESOURCE",
     "_clamp_plan_number",
-    "_migrate_baah_event_first",
-    "_migrate_bgi_account_switch_default",
     "_migrate_oknte_launch_mode_default",
     "_normalize_maaend_sanity_task_type",
     "_tag_last_status",
     "_tag_notes",
     "_tag_proxy",
     "_tag_remained_days",
-    "default_baah_plan_key",
     "logger",
-    "normalize_baah_plan_key",
     "normalize_maaend_plan_key",
     "normalize_mss_plan_key",
     "schema_model",
-    "validate_baah_plan_key",
     "validate_maaend_plan_key",
 ]
 

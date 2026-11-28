@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Callable, TypeVar, cast
+from uuid import UUID
 
 from pydantic import Field
 from pydantic.fields import FieldInfo
@@ -25,6 +27,7 @@ from .fields import (
     select,
     ui,
 )
+from .fields.ref import _TriggerTimeout
 
 _F = TypeVar("_F", bound=Callable[..., object])
 _TEntry = TypeVar("_TEntry", bound=ConfigNode)
@@ -91,11 +94,21 @@ def virtual_field(path: str) -> Callable[[_F], _F]:
     return _decorator
 
 
-def trigger_field(path: str) -> Callable[[_F], _F]:
-    """注册触发器；``entry.<group>.<field> = True`` 执行一次 handler。"""
+def trigger(*, timeout: float, description: str | None = None) -> UUID | None:
+    """声明触发器字段的执行超时，单位秒。字段仍以 None 为空闲初值。"""
+    if not isfinite(timeout) or timeout <= 0:
+        raise ValueError("触发器超时必须为有限的正数秒")
+    info = cast(FieldInfo, Field(default=None, description=description))
+    info.metadata.append(_TriggerTimeout(timeout))
+    return cast(UUID | None, info)
+
+
+def trigger_field(path: str, *, finish_on_cancel: bool = False) -> Callable[[_F], _F]:
+    """注册触发器处理器；下拉动作可接收所选值，finish_on_cancel 保证取消时完整收尾。"""
     group, field_name = parse_field_path(path)
 
     def _decorator(func: _F) -> _F:
+        setattr(func, "__trigger_finish_on_cancel__", finish_on_cancel)
         setattr(
             func,
             "__trigger_field_binding__",
@@ -129,6 +142,7 @@ __all__ = [
     "ref",
     "collection",
     "virtual_field",
+    "trigger",
     "trigger_field",
     "ui_visibility",
     "encrypted",

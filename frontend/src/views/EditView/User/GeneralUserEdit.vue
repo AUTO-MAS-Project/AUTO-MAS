@@ -1,140 +1,149 @@
 <template>
-  <UserEditHeader
-    :script-id="scriptId"
-    :script-name="scriptName"
-    :is-edit="isEdit"
-    script-edit-segment="general"
-    :user-id="userId"
-    :config-label="t('core.edit.generalConfiguration')"
-    :config-loading="generalConfigLoading"
-    :config-active="showGeneralConfigMask"
-    :config-disabled="configLocked"
-    @config="handleGeneralConfig()"
-    @cancel="handleCancel"
-  />
+  <ConfigEditShell :max-width="1200">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="general"
+        :user-id="userId"
+        :config-label="t('core.edit.generalConfiguration')"
+        :config-loading="generalConfigLoading"
+        :config-active="showGeneralConfigMask"
+        :config-disabled="configLocked"
+        @config="handleGeneralConfig()"
+        @cancel="handleCancel"
+      />
+    </template>
 
-  <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
-  <teleport to="body">
-    <div v-if="showGeneralConfigMask" class="maa-config-mask">
-      <div class="mask-content">
-        <div class="mask-icon">
-          <EyeOutlined
-            v-if="generalSessionViewOnly"
-            :style="{ fontSize: '48px', color: '#1890ff' }"
-          />
-          <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
-        </div>
-        <template v-if="generalSessionViewOnly">
-          <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
-          <p class="mask-description">
-            {{ t('core.edit.generalViewingDesc') }}
-            <br />
-            {{ t('core.edit.generalViewingDesc2') }}
-          </p>
-        </template>
-        <template v-else>
-          <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
-          <p class="mask-description">
-            {{ t('core.edit.generalConfigurationThisUser') }}
-            <br />
-            {{ t('core.edit.clickSaveConfigurationWhen2') }}
-          </p>
-        </template>
-        <div class="mask-actions">
-          <a-button
-            v-if="generalTaskId"
-            type="primary"
-            size="large"
-            @click="handleSaveGeneralConfig"
-          >
-            {{
-              generalSessionViewOnly
-                ? t('core.edit.generalViewClose')
-                : t('core.edit.saveConfiguration')
-            }}
-          </a-button>
-        </div>
-      </div>
-    </div>
-  </teleport>
-
-  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-    <a-card class="config-card">
-      <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
-        <!-- 基本信息 -->
-        <div class="form-section">
+    <template #default>
+      <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
+        <a-form
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          layout="vertical"
+          class="config-form"
+        >
+          <!-- 基本信息 -->
           <UserAccountHeading
             :user-name="formData.userName"
             :options="{ isEdit, logoSrc: accountIcon }"
           />
-          <div class="section-header">
-            <h3>{{ t('core.edit.basicInfo') }}</h3>
-            <div class="section-header-actions">
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <template #actions>
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('core.edit.configRestoreTitle') }}
               </a-button>
+            </template>
+            <UserBasicInfoFields
+              v-model:user-name="formData.userName"
+              v-model:status="formData.Info.Status"
+              v-model:remained-day="formData.Info.RemainedDay"
+              v-model:notes="formData.Info.Notes"
+              :disabled="loading"
+              @save-name="handleFieldSave('userName', formData.userName)"
+              @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
+              @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
+              @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
+            />
+          </SectionCard>
+
+          <SectionCard variant="plain">
+            <GeneralUserConfigurationSection
+              :model-value="formData.Info.Base ?? 'independent'"
+              :plan-mode="formData.Info.PlanMode"
+              :owner="{ scriptId, userId }"
+              :disabled="loading"
+              :saving="configModeSaving"
+              @change="handleConfigModeChange"
+              @plan-change="formData.Info.PlanMode = $event"
+            />
+          </SectionCard>
+
+          <!-- 额外脚本 -->
+          <ExtraScriptSection
+            v-model:form-data="formData"
+            :loading="loading"
+            @save="handleFieldSave"
+          />
+
+          <UserNotifyConfig
+            v-model="formData.Notify"
+            :loading="loading"
+            :script-id="scriptId"
+            :user-id="userId"
+            @save="handleFieldSave"
+          />
+        </a-form>
+      </ConfigLockPanel>
+    </template>
+
+    <template #overlay>
+      <!-- 通用配置遮罩层（配置会话 / 查看会话双形态） -->
+      <teleport to="body">
+        <div v-if="showGeneralConfigMask" class="maa-config-mask">
+          <div class="mask-content">
+            <div class="mask-icon">
+              <EyeOutlined
+                v-if="generalSessionViewOnly"
+                :style="{ fontSize: '48px', color: '#1890ff' }"
+              />
+              <SettingOutlined v-else :style="{ fontSize: '48px', color: '#1890ff' }" />
+            </div>
+            <template v-if="generalSessionViewOnly">
+              <h2 class="mask-title">{{ t('core.edit.generalViewingTitle') }}</h2>
+              <p class="mask-description">
+                {{ t('core.edit.generalViewingDesc') }}
+                <br />
+                {{ t('core.edit.generalViewingDesc2') }}
+              </p>
+            </template>
+            <template v-else>
+              <h2 class="mask-title">{{ t('core.edit.generalConfigurationProgress') }}</h2>
+              <p class="mask-description">
+                {{ t('core.edit.generalConfigurationThisUser') }}
+                <br />
+                {{ t('core.edit.clickSaveConfigurationWhen2') }}
+              </p>
+            </template>
+            <div class="mask-actions">
+              <a-button
+                v-if="generalTaskId"
+                type="primary"
+                size="large"
+                @click="handleSaveGeneralConfig"
+              >
+                {{
+                  generalSessionViewOnly
+                    ? t('core.edit.generalViewClose')
+                    : t('core.edit.saveConfiguration')
+                }}
+              </a-button>
             </div>
           </div>
-          <UserBasicInfoFields
-            v-model:user-name="formData.userName"
-            v-model:status="formData.Info.Status"
-            v-model:remained-day="formData.Info.RemainedDay"
-            v-model:notes="formData.Info.Notes"
-            :disabled="loading"
-            @save-name="handleFieldSave('userName', formData.userName)"
-            @save-status="handleFieldSave('Info.Status', formData.Info.Status)"
-            @save-days="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-            @save-notes="handleFieldSave('Info.Notes', formData.Info.Notes)"
-          />
-          <a-row :gutter="24">
-            <a-col :span="24">
-              <GeneralUserConfigurationSection
-                :model-value="formData.Info.Base ?? 'independent'"
-                :plan-mode="formData.Info.PlanMode"
-                :owner="{ scriptId, userId }"
-                :disabled="loading"
-                :saving="configModeSaving"
-                @change="handleConfigModeChange"
-                @plan-change="formData.Info.PlanMode = $event"
-              />
-            </a-col>
-          </a-row>
         </div>
+      </teleport>
 
-        <!-- 额外脚本 -->
-        <ExtraScriptSection
-          v-model:form-data="formData"
-          :loading="loading"
-          @save="handleFieldSave"
-        />
-
-        <UserNotifyConfig
-          v-model="formData.Notify"
-          :loading="loading"
-          :script-id="scriptId"
-          :user-id="userId"
-          @save="handleFieldSave"
-        />
-      </a-form>
-    </a-card>
-  </ConfigLockPanel>
-
-  <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
-  <ConfigRestoreSection
-    v-model:open="restoreOpen"
-    :disabled="configLocked"
-    :script-name="GENERAL_DISPLAY_NAME"
-    :targets="restoreTargets"
-    :api="restoreApi"
-    :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
-    :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
-    :on-restored="handleRestored"
-    :on-detail="handleRestoreView"
-  />
+      <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="GENERAL_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.generalConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.generalConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+        :on-detail="handleRestoreView"
+      />
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/AUTO-MAS.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -145,7 +154,8 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { useConfirm } from '@/composables/useConfirm'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
@@ -167,6 +177,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import { useConfigBackupApi } from '@/composables/useConfigBackupApi'
 
 const { t } = useI18n()
+const { confirm } = useConfirm()
 
 const logger = window.electronAPI.getLogger('通用用户编辑')
 
@@ -178,14 +189,10 @@ const { subscribe, unsubscribe } = useWebSocket()
 
 const formRef = ref<FormInstance>()
 const loading = computed(() => userLoading.value)
-const isInitializing = ref(true) // 标记是否正在初始化
-// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
-
-// 路由参数
+const isInitializing = ref(true)
 const scriptId = route.params.scriptId as string
-
 let userId = route.params.userId as string
+const { enqueue } = useSaveQueue()
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => ({ scriptId, userId }))
 
@@ -202,7 +209,8 @@ const generalSessionViewOnly = ref(false) // 当前会话是否为查看（只�
 const configTimedOut = ref(false) // 新增：标记是否已超时
 let generalConfigTimeout: number | null = null
 
-// 通用脚本默认用户数据
+// 通用脚本默认用户数据。
+// 字段与默认值以 app/models/config/script.py 的 GeneralUserConfig 为准，后端改字段时需同步这里。
 const getDefaultGeneralUserData = () => ({
   Info: {
     Name: '',
@@ -213,7 +221,6 @@ const getDefaultGeneralUserData = () => ({
     Base: 'independent',
     // 固定配置，或按日轮换的通用计划 ID
     PlanMode: 'Fixed',
-    IfUseMasConfig: true,
     IfScriptBeforeTask: false,
     IfScriptAfterTask: false,
     ScriptBeforeTask: '',
@@ -226,8 +233,6 @@ const getDefaultGeneralUserData = () => ({
     IfSendStatistic: false,
     IfServerChan: false,
     ServerChanKey: '',
-    ServerChanChannel: '',
-    ServerChanTag: '',
   },
   Data: {
     LastProxyDate: '2000-01-01T00:00:00+04:00',
@@ -302,35 +307,27 @@ const handleFieldSave = async (key: string, value: any) => {
 
 // 配置来源三态卡片（value 为后端 Info.Base 取值，驱动逻辑需保持原样；文案走词表）
 
-// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存
-// 注意：IfUseMasConfig 是旧的两态字段，仍被 BetterGI 槽位逻辑消费，故保留并与之对齐写入。
+// 配置来源切换：校验 value ∈ 三态 → 赋值 Info.Base → 真实保存。
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['shared', 'independent', 'native'].includes(value)) return
   if (isInitializing.value || configModeSaving.value || !userId) return
   if (formData.Info.Base === value) return
 
   const previousMode = formData.Info.Base
-  const previousIfUseMas = formData.Info.IfUseMasConfig
   formData.Info.Base = value as 'shared' | 'independent' | 'native'
-  formData.Info.IfUseMasConfig = value !== 'native'
   configModeSaving.value = true
-
   try {
-    const saved = await updateUser(scriptId, userId, {
-      Info: {
-        Base: formData.Info.Base as 'shared' | 'independent' | 'native',
-        IfUseMasConfig: formData.Info.IfUseMasConfig,
-      },
+    await enqueue(async () => {
+      const saved = await updateUser(scriptId, userId, {
+        Info: { Base: formData.Info.Base as 'shared' | 'independent' | 'native' },
+      })
+      if (!saved) {
+        formData.Info.Base = previousMode
+        return
+      }
+      await loadUserData()
+      logger.info(`配置来源已切换为: ${formData.Info.Base}`)
     })
-
-    if (!saved) {
-      formData.Info.Base = previousMode
-      formData.Info.IfUseMasConfig = previousIfUseMas
-      return
-    }
-
-    await loadUserData()
-    logger.info(`配置来源已切换为: ${formData.Info.Base}`)
   } finally {
     configModeSaving.value = false
   }
@@ -654,45 +651,42 @@ const handleRestored = async () => {
 // mas 备份：恢复到该用户 ConfigFile 后启动查看会话（目录副本型下发，GUI
 // 所见即备份）；原生备份：恢复到脚本配置路径后启动脚本级查看会话（跳过
 // 下发，原生配置即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) => {
-  if (configLocked.value) return Promise.resolve(false)
+const handleRestoreView = async (target: string, item: { time: string }) => {
+  if (configLocked.value) return false
 
-  return new Promise<boolean>(resolve => {
-    Modal.confirm({
-      title: t('core.edit.configRestoreDetailView'),
-      content: h(
-        'p',
-        { style: { color: 'var(--ant-color-error)', margin: 0 } },
-        t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
-      ),
-      okText: t('core.edit.configRestoreConfirmOk'),
-      okType: 'danger',
-      cancelText: t('core.edit.cancel'),
-      onOk: async () => {
-        if (configLocked.value) {
-          message.error(t('core.edit.configLocked'))
-          resolve(false)
-          return
-        }
+  let restored = false
+  await confirm({
+    tone: 'danger',
+    title: t('core.edit.configRestoreDetailView'),
+    description: h(
+      'p',
+      { style: { color: 'var(--ant-color-error)', margin: 0 } },
+      t('core.edit.configRestoreDetailConfirm', { script: GENERAL_DISPLAY_NAME })
+    ),
+    okText: t('core.edit.configRestoreConfirmOk'),
+    cancelText: t('core.edit.cancel'),
+    onOk: async () => {
+      if (configLocked.value) {
+        message.error(t('core.edit.configLocked'))
+        return
+      }
 
-        try {
-          const resp = await restoreApi.restore(target, item.time)
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('core.edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          await handleGeneralConfig(true, target)
-          resolve(true)
-        } catch (e) {
-          message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
-          resolve(false)
+      try {
+        const resp = await restoreApi.restore(target, item.time)
+        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+        // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+        if (resp.code !== 200) {
+          throw new Error(resp.message || t('core.edit.configRestoreFailed'))
         }
-      },
-      onCancel: () => resolve(false),
-    })
+        restoreOpen.value = false
+        await handleGeneralConfig(true, target)
+        restored = true
+      } catch (e) {
+        message.error(e instanceof Error ? e.message : t('core.edit.configRestoreFailed'))
+      }
+    },
   })
+  return restored
 }
 
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态
@@ -746,42 +740,7 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped src="@/styles/userEditForm.css"></style>
-
 <style scoped>
-.form-section {
-  margin-bottom: 12px;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.section-header {
-  margin-bottom: 6px;
-}
-
-.switch-description {
-  margin-left: 12px;
-  font-size: 13px;
-  color: var(--ant-color-text-secondary);
-}
-
-.save-button {
-  background: var(--ant-color-primary);
-  border-color: var(--ant-color-primary);
-}
-
-.save-button:hover {
-  background: var(--ant-color-primary-hover);
-  border-color: var(--ant-color-primary-hover);
-}
-
-.float-button {
-  width: 60px;
-  height: 60px;
-}
-
 /* 通用/MAA 配置遮罩样式（用于全局覆盖） */
 .maa-config-mask {
   position: fixed;

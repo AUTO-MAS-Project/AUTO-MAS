@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { QrcodeOutlined } from '@ant-design/icons-vue'
+import { AppModal, SectionCard } from '@/components/ui'
 import type { CancelablePromise, OutBase } from '@/api'
 import { navigateTo } from '@/router'
 import { openExternalUrl } from '@/utils/openExternal'
@@ -175,7 +176,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="token-tools">
-    <a-card :title="t('core.mystery.tokens.title')">
+    <SectionCard :title="t('core.mystery.tokens.title')" style="margin-bottom: 0">
       <p>{{ t('core.mystery.tokens.description') }}</p>
       <a-alert
         v-if="accountsError"
@@ -217,7 +218,7 @@ onBeforeUnmount(() => {
         show-icon
         :message="t('core.mystery.tokens.saved', saved)"
       />
-    </a-card>
+    </SectionCard>
 
     <a-row :gutter="[16, 16]">
       <a-col :xs="24" :lg="12">
@@ -254,13 +255,11 @@ onBeforeUnmount(() => {
       </a-col>
     </a-row>
 
-    <a-modal
+    <AppModal
       :open="taygedoVisible"
       :title="t('core.gamesign.login.taygedoTitle')"
-      :footer="null"
+      footer="none"
       :width="420"
-      :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
-      centered
       @cancel="closeTaygedo"
     >
       <a-alert
@@ -312,7 +311,7 @@ onBeforeUnmount(() => {
           </a-button>
         </a-space>
       </a-form>
-    </a-modal>
+    </AppModal>
 
     <QrLoginModal
       :open="qrVisible"

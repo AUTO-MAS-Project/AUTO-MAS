@@ -1,3 +1,4 @@
+import { allowedFields } from './startupHardware/summary'
 import { randomInt } from 'crypto'
 import type {
   AnalyticsContext,
@@ -30,6 +31,7 @@ export interface AnalyticsPayload {
 
 interface AnalyticsOptions {
   isAllowed(): boolean
+  onDisabled?(): void
   systemProps(): AnalyticsPayload['systemProps']
   send(payload: AnalyticsPayload, signal: AbortSignal): Promise<void>
 }
@@ -53,6 +55,7 @@ export class AnalyticsService {
   setEnabled(enabled: boolean): void {
     if (this.disposed || this.enabled === enabled) return
     this.enabled = enabled
+    if (!enabled) this.options.onDisabled?.()
     this.generation++
     this.session = null
     this.lastScreen = ''
@@ -78,15 +81,37 @@ export class AnalyticsService {
     this.emit('app_started', props, this.getContext())
   }
 
-  recordRendererEvent(context: unknown, event: unknown): void {
+  recordRendererEvent(
+    context: unknown,
+    event: unknown,
+    initialization?: () => Record<string, string>
+  ): void {
     if (context !== this.getContext() || typeof context !== 'number') return
     const valid = validateAnalyticsEvent(event, true)
-    if (valid) this.emit(valid.name, valid.props, context)
+    if (valid)
+      this.emit(
+        valid.name,
+        valid.name === 'initialization_finished_v2' && initialization
+          ? { ...valid.props, ...allowedFields(initialization(), true) }
+          : valid.props,
+        context
+      )
   }
 
-  recordMainEvent(context: AnalyticsContext, event: AnalyticsEvent): void {
+  recordMainEvent(
+    context: AnalyticsContext,
+    event: AnalyticsEvent,
+    hardware?: Record<string, string>
+  ): void {
     const valid = validateAnalyticsEvent(event, false)
-    if (valid) this.emit(valid.name, valid.props, context)
+    if (valid)
+      this.emit(
+        valid.name,
+        valid.name === 'initialization_stage_finished_v2' && hardware
+          ? { ...valid.props, ...allowedFields(hardware, true) }
+          : valid.props,
+        context
+      )
   }
 
   dispose(): void {

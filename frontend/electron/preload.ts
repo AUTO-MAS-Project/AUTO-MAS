@@ -31,12 +31,20 @@ window.addEventListener('DOMContentLoaded', () => {
 contextBridge.exposeInMainWorld('electronAPI', {
   analytics: {
     getContext: () => ipcRenderer.invoke('analytics:context'),
+    beginInitialization: () => ipcRenderer.invoke('analytics:initialization-begin'),
+    finishInitialization: (
+      context: number | null,
+      attempt: number | null,
+      event: RendererAnalyticsEvent
+    ) => ipcRenderer.send('analytics:initialization-finish', context, attempt, event),
     trackEvent: (context: number, event: RendererAnalyticsEvent) =>
       ipcRenderer.send('analytics:event', context, event),
   },
   isMacOS: process.platform === 'darwin',
   installFluxdown: (mirror: string) => ipcRenderer.invoke('fluxdown:install', mirror),
   openDevTools: () => ipcRenderer.invoke('open-dev-tools'),
+  verifyMysteryAccessCode: (accessCode: string, context: unknown) =>
+    ipcRenderer.invoke('mystery:verify', accessCode, context),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFile: (filters?: unknown[]) => ipcRenderer.invoke('select-file', filters),
   saveTextFile: (
@@ -175,7 +183,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 配置文件操作
   saveConfig: (config: unknown, defaults?: unknown) =>
     ipcRenderer.invoke('save-config', config, defaults),
-  loadConfig: () => ipcRenderer.invoke('load-config'),
+  loadConfig: (strict?: boolean) =>
+    strict === true ? ipcRenderer.invoke('load-config', true) : ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 
   // 应用初始化版本（保存前端版本号用于比对）
@@ -235,6 +244,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportMSSIssueReport: () => ipcRenderer.invoke('mss:exportIssueReport'),
   exportHSRIssueReport: () => ipcRenderer.invoke('hsr:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
+  getUpgradeBackupDirectory: () => ipcRenderer.invoke('upgrade-backup:directory'),
+  chooseUpgradeBackupDirectory: (reset: boolean) =>
+    ipcRenderer.invoke('upgrade-backup:choose-directory', reset),
+  confirmUpgradeBackupDirectory: (id: string) =>
+    ipcRenderer.invoke('upgrade-backup:confirm-directory', id),
+  cancelUpgradeBackupDirectory: (id: string) =>
+    ipcRenderer.invoke('upgrade-backup:cancel-directory', id),
   // 传 fromOffset 时只读该字节偏移之后的新增部分，返回 { content, size, reset }
   getLogs: (lines?: number, fileName?: string, fromOffset?: number) =>
     ipcRenderer.invoke('log:getContent', lines, fileName, fromOffset),
@@ -315,6 +331,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('appearance:inspect-local', zipPath, category),
   inspectAppearanceCover: (imagePath: string) =>
     ipcRenderer.invoke('appearance:inspect-cover', imagePath),
+  onOnlineAppearancePrepareProgress: (callback: (progress: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('appearance:online-prepare-progress', listener)
+    return () => ipcRenderer.removeListener('appearance:online-prepare-progress', listener)
+  },
   onAppearanceChanged: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('appearance-changed', listener)
@@ -385,14 +406,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   desktopSessionSupported: () => ipcRenderer.invoke('desktop-session:supported'),
   desktopSessionOpen: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
     ipcRenderer.invoke('desktop-session:open', input),
+  desktopSessionConnectForTask: () => ipcRenderer.invoke('desktop-session:connect-for-task'),
+  desktopSessionCancelTaskConnect: (id: number) =>
+    ipcRenderer.invoke('desktop-session:cancel-task-connect', id),
   desktopSessionCheck: () => ipcRenderer.invoke('desktop-session:check'),
+  desktopSessionGetPrompt: () => ipcRenderer.invoke('desktop-session:prompt:get'),
+  desktopSessionRespondToPrompt: (
+    id: number,
+    action: import('./services/desktopSessionProtocol').DesktopSessionPromptAction
+  ) => ipcRenderer.invoke('desktop-session:prompt:respond', id, action),
+  onDesktopSessionPrompt: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('desktop-session:prompt', listener)
+    return () => ipcRenderer.removeListener('desktop-session:prompt', listener)
+  },
   desktopSessionRepair: (
     plan: import('./services/desktopSessionProtocol').DesktopSessionRepair[]
   ) => ipcRenderer.invoke('desktop-session:repair', plan),
   desktopSessionExportLogs: () => ipcRenderer.invoke('desktop-session:export-logs'),
   desktopSessionPending: () => ipcRenderer.invoke('desktop-session:pending'),
-  desktopSessionStart: (input: import('./services/desktopSessionProtocol').DesktopSessionRequest) =>
-    ipcRenderer.invoke('desktop-session:start', input),
+  desktopSessionStart: (
+    input: import('./services/desktopSessionProtocol').DesktopSessionStartRequest
+  ) => ipcRenderer.invoke('desktop-session:start', input),
   desktopSessionBounds: (bounds: Electron.Rectangle) =>
     ipcRenderer.send('desktop-session:bounds', bounds),
   desktopSessionWindow: (action: 'show' | 'hide') =>

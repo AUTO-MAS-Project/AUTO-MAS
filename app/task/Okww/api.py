@@ -78,6 +78,25 @@ class OkwwTaskConfigIn(BaseModel):
     values: dict[str, Any]
 
 
+class OkwwPlanPanel(BaseModel):
+    kind: PanelKind
+    filename: str
+    values: dict[str, Any]
+    fields: list[OkwwConfigField]
+    overrides: dict[str, Any]
+    labels: dict[str, str]
+
+
+class OkwwPlanConfigsOut(OutBase):
+    data: list[OkwwPlanPanel] = Field(default_factory=list)
+
+
+class OkwwPlanConfigsIn(BaseModel):
+    plan_id: str
+    day: str
+    configs: dict[str, dict[str, Any]]
+
+
 @router.get("/okww/task-config", tags=["Get"], response_model=OkwwTaskConfigOut)
 async def get_okww_task_config_api(
     scriptId: str,
@@ -172,3 +191,30 @@ async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
             message=str(e),
             client_path="",
         )
+
+
+@router.get("/okww/plan/configs", tags=["Get"], response_model=OkwwPlanConfigsOut)
+async def get_okww_plan_configs_api(
+    plan_id: str,
+    day: str,
+    locale: Literal["zh_CN", "en_US", "ja_JP"] = "zh_CN",
+) -> OkwwPlanConfigsOut:
+    """读取当天详细覆写及原生面板字段。"""
+    from .api_service import describe_plan_configs
+
+    try:
+        return OkwwPlanConfigsOut(data=describe_plan_configs(plan_id, day, locale))
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        return OkwwPlanConfigsOut(code=400, status="error", message=str(error))
+
+
+@router.post("/okww/plan/configs", tags=["Set"], response_model=OutBase)
+async def save_okww_plan_configs_api(data: OkwwPlanConfigsIn) -> OutBase:
+    """替换当天覆写，未设置项恢复继承账号配置。"""
+    from .api_service import save_plan_configs
+
+    try:
+        await save_plan_configs(data.plan_id, data.day, data.configs)
+        return OutBase()
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        return OutBase(code=400, status="error", message=str(error))

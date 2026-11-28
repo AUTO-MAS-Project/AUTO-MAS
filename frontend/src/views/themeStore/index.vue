@@ -8,19 +8,22 @@ import type { MyAppearanceItem } from '@/composables/useShareApi'
 import type { AppearanceCategory, AppearanceFilter } from '@/types/mascotPack'
 import { useAppearanceSettings } from '@/views/setting/useAppearanceSettings'
 import { MAS_DOC_URLS, openExternalUrl } from '@/utils/openExternal'
+import { AppPage, PageHeader, PageSurface } from '@/components/ui'
 import AppearanceUploadModal from './components/AppearanceUploadModal.vue'
 import MyAppearanceList from './components/MyAppearanceList.vue'
-import OnlineAppearanceDetail from './components/OnlineAppearanceDetail.vue'
+import OnlineAppearanceDetailDrawer from './components/OnlineAppearanceDetailDrawer.vue'
 import OnlineAppearanceList from './components/OnlineAppearanceList.vue'
 import ThemeStoreAccount from './components/ThemeStoreAccount.vue'
+import ThemeStoreLocalStatus from './components/ThemeStoreLocalStatus.vue'
 import { toStoreItem } from './myAppearance'
 import { useMyAppearances } from './useMyAppearances'
 import { useOnlineAppearance } from './useOnlineAppearance'
+import { useOutdatedAppearances } from './useOutdatedAppearances'
 import { useShareAccount } from './useShareAccount'
 
 defineOptions({ name: 'ThemeStorePage' })
 
-type ThemeStoreTab = AppearanceCategory | 'mine'
+type ThemeStoreTab = 'all' | AppearanceCategory | 'installed' | 'mine'
 
 const { t } = useI18n()
 // 覆盖确认、失败提示和「预览 → 应用外观」沿用设置页那一套，所有窗口一起同步。
@@ -32,11 +35,29 @@ const account = useShareAccount({
     ),
   onError: text => message.error(text),
 })
-// 每个分类独立持有列表、封面和下载 token，切换时不会把旧请求写进新分类。
+
+const refreshOutdated = (): void => {
+  void outdated.refresh()
+}
+
+// 按分类独立持有列表、封面和下载 token，切换时不会把旧请求写进新分类。
 const contexts = {
+  all: {
+    store: useOnlineAppearance({
+      categoryKey: 'all',
+      install: (token, category, opts) =>
+        installPreparedOnlineAppearance(token, category ?? 'theme', opts),
+      onInstalled: refreshOutdated,
+    }),
+  },
   theme: {
-    store: useOnlineAppearance({ install: installPreparedOnlineAppearance }),
+    store: useOnlineAppearance({
+      categoryKey: 'theme',
+      install: (token, _category, opts) => installPreparedOnlineAppearance(token, 'theme', opts),
+      onInstalled: refreshOutdated,
+    }),
     mine: useMyAppearances({
+      categoryKey: 'theme',
       onUnauthorized: () => void account.refresh(),
       onChanged: () => invalidateMine('theme'),
     }),
@@ -44,7 +65,8 @@ const contexts = {
   mascot: {
     store: useOnlineAppearance({
       categoryKey: 'mascot',
-      install: token => installPreparedOnlineAppearance(token, 'mascot'),
+      install: (token, _category, opts) => installPreparedOnlineAppearance(token, 'mascot', opts),
+      onInstalled: refreshOutdated,
     }),
     mine: useMyAppearances({
       categoryKey: 'mascot',
@@ -58,22 +80,42 @@ const allMine = useMyAppearances({
   onUnauthorized: () => void account.refresh(),
   onChanged: () => invalidateMine('all'),
 })
-const tab = ref<ThemeStoreTab>('theme')
-const category = computed<AppearanceCategory>(() => (tab.value === 'mascot' ? 'mascot' : 'theme'))
-const store = computed(() => contexts[category.value].store)
-const view = computed(() => store.value.view.value)
-const mine = computed(() => (tab.value === 'mine' ? allMine : contexts[category.value].mine))
-const installing = computed(() =>
+
+const tab = ref<ThemeStoreTab>('all')
+const activeStoreKey = computed<'all' | 'theme' | 'mascot'>(() => {
+  if (tab.value === 'theme') return 'theme'
+  if (tab.value === 'mascot') return 'mascot'
+  return 'all'
+})
+const store = computed(() => contexts[activeStoreKey.value].store)
+const mine = computed(() => {
+  if (tab.value === 'theme') return contexts.theme.mine
+  if (tab.value === 'mascot') return contexts.mascot.mine
+  return allMine
+})
+const storeInstalling = computed(() =>
   Object.values(contexts).some(context => context.store.installing.value)
 )
+// 顶部状态条与「全部更新」共享独立于搜索、分页和分类页签的全量本机待更新清单。
+const outdated = useOutdatedAppearances({
+  install: (token, category, opts) => installPreparedOnlineAppearance(token, category, opts),
+  isBusy: () => storeInstalling.value,
+  onUpdated: () => {
+    if (tab.value !== 'mine') void store.value.loadList(1)
+  },
+})
+const installing = computed(() => storeInstalling.value || outdated.updatingAll.value)
 const { authorized, state: accountState } = account
 
 const tabOptions = computed(() => [
-  { value: 'theme', label: t('core.themeStore.tabs.resources') },
+  { value: 'all', label: t('core.themeStore.categories.all') },
+  { value: 'theme', label: t('core.themeStore.categories.theme') },
   { value: 'mascot', label: t('core.themeStore.tabs.mascot') },
+  { value: 'installed', label: t('core.themeStore.tabs.installed') },
   { value: 'mine', label: t('core.themeStore.tabs.mine') },
 ])
-// 当前登录的账号；未登录为空。换账号或退出时之前账号的列表和封面都不能再用
+
+// 当前登录的账号；未登录为空。换账号或退出时之前账号的列表和封面都不能再用。
 const accountKey = computed(() => (authorized.value ? `user:${accountState.value.username}` : ''))
 const uploadOpen = ref(false)
 const uploadTargetId = ref<number | null>(null)
@@ -84,16 +126,14 @@ const openUpload = (fileId: number | null = null, resourceCategory?: AppearanceC
   uploadCategory.value =
     resourceCategory ??
     store.value.detailItem.value?.categoryKey ??
-    (category.value === 'mascot' ? 'mascot' : 'theme')
+    (tab.value === 'mascot' ? 'mascot' : 'theme')
   uploadTargetId.value = fileId
   uploadOpen.value = true
 }
 
 /**
  * 打开外观包与桌宠包的文档。
- *
- * 文档站还没出英文版的外观指南——`/en/docs/advanced-features/appearance.html` 现在落到中文首页，
- * 所以先固定开中文页，等英文版发布后再接 localizeDocUrl。
+ * 文档站暂无英文版外观指南，先固定打开中文页。
  */
 const openDocs = (): void => {
   void openExternalUrl(MAS_DOC_URLS.appearance)
@@ -101,17 +141,15 @@ const openDocs = (): void => {
 
 const handleUploaded = (): void => {
   invalidateMine()
-  if (tab.value !== 'mine' && view.value === 'list')
-    void store.value.loadList(store.value.page.value)
+  void outdated.refresh()
+  if (tab.value !== 'mine') void store.value.loadList(1)
   if (authorized.value) void mine.value.ensureLoaded()
 }
 
-// 同页三份分类缓存共用一组资源；写入后其他分类在下次展示时重新加载。
 function invalidateMine(source?: AppearanceFilter): void {
   if (source !== 'all') allMine.reset()
-  for (const [key, context] of Object.entries(contexts)) {
-    if (key !== source) context.mine.reset()
-  }
+  if (source !== 'theme') contexts.theme.mine.reset()
+  if (source !== 'mascot') contexts.mascot.mine.reset()
 }
 
 const viewInStore = (item: MyAppearanceItem): void => {
@@ -121,17 +159,24 @@ const viewInStore = (item: MyAppearanceItem): void => {
   void contexts[resourceCategory].store.openDetail(toStoreItem(item, accountState.value.username))
 }
 
-// 先清再拉：两个 watcher 按定义顺序执行
 watch(accountKey, () => invalidateMine())
 
 watch(tab, (current, previous) => {
-  if (previous !== 'mine') {
-    const keyword = contexts[previous].store.keyword.value
-    contexts[previous].store.reset()
-    if (current !== 'mine') contexts[current].store.keyword.value = keyword
+  const prevKey =
+    previous === 'theme' || previous === 'mascot' ? previous : previous === 'mine' ? null : 'all'
+  const nextKey =
+    current === 'theme' || current === 'mascot' ? current : current === 'mine' ? null : 'all'
+  if (prevKey && nextKey && prevKey !== nextKey) {
+    const keyword = contexts[prevKey].store.keyword.value
+    contexts[prevKey].store.backToList()
+    contexts[nextKey].store.keyword.value = keyword
+  } else if (prevKey && !nextKey) {
+    contexts[prevKey].store.backToList()
   }
   uploadTargetId.value = null
-  if (current !== 'mine' && view.value === 'list') void store.value.loadList(1)
+  if (nextKey && (contexts[nextKey].store.items.value.length === 0 || prevKey !== nextKey)) {
+    void contexts[nextKey].store.loadList(1)
+  }
 })
 
 watch(
@@ -142,29 +187,42 @@ watch(
   { immediate: true }
 )
 
+let unsubAppearance: (() => void) | undefined
+let unsubMascot: (() => void) | undefined
+
 onMounted(() => {
-  store.value.open()
+  contexts.all.store.open()
+  void outdated.refresh()
   void account.refresh()
+  unsubAppearance = window.electronAPI.onAppearanceChanged?.(() => {
+    if (!outdated.updatingAll.value) void outdated.refresh()
+  })
+  unsubMascot = window.electronAPI.onMascotChanged?.(() => {
+    if (!outdated.updatingAll.value) void outdated.refresh()
+  })
 })
 
 onBeforeUnmount(() => {
-  for (const context of Object.values(contexts)) {
-    context.store.reset()
-    context.mine.reset()
-  }
+  unsubAppearance?.()
+  unsubMascot?.()
+  contexts.all.store.reset()
+  contexts.theme.store.reset()
+  contexts.theme.mine.reset()
+  contexts.mascot.store.reset()
+  contexts.mascot.mine.reset()
   allMine.reset()
+  outdated.reset()
   account.dispose()
 })
 </script>
 
 <template>
-  <div class="theme-store-page">
+  <AppPage layout="scroll">
     <component :is="modalContextHolder" />
-    <div class="theme-store-header">
-      <h1 class="page-title">{{ t('core.themeStore.title') }}</h1>
-      <div class="theme-store-actions">
+    <PageHeader :title="t('core.themeStore.title')">
+      <template #actions>
         <ThemeStoreAccount :account="account" />
-        <a-button type="primary" @click="openDocs">
+        <a-button @click="openDocs">
           <template #icon><FileTextOutlined /></template>
           {{ t('core.themeStore.openDocs') }}
         </a-button>
@@ -172,20 +230,31 @@ onBeforeUnmount(() => {
           <template #icon><UploadOutlined /></template>
           {{ t('core.themeStore.upload.open') }}
         </a-button>
-      </div>
-    </div>
-    <div class="theme-store-content">
+      </template>
+    </PageHeader>
+
+    <PageSurface :scrollable="false" class="theme-store-content">
+      <ThemeStoreLocalStatus
+        :outdated-count="outdated.items.value.length"
+        :updating-all="outdated.updatingAll.value"
+        @update-all="void outdated.updateAll()"
+      />
+
       <a-segmented
         v-model:value="tab"
         :options="tabOptions"
         :disabled="uploadOpen || installing"
         class="theme-store-tabs"
       />
+
       <template v-if="tab !== 'mine'">
-        <OnlineAppearanceList v-if="view === 'list'" :key="category" :store="store" />
-        <OnlineAppearanceDetail
-          v-else
-          :key="category"
+        <OnlineAppearanceList
+          :key="activeStoreKey"
+          :store="store"
+          :category-mode="tab === 'installed' ? 'installed' : activeStoreKey"
+        />
+        <OnlineAppearanceDetailDrawer
+          :key="activeStoreKey"
           :store="store"
           :account="account"
           :mine="mine"
@@ -203,62 +272,26 @@ onBeforeUnmount(() => {
         @upload-version="openUpload"
         @view-in-store="viewInStore"
       />
-    </div>
+    </PageSurface>
+
     <AppearanceUploadModal
       :key="uploadCategory"
+      v-model:open="uploadOpen"
       :category-key="uploadCategory"
       :allow-category-change="uploadTargetId === null"
-      v-model:open="uploadOpen"
       :account="account"
       :mine="uploadMine"
       :target-file-id="uploadTargetId"
       @uploaded="handleUploaded"
       @category-change="uploadCategory = $event"
     />
-  </div>
+  </AppPage>
 </template>
 
 <style scoped>
-.theme-store-page {
-  display: flex;
-  width: 100%;
-  min-height: 100%;
-  flex-direction: column;
-  box-sizing: border-box;
-}
-
-.theme-store-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding: 0 4px;
-}
-
-.page-title {
-  margin: 0;
-  color: var(--app-page-title-color, var(--ant-color-text));
-  font-size: 32px;
-  font-weight: 700;
-}
-
-.theme-store-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: flex-end;
-}
-
 .theme-store-content {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  padding: 20px 24px 24px;
-  border-radius: 8px;
-  background: var(--ant-color-bg-container);
 }
 
 .theme-store-tabs {

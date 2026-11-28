@@ -93,6 +93,7 @@
       "updateRuntime": "Update Runtime"
     },
     "msg": {
+      "backingUpUpgrade": "Backing up data from before the upgrade…",
       "execFailed": "Execution failed",
       "autoRetry": "Retrying startup",
       "initDone": "Setup complete",

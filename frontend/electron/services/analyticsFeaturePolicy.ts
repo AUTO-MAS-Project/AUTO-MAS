@@ -36,10 +36,34 @@ const script = [
   'none',
 ] as const
 const family = ['mumu', 'leidian', 'bluestacks', 'avd', 'multi', 'unknown'] as const
+const gameAdapter = [
+  'mumu',
+  'ldplayer',
+  'avd',
+  'general_emulator',
+  'win_process',
+  'unknown',
+] as const
+const gameOperation = [
+  'open',
+  'close',
+  'show',
+  'hide',
+  'minimize',
+  'maximize',
+  'refresh',
+  'create_instance',
+  'delete_instance',
+  'install_app',
+  'open_store',
+  'check_components',
+  'check_update',
+  'update',
+  'unknown',
+] as const
 const plan = [
   'MaaPlanConfig',
   'MaaEndPlanConfig',
-  'BAAHPlanConfig',
   'MSSPlanConfig',
   'OkwwPlanConfig',
   'OkNtePlanConfig',
@@ -54,6 +78,22 @@ const finished = <T extends Record<string, readonly string[]>>(fields: T) => ({
 })
 
 export const featureAnalyticsSchemas = {
+  game_target_changed: finished({
+    adapter: gameAdapter,
+    action: [
+      'create',
+      'update',
+      'delete',
+      'search',
+      'import',
+      'settings',
+      'batch_settings',
+      'stable_mode',
+      'capture',
+    ] as const,
+  }),
+  game_operation_result: finished({ adapter: gameAdapter, operation: gameOperation }),
+  game_operation_observed_finished: finished({ adapter: gameAdapter, operation: gameOperation }),
   plugin_action_finished: finished({
     action: ['enable', 'disable', 'reload', 'uninstall', 'install', 'refresh', 'config'] as const,
   }),
@@ -164,6 +204,12 @@ export const featureAnalyticsSchemas = {
   }),
   community_activity_requested: finished({
     operation_kind: ['refresh', 'sign', 'reward', 'action'] as const,
+  }),
+  // 附属插件（SignFlow）的三类用户操作：抽卡查询、抽卡读取、凭据刷新。
+  // 单独建事件而不复用 community_activity_requested：它们的成败由插件端点决定，
+  // 与宿主社区活动接口不是同一条链路，混在一起会让失败率互相污染。
+  signflow_requested: finished({
+    action: ['gacha_query', 'gacha_fetch', 'token_refresh'] as const,
   }),
   settings_change_finished: finished({
     setting_key: [

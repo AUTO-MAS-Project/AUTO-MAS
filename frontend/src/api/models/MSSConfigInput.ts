@@ -4,17 +4,22 @@
 /* eslint-disable */
 import type { MSSConfig_DeviceInput } from './MSSConfig_DeviceInput';
 import type { MSSConfig_EmbeddedInput } from './MSSConfig_EmbeddedInput';
-import type { MSSConfig_EmulatorInput } from './MSSConfig_EmulatorInput';
 import type { MSSConfig_GameInput } from './MSSConfig_GameInput';
 import type { MSSConfig_InfoInput } from './MSSConfig_InfoInput';
+import type { MSSConfig_plugin_gameInput } from './MSSConfig_plugin_gameInput';
+import type { MSSConfig_plugin_infoInput } from './MSSConfig_plugin_infoInput';
 import type { MSSConfig_RunInput } from './MSSConfig_RunInput';
 import type { MSSConfig_SelectionInput } from './MSSConfig_SelectionInput';
 import type { MSSConfig_TaskInput } from './MSSConfig_TaskInput';
 import type { MSSConfig_UpdateInput } from './MSSConfig_UpdateInput';
 export type MSSConfigInput = {
+    /**
+     * 游戏与设备
+     */
+    game?: (MSSConfig_plugin_gameInput | null);
+    info?: (MSSConfig_plugin_infoInput | null);
     Device?: (MSSConfig_DeviceInput | null);
     Embedded?: (MSSConfig_EmbeddedInput | null);
-    Emulator?: (MSSConfig_EmulatorInput | null);
     Game?: (MSSConfig_GameInput | null);
     Info?: (MSSConfig_InfoInput | null);
     Run?: (MSSConfig_RunInput | null);

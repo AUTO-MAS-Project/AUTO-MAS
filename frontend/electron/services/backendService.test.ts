@@ -393,6 +393,9 @@ describe('Runtime 启动与退出', () => {
         expect(spawnedEnv(index).AUTO_MAS_HTTP_PORT).toBe(port)
         expect(spawnedEnv(index).AUTO_MAS_DEV).toBeUndefined()
         expect(spawnedEnv(index).AUTO_MAS_ENV).toBe(isPackaged ? 'production' : 'development')
+        expect(spawnedEnv(index).AUTO_MAS_DESKTOP_VERSION).toBe(
+          isPackaged && mode === 'managed' ? '5.5.0-beta.3' : undefined
+        )
         expect(spawnedEnv(index).AUTO_MAS_INSTALL_TOKEN).toBe(
           getFluxdownInstallEnvironment().AUTO_MAS_INSTALL_TOKEN
         )

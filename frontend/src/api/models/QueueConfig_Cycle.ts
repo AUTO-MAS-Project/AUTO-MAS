@@ -15,5 +15,9 @@ export type QueueConfig_Cycle = {
      * 下次循环触发时间，由上次触发时间和间隔计算
      */
     readonly NextRunAt?: (string | null);
+    /**
+     * 重置循环计时，将上次循环触发时间设为现在
+     */
+    readonly ResetTimer?: (string | null);
 };
 

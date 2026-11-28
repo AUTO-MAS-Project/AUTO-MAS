@@ -2,7 +2,7 @@
 
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from datetime import date
 from pathlib import Path
 from typing import (
@@ -12,8 +12,8 @@ from typing import (
     Generic,
     List,
     Literal,
-    NamedTuple,
     Optional,
+    Self,
     TypeVar,
     Union,
 )
@@ -25,11 +25,14 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
-    ValidationInfo,
+    ValidationError,
     WithJsonSchema,
     field_validator,
+    model_serializer,
 )
 
+from app.config.errors import ConfigAggregateError
+from app.config.fields.hints import UiHintsMap, UiSection, UiStep, UiTablesList
 from app.config.wire import config_contract
 from app.models.task import TaskItem, TaskMode, TaskParams, TaskTriggerReason
 from app.utils import MSS_DEFAULT_TRIBULATION_STAGE, MSS_TRIBULATION_STAGES
@@ -71,22 +74,6 @@ class PluginInstallation(BaseModel):
     version: str
     state: Literal["waiting_restart", "applying", "succeeded", "failed"]
     message: str | None = None
-
-
-class OperationInfo(BaseModel):
-    """宿主命令快照，业务参数和插件实例不进入外部契约。"""
-
-    operationId: UUID
-    configUid: UUID
-    field: str
-    owner: UUID | None = None
-    state: Literal[
-        "queued", "running", "cancelling", "succeeded", "failed", "cancelled"
-    ] = "queued"
-    cancellable: bool = True
-    createdAt: AwareDatetime
-    completedAt: AwareDatetime | None = None
-    errorCode: str | None = None
 
 
 class DownloadSnapshot(BaseModel):
@@ -207,6 +194,7 @@ class HistoryCounterStatistic(BaseModel):
 
 HistoryJsonValue = Annotated[
     JsonValue,
+    ValidationError,
     WithJsonSchema(
         {
             "anyOf": [
@@ -372,6 +360,99 @@ class OutBase(BaseModel):
     message: str = Field(default="操作成功", description="操作消息")
 
 
+def _config_update_issues(
+    error: Exception, field_path: tuple[str, str] | None = None
+) -> Iterator[tuple[tuple[str | int, ...], str]]:
+    """冷态校验给出完整路径，热态赋值使用提交时的字段坐标。"""
+    if isinstance(error, ConfigAggregateError):
+        for cause in error.errors:
+            yield from _config_update_issues(cause, error.field_path or field_path)
+    elif isinstance(error, ValidationError):
+        for issue in error.errors(
+            include_input=False, include_context=False, include_url=False
+        ):
+            yield field_path or issue["loc"], issue["msg"]
+    else:
+        yield (), str(error)
+
+
+class ConfigUpdateOut(OutBase):
+    fieldErrors: dict[str, str] = Field(
+        default_factory=dict, description="按 group.field 定位的校验错误"
+    )
+
+    @classmethod
+    def from_validation_error(
+        cls, error: ValidationError | ConfigAggregateError, *, code: int
+    ) -> Self:
+        messages: list[str] = []
+        fields: dict[str, list[str]] = {}
+        for path, message in _config_update_issues(error):
+            label = ".".join(map(str, path))
+            messages.append(f"{label}: {message}" if label else message)
+            if len(path) >= 2:
+                fields.setdefault(f"{path[0]}.{path[1]}", []).append(message)
+        return cls(
+            code=code,
+            status="error",
+            message="\n".join(messages) or str(error),
+            fieldErrors={key: "\n".join(items) for key, items in fields.items()},
+        )
+
+
+class BackupTargetHint(BaseModel):
+    key: str
+    kind: Literal["user", "script"]
+
+
+class DeclarativeConfigUi(BaseModel):
+    """单项编辑所需的实时提示及触发器、锁使用的配置实例标识。"""
+
+    configUid: str
+    hints: UiHintsMap
+    tables: UiTablesList
+    steps: list[UiStep] = Field(default_factory=list)
+    sections: dict[str, UiSection] = Field(default_factory=dict)
+    i18nNamespace: str | None = None
+    pluginName: str | None = None
+    backupTargets: list[BackupTargetHint] = Field(default_factory=list)
+    nativeSession: Literal["view", "config"] | None = None
+
+
+class ConfigSnapshotOut(OutBase):
+    """配置快照及其 Entry / Collection 订阅来源。"""
+
+    uiSources: list[UUID] = Field(default_factory=list)
+
+
+class DeclarativeConfigGetOut(ConfigSnapshotOut):
+    """仅详情包含表单声明，列表保留原有 JSON 结构。"""
+
+    ui: DeclarativeConfigUi | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler):
+        document = handler(self)
+        if self.ui is None:
+            document.pop("ui", None)
+        return document
+
+
+class UnavailableConfigItem(BaseModel):
+    """所属插件不可用、原样保留着的托管或计划表（不在 index / data 里）。"""
+
+    uid: str = Field(..., description="唯一标识符")
+    type: str = Field(..., description="盘上记录的配置类型名")
+    typeLabel: str = Field(..., description="类型显示名，不认识的类型即类型名")
+    name: str = Field(default="", description="名称，取不到时为空")
+    plugin: Optional[str] = Field(default=None, description="所属插件名，不认识时为空")
+    reason: Literal["plugin_unavailable", "load_failed"] = Field(
+        ...,
+        description="plugin_unavailable：所属插件没装上或没启用；load_failed：插件在但解析不了",
+    )
+    detail: str = Field(default="", description="load_failed 时的错误摘要")
+
+
 class ConfigBackupItemOut(BaseModel):
     """配置备份条目"""
 
@@ -394,7 +475,7 @@ class ConfigBackupRestoreIn(BaseModel):
     """把指定备份恢复到目标位置（target 取值由专项池定义）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     time: str = Field(..., description="备份时间戳")
     target: str = Field(
         ...,
@@ -414,7 +495,7 @@ class ConfigBackupEnsureIn(BaseModel):
     """按需归档目标池当前配置（编辑界面进入/退出时机，指纹去重）"""
 
     scriptId: str = Field(..., description="所属托管ID")
-    userId: str = Field(..., description="目标账号ID")
+    userId: str | None = Field(default=None, description="目标账号ID，托管级池可省略")
     target: str = Field(..., description="归档目标（取值由专项池定义）")
 
 
@@ -527,7 +608,7 @@ class EmulatorDeleteIn(BaseModel):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
-PlanComboxConsumer = Literal["maaend", "baah", "mss", "universal", "oknte", "okww"]
+PlanComboxConsumer = Literal["maaend", "mss", "universal", "oknte", "okww"]
 
 
 class MaaEndAutoEssencePlanKey(BaseModel):
@@ -573,186 +654,6 @@ class MaaEndProtocolSpacePlanKey(BaseModel):
 MaaEndPlanKey = MaaEndProtocolSpacePlanKey | MaaEndAutoEssencePlanKey
 
 
-class BAAHSlotRule(NamedTuple):
-    """BAAH 计划表某一位的取值规则。
-
-    六个字段都是「三位一组」的整数列表，位置含义随字段而变（序号、地区、关卡、
-    次数、开关），同一位在不同字段上的合法范围也不同，所以逐位列出规则表，
-    校验与修正都从这张表读，避免两边各写一份后漂移。
-    """
-
-    title: str  # 这一位的中文名，报错信息里用
-    minimum: int  # 允许的最小值
-    maximum: Optional[int] = None  # 允许的最大值，None 表示不设上限
-    allowed: tuple[int, ...] = ()  # 区间之外额外允许的取值（如关卡位的 -1）
-    fallback: Optional[int] = None
-
-
-BAAH_PLAN_KEY_SLOT_RULES: dict[str, tuple[BAAHSlotRule, ...]] = {
-    "Event": (
-        BAAHSlotRule("活动关卡序号", minimum=1),
-        BAAHSlotRule("活动扫荡次数", minimum=-1),
-        BAAHSlotRule("活动关卡开关", minimum=0, maximum=1, fallback=1),
-    ),
-    "Wanted": (
-        BAAHSlotRule("地区", minimum=1, maximum=3),
-        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
-        BAAHSlotRule("扫荡次数", minimum=-1),
-        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
-    ),
-    "Special": (
-        BAAHSlotRule("地区", minimum=1, maximum=2),
-        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
-        BAAHSlotRule("扫荡次数", minimum=-1),
-        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
-    ),
-    "Exchange": (
-        BAAHSlotRule("学院", minimum=1, maximum=3),
-        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
-        BAAHSlotRule("扫荡次数", minimum=-1),
-        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
-    ),
-    "Hard": (
-        BAAHSlotRule("章节", minimum=1),
-        BAAHSlotRule("关卡", minimum=1),
-        BAAHSlotRule("扫荡次数", minimum=-1),
-        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
-    ),
-    "Normal": (
-        BAAHSlotRule("章节", minimum=1),
-        BAAHSlotRule("关卡", minimum=1),
-        BAAHSlotRule("扫荡次数", minimum=-1),
-        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
-    ),
-}
-
-
-def _baah_slot_expected(rule: BAAHSlotRule) -> str:
-    """把一位的合法取值说成一句人话，用于校验报错。"""
-
-    if rule.allowed:
-        extra = "、".join(str(item) for item in rule.allowed)
-        return f"只能填 {extra} 或不小于 {rule.minimum}"
-    if rule.maximum is None:
-        return f"必须不小于 {rule.minimum}"
-    if rule.minimum == rule.maximum:
-        return f"只能是 {rule.minimum}"
-    return f"只能填 {rule.minimum} 到 {rule.maximum}"
-
-
-def baah_plan_slot_error(field: str, index: int, value: int) -> Optional[str]:
-    """该位不合法时返回完整的中文原因（含字段、位次与期望取值），合法返回 None。"""
-
-    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
-    # 列表比规则表短是合法的（可选位可以缺省），超出规则表的位不做判断。
-    if rules is None or index >= len(rules):
-        return None
-
-    rule = rules[index]
-    if value in rule.allowed:
-        return None
-    if value < rule.minimum or (rule.maximum is not None and value > rule.maximum):
-        return (
-            f"{field} 第 {index + 1} 位（{rule.title}）{_baah_slot_expected(rule)}，"
-            f"当前为 {value}"
-        )
-    return None
-
-
-def fix_baah_plan_slot(field: str, index: int, value: int) -> int:
-    """把越界的一位修正到最近的合法值，规则表里没有的位原样返回。"""
-
-    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
-    if rules is None or index >= len(rules):
-        return value
-
-    rule = rules[index]
-    if value in rule.allowed:
-        return value
-    if value < rule.minimum:
-        return rule.minimum if rule.fallback is None else rule.fallback
-    if rule.maximum is not None and value > rule.maximum:
-        return rule.maximum if rule.fallback is None else rule.fallback
-    return value
-
-
-BAAH_PLAN_KEY_MIN_LENGTH = 2
-
-
-class BAAHPlanKey(BaseModel):
-    """BAAH 计划表某一天要打的关卡。
-
-    五类非活动关卡各自有三种状态，缺一不可地区分：
-    缺席（字段不在 key 里）＝今天这一类不干预，BAAH 沿用自己配置文件里的关卡与开关；
-    空数组＝今天不打这一类；有值（如 ``[3, -1, 1]``）＝今天按这个参数打这一类。
-    因此默认值是 ``None`` 而不是某套具体关卡：补成默认值会把「不干预」静默变成
-    「按默认关卡打」。
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    # 只兼容旧客户端的输入；配置加载和保存时移除，运行期不再从计划表下发活动关卡。
-    Event: Optional[list[int]] = Field(
-        default=None,
-        max_length=3,
-        description="活动关卡：关卡序号、扫荡次数；缺席表示今天不干预这一类",
-    )
-    Wanted: Optional[list[int]] = Field(
-        default=None,
-        max_length=4,
-        description="悬赏通缉：地区、关卡、次数；缺席表示今天不干预这一类",
-    )
-    Special: Optional[list[int]] = Field(
-        default=None,
-        max_length=4,
-        description="特殊任务：地区、关卡、次数；缺席表示今天不干预这一类",
-    )
-    Exchange: Optional[list[int]] = Field(
-        default=None,
-        max_length=4,
-        description="学园交流会：学院、关卡、次数；缺席表示今天不干预这一类",
-    )
-    Hard: Optional[list[int]] = Field(
-        default=None,
-        max_length=4,
-        description="困难图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
-    )
-    Normal: Optional[list[int]] = Field(
-        default=None,
-        max_length=4,
-        description="普通图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
-    )
-
-    @field_validator("Event", "Wanted", "Special", "Exchange", "Hard", "Normal")
-    @classmethod
-    def validate_slot_values(
-        cls, value: Optional[list[int]], info: ValidationInfo
-    ) -> Optional[list[int]]:
-        """逐位校验取值，并检查非空值的长度下限。
-
-        只限制长度挡不住负数与 0，而它们会被原样传给 BAAH：悬赏通缉/特殊任务/
-        学园交流会的关卡位 0 会让上游提示「关卡序号为0，无法扫荡」，困难图与普通
-        图的关卡位走滚动选择，负数算不出坐标。规则表见 BAAH_PLAN_KEY_SLOT_RULES。
-
-        ``None``（缺席）与空数组（今天不打这一类）都是合法取值，直接放行。
-        """
-
-        if value is None or len(value) == 0:
-            return value
-
-        if len(value) < BAAH_PLAN_KEY_MIN_LENGTH:
-            raise ValueError(
-                f"{info.field_name} 至少要写 {BAAH_PLAN_KEY_MIN_LENGTH} 位"
-                f"（每一位含义固定），当前为 {value}"
-            )
-
-        for index, item in enumerate(value):
-            error = baah_plan_slot_error(info.field_name, index, item)
-            if error is not None:
-                raise ValueError(error)
-        return value
-
-
 class WSEnvelope(BaseModel):
     """主 WebSocket 统一消息信封, 前后端均按 id + type 路由"""
 
@@ -784,6 +685,9 @@ class WSTaskNoticeData(BaseModel):
     """任务提示消息数据 (type=task.notice)"""
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    sourceScriptType: str | None = Field(
+        default=None, description="实际发出提示的专项类型"
+    )
     message: str = Field(..., description="提示内容")
     messageKey: Optional[str] = Field(
         default=None, description="可选的前端翻译键；旧客户端仍使用 message"
@@ -879,6 +783,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
 
     task: TaskTreeData
     taskId: str = Field(..., description="任务 ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(
         ..., description="脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行"
     )
@@ -967,6 +872,7 @@ class WSTaskCreatedData(BaseModel):
 
     trigger: TaskTriggerReason = TaskTriggerReason.MANUAL
     taskId: str = Field(..., description="新任务ID")
+    targetId: str | None = Field(default=None, description="可重跑的队列或单个托管 ID")
     mode: TaskMode = Field(..., description="任务模式, 与创建请求一致")
     scripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="任务关联的托管静态标识"
@@ -1831,7 +1737,7 @@ class WebhookGetIn(WebhookInBase):
 ConfigDataT = TypeVar("ConfigDataT")
 
 
-class WebhookGetOut(OutBase, Generic[ConfigDataT]):
+class WebhookGetOut(ConfigSnapshotOut, Generic[ConfigDataT]):
     index: List[WebhookIndexItem] = Field(..., description="Webhook索引列表")
     data: Dict[str, ConfigDataT] = Field(
         ..., description="Webhook数据字典, key来自于index列表的uid"
@@ -1902,7 +1808,6 @@ __all__ = [
     "ConfigBackupEnsureOut",
     "ConfigBackupPreviewOut",
     "ConfigBackupFileOut",
-    "OperationInfo",
     "PluginInstallation",
     "DownloadRequest",
     "DownloadSnapshot",
@@ -1933,6 +1838,10 @@ __all__ = [
     "HistoryCleanupReport",
     "HistoryBackupSnapshot",
     "OutBase",
+    "ConfigUpdateOut",
+    "DeclarativeConfigGetOut",
+    "BackupTargetHint",
+    "DeclarativeConfigUi",
     "TagItem",
     "ComboBoxItem",
     "ComboBoxOut",
@@ -1945,12 +1854,6 @@ __all__ = [
     "MaaEndAutoEssencePlanKey",
     "MaaEndProtocolSpacePlanKey",
     "MaaEndPlanKey",
-    "BAAHSlotRule",
-    "BAAH_PLAN_KEY_SLOT_RULES",
-    "baah_plan_slot_error",
-    "fix_baah_plan_slot",
-    "BAAH_PLAN_KEY_MIN_LENGTH",
-    "BAAHPlanKey",
     "WSEnvelope",
     "WSTaskNoticeData",
     "WSTaskConfigDiscardedData",
@@ -2039,7 +1942,6 @@ __all__ = [
 
 PLAN_ROTATE_DAYS_DEFAULT = 7
 PLAN_ROTATE_DAYS_MAX = 31
-BAAH_PLAN_ROTATE_DAYS_DEFAULT = 3
 
 
 class OkNtePlanKey(BaseModel):

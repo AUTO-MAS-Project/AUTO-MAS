@@ -1,475 +1,193 @@
 <script setup lang="ts">
-import { computed, watch, ref } from 'vue'
+import { computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { message, Modal } from 'ant-design-vue'
-import { MoreOutlined, ReloadOutlined, SettingOutlined, ShopOutlined } from '@ant-design/icons-vue'
-import type { PluginRegistryDocument, PluginConfigUi } from '@/api'
-import { usePluginInstallation } from '@/views/plugins/usePluginInstallation'
-import PageHeader from '@/components/PageHeader.vue'
-import PageSurface from '@/components/PageSurface.vue'
+import { useRoute, useRouter } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { AppPage, PageHeader, PageSurface } from '@/components/ui'
 import ApiRetryAlert from '@/components/ApiRetryAlert.vue'
-import NoData from '@/components/NoData.vue'
-import { pluginCatalogQueryKey, usePluginQuery } from '@/views/plugins/usePluginQuery'
-import { usePluginApi } from '@/composables/usePluginApi'
-import { pluginActionHint, pluginToggleChecked } from '@/views/plugins/configActions'
 import { apiErrorMessage } from '@/utils/apiResult'
-import PluginMetadataDetails from '@/views/plugins/PluginMetadataDetails.vue'
+import InstalledPane from '@/views/plugins/installed/InstalledPane.vue'
+import MarketPane from '@/views/plugins/market/MarketPane.vue'
+import UpdatesPane from '@/views/plugins/updates/UpdatesPane.vue'
+import UpdatesToolbar from '@/views/plugins/updates/UpdatesToolbar.vue'
+import { INSTALLED_FILTERS, MARKET_FILTERS } from '@/views/plugins/pluginCenterModel'
+import { providePluginCenter, type PluginCenterTab } from '@/views/plugins/usePluginCenter'
 
-type PluginRow = {
-  uid: string
-  info: Record<string, unknown>
-  ui?: PluginConfigUi
-  disableImpact: PluginRegistryDocument['disableImpact']
+/** 插件中心外壳：/plugins、/plugins/market、/plugins/updates 共用一个实例，页签跟随路由。 */
+const ROUTE_BY_TAB: Record<PluginCenterTab, string> = {
+  installed: 'Plugins',
+  market: 'PluginMarket',
+  updates: 'PluginUpdates',
 }
-const { t, te, locale } = useI18n()
-const api = usePluginApi()
-const expandedRowKeys = ref<string[]>([])
-const running = ref(false)
-const checking = ref(false)
-const {
-  installing,
-  install: installPlugin,
-  messageHolder: installationMessageHolder,
-} = usePluginInstallation()
 
-const normalize = (uid: string, value?: PluginRegistryDocument): PluginRow => {
-  // 保留后端配置字段和 UI 属性，不再以运行状态推断操作权限。
-  return { uid, info: value?.info ?? {}, ui: value?.ui, disableImpact: value?.disableImpact ?? [] }
-}
-const pluginText = (row: PluginRow, field: string, fallback: string) => {
-  // 优先读取插件资源命名空间中的展示文本，缺失时使用注册记录中的回退文本。
-  const key = `plugins.${row.info.plugin_name}.${field}`
-  return te(key) ? t(key) : fallback
-}
-const pluginName = (row: PluginRow) =>
-  /* 取得插件当前语言的展示名称，依次回退到记录名称、插件名或标识。 */ pluginText(
-    row,
-    'display_name',
-    String(row.info.display_name || row.info.plugin_name || row.uid)
-  )
-const status = (row: PluginRow) =>
-  /* 读取插件运行状态，尚未加载时使用 unloaded 展示状态。 */ String(row.info.state || 'unloaded')
-const tags = (row: PluginRow) => {
-  // 优先读取插件多语言标签，格式无效或缺失时使用记录中的标签列表。
-  const key = `plugins.${row.info.plugin_name}.tags`
-  if (te(key)) {
-    try {
-      const value: unknown = JSON.parse(t(key))
-      if (Array.isArray(value))
-        return value.filter(
-          item =>
-            /* 仅保留插件标签资源中的文本项，避免无效值进入标签组件。 */ typeof item === 'string'
-        )
-    } catch {
-      /* 缺失或不合法的词条回退到注册信息。 */
-    }
-  }
-  return Array.isArray(row.info.tags) ? row.info.tags : []
-}
-const enumText = (kind: string, value: unknown) => {
-  // 将运行状态等枚举转换为当前语言文本，无词条时展示原值或占位。
-  const key = `core.plugins.${kind}.${value}`
-  const text = t(key)
-  return text === key ? String(value || '-') : text
-}
-const listValue = (value: unknown) =>
-  /* 将依赖等列表转换为逗号分隔文本，空值使用占位。 */ Array.isArray(value)
-    ? value.join(', ')
-    : String(value || '-')
-const textValue = (value: unknown) =>
-  /* 将详情字段转换为展示文本，对空值统一显示占位。 */ value === undefined ||
-  value === null ||
-  value === ''
-    ? '-'
-    : String(value)
-const flagValue = (value: unknown) =>
-  /* 将布尔详情字段转换为当前语言的是或否，未知值显示占位。 */ value === true
-    ? t('core.common.yes')
-    : value === false
-      ? t('core.common.no')
-      : '-'
-const statusColor = (value: string) =>
-  /* 将启用、故障、停用和处理中状态映射为页面状态标签颜色。 */ value === 'enabled'
-    ? 'success'
-    : value.startsWith('fault')
-      ? 'error'
-      : ['disabled', 'unloaded'].includes(value)
-        ? 'default'
-        : 'processing'
+const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const center = providePluginCenter()
+const { data, lock, installedQuery, installedFilter, marketQuery, marketFilter } = center
 
-const {
-  data: queryRows,
-  loading: registryLoading,
-  error: registryError,
-  execute: loadRegistry,
-} = usePluginQuery(
-  () => /* 以当前语言区分已安装插件列表的查询缓存。 */ ['plugins', 'installed', locale.value],
-  async () => {
-    // 注册配置已包含运行状态及 UI 属性，直接使用这一份权威数据。
-    const result = await api.getRegistry()
-    return (result.order ?? []).map(item => normalize(item.uid, result.data?.[item.uid]))
+const tab = computed<PluginCenterTab>(() =>
+  route.name === 'PluginMarket'
+    ? 'market'
+    : route.name === 'PluginUpdates'
+      ? 'updates'
+      : 'installed'
+)
+const tabOptions = computed(() => [
+  {
+    value: 'installed',
+    payload: { count: data.registry.loaded.value ? data.installed.value.length : null },
   },
-  () => /* 为插件列表查询提供当前语言的加载失败提示。 */ t('core.plugins.loadFailed')
-)
-const rows = computed(
-  () => /* 读取注册配置中的插件行，尚无查询结果时返回空列表。 */ queryRows.value ?? []
+  { value: 'market', payload: { count: null } },
+  { value: 'updates', payload: { count: data.updates.value.length || null } },
+])
+const selectTab = (value: string | number) => {
+  const next = ROUTE_BY_TAB[value as PluginCenterTab]
+  if (next && next !== route.name) void router.push({ name: next })
+}
+
+const query = computed({
+  get: () => (tab.value === 'market' ? marketQuery.value : installedQuery.value),
+  set: value => {
+    if (tab.value === 'market') marketQuery.value = value
+    else installedQuery.value = value
+  },
+})
+const filterOptions = computed(() =>
+  tab.value === 'market'
+    ? MARKET_FILTERS.map(value => ({
+        value,
+        active: marketFilter.value === value,
+        pick: () => (marketFilter.value = value),
+      }))
+    : INSTALLED_FILTERS.map(value => ({
+        value,
+        active: installedFilter.value === value,
+        pick: () => (installedFilter.value = value),
+      }))
 )
 
-const catalog = usePluginQuery(
-  () => pluginCatalogQueryKey(locale.value),
-  api.getCatalog,
-  () => t('core.plugins.marketLoadFailed')
+const loading = computed(() => data.registry.loading.value || data.catalog.loading.value)
+const loadError = computed(() =>
+  tab.value === 'market'
+    ? data.catalog.error.value
+    : data.registry.error.value || data.catalog.error.value
 )
-const loading = computed(() => registryLoading.value || catalog.loading.value)
-const loadError = computed(() => registryError.value || catalog.error.value)
-const load = () => {
-  // 同步注册记录与市场投影，让两个页面使用同一份升级目标及操作权限。
-  return Promise.all([loadRegistry(), catalog.execute()])
-}
-const upgradeFor = (row: PluginRow) => {
-  // 按稳定插件身份关联目录，更新资格由后端配置字段计算。
-  return Object.values(catalog.data.value?.data ?? {}).find(
-    meta => meta.info?.plugin_name === row.info.plugin_name && meta.info?.update_available === true
-  )
-}
 const refresh = async () => {
-  // 从发行目录检查更新，再回读当前安装状态和可执行操作。
-  checking.value = true
+  // 从发行目录检查更新（市场页签为刷新目录），再回读安装状态与可执行操作。
   try {
-    await api.refreshCatalog()
-    const results = await load()
-    if (results.every(result => result !== null)) message.success(t('core.plugins.updatesChecked'))
+    if (await data.refreshCatalog())
+      message.success(
+        t(tab.value === 'market' ? 'core.plugins.marketRefreshed' : 'core.plugins.updatesChecked')
+      )
   } catch (error) {
     message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
-  } finally {
-    checking.value = false
   }
-}
-const upgrade = async (row: PluginRow) => {
-  // 从插件中心提交对应市场条目的原安装命令，升级完成后回读版本。
-  const meta = upgradeFor(row)
-  if (running.value || !meta) return
-  if (await installPlugin(meta)) await load()
 }
 
-const trigger = async (row: PluginRow, action: 'enable' | 'disable' | 'reload' | 'uninstall') => {
-  // 互斥提交插件启用、停用、重载或卸载触发器，等待后台结果后提示并刷新列表。
-  if (
-    running.value ||
-    installing.value ||
-    pluginActionHint(row.ui, 'info', action)?.editable !== true
-  )
-    return
-  running.value = true
-  try {
-    if (action === 'uninstall' || (action === 'disable' && row.disableImpact?.length)) {
-      const confirmed = await new Promise<boolean>(resolve => {
-        // 卸载始终删除插件配置，已禁用适配器也须确认；停用沿用后端给出的配置影响范围。
-        Modal.confirm({
-          title: t(`core.plugins.${action}ConfirmTitle`),
-          content:
-            action === 'uninstall'
-              ? t('core.plugins.uninstallConfirmContent', { name: pluginName(row) })
-              : t('core.plugins.disableConfirmContent', {
-                  name: pluginName(row),
-                  scopes: row
-                    .disableImpact!.map(scope => t(`core.plugins.disableScope.${scope}`))
-                    .join(' / '),
-                }),
-          okText: t(`core.plugins.${action}`),
-          okType: 'danger',
-          cancelText: t('core.common.cancel'),
-          onOk: () => {
-            resolve(true)
-          },
-          onCancel: () => {
-            resolve(false)
-          },
-        })
-      })
-      if (!confirmed) return
-    }
-    const result = await api.runCommand(action, {
-      configUid: row.uid,
-      group: 'info',
-      field: action,
-      value: true,
-    })
-    message.success(result.message || t('core.plugins.actionComplete'))
-    await load()
-  } catch (error) {
-    message.error(apiErrorMessage(error, t('core.plugins.actionFailed')))
-  } finally {
-    running.value = false
-  }
-}
-const toggleExpanded = (uid: string) => {
-  // 按用户点击切换指定插件详情的展开状态。
-  expandedRowKeys.value = expandedRowKeys.value.includes(uid)
-    ? expandedRowKeys.value.filter(key => /* 从展开键中移除当前插件，收起对应详情。 */ key !== uid)
-    : [...expandedRowKeys.value, uid]
-}
-const handleExpand = (expanded: boolean, row: PluginRow) => {
-  // 根据表格展开事件更新展开键，避免重复添加同一插件。
-  expandedRowKeys.value = expanded
-    ? expandedRowKeys.value.includes(row.uid)
-      ? expandedRowKeys.value
-      : [...expandedRowKeys.value, row.uid]
-    : expandedRowKeys.value.filter(
-        key => /* 收起表格指定行时移除该插件的展开键。 */ key !== row.uid
-      )
-}
-watch(locale, load, { immediate: true })
+watch(
+  tab,
+  current => {
+    // 进入市场先显示本机目录，再从发行源刷新；慢网或失败时保留已有列表。
+    if (current === 'market') void data.autoRefreshCatalog()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
-  <main class="plugins-page">
-    <installation-message-holder />
+  <AppPage layout="fill" class="plugins-page">
     <PageHeader :title="t('core.plugins.title')">
       <template #actions>
         <a-button
-          :loading="checking || loading"
-          :disabled="running || installing !== null"
+          :loading="data.catalogRefreshing.value || loading"
+          :disabled="lock.busy.value"
           @click="refresh"
           ><template #icon><ReloadOutlined /></template
-          >{{ t('core.plugins.checkUpdates') }}</a-button
-        >
-        <a-button type="primary" @click="$router.push({ name: 'PluginMarket' })"
-          ><template #icon><ShopOutlined /></template>{{ t('core.plugins.marketButton') }}</a-button
+          >{{
+            t(tab === 'market' ? 'core.plugins.refreshCatalog' : 'core.plugins.checkUpdates')
+          }}</a-button
         >
       </template>
     </PageHeader>
     <PageSurface>
-      <ApiRetryAlert :error="loadError" :loading="loading" @retry="load" />
-      <a-table
-        v-if="rows.length || loading"
-        :data-source="rows"
-        :loading="loading"
-        row-key="uid"
-        :pagination="false"
-        :expanded-row-keys="expandedRowKeys"
-        @expand="handleExpand"
-      >
-        <template #emptyText><span /></template>
-        <a-table-column key="name" :title="t('core.plugins.attribute.name')" :width="240">
-          <template #default="{ record }"
-            ><div class="plugin-name-cell">
-              <a class="plugin-name" @click="toggleExpanded(record.uid)">{{ pluginName(record) }}</a
-              ><span class="plugin-id">{{ record.info.package_name || record.uid }}</span
-              ><span class="plugin-description">{{
-                pluginText(
-                  record,
-                  'description',
-                  String(record.info.description || t('core.plugins.noDescription'))
-                )
-              }}</span>
-            </div></template
-          >
-        </a-table-column>
-        <a-table-column key="tags" :title="t('core.plugins.tags')" :width="180"
-          ><template #default="{ record }"
-            ><a-space wrap size="small"
-              ><a-tag v-for="tag in tags(record)" :key="String(tag)">{{ tag }}</a-tag
-              ><span v-if="!tags(record).length" class="muted">-</span></a-space
-            ></template
-          ></a-table-column
-        >
-        <a-table-column key="state" :title="t('core.plugins.attribute.status')" :width="120"
-          ><template #default="{ record }"
-            ><a-tag :color="statusColor(status(record))">{{
-              enumText('state', status(record))
-            }}</a-tag></template
-          ></a-table-column
-        >
-        <a-table-column key="version" :title="t('core.plugins.attribute.version')" :width="150"
-          ><template #default="{ record }"
-            >{{ record.info.version || '-' }}
-            <div v-if="upgradeFor(record)">
-              <a-typography-text type="secondary">{{
-                t('core.plugins.availableVersion', { version: upgradeFor(record)?.info?.version })
-              }}</a-typography-text>
-            </div></template
-          ></a-table-column
-        >
-        <a-table-column key="source" :title="t('core.plugins.attribute.source')" :width="120"
-          ><template #default="{ record }">{{
-            enumText('source', record.info.source)
-          }}</template></a-table-column
-        >
-        <a-table-column key="error" :title="t('core.plugins.attribute.error')"
-          ><template #default="{ record }"
-            ><span v-if="record.info.last_error" class="error-text">{{
-              record.info.last_error
-            }}</span
-            ><span v-else class="muted">-</span></template
-          ></a-table-column
-        >
-        <a-table-column key="enabled" :title="t('core.plugins.attribute.enabled')" :width="90">
-          <template #default="{ record }">
-            <a-switch
-              v-if="
-                pluginActionHint(record.ui, 'info', 'enable') ||
-                pluginActionHint(record.ui, 'info', 'disable')
+      <div class="plugin-center">
+        <div class="plugin-center-toolbar">
+          <a-segmented :value="tab" :options="tabOptions" @change="selectTab">
+            <template #label="{ value, payload }">
+              <span class="plugin-center-tab">
+                {{ t(`core.plugins.tab.${value}`) }}
+                <span v-if="payload?.count !== null && payload?.count !== undefined">{{
+                  payload.count
+                }}</span>
+              </span>
+            </template>
+          </a-segmented>
+          <template v-if="tab !== 'updates'">
+            <a-input
+              v-model:value="query"
+              class="plugin-center-search"
+              allow-clear
+              :aria-label="
+                t(tab === 'market' ? 'core.plugins.searchMarket' : 'core.plugins.searchInstalled')
               "
-              :aria-label="`${pluginName(record)} ${t('core.plugins.attribute.enabled')}`"
-              :checked="pluginToggleChecked(record.ui, record.info.enabled)"
-              :disabled="
-                running ||
-                installing !== null ||
-                pluginActionHint(
-                  record.ui,
-                  'info',
-                  pluginToggleChecked(record.ui, record.info.enabled) ? 'disable' : 'enable'
-                )?.editable !== true
+              :placeholder="
+                t(tab === 'market' ? 'core.plugins.searchMarket' : 'core.plugins.searchInstalled')
               "
-              @change="
-                trigger(
-                  record,
-                  pluginToggleChecked(record.ui, record.info.enabled) ? 'disable' : 'enable'
-                )
-              "
-            />
-          </template>
-        </a-table-column>
-        <a-table-column
-          key="actions"
-          :title="t('core.plugins.action')"
-          :width="160"
-          align="right"
-          fixed="right"
-        >
-          <template #default="{ record }"
-            ><a-space size="small"
-              ><a-button
-                v-if="
-                  upgradeFor(record) && pluginActionHint(upgradeFor(record)?.ui, 'info', 'install')
-                "
-                type="primary"
-                size="small"
-                :loading="installing === upgradeFor(record)?.uid"
-                :disabled="
-                  running ||
-                  installing !== null ||
-                  pluginActionHint(upgradeFor(record)?.ui, 'info', 'install')?.editable !== true
-                "
-                @click="upgrade(record)"
-                >{{ t('core.plugins.upgrade') }}</a-button
-              ><a-button
-                type="text"
-                :aria-label="t('core.plugins.settings')"
-                @click="$router.push({ name: 'PluginSettings', params: { pluginId: record.uid } })"
-                ><SettingOutlined /></a-button
-              ><a-dropdown placement="bottomRight"
-                ><a-button
-                  type="text"
-                  :disabled="running || installing !== null"
-                  :aria-label="t('core.plugins.moreActions')"
-                  ><MoreOutlined /></a-button
-                ><template #overlay
-                  ><a-menu
-                    ><a-menu-item
-                      key="reload"
-                      v-if="pluginActionHint(record.ui, 'info', 'reload')"
-                      :disabled="pluginActionHint(record.ui, 'info', 'reload')?.editable !== true"
-                      @click="trigger(record, 'reload')"
-                      >{{ t('core.plugins.reload') }}</a-menu-item
-                    ><a-menu-divider /><a-menu-item
-                      key="uninstall"
-                      v-if="pluginActionHint(record.ui, 'info', 'uninstall')"
-                      :disabled="
-                        pluginActionHint(record.ui, 'info', 'uninstall')?.editable !== true
-                      "
-                      danger
-                      @click="trigger(record, 'uninstall')"
-                      >{{ t('core.plugins.uninstall') }}</a-menu-item
-                    ></a-menu
-                  ></template
-                ></a-dropdown
-              ></a-space
-            ></template
-          >
-        </a-table-column>
-        <template #expandedRowRender="{ record }">
-          <div class="plugin-details">
-            <PluginMetadataDetails :info="record.info" />
-            <a-descriptions size="small" :column="3" bordered>
-              <a-descriptions-item :label="t('core.plugins.attribute.importName')">{{
-                textValue(record.info.import_name)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.requires')">{{
-                listValue(record.info.requires)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.wants')">{{
-                listValue(record.info.wants)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.lifecycle')">{{
-                textValue(record.info.lifecycle_context)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.enabled')">{{
-                flagValue(record.info.enabled)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.core')">{{
-                flagValue(record.info.is_core)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.local')">{{
-                flagValue(record.info.is_local)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.codeDrift')">{{
-                textValue(record.info.code_drift)
-              }}</a-descriptions-item
-              ><a-descriptions-item :label="t('core.plugins.attribute.error')">{{
-                textValue(record.info.last_error)
-              }}</a-descriptions-item></a-descriptions
             >
-          </div>
-        </template>
-      </a-table>
-      <NoData
-        v-if="!loading && !loadError && !rows.length"
-        :description="t('core.plugins.empty')"
-      />
+              <template #prefix><SearchOutlined /></template>
+            </a-input>
+            <div class="plugin-center-filters">
+              <a-checkable-tag
+                v-for="filter in filterOptions"
+                :key="filter.value"
+                :checked="filter.active"
+                @change="filter.pick()"
+                >{{ t(`core.plugins.filter.${filter.value}`) }}</a-checkable-tag
+              >
+            </div>
+          </template>
+          <UpdatesToolbar v-else />
+        </div>
+        <ApiRetryAlert :error="loadError" :loading="loading" @retry="data.reload" />
+        <InstalledPane v-if="tab === 'installed'" />
+        <MarketPane v-else-if="tab === 'market'" />
+        <UpdatesPane v-else />
+      </div>
     </PageSurface>
-  </main>
+  </AppPage>
 </template>
 
 <style scoped>
-.plugins-page {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-.plugin-name-cell {
+.plugin-center {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
-}
-.plugin-name {
-  overflow: hidden;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.plugin-id,
-.plugin-description,
-.muted {
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-.plugin-description {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.error-text {
-  color: var(--ant-color-error);
-}
-.plugin-details {
-  display: flex;
-  margin: 0 8px;
-  flex-direction: column;
   gap: 16px;
+}
+
+.plugin-center-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.plugin-center-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plugin-center-search {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.plugin-center-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 </style>

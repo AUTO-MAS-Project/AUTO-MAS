@@ -44,8 +44,9 @@ class RestorePoolResolver:
         self._entries = entries
 
     def __call__(self, script: ConfigEntry) -> list[ConfigRestorePool]:
+        # 按确切类型认：子类不因父类登记过就拿到父类的恢复池。
         for entry_type, load in self._entries:
-            if isinstance(script, entry_type):
+            if type(script) is entry_type:
                 if load is None:
                     break
                 return load()

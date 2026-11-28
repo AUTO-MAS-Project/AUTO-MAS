@@ -1,29 +1,63 @@
-"""游戏管理主入口：订阅取实例；add 时挂管理实例；搜索汇总已启用插件。
-
-TODO(游戏管理迁移)：当前仅接入插件配置激活与控制器重载装配，尚未完成整体迁移。
-订阅/释放、串行准入及恢复流程尚未接入托管执行链，具体游戏/模拟器插件、
-旧数据转换和前端管理仍待游戏管理阶段统一实施；现有模拟器模块继续承担实际业务。
-"""
+"""统一游戏配置、任务订阅与设备插件生命周期。"""
 
 from __future__ import annotations
 
 import asyncio
+import os
 from collections import deque
-from typing import Any, Literal, overload
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 from uuid import UUID
 
 from app.config.core.node import LockTicket
 from app.config.signals import CollectionChangeEvent
+from app.config.wire import config_contract
 from app.models.config.game import GameDeviceEntry, GameEntry
+from app.models.config.game_binding import GameBindingCapabilities, GameBindingOwner
 from app.models.config.plugin_emulator import EmulatorEntry
+from app.models.emulator import DeviceUpdateOptions
 from app.plugin.base.emulator import EmulatorControl
-from app.plugin.base.game import GameControl
+from app.plugin.base.game import GameAdapterPlugin, GameControl
 from app.utils import get_logger
+
+if TYPE_CHECKING:
+    from app.task.game import BoundEmulator
 
 logger = get_logger("游戏管理")
 
 
 class _GameRuntime:
+    @property
+    def resource_path(self) -> Path:
+        from app.core import Config
+
+        return Config.resource_path
+
+    @property
+    def update_options(self) -> DeviceUpdateOptions:
+        from app.config import EncryptedValue
+        from app.core import Config
+
+        github = Config.setting.Update.Source == "GitHub"
+        stored = Config.setting.effective.Update.__dict__.get("MirrorChyanCDK")
+        ciphertext = (
+            stored.ciphertext().removeprefix("DPAPI:").strip()
+            if isinstance(stored, EncryptedValue)
+            else ""
+        )
+        return DeviceUpdateOptions(
+            source="github" if github else "mirrorchyan",
+            automas_version=Config.VERSION,
+            cdk_dpapi="" if github else ciphertext,
+        )
+
+    @property
+    def process_environment(self) -> dict[str, str] | None:
+        from app.core import Config
+        from app.utils.common.proxy_env import proxy_environment
+
+        return proxy_environment(Config.proxy)
+
     @property
     def silent(self) -> bool:
         """读取宿主当前静默设置，供游戏控制实例遵循统一的窗口显示策略。"""
@@ -37,10 +71,6 @@ class _GameRuntime:
         from app.core import Config
 
         return Config.setting.Function.IfBlockAd
-
-
-class GameCleanupError(RuntimeError):
-    """上次游戏占用尚未恢复，不能降级为无游戏订阅继续执行。"""
 
 
 class _SerialGate:
@@ -84,13 +114,291 @@ class _GameManager:
     """对外提供订阅、搜索；add 挂载由 Config 对 GameConfig 实例级 connect 本类方法。"""
 
     def __init__(self) -> None:
-        """初始化发现结果、设备订阅、清理锁及串行准入记录，统一持有游戏控制实例的运行状态。"""
+        """初始化发现结果、设备订阅、释放锁及串行准入记录。"""
         self._found: dict[UUID, Any] = {}
         self._subs: dict[LockTicket, GameEntry] = {}
         self._release_locks: dict[LockTicket, asyncio.Lock] = {}
-        self._pending_cleanup: set[LockTicket] = set()
         self._gate = _SerialGate()
         self._gate_tokens: set[UUID] = set()
+
+    async def get_emulator_instance(self, uid: UUID | str) -> BoundEmulator | None:
+        """[兼容旧专项] 借用 L2 当前设备，资源归属及账号覆盖由会话统一决定。"""
+        from app.task.game import current_emulator
+
+        return current_emulator()
+
+    @staticmethod
+    def existing_installation(
+        entry: GameEntry, *, exclude: UUID | None = None
+    ) -> GameEntry | None:
+        """发现及手动登记共用真实路径身份，避免升级后的安装再次导入。"""
+        from app.core import Config
+
+        path = getattr(entry.info, "path", None)
+        if path is None:
+            return None
+        identity = os.path.normcase(str(Path(path).resolve()))
+        for other in Config.GameConfig.values():
+            other_path = getattr(other.info, "path", None)
+            if (
+                other.uid != exclude
+                and type(other).__name__ == type(entry).__name__
+                and other_path is not None
+                and os.path.normcase(str(Path(other_path).resolve())) == identity
+            ):
+                return other
+        return None
+
+    async def create(self, type_key: str, data: dict) -> UUID:
+        from app.core import Config, Plugin
+
+        declaration = next(
+            (
+                Plugin.game_types[r.uid]
+                for r in Plugin.list_plugins()
+                if r.uid in Plugin.game_types
+                and (plugin_class := r._plugin_cls) is not None
+                and issubclass(plugin_class, GameAdapterPlugin)
+                and plugin_class.game_type_key == type_key
+            ),
+            None,
+        )
+        if declaration is None:
+            raise ValueError("游戏适配插件未启用")
+        payload = (
+            config_contract(declaration.game_class, mode="input", extra="forbid")
+            .model_validate(data)
+            .model_dump(exclude_unset=True)
+        )
+        candidate = declaration.game_class.model_validate(payload)
+        if (
+            data.get("info", {}).get("path")
+            and getattr(candidate.info, "path", None) is None
+        ):
+            raise ValueError("游戏程序或安装路径无效")
+        if self.existing_installation(candidate) is not None:
+            raise ValueError("该安装路径已存在，请使用已有游戏目标")
+        uid = Config.GameConfig.add(declaration.game_class, payload=payload)
+        await Config.GameConfig.commit()
+        return uid
+
+    async def update(self, uid: UUID, data: dict) -> None:
+        from app.core import Config
+
+        entry = Config.GameConfig[uid]
+        payload = (
+            config_contract(type(entry), mode="input", extra="forbid")
+            .model_validate(data)
+            .model_dump(exclude_unset=True)
+        )
+        candidate = type(entry).model_validate(payload)
+        if (
+            data.get("info", {}).get("path")
+            and getattr(candidate.info, "path", None) is None
+        ):
+            raise ValueError("游戏程序或安装路径无效")
+        if self.existing_installation(candidate, exclude=uid) is not None:
+            raise ValueError("该安装路径已存在，请使用已有游戏目标")
+        if entry.actions_busy:
+            raise ValueError("游戏目标正在使用，不能修改安装配置")
+        ticket = await entry.try_lock_x(cascade=False)
+        if ticket is None:
+            raise ValueError("游戏目标正在使用，不能修改安装配置")
+        try:
+            await entry.update(candidate)
+            if payload.get("info", {}).keys() - {"name", "concurrent_execution"}:
+                control = entry._control
+                try:
+                    await control.teardown()
+                finally:
+                    self.create_control(config=entry, control_class=type(control))
+        finally:
+            await entry.unlock(ticket)
+
+    async def startup_maintenance(self) -> None:
+        from app.core import Config
+
+        for entry in Config.GameConfig.values():
+            try:
+                await entry._control.startup()
+            except Exception as error:
+                logger.warning(f"设备维护恢复失败，保留材料供下次尝试：{error}")
+
+    async def close_devices(self, *, kind: str | None = None) -> None:
+        from app.core import Config
+
+        async def close_installation(control: EmulatorControl) -> None:
+            try:
+                await asyncio.wait_for(control.close_all(), timeout=30)
+            except Exception as error:
+                logger.warning(f"关闭模拟器安装失败，继续其他设备收尾：{error}")
+
+        await asyncio.gather(
+            *(
+                close_installation(entry._control)
+                for entry in Config.GameConfig.values()
+                if isinstance(entry._control, EmulatorControl)
+                and (kind is None or entry._control.kind == kind)
+            )
+        )
+
+    async def validate_binding(
+        self,
+        script_id: str,
+        patch: dict,
+        *,
+        owner=None,
+        script=None,
+        capabilities: GameBindingCapabilities | None = None,
+    ) -> str | None:
+        from app.core import Config
+
+        if script is None:
+            script = Config.ScriptConfig[script_id]
+        binding = patch.get("game", {})
+        uid = binding.get("game_id", (owner or script).game.game_id)
+        if uid == "-":
+            if owner is None or "game_id" in binding or script.game.game_id == "-":
+                return None
+            uid = script.game.game_id
+        if capabilities is None:
+            capabilities = Config.script_game_binding(
+                script, patch if owner is None else {}
+            )
+        if not capabilities.supported:
+            return "当前专项不支持绑定游戏目标" if binding else None
+        if owner is not None and not capabilities.account_override_supported:
+            if binding:
+                return "当前专项不支持账号单独指定游戏目标"
+            uid = script.game.game_id
+            if uid == "-":
+                return None
+        game = Config.GameConfig.get(UUID(str(uid)))
+        if game is None:
+            return "所选游戏目标不存在"
+        if capabilities.kinds and game.info.type not in capabilities.kinds:
+            return "所选游戏目标类型与当前专项控制方式不兼容"
+        if (
+            isinstance(game._control, EmulatorControl)
+            and game._control.kind == "avd"
+            and not Config.script_supports_mod_avd(script)
+        ):
+            return "当前专项不支持 ModAVD"
+        return None
+
+    async def update_device(self, uid: UUID, device_uid: UUID, data: dict) -> None:
+        from app.core import Config
+
+        entry = Config.GameConfig[uid]
+        if data.keys() - {"action"} and (
+            entry.actions_busy or entry._control.device_usage(device_uid) is not None
+        ):
+            raise ValueError("设备正在使用，不能修改连接参数")
+        device = entry.devices[device_uid]
+        payload = (
+            config_contract(type(device), mode="input", extra="forbid")
+            .model_validate(data)
+            .model_dump(exclude_unset=True)
+        )
+        await device.update(type(device).model_validate(payload))
+
+    async def write_settings(
+        self,
+        uid: UUID,
+        device_uid: UUID,
+        changes: dict[str, int],
+        expected: dict[str, int | None] | None,
+    ) -> None:
+        from app.core import Config
+        from app.models.config.game import TRIGGER_TICKET
+
+        entry = Config.GameConfig[uid]
+        if not isinstance(entry._control, EmulatorControl):
+            raise ValueError("客户端不提供模拟器实例设置")
+        if entry.actions_busy:
+            raise ValueError("游戏目标正在使用，不能修改实例设置")
+        ticket = await entry.try_lock_x(cascade=False)
+        if ticket is None:
+            raise ValueError("游戏目标正在使用，不能修改实例设置")
+        try:
+            await entry._control.save_settings(
+                device_uid, changes, expected, ticket=TRIGGER_TICKET
+            )
+        finally:
+            await entry.unlock(ticket)
+
+    async def configure_devices(
+        self,
+        uid: UUID,
+        action: Literal["settings", "stable_mode", "capture"],
+        *,
+        devices: list[UUID] | None = None,
+        changes: dict[str, int] | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """同一安装下逐台操作，单台失败交回结果，其余实例继续。"""
+        from app.core import Config
+        from app.models.config.game import TRIGGER_TICKET
+
+        entry = Config.GameConfig[uid]
+        if not isinstance(entry._control, EmulatorControl):
+            raise ValueError("此目标不提供模拟器配置维护")
+        control = entry._control
+        if entry.actions_busy:
+            raise ValueError("游戏目标正在使用，不能修改实例设置")
+        ticket = await entry.try_lock_x(cascade=False)
+        if ticket is None:
+            raise ValueError("游戏目标正在使用，不能修改实例设置")
+        try:
+            await control.refresh()
+            selected = devices if devices is not None else list(entry.devices.keys())
+            result: dict[str, dict[str, Any]] = {}
+            for device_uid in selected:
+                try:
+                    device = entry.devices[device_uid]
+                    if getattr(device.info, "tombstone", False):
+                        continue
+                    value: dict[str, Any] | list[str]
+                    if action == "settings":
+                        assert changes is not None
+                        value = (
+                            await control.save_settings(
+                                device_uid, changes, None, ticket=TRIGGER_TICKET
+                            )
+                        ).to_dict()
+                    elif action == "stable_mode":
+                        value = await control.apply_stable_mode(
+                            device_uid, ticket=TRIGGER_TICKET
+                        )
+                    elif action == "capture":
+                        value = await control.capture_baseline(
+                            device_uid, ticket=TRIGGER_TICKET
+                        )
+                    else:
+                        raise ValueError("未知实例配置操作")
+                    result[str(device_uid)] = {"ok": True, "data": value}
+                except Exception as error:
+                    logger.opt(exception=True).warning(f"实例配置操作失败：{error}")
+                    result[str(device_uid)] = {"ok": False, "message": str(error)}
+            return result
+        finally:
+            await entry.unlock(ticket)
+
+    @staticmethod
+    async def on_device_removed(sender, *, uid: UUID):
+        """实际删除设备后清除共同绑定，墓碑条目仍保留原身份供用户辨认。"""
+        from app.core import Config
+        from app.models.script_access import script_users
+
+        for script in Config.ScriptConfig.values():
+            for item in (script, *script_users(script).values()):
+                owner = cast(GameBindingOwner, item)
+                if (
+                    owner.game.game_id == sender.parent.uid
+                    and owner.game.device_id == uid
+                ):
+                    await owner.update(
+                        type(owner).model_validate({"game": {"device_id": "-"}})
+                    )
 
     @staticmethod
     def create_control(
@@ -117,9 +425,11 @@ class _GameManager:
 
         for decl in Plugin.game_types.values():
             if isinstance(event.entry, decl.game_class):
-                _GameManager.create_control(
+                control = _GameManager.create_control(
                     config=event.entry, control_class=decl.control_class
                 )
+                if event.kind == "add":
+                    await control.initialize_devices()
                 break
         else:
             raise RuntimeError(f"未找到 {type(event.entry)} 对应的 GameTypeDecl")
@@ -188,13 +498,6 @@ class _GameManager:
             await self._gate.acquire()
             gated = True
         try:
-            # 上一任务的失败还原由宿主持票；重新使用该游戏前先完成恢复。
-            for pending in list(self._pending_cleanup):
-                if self._subs.get(pending) is entry:
-                    try:
-                        await self.unsubscribe(pending)
-                    except Exception as exc:
-                        raise GameCleanupError(f"游戏 {uid} 尚未完成还原") from exc
             ticket = await entry.lock_s(cascade=False)
         except BaseException:
             if gated:
@@ -207,7 +510,7 @@ class _GameManager:
         return ctrl, ticket
 
     async def unsubscribe(self, ticket: LockTicket) -> None:
-        """还原后解锁；失败保留恢复票，但不阻塞其他游戏的串行队列。"""
+        """尝试还原后解锁；还原异常交给托管收尾，不阻断后续任务。"""
         lock = self._release_locks.get(ticket)
         if lock is None:
             return
@@ -216,16 +519,13 @@ class _GameManager:
             if entry is None:
                 return
             try:
-                # 还原仍须保留原票与主配置锁；失败设备的登记由 Control 保留。
-                await entry._control.unsubscribe_all(ticket)
-                await entry.unlock(ticket)
-            except BaseException:
-                self._pending_cleanup.add(ticket)
-                raise
-            else:
-                del self._subs[ticket]
-                del self._release_locks[ticket]
-                self._pending_cleanup.discard(ticket)
+                try:
+                    await entry._control.unsubscribe_all(ticket)
+                finally:
+                    # 备份与下次重试归插件；配置恢复失败不能长期占用调度资源。
+                    await entry.unlock(ticket)
+                    del self._subs[ticket]
+                    del self._release_locks[ticket]
             finally:
                 if ticket.token in self._gate_tokens:
                     self._gate_tokens.discard(ticket.token)
@@ -237,34 +537,56 @@ class _GameManager:
 
         found: dict[UUID, Any] = {}
         catalog: dict[str, dict[str, Any]] = {}
-        for decl in Plugin.game_types.values():
-            rows = await decl.search()
-            for entry in rows or []:
+        for uid, decl in tuple(Plugin.game_types.items()):
+            try:
+                rows = await Plugin.search_game_adapter(uid, decl)
+            except Exception as error:
+                logger.opt(exception=True).warning(
+                    f"{decl.game_class.__name__} 发现安装失败：{error}"
+                )
+                continue
+            for entry in rows:
+                if type(entry) is not decl.game_class:
+                    logger.warning(
+                        f"{decl.game_class.__name__} 返回了不属于本适配器的发现结果"
+                    )
+                    continue
+                if self.existing_installation(entry) is not None:
+                    continue
                 found[entry.uid] = entry
                 catalog[str(entry.uid)] = {
                     "name": entry.info.name,
                     "type": entry.info.type,
+                    "path": entry.model_dump(context={"audience": "api"})
+                    .get("info", {})
+                    .get("path"),
                     "concurrent_execution": entry.info.concurrent_execution,
                 }
         self._found = found
         return catalog
 
     async def add_found(self, uid: UUID) -> GameEntry:
-        """把搜索缓存中的未激活实例写入 GameConfig：add 占位再 update 同步字段。"""
+        """在一次提交中导入搜索结果及其配置。"""
         from app.core import Config
 
         if uid not in self._found:
             raise KeyError(f"搜索结果不存在或已过期: {uid}")
         if uid in Config.GameConfig:
             raise ValueError(f"游戏已存在: {uid}")
-        found = self._found.pop(uid)
+        found = self._found[uid]
         if not isinstance(found, GameEntry):
             raise TypeError(f"非 GameEntry: {type(found)}")
+        if self.existing_installation(found) is not None:
+            raise ValueError("该安装路径已存在，请使用已有游戏目标")
 
-        Config.GameConfig.add(type(found), uid=uid)
+        Config.GameConfig.add(
+            type(found),
+            uid=uid,
+            payload=found.model_dump(context={"audience": "persist"}),
+        )
         await Config.GameConfig.commit()
         entry = Config.GameConfig[uid]
-        await entry.update(found)
+        self._found.pop(uid)
         return entry
 
 

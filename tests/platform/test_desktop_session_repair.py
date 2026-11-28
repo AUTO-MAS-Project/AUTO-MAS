@@ -1,5 +1,6 @@
 """分身连接取消或写入失败时恢复已更改的 Windows 设置。"""
 
+import io
 import os
 import subprocess
 import sys
@@ -157,21 +158,26 @@ def test_repair_restores_configuration_when_connection_is_not_confirmed(
 
 
 @pytest.mark.parametrize(
-    "registered_session,adopted,logoff_requested,keeps_session",
+    "registered_session,current_child,logoff_requested,remaining_child",
     [
-        (None, False, None, True),
-        (42, False, None, False),
-        (42, True, None, True),
-        (42, True, False, True),
-        (42, True, True, False),
+        (None, 42, True, 42),
+        (42, 42, None, 42),
+        (42, 42, False, 42),
+        (42, 42, True, None),
+        (42, 43, True, 43),
     ],
 )
 def test_close_after_disconnect_logs_off_only_registered_session(
-    tmp_path, monkeypatch, registered_session, adopted, logoff_requested, keeps_session
+    tmp_path,
+    monkeypatch,
+    registered_session,
+    current_child,
+    logoff_requested,
+    remaining_child,
 ):
     from app.core.desktop_session import host
 
-    session = 42
+    session = current_child
     reports = []
 
     def current_session():
@@ -188,7 +194,6 @@ def test_close_after_disconnect_logs_off_only_registered_session(
     instance = host.Host(tmp_path)
     instance.report = lambda event, **fields: reports.append((event, fields))
     instance.session_id = registered_session
-    instance.adopted = adopted
     instance.viewer = SimpleNamespace(close=close_viewer)
     monkeypatch.setattr(host, "child_session", current_session)
     monkeypatch.setattr(host, "logoff_child", logoff)
@@ -196,8 +201,29 @@ def test_close_after_disconnect_logs_off_only_registered_session(
     instance.report_viewer("state", state="disconnected", code="connect_timeout")
     instance.command({"action": "close", "logoff": logoff_requested})
 
-    assert session == (42 if keeps_session else None)
+    assert session == remaining_child
     assert reports[-1] == ("state", {"state": "idle"})
+
+
+def test_host_stdin_eof_disconnects_without_logging_off(tmp_path, monkeypatch):
+    from app.core.desktop_session import host
+
+    instance = host.Host(tmp_path)
+    instance.report = lambda *_args, **_fields: None
+    instance.session_id = 42
+    disconnected = []
+    instance.viewer = SimpleNamespace(
+        close=lambda: disconnected.append(True), pump_until=lambda _: None
+    )
+    monkeypatch.setattr(host.sys, "stdin", SimpleNamespace(buffer=io.BytesIO()))
+    monkeypatch.setattr(host, "bind", lambda *_: lambda _: None)
+    monkeypatch.setattr(
+        host, "logoff_child", lambda _: pytest.fail("EOF should preserve the session")
+    )
+
+    instance.run()
+
+    assert disconnected == [True]
 
 
 def test_connect_with_existing_child_leaves_it_running(tmp_path, monkeypatch):
@@ -214,11 +240,6 @@ def test_connect_with_existing_child_leaves_it_running(tmp_path, monkeypatch):
     monkeypatch.setattr(host, "probe", lambda: ([], 3389))
     monkeypatch.setattr(host, "child_session", lambda: 42)
     monkeypatch.setattr(host, "logoff_child", logoff)
-    monkeypatch.setattr(
-        host.credentials, "current_identity", lambda: ("account", "sid")
-    )
-    monkeypatch.setattr(host.credentials, "load", lambda *_: object())
-    monkeypatch.setattr(host.credentials, "validate", lambda _: None)
 
     instance.command({"action": "connect"})
     assert reports[-1] == (
@@ -235,7 +256,7 @@ def test_connect_with_existing_child_leaves_it_running(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("passes_recheck", [True, False])
-def test_environment_repair_finishes_before_password_check(
+def test_environment_repair_finishes_before_connection(
     tmp_path, monkeypatch, passes_recheck
 ):
     from app.core.desktop_session import host
@@ -263,9 +284,14 @@ def test_environment_repair_finishes_before_password_check(
         committed = commit
         applied = commit
 
-    def load(*_):
+    def viewer(**options):
         assert applied and committed
-        raise host.credentials.CredentialError("password_required")
+
+        def open_viewer(credential):
+            assert credential is None
+            options["report"]("state", state="connected", sessionId=42)
+
+        return SimpleNamespace(parent_session=1, open=open_viewer, close=lambda: None)
 
     monkeypatch.setattr(host, "probe", probe)
     monkeypatch.setattr(host, "child_session", lambda: None)
@@ -275,7 +301,7 @@ def test_environment_repair_finishes_before_password_check(
     monkeypatch.setattr(
         host.credentials, "current_identity", lambda: ("account", "sid")
     )
-    monkeypatch.setattr(host.credentials, "load", load)
+    monkeypatch.setattr(host, "RdpViewer", viewer)
     instance = host.Host(tmp_path)
     instance.report_environment = lambda _: None
     instance.report = lambda event, **fields: reports.append((event, fields))
@@ -286,8 +312,19 @@ def test_environment_repair_finishes_before_password_check(
     if passes_recheck:
         instance.command({"action": "repair", "approvedRepairs": ["child_enabled"]})
         assert reports[-1] == ("repair_finished", {})
-        with pytest.raises(host.credentials.CredentialError, match="password_required"):
-            instance.command({"action": "connect"})
+        instance.command(
+            {
+                "action": "connect",
+                "mode": "proxy",
+                "resolution": "1080p",
+                "owner": "1",
+                "bounds": [0, 0, 100, 100],
+            }
+        )
+        assert reports[-1] == ("state", {"state": "connected", "sessionId": 42})
+        assert not (
+            tmp_path / "config" / "desktop-session" / "credentials.json"
+        ).exists()
     else:
         with pytest.raises(host.RepairError, match="environment_recheck_failed"):
             instance.command({"action": "repair", "approvedRepairs": ["child_enabled"]})
@@ -360,6 +397,69 @@ def test_home_connection_failure_keeps_only_verified_credentials(
             instance.command(command)
         assert not saved
         assert instance.viewer is None
+
+
+@pytest.mark.parametrize("saved_password", [False, True])
+def test_automatic_connection_keeps_password_prompt_available(
+    tmp_path, monkeypatch, saved_password
+):
+    import win32security
+    from pywintypes import error
+    from winerror import ERROR_LOGON_FAILURE
+
+    from app.core.desktop_session import host
+
+    credential_path = tmp_path / "config" / "desktop-session" / "credentials.json"
+    if saved_password:
+        host.credentials.save(credential_path, "account", "AA==")
+
+    def reject_outdated_password(*_):
+        assert saved_password
+        raise error(ERROR_LOGON_FAILURE, "LogonUser", "Login failed")
+
+    def viewer(**options):
+        def open_viewer(credential):
+            assert credential is None
+            options["report"](
+                "state",
+                state="disconnected",
+                code="rdp_disconnected",
+                nativeCodes=(8455, 0),  # SSL_ERR_FRESH_CRED_REQUIRED_BY_SERVER
+            )
+
+        return SimpleNamespace(parent_session=1, open=open_viewer)
+
+    reports = []
+    instance = host.Host(tmp_path)
+    instance.report_environment = lambda _: None
+    instance.report = lambda event, **fields: reports.append((event, fields))
+    monkeypatch.setattr(host, "probe", lambda: ([], 3389))
+    monkeypatch.setattr(host, "child_session", lambda: None)
+    monkeypatch.setattr(host, "recent_failure", lambda *_, **__: None)
+    monkeypatch.setattr(host, "RdpViewer", viewer)
+    monkeypatch.setattr(
+        host.credentials, "current_identity", lambda: ("account", "sid")
+    )
+    monkeypatch.setattr(
+        host.credentials, "protect", lambda *_, **__: bytearray(b"outdated")
+    )
+    monkeypatch.setattr(win32security, "LogonUser", reject_outdated_password)
+
+    instance.command(
+        {
+            "action": "connect",
+            "mode": "proxy",
+            "resolution": "1080p",
+            "owner": "1",
+            "bounds": [0, 0, 100, 100],
+        }
+    )
+
+    assert reports[-1][1]["code"] == "rdp_authentication_failed"
+    if saved_password:
+        assert credential_path.read_text() == '{"account": "AA=="}'
+    else:
+        assert not credential_path.exists()
 
 
 def test_security_event_matches_current_local_rdp_attempt():

@@ -40,17 +40,12 @@ from .tools import *
 
 CLASS_BOOK: dict[str, type[ScriptConfigType]] = {
     "MaaEnd": MaaEndConfig,
-    "SRC": SrcConfig,
-    "M9A": M9AConfig,
-    "MaaFW": MaaFWConfig,
     "General": GeneralConfig,
     "Okww": OkwwConfig,
     "OkNte": OkNteConfig,
     "HSR": HSRConfig,
-    "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
-    "MSS": MSSConfig,
 }
 
 
@@ -67,7 +62,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
     "OkwwPlanConfig": {
         "create_type": "OkwwPlan",
         "config_class": OkwwPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[5],
+        "consumer": PLAN_CONSUMER_VALUES[4],
         "script_class": OkwwConfig,
         "field_group": "Info",
         "field_name": "PlanMode",
@@ -75,7 +70,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
     "OkNtePlanConfig": {
         "create_type": "OkNtePlan",
         "config_class": OkNtePlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[4],
+        "consumer": PLAN_CONSUMER_VALUES[3],
         "script_class": OkNteConfig,
         "field_group": "Info",
         "field_name": "PlanMode",
@@ -83,7 +78,7 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
     "UniversalPlanConfig": {
         "create_type": "UniversalPlan",
         "config_class": UniversalPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[3],
+        "consumer": PLAN_CONSUMER_VALUES[2],
         # 只服务通用脚本：专项各自的整份配置由各自计划承载
         "script_class": GeneralConfig,
         "field_group": "Info",
@@ -96,22 +91,5 @@ PLAN_BOOK: dict[str, _PlanRegistration] = {
         "script_class": MaaEndConfig,
         "field_group": "Info",
         "field_name": "SanityMode",
-    },
-    "BAAHPlanConfig": {
-        "create_type": "BAAHPlan",
-        "config_class": BAAHPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[1],
-        "script_class": BAAHConfig,
-        "field_group": "Info",
-        "field_name": "StageMode",
-    },
-    "MSSPlanConfig": {
-        "create_type": "MSSPlan",
-        "config_class": MSSPlanConfig,
-        # MSS 排在 baah 之后，位置索引跟着往后挪一位
-        "consumer": PLAN_CONSUMER_VALUES[2],
-        "script_class": MSSConfig,
-        "field_group": "Info",
-        "field_name": "PlanMode",
     },
 }

@@ -17,6 +17,7 @@ export type PluginCatalogGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
     order?: Array<CollectionOrderItem>;
     data?: Record<string, PluginCatalogDocument>;
 };

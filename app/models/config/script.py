@@ -22,6 +22,8 @@
 from __future__ import annotations
 
 import json
+import re
+from _strptime import TimeRE
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path as NativePath
@@ -34,7 +36,6 @@ from app.config import (
     ConfigCollection,
     ConfigGroup,
     UiVisibility,
-    Virtual,
     collection,
     encrypted,
     legacy,
@@ -52,16 +53,14 @@ from app.config.types import (
     FolderPath,
     JsonDictString,
     JsonListString,
-    WindowsNameString,
     path_policy,
 )
 from app.utils import constants as _utils_constants
 
-from .base import DomainEntry
+from .base import DomainEntry as _DomainEntry
+from .game_binding import GameBindingOwner
 from .plan import (
-    BAAHPlanConfig,
     MaaEndPlanConfig,
-    MSSPlanConfig,
     OkNtePlanConfig,
     OkwwPlanConfig,
     UniversalPlanConfig,
@@ -69,22 +68,28 @@ from .plan import (
 from .plugin_script import ScriptEntry, UserEntry
 from .queue import Webhook
 from .shared import (
-    _BGI_LEGACY_SERVERS_TO_RESOURCE,
+    AccountCredentialFields,
+    AccountNameFields,
+    AccountRunFields,
+    AccountRunStatusFields,
+    AccountScriptHookFields,
     OkwwTaskFields,
     SRAProfileName,
-    _migrate_baah_event_first,
-    _migrate_bgi_account_switch_default,
     _migrate_oknte_launch_mode_default,
     _normalize_maaend_sanity_task_type,
     _tag_last_status,
     _tag_notes,
     _tag_proxy,
     _tag_remained_days,
-    local_timezone,
     migrate_maaend_sanity_tasks,
     none_as,
     normalize_maaend_plan_key,
 )
+
+
+class DomainEntry(_DomainEntry, GameBindingOwner):
+    """旧专项配置复用新游戏绑定，保留原有配置输入转换。"""
+
 
 MaaEndInstallPath = Annotated[
     NativePath | None, path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS)
@@ -104,30 +109,17 @@ class MaaEndUserConfig(DomainEntry):
 
     related_config: ClassVar = {}
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
-        LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
-            default_factory=lambda: "未知", description="上次代理状态"
-        )
-
+    class DataFields(AccountRunFields, AccountRunStatusFields):
         PeriodTaskRecords: JsonDictString = Field(
             default_factory=lambda: "{ }",
             description="MaaEnd 每日任务完成记录，结构为 daily -> task name -> 日期",
         )
 
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
-        )
-
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(
+        AccountNameFields, AccountCredentialFields, AccountScriptHookFields
+    ):
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -140,31 +132,16 @@ class MaaEndUserConfig(DomainEntry):
             description="base 来源（shared=共享/independent=独立/native=原生）",
         )
 
-        Id: str = Field(default_factory=lambda: "", description="账号ID")
+        Id: Annotated[str, encrypted()] = Field(
+            default_factory=lambda: "", description="账号ID"
+        )
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True, description="是否启用覆写常规配置"
         )
 
-        IfScriptAfterTask: bool = Field(
-            default_factory=lambda: False, description="任务后执行脚本"
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            default_factory=lambda: False, description="任务前执行脚本"
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
-        )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
         )
 
         Resource: str = Field(
@@ -198,20 +175,6 @@ class MaaEndUserConfig(DomainEntry):
                 display_field="Info.Name",
             ),
         ] = Field(default_factory=lambda: "Fixed", description="基质刷取配置模式")
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="账号标签信息"
-        )
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
@@ -544,6 +507,14 @@ class MaaEndUserConfig(DomainEntry):
             return str(exc)
 
 
+class DesktopSessionRunFields(ConfigGroup):
+    """支持桌面分身的托管运行设置。"""
+
+    ExecutionSession: Literal["main", "desktop"] = Field(
+        default="main", description="单独启动托管时使用的 Windows 会话"
+    )
+
+
 class MaaEndConfig(DomainEntry):
     "MaaEnd配置"
 
@@ -564,19 +535,6 @@ class MaaEndConfig(DomainEntry):
 
         ControllerType: str = Field(
             default_factory=lambda: "", description="控制器类型"
-        )
-
-        EmulatorId: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        EmulatorIndex: str = Field(
-            default_factory=lambda: "-", description="模拟器索引"
         )
 
         IfAutoUpdate: bool = Field(
@@ -653,7 +611,7 @@ class MaaEndConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         AccountSwitchMethod: Literal["MAS", "MAAEND"] = Field(
             default_factory=lambda: "MAAEND",
             description="账号切换方式（默认使用 MAAEND，MAS 为兼容入口）",
@@ -727,377 +685,6 @@ class MaaEndConfig(DomainEntry):
         return data
 
 
-class SrcUserConfig(DomainEntry):
-    "SRC账号配置"
-
-    related_config: ClassVar = {}
-
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
-        )
-
-    Data: DataFields = Field(default_factory=DataFields)
-
-    class InfoFields(ConfigGroup):
-        Base: Annotated[
-            Literal["shared", "independent", "native"],
-            legacy(
-                group="Info",
-                name="Mode",
-                convert=_utils_constants.normalize_base_source,
-            ),
-        ] = Field(
-            default_factory=lambda: "shared",
-            description="base 来源（shared=共享/independent=独立/native=原生）",
-        )
-
-        Id: str = Field(default_factory=lambda: "", description="账号 ID")
-
-        IfQuickConfig: bool = Field(
-            default_factory=lambda: True,
-            description="是否启用覆写常规配置（与配置来源独立，按账号保存）",
-        )
-
-        IfScriptAfterTask: bool = Field(
-            default_factory=lambda: False, description="任务后执行脚本"
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            default_factory=lambda: False, description="任务前执行脚本"
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
-        Password: Annotated[str, encrypted()] = Field(
-            default_factory=lambda: "", description="密码"
-        )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Server: Literal[
-            "CN-Official",
-            "CN-Bilibili",
-            "VN-Official",
-            "OVERSEA-America",
-            "OVERSEA-Asia",
-            "OVERSEA-Europe",
-            "OVERSEA-TWHKMO",
-        ] = Field(default_factory=lambda: "CN-Official", description="游戏服务器")
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="账号标签信息"
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class NotifyFields(ConfigGroup):
-        Enabled: bool = Field(default_factory=lambda: False, description="是否启用通知")
-
-        IfSendMail: bool = Field(
-            default_factory=lambda: False, description="是否发送邮件"
-        )
-
-        IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送统计信息"
-        )
-
-        IfServerChan: bool = Field(
-            default_factory=lambda: False, description="是否启用 Server 酱"
-        )
-
-        ServerChanKey: str = Field(
-            default_factory=lambda: "", description="Server 酱密钥"
-        )
-
-        ToAddress: str = Field(default_factory=lambda: "", description="收件地址")
-
-    Notify: NotifyFields = Field(default_factory=NotifyFields)
-
-    class StageFields(ConfigGroup):
-        Channel: Literal["Relic", "Materials", "Ornament"] = Field(
-            default_factory=lambda: "Relic", description="关卡通道"
-        )
-
-        EchoOfWar: Literal[
-            "-",
-            "Echo_of_War_The_Comedy_of_Doom",
-            "Echo_of_War_Rusted_Crypt_of_the_Iron_Carcass",
-            "Echo_of_War_Glance_of_Twilight",
-            "Echo_of_War_Inner_Beast_Battlefield",
-            "Echo_of_War_Salutations_of_Ashen_Dreams",
-            "Echo_of_War_Borehole_Planet_Past_Nightmares",
-            "Echo_of_War_Divine_Seed",
-            "Echo_of_War_End_of_the_Eternal_Freeze",
-            "Echo_of_War_Destruction_Beginning",
-        ] = Field(default_factory=lambda: "-", description="历战余响关卡")
-
-        ExtractReservedTrailblazePower: bool = Field(
-            default_factory=lambda: False, description="使用储备开拓力"
-        )
-
-        FuelReserve: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default_factory=lambda: 5, description="保留的燃料数量"
-        )
-
-        Materials: Literal[
-            "-",
-            "Calyx_Golden_Memories_Planarcadia",
-            "Calyx_Golden_Memories_Amphoreus",
-            "Calyx_Golden_Memories_Penacony",
-            "Calyx_Golden_Memories_The_Xianzhou_Luofu",
-            "Calyx_Golden_Memories_Jarilo_VI",
-            "Calyx_Golden_Aether_Planarcadia",
-            "Calyx_Golden_Aether_Amphoreus",
-            "Calyx_Golden_Aether_Penacony",
-            "Calyx_Golden_Aether_The_Xianzhou_Luofu",
-            "Calyx_Golden_Aether_Jarilo_VI",
-            "Calyx_Golden_Treasures_Planarcadia",
-            "Calyx_Golden_Treasures_Amphoreus",
-            "Calyx_Golden_Treasures_Penacony",
-            "Calyx_Golden_Treasures_The_Xianzhou_Luofu",
-            "Calyx_Golden_Treasures_Jarilo_VI",
-            "Calyx_Crimson_Destruction_Herta_StorageZone",
-            "Calyx_Crimson_Destruction_Luofu_ScalegorgeWaterscape",
-            "Calyx_Crimson_Destruction_Planarcadia_InkfordHermitage",
-            "Calyx_Crimson_Preservation_Herta_SupplyZone",
-            "Calyx_Crimson_Preservation_Penacony_ClockStudiosThemePark",
-            "Calyx_Crimson_The_Hunt_Jarilo_OutlyingSnowPlains",
-            "Calyx_Crimson_The_Hunt_Penacony_SoulGladScorchsandAuditionVenue",
-            "Calyx_Crimson_The_Hunt_Amphoreus_MemortisShoreRuinsofTime",
-            "Calyx_Crimson_Abundance_Jarilo_BackwaterPass",
-            "Calyx_Crimson_Abundance_Luofu_FyxestrollGarden",
-            "Calyx_Crimson_Erudition_Jarilo_RivetTown",
-            "Calyx_Crimson_Erudition_Penacony_PenaconyGrandTheater",
-            "Calyx_Crimson_Erudition_Planarcadia_SeafeldTVTower",
-            "Calyx_Crimson_Harmony_Jarilo_RobotSettlement",
-            "Calyx_Crimson_Harmony_Penacony_TheReverieDreamscape",
-            "Calyx_Crimson_Nihility_Jarilo_GreatMine",
-            "Calyx_Crimson_Nihility_Luofu_AlchemyCommission",
-            "Calyx_Crimson_Nihility_Amphoreus_RadiantScarwoodGroveofEpiphany",
-            "Calyx_Crimson_Remembrance_Amphoreus_StrifeRuinsCastrumKremnos",
-            "Calyx_Crimson_Elation_Planarcadia_WorldEndTavern",
-            "Stagnant_Shadow_Spike",
-            "Stagnant_Shadow_Perdition",
-            "Stagnant_Shadow_Duty",
-            "Stagnant_Shadow_Deepsheaf",
-            "Stagnant_Shadow_Blaze",
-            "Stagnant_Shadow_Scorch",
-            "Stagnant_Shadow_Roast",
-            "Stagnant_Shadow_Ire",
-            "Stagnant_Shadow_Ashes",
-            "Stagnant_Shadow_Rime",
-            "Stagnant_Shadow_Icicle",
-            "Stagnant_Shadow_Nectar",
-            "Stagnant_Shadow_Sirens",
-            "Stagnant_Shadow_Fulmination",
-            "Stagnant_Shadow_Doom",
-            "Stagnant_Shadow_Mechwolf",
-            "Stagnant_Shadow_Soundburst",
-            "Stagnant_Shadow_Gust",
-            "Stagnant_Shadow_Celestial",
-            "Stagnant_Shadow_Gloam",
-            "Stagnant_Shadow_Cinders",
-            "Stagnant_Shadow_Quanta",
-            "Stagnant_Shadow_Abomination",
-            "Stagnant_Shadow_Gelidmoon",
-            "Stagnant_Shadow_Devour",
-            "Stagnant_Shadow_Mirage",
-            "Stagnant_Shadow_Puppetry",
-            "Stagnant_Shadow_Timbre",
-            "Stagnant_Shadow_Sloggyre",
-        ] = Field(default_factory=lambda: "-", description="材料关卡")
-
-        Ornament: Literal[
-            "-",
-            "Divergent_Universe_Bugs_Incoming",
-            "Divergent_Universe_Gilded_Recollection",
-            "Divergent_Universe_Within_the_West_Wind",
-            "Divergent_Universe_Moonlit_Blood",
-            "Divergent_Universe_Unceasing_Strife",
-            "Divergent_Universe_Famished_Worker",
-            "Divergent_Universe_Eternal_Comedy",
-            "Divergent_Universe_To_Sweet_Dreams",
-            "Divergent_Universe_Pouring_Blades",
-            "Divergent_Universe_Fruit_of_Evil",
-            "Divergent_Universe_Permafrost",
-            "Divergent_Universe_Gentle_Words",
-            "Divergent_Universe_Smelted_Heart",
-            "Divergent_Universe_Untoppled_Walls",
-        ] = Field(default_factory=lambda: "-", description="饰品关卡")
-
-        Relic: Literal[
-            "-",
-            "Cavern_of_Corrosion_Path_of_the_Secret_Actor",
-            "Cavern_of_Corrosion_Path_of_Insight",
-            "Cavern_of_Corrosion_Path_of_Possession",
-            "Cavern_of_Corrosion_Path_of_Hidden_Salvation",
-            "Cavern_of_Corrosion_Path_of_Thundersurge",
-            "Cavern_of_Corrosion_Path_of_Aria",
-            "Cavern_of_Corrosion_Path_of_Uncertainty",
-            "Cavern_of_Corrosion_Path_of_Cavalier",
-            "Cavern_of_Corrosion_Path_of_Dreamdive",
-            "Cavern_of_Corrosion_Path_of_Darkness",
-            "Cavern_of_Corrosion_Path_of_Elixir_Seekers",
-            "Cavern_of_Corrosion_Path_of_Conflagration",
-            "Cavern_of_Corrosion_Path_of_Holy_Hymn",
-            "Cavern_of_Corrosion_Path_of_Providence",
-            "Cavern_of_Corrosion_Path_of_Drifting",
-            "Cavern_of_Corrosion_Path_of_Jabbing_Punch",
-            "Cavern_of_Corrosion_Path_of_Gelid_Wind",
-        ] = Field(default_factory=lambda: "-", description="遗器关卡")
-
-        SimulatedUniverseWorld: Literal[
-            "-",
-            "Simulated_Universe_World_3",
-            "Simulated_Universe_World_4",
-            "Simulated_Universe_World_5",
-            "Simulated_Universe_World_6",
-            "Simulated_Universe_World_8",
-        ] = Field(default_factory=lambda: "-", description="模拟宇宙关卡")
-
-        UseFuel: bool = Field(default_factory=lambda: False, description="使用燃料")
-
-    Stage: StageFields = Field(default_factory=StageFields)
-    Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
-
-    def getTags(self) -> str:
-        """生成账号标签列表，返回JSON字符串格式的TagItem列表"""
-        tags = []
-        tags.append(_tag_proxy(self))
-        tags.append(_tag_remained_days(self))
-        if not self.Info.IfQuickConfig:
-            tags.append(_tag_notes(self))
-            return json.dumps(tags, ensure_ascii=False)
-
-        tags.append(
-            {
-                "text": f"关卡：{_utils_constants.STARRAIL_STAGE_BOOK.get(getattr(self.Stage, self.Stage.Channel), '未知关卡')}",
-                "color": "blue",
-            }
-        )
-        tags.append(
-            {
-                "text": f"周本：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.EchoOfWar, '未知关卡')}",
-                "color": "blue",
-            }
-        )
-        tags.append(
-            {
-                "text": f"模拟宇宙：{_utils_constants.STARRAIL_STAGE_BOOK.get(self.Stage.SimulatedUniverseWorld, '未知关卡')}",
-                "color": "blue",
-            }
-        )
-        tags.append(_tag_notes(self))
-        return json.dumps(tags, ensure_ascii=False)
-
-    @virtual_field("Info.Tag")
-    def compute_Info_Tag(self):
-        try:
-            return self.getTags()
-        except Exception as exc:
-            return str(exc)
-
-
-class SrcConfig(DomainEntry):
-    "SRC配置"
-
-    class UpdateFields(ConfigGroup):
-        TakeoverEnabled: bool = Field(
-            default=False,
-            description="运行前由 MAS 预取 SRC 原生代码源并调用官方安装器完成更新，普通下载失败后沿用当前安装；运行期暂停原生更新并在任务结束后恢复",
-        )
-
-    Update: UpdateFields = Field(default_factory=UpdateFields)
-
-    related_config: ClassVar = {}
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
-
-    class InfoFields(ConfigGroup):
-        Name: str = Field(
-            default_factory=lambda: "新 SRC 托管", description="SRC 托管名称"
-        )
-
-        Path: FolderPath = Field(default_factory=lambda: None, description="SRC 路径")
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class RunFields(ConfigGroup):
-        GameUpdateTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 60,
-            description="游戏更新时间限制（分钟）",
-        )
-
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 120,
-            description="单账号运行总时限（分钟），包含等待和全部重试",
-        )
-
-        IfAutoInstallGameApk: bool = Field(
-            default_factory=lambda: False,
-            description="版本落后时是否由 MAS 自动下载并安装安装包",
-        )
-
-        IfCheckGameUpdate: bool = Field(
-            default_factory=lambda: False, description="是否在登录游戏前检查游戏更新"
-        )
-
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default_factory=lambda: 0, description="代理次数限制"
-        )
-
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 10,
-            description="运行时间限制（分钟）",
-        )
-
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 3, description="运行次数限制"
-        )
-
-        TaskTransitionMethod: Literal["ExitGame", "ExitEmulator"] = Field(
-            default_factory=lambda: "ExitGame", description="任务切换方式"
-        )
-
-    Run: RunFields = Field(default_factory=RunFields)
-    UserData: ConfigCollection[SrcUserConfig] = collection(SrcUserConfig)
-
-
 class HSRUserConfig(DomainEntry):
     "HSR账号配置"
 
@@ -1115,7 +702,7 @@ class HSRUserConfig(DomainEntry):
 
     Control: ControlFields = Field(default_factory=ControlFields)
 
-    class DataFields(ConfigGroup):
+    class DataFields(AccountRunFields, AccountRunStatusFields):
         EchoOfWarCompletedThisWeek: bool = Field(
             default_factory=lambda: False, description="本周是否已完成历战余响"
         )
@@ -1132,19 +719,8 @@ class HSRUserConfig(DomainEntry):
             description='历战余响上次重置 ISO 周（形如 "2025-W23"）',
         )
 
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
         M7ARedeemCodeFingerprint: str = Field(
             description="M7A 兑换码指纹", default_factory=lambda: ""
-        )
-
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
         )
 
         SRARedeemCodeFingerprint: str = Field(
@@ -1171,7 +747,9 @@ class HSRUserConfig(DomainEntry):
 
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(
+        AccountNameFields, AccountCredentialFields, AccountScriptHookFields
+    ):
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -1187,50 +765,19 @@ class HSRUserConfig(DomainEntry):
         Id: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="账号"
         )
+
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
             description="兼容字段；HSR 运行不消费此开关，不提供覆写常规配置",
         )
 
-        IfScriptAfterTask: bool = Field(
-            default_factory=lambda: False, description="任务后执行脚本"
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            default_factory=lambda: False, description="任务前执行脚本"
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
         Password: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="密码"
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
-        )
 
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Server: Literal["CN-Official"] = Field(
-            default_factory=lambda: "CN-Official", description="游戏服务器"
-        )
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None,
-            description="账号标签信息（虚拟字段，供前端显示）",
-        )
+        Resource: Annotated[
+            Literal["CN-Official"], legacy(group="Info", name="Server")
+        ] = Field(default_factory=lambda: "CN-Official", description="游戏服务器")
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
@@ -1340,7 +887,7 @@ class HSRUserConfig(DomainEntry):
     def getTags(self) -> str:
         """生成 HSR 账号标签列表，返回JSON字符串格式的TagItem列表。"""
         tags: list[dict] = []
-        server = self.Info.Server
+        server = self.Info.Resource
         server_label_map = {"CN-Official": "官服"}
         server_label = server_label_map.get(server, server or "未知")
         tags.append({"text": f"服务器：{server_label}", "color": "blue"})
@@ -1495,7 +1042,7 @@ class HSRConfig(DomainEntry):
 
     Managed: ManagedFields = Field(default_factory=ManagedFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         DailyTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 20,
             description="日常任务超时限制（分钟）",
@@ -1617,650 +1164,14 @@ class HSRConfig(DomainEntry):
     UserData: ConfigCollection[HSRUserConfig] = collection(HSRUserConfig)
 
 
-class MaaFWUserConfig(DomainEntry):
-    "MaaFW 账号配置"
-
-    class DataFields(ConfigGroup):
-        IfPassCheck: bool = Field(
-            default_factory=lambda: True, description="是否通过检查"
-        )
-
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
-        LastProxyStatus: str = Field(
-            default_factory=lambda: "未知", description="上次运行状态"
-        )
-
-        PeriodTaskRecords: JsonDictString = Field(
-            default_factory=lambda: "{ }",
-            description="MaaFW 周期任务完成记录，结构为 weekly/monthly -> task name -> period key",
-        )
-
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
-        )
-
-    Data: DataFields = Field(default_factory=DataFields)
-
-    class DeviceFields(ConfigGroup):
-        AdbAddress: str = Field(
-            default_factory=lambda: "",
-            description="当前账号覆盖 ADB 地址，留空时使用托管级模拟器配置",
-        )
-
-        HWnd: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Win32 / Gamepad 窗口句柄，0 表示未指定",
-        )
-
-        PlayCoverAddress: str = Field(
-            default_factory=lambda: "", description="PlayCover 地址"
-        )
-
-        PlayCoverUuid: str = Field(
-            default_factory=lambda: "", description="PlayCover UUID"
-        )
-
-    Device: DeviceFields = Field(default_factory=DeviceFields)
-
-    class InfoFields(ConfigGroup):
-        Account: str = Field(
-            default_factory=lambda: "",
-            description="账号信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务",
-        )
-
-        Base: Annotated[
-            Literal["shared", "independent", "native"],
-            legacy(
-                group="Info",
-                name="Mode",
-                convert=_utils_constants.normalize_base_source,
-            ),
-        ] = Field(
-            default_factory=lambda: "independent",
-            description="兼容字段；MFW 运行不按 base 三态切换配置，任务来源为账号任务队列",
-        )
-
-        Controller: str = Field(
-            default_factory=lambda: "",
-            description="MaaFW controller 名称，留空时按 interface 和设备配置自动选择",
-        )
-
-        IfQuickConfig: bool = Field(
-            default_factory=lambda: True,
-            description="兼容字段；MFW 运行不消费此开关，始终使用账号任务队列",
-        )
-
-        IfScriptAfterTask: bool = Field(
-            default_factory=lambda: False, description="是否在任务后执行脚本"
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            default_factory=lambda: False, description="是否在任务前执行脚本"
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
-        Password: Annotated[str, encrypted()] = Field(
-            default_factory=lambda: "",
-            description="密码信息，仅用于 AUTO-MAS 记录，不自动传入 MaaFW 任务",
-        )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
-        )
-
-        Resource: str = Field(
-            default_factory=lambda: "",
-            description="MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource",
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            default_factory=lambda: None, description="任务后脚本路径"
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            default_factory=lambda: None, description="任务前脚本路径"
-        )
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="账号标签信息"
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class NotifyFields(ConfigGroup):
-        Enabled: bool = Field(default_factory=lambda: False, description="是否启用通知")
-
-        IfSendMail: bool = Field(
-            default_factory=lambda: False, description="是否发送邮件"
-        )
-
-        IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送统计信息"
-        )
-
-        IfServerChan: bool = Field(
-            default_factory=lambda: False, description="是否启用 Server 酱"
-        )
-
-        ServerChanKey: str = Field(
-            default_factory=lambda: "", description="Server 酱密钥"
-        )
-
-        ToAddress: str = Field(default_factory=lambda: "", description="收件地址")
-
-    Notify: NotifyFields = Field(default_factory=NotifyFields)
-
-    class TaskFields(ConfigGroup):
-        SelectedPreset: str = Field(
-            default_factory=lambda: "",
-            description="当前选中的 interface preset 名称，留空时使用 interface 默认逻辑",
-        )
-
-        # 新队列的 keepUnchecked 标记随 JSON 原样保存；无标记的旧 false 实例仍隐藏。
-        TaskSnapshot: JsonDictString = Field(
-            default_factory=lambda: "{ }",
-            description="当前账号的任务快照，结构为 taskOrder/taskChecked/taskOptions/globalOptions， 可选 taskLabels（用户给某一份实例起的显示名，只影响界面显示）， 可选 taskSchedules（``{实例 id: {weekdays: [1..7]}}``，ISO 星期 1=周一，升序去重；只在本机今天的星期在其中时运行这一份，开跑建计划时判一次；七天全选即不限制、不写这一项，空表或非法值按不限制处理）； 除 globalOptions 外各键都是任务实例 id，同一个任务可以重复入队（见 MaaFWTaskSnapshot）； globalOptions 是全局选项的值，每个账号一份、所有任务共用。 默认的空快照在创建账号、读取账号与运行前按项目默认（预设或默认勾选）补成实打实的队列， 见 app/task/MaaFW/tools/embedded/default_snapshot.py",
-        )
-
-    Task: TaskFields = Field(default_factory=TaskFields)
-    Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
-
-    def getTags(self) -> str:
-        """生成 MaaFW 账号标签列表"""
-        tags = []
-        last_status = self.Data.LastProxyStatus
-        tags.append(
-            {
-                "text": f"上次：{_tag_last_status(last_status)}",
-                "color": "red" if last_status == "失败" else "green",
-            }
-        )
-        if not self.Data.IfPassCheck:
-            tags.append({"text": "人工排查未通过", "color": "red"})
-        tags.append(_tag_proxy(self, "任务"))
-        tags.append(_tag_remained_days(self))
-        tags.append(_tag_notes(self))
-        return json.dumps(tags, ensure_ascii=False)
-
-    @virtual_field("Info.Tag")
-    def compute_Info_Tag(self):
-        try:
-            return self.getTags()
-        except Exception as exc:
-            return str(exc)
-
-
-class MaaFWConfig(DomainEntry):
-    """MaaFW 项目配置。
-
-    特调通过继承配置分组扩展默认值，并显式声明自身的账号集合类型。
-    """
-
-    related_config: ClassVar = {}
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MFW 托管"
-    USER_CONFIG_CLASS: ClassVar = MaaFWUserConfig
-    FLAVOR: ClassVar = None
-    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = "{ }"
-
-    class DeviceFields(ConfigGroup):
-        AdbAddress: str = Field(
-            default_factory=lambda: "",
-            description="ADB 地址，留空时启动托管级模拟器获取",
-        )
-
-        AdbInputMethods: Annotated[int, Field(ge=-999, le=999999999999)] = Field(
-            default_factory=lambda: -1,
-            description="ADB 输入方法，默认优先模拟器增强，失败后回退到 MaaTouch / MiniTouch / ADB 同上，仅第二层适用；第一层运行期写死 InputMethods=18446744073709551607",
-        )
-
-        AdbPath: FilePath = Field(
-            default_factory=lambda: None,
-            description="ADB 路径，留空时从 MAS 模拟器配置或 MaaFW Toolkit 推导",
-        )
-
-        AdbScreencapMethods: Annotated[int, Field(ge=-999, le=999999999999)] = Field(
-            default_factory=lambda: -57,
-            description="ADB 截图方法，默认优先模拟器增强，失败后回退到 ADB 截图 仅第二层（MAS 进程内 runner）适用：第一层由外壳自己创建控制器，运行期按 M9A 专项的既验证取值写死（ScreencapMethods=64），本项不参与外部运行， 接线前不要暴露到前端，否则用户改了不会生效也没有提示",
-        )
-
-        GamepadType: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Gamepad 类型，默认 Xbox360",
-        )
-
-        HWnd: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Win32 / Gamepad 窗口句柄，0 表示未指定",
-        )
-
-        PlayCoverAddress: str = Field(
-            default_factory=lambda: "", description="PlayCover 地址"
-        )
-
-        PlayCoverUuid: str = Field(
-            default_factory=lambda: "", description="PlayCover UUID"
-        )
-
-        Win32KeyboardMethod: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Win32 键盘方法，0 表示使用 interface 声明或 MaaFW 默认值",
-        )
-
-        Win32MouseMethod: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Win32 鼠标方法，0 表示使用 interface 声明或 MaaFW 默认值",
-        )
-
-        Win32ScreencapMethod: Annotated[int, Field(ge=0, le=999999999999)] = Field(
-            default_factory=lambda: 0,
-            description="Win32 截图方法，0 表示使用 interface 声明或 MaaFW 默认值",
-        )
-
-    Device: DeviceFields = Field(default_factory=DeviceFields)
-
-    class EmbeddedFields(ConfigGroup):
-        FollowSource: bool = Field(
-            default_factory=lambda: False,
-            description="跟随来源目录（开发者模式），默认关。开着时每次运行前比一下来源目录（投影会带走的 文件的路径 + 大小 + 修改时间），变了就重新导入到这个托管自己的私有渠道（不比版本、 不与同项目其它托管共用版本），不做项目更新；关掉后回到 Update.Channel 的组。 见 tools/embedded/embedded_project.py「跟随来源目录」一节。",
-        )
-
-        ImportedAt: Annotated[
-            datetime | None, tz(local_timezone), ui(widget="datetime", format="hms")
-        ] = Field(default=None, description="导入时间，仅展示；空值表示尚未导入")
-
-        Report: JsonDictString = Field(
-            default_factory=lambda: "{ }",
-            description="投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串",
-        )
-
-        SourceVersion: str = Field(
-            default_factory=lambda: "",
-            description="由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在 data/mfw/<托管 uuid 前 12 位>/，由托管 ID 推出、不进配置、用户不可手改； Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。 导入时来源的 interface 版本，仅展示",
-        )
-
-    Embedded: EmbeddedFields = Field(default_factory=EmbeddedFields)
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(
-            default_factory=lambda: "-",
-            description="模拟器 ID，ADB controller 留空地址时使用",
-        )
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
-
-    class GameFields(ConfigGroup):
-        Arguments: CliArgumentString = Field(
-            default_factory=lambda: "",
-            description="游戏启动参数，仅 DirectExe 模式使用；URL 模式的参数写进链接",
-        )
-
-        CloseMode: Literal["Script", "OnFailure", "Always"] = Field(
-            default_factory=lambda: "OnFailure",
-            description="AttachOnly 模式下结束后谁关游戏：Script 交给脚本（MAS 不关）；OnFailure 本次运行没正常完成（失败、超时、停止、异常）时由 MAS 关；Always 结束后一律由 MAS 关。MAS 只关本次运行开始之后才出现的进程，重试之间不关。DirectExe 与 URL 模式忽略它",
-        )
-
-        Hotkeys: JsonDictString = Field(
-            default_factory=lambda: "{}",
-            description='托管级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``， 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过账号快照 / 预设里的值。 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option / 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。',
-        )
-
-        LaunchMode: Literal["DirectExe", "URL", "AttachOnly"] = Field(
-            default_factory=lambda: "DirectExe",
-            description="游戏生命周期模式：DirectExe 由 MAS 按 exe 启动、结束后关闭；URL 由 MAS 打开链接拉起游戏、结束后关闭；AttachOnly 由脚本或用户自己启动，MAS 只接管窗口，结束后是否由 MAS 关闭见 CloseMode",
-        )
-
-        LaunchPath: FilePath = Field(
-            default_factory=lambda: None,
-            description="游戏 exe：DirectExe 模式下 MAS 启动它；URL 模式下必填，用来认出游戏（是否已在运行、等窗口、关闭、Unity 分辨率）；AttachOnly 模式下可选，用来认出要关闭的游戏",
-        )
-
-        LauncherPath: FilePath = Field(
-            default_factory=lambda: None,
-            description="AttachOnly 模式下可选的启动器 exe，MAS 兜底关闭游戏时一并关闭本次运行期间打开的启动器",
-        )
-
-        PackageName: str = Field(
-            default_factory=lambda: "",
-            description="安卓游戏包名，Adb controller 用：启动模拟器时顺带把游戏拉起来。 留空表示从项目的 pipeline 里自动识别（见 embedded/game_package.py）； 自动识别是启发式的，填了这里就以这里为准。识别不出且没填则不启动游戏。",
-        )
-
-        URL: str = Field(
-            default_factory=lambda: "",
-            description="URL 模式下 MAS 打开的链接，如 steam://rungameid/<appid>",
-        )
-
-        UnityResolution: Literal["Off", "1920x1080", "1280x720"] = Field(
-            default_factory=lambda: "Off",
-            description="DirectExe 与 URL 模式下，启动游戏前按 exe 路径反查 Unity 注册表，临时把分辨率改成所选 尺寸的窗口模式，游戏关闭后恢复原值（tools/embedded/game_resolution.py）。 只对 Unity 引擎的游戏有效；游戏已在运行时不改。Off 表示不碰。",
-        )
-
-        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default_factory=lambda: 120,
-            description="游戏启动等待时间（秒）：既是等窗口出现的上限，也是窗口出现后等画面稳定的上限。 Unity 游戏窗口出现时还在黑屏加载，登录界面往往要二三十秒后才渲染出来； MaaEnd 的 SceneManager 见连续画面不变十几秒就判「环境识别异常」直接失败。 等画面时 worker 每秒截一帧，有内容且连续几秒不变就提前下发，等不到才等满； MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。",
-        )
-
-    Game: GameFields = Field(default_factory=GameFields)
-
-    class InfoFields(ConfigGroup):
-        Controller: str = Field(
-            default_factory=lambda: "",
-            description="MaaFW controller 名称，留空时按 interface 和设备配置自动选择",
-        )
-
-        Name: str = Field(
-            default_factory=lambda: "新 MFW 托管", description="MaaFW 托管名称"
-        )
-
-        # 导入完成后来源可删除；完整保留版本号目录名，不能去后缀或清空。
-        Path: Annotated[
-            NativePath | None,
-            path_policy(kind="folder", blocked_dirs=STANDARD_BLOCKED_DIRS),
-        ] = Field(
-            default_factory=lambda: None,
-            description="MaaFW 项目的导入来源目录，应包含 interface.json；导入后可删，删了也原样保留",
-        )
-
-        ProjectLabel: str = Field(
-            default_factory=lambda: "",
-            description="项目标签，可用于区分同一 ProjectInterface 的不同实例",
-        )
-
-        Resource: str = Field(
-            default_factory=lambda: "",
-            description="MaaFW resource 名称，留空时选择匹配 controller 的第一个 resource",
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class RunFields(ConfigGroup):
-        DailyOnceTasks: JsonListString = Field(
-            default_factory=lambda: "[ ]",
-            description="每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表",
-        )
-
-        GameUpdateMode: Literal["Off", "Check", "AutoInstall"] = Field(
-            default_factory=lambda: "Off",
-            description="游戏客户端更新：Off 不检查 / Check 只检查，落后时本次判失败并提示手动更新 / AutoInstall 落后时自动下载安装包并 adb 安装（保留游戏数据）。只在特调实现了 游戏更新钩子（当前只有 M9A）且 controller 是 ADB 时生效，通用 MaaFW 不读。 Off 必须排第一：OptionsValidator 纠错回退的是 options[0]。",
-        )
-
-        LoopGuard: bool = Field(
-            default_factory=lambda: True,
-            description="原地打转检测（默认开）。任务在短周期里反复执行同一串节点（周期 ≤ 8 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续 ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。 默认值双轨：新建托管取类默认开；既有托管配置里写着这个键的（用户可能动过）原样保留，配置里没有这个键的（从没保存过，肯定没动过）落到类默认，同样是开。",
-        )
-
-        MonthlyOnceTasks: JsonListString = Field(
-            default_factory=lambda: "[ ]",
-            description="每月正常完成一次后，本月剩余时间跳过的 MaaFW 任务名列表",
-        )
-
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default_factory=lambda: 0,
-            description="运行引擎，决定「谁来跑」： 代理次数限制",
-        )
-
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 120,
-            description="单次运行时间限制（分钟），套在单个账号的整次运行上。截止时刻随 job 文件交给 worker：到点它自己停掉当前任务、截一张超时图、带回已完成的任务；宿主只在 worker 没能及时停下时才强杀（那时既没有截图也没有进度）。MaaFW 项目一轮日常 动辄几十分钟，30 分钟默认值实测常被误伤，放宽到 120。",
-        )
-
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 3,
-            description="运行次数限制。重试不关游戏、不再等启动，从当前画面接着跑； 脚本自己的加载超时（MaaEnd 回大世界 20s）一次抖动就把整轮判失败， 只给一次机会时用户看到的就是「从来没成功过」，默认与其他专项一样 3 次。",
-        )
-
-        TaskTimeLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default_factory=lambda: 45,
-            description="单个任务的时限（分钟），0 表示不限。某个任务卡住时到点只停它、截一张超时图， 记一条任务失败后接着跑后面的任务（计划里第一个任务超时则结束本轮）；不再让 一个卡住的任务吃掉整轮 RunTimeLimit 的时间。 默认 45 而不是 30：M9A 智能均衡刷材料正常 1–22 分钟，自动深眠在新内容日 实测 33.7 分钟，30 会误伤正常运行。",
-        )
-
-        TaskTimeLimitOverrides: JsonDictString = Field(
-            default_factory=lambda: "{ }",
-            description="按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。 默认值由类属性 DEFAULT_TASK_TIME_LIMIT_OVERRIDES 决定（特调可内置几条）； 只在配置里没有这个键时生效，用户存过的值（含清空成 {}）原样保留。",
-        )
-
-        WeeklyOnceTasks: JsonListString = Field(
-            default_factory=lambda: "[ ]",
-            description="每周正常完成一次后，本周剩余时间跳过的 MaaFW 任务名列表",
-        )
-
-    Run: RunFields = Field(default_factory=RunFields)
-
-    class SelectionFields(ConfigGroup):
-        Controller: JsonListString = Field(
-            default_factory=lambda: "[ ]",
-            description="当前阶段保留：manager.py 仍从 Selection.* 读取运行范围， 字段迁移到 Info.* / 账号任务配置属于后续 P3 前端回收。 选中的 controller 列表",
-        )
-
-        Resource: JsonListString = Field(
-            default_factory=lambda: "[ ]", description="选中的 resource 列表"
-        )
-
-        Tasks: JsonListString = Field(
-            default_factory=lambda: "[ ]", description="选中的 task 列表"
-        )
-
-    Selection: SelectionFields = Field(default_factory=SelectionFields)
-
-    class TaskFields(ConfigGroup):
-        Templates: JsonListString = Field(
-            default_factory=lambda: "[ ]",
-            description='账号页任务队列的自定义模板，同一托管的账号共用。JSON 列表，每项 ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions, taskLabels?, taskSchedules?}}``， 快照形状同账号的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务、密码字段 与全局选项（globalOptions 归各账号自己）； 名称在托管内唯一。运行流程不读它，只由账号页套用到某个账号的队列。',
-        )
-
-    Task: TaskFields = Field(default_factory=TaskFields)
-
-    class UpdateFields(ConfigGroup):
-        # 默认增量：GitHub 源按区间差量、Mirror 酱源要差量包，失败都回退全量。
-        # 全量的好处只有一条——队列里可以提前预下载（增量依赖开跑时的当前载荷，
-        # 不预下载，见 embedded_manager.prefetch_script_update）。
-        PackageMode: Literal["full", "incremental"] = Field(
-            default="incremental",
-            description="更新方式：全量或优先增量；增量依赖完整且匹配的基线，必要时回退全量。",
-        )
-        AutoUpdateMode: Annotated[
-            Literal["Off", "BeforeRun", "AfterRun"],
-            legacy(
-                group="Update",
-                name="IfAutoUpdate",
-                convert=lambda value: "Off" if value is False else "BeforeRun",
-            ),
-        ] = Field(
-            default_factory=lambda: "BeforeRun",
-            description="项目自动更新时机：Off 不更新，BeforeRun 在账号任务开始前更新。旧配置 AfterRun 兼容为运行前更新。更新和环境准备耗时不计入账号任务时限。",
-        )
-
-        Channel: Literal["stable", "beta"] = Field(
-            default_factory=lambda: "stable",
-            description="更新渠道只有稳定版与测试版，默认稳定版，要测试版由用户手动切。 不给「跟随全局」：全局那个 Update.Channel 是 MAS 自身的发布通道， 和脚本本体的版本档位是两回事，串在一起只会让人猜。 Mirror 酱还支持 channel=alpha，**故意不开放**——那是项目方的内部 验证档，稳定性无保证，而这里更新的是用户日常在跑的脚本本体。 这两个值必须与前端 updateChannelOptions 和 schema 的 Literal 一致： 三处任一多给一档，用户选了就会 422 或被静默纠回默认值。 旧配置里的空串现在是非法值，会被 correct() 回退成 options[0]， 即 stable——这里的顺序同样不能随意调换。",
-        )
-
-        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
-            default_factory=lambda: "",
-            description="Mirror 酱 CDK，由用户自己填。**不做全局兜底**：全局那个服务的是 AUTO-MAS 自身的更新，和脚本本体不是一回事，串在一起只会让人猜 自己在用哪个。选 Mirror 酱作为下载源时这一项必填。 （合并逻辑见 tools/embedded/update_credentials.py）",
-        )
-        ProxyAddress: str = Field(
-            default_factory=lambda: "",
-            description="托管级网络代理，给这个项目的更新包下载与运行环境安装（uv / pip、 binding 源码兜底）用。与 CDK / 渠道不同，这一项**留空就跟随全局** `Update.ProxyAddress`（设置 → 其他 → 网络代理），填了就只走自己的： 代理解决的是「这台机器连不连得上」，多数人全局一份就够，个别项目 的源在别的网络才需要单独指。格式同全局项，`host:port` 不带协议时 补 `http://`（合并逻辑见 tools/embedded/update_credentials.py）。",
-        )
-
-        Source: Literal["GitHub", "MirrorChyan"] = Field(
-            default_factory=lambda: "GitHub",
-            description="更新包的下载源，由用户显式选择——**不做自动分流**。 版本检查始终走 Mirror 酱（无 CDK 也能查），但下载去哪由这一项决定： 选 Mirror 酱就必须自己填 CDK，CDK 不可用时明确报错，不悄悄换成 GitHub——用户得知道自己在从哪下载，出问题才查得动。 默认 GitHub：零配置即可用，与全局 Update.Source 的默认值一致。 选项顺序有意义：OptionsValidator.correct() 回退的是 **options[0]**， 不是这里的默认值。旧配置里 Source 是空串（旧默认），加载时会被 correct 成第一项并写回磁盘——GitHub 必须排在前面，否则所有既有托管会被静默改成 Mirror 酱，而它们并没有 CDK，每次运行都更新失败。",
-        )
-
-    Update: UpdateFields = Field(default_factory=UpdateFields)
-    UserData: ConfigCollection[MaaFWUserConfig] = collection(MaaFWUserConfig)
-
-
-class M9AUserConfig(MaaFWUserConfig):
-    """M9A 账号配置。
-
-    ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
-    「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
-    """
-
-
-# M9A 内置的按任务时限：只放比全局默认（TaskTimeLimit 45 分钟）更长的任务，和全局相同的不写，
-# 否则用户调大全局时限后这几个任务仍卡在旧值
-_M9A_TASK_TIME_LIMIT_OVERRIDES = '{"自动深眠": 60, "自动醒梦": 60}'
-
-
-class M9AConfig(MaaFWConfig):
-    """M9A 托管配置：MaaFW 的特调类型。
-
-    字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认托管名、内置的按任务单任务时限，以及运行前的队列装饰
-    （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
-    ``app/task/M9A/migration.py`` 一次性迁到这个形状。
-    """
-
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 M9A 托管"
-    USER_CONFIG_CLASS: ClassVar = M9AUserConfig
-    FLAVOR: ClassVar = "app.task.M9A.flavor:FLAVOR"
-    DEFAULT_TASK_TIME_LIMIT_OVERRIDES: ClassVar = _M9A_TASK_TIME_LIMIT_OVERRIDES
-
-    class InfoFields(MaaFWConfig.InfoFields):
-        Name: str = Field(
-            default_factory=lambda: "新 M9A 托管", description="MaaFW 托管名称"
-        )
-
-    # 独立配置类型有意覆盖分组及集合，保留专项默认值与准确字段类型。
-    Info: InfoFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=InfoFields
-    )
-
-    class RunFields(MaaFWConfig.RunFields):
-        LoginMode: Literal["Project", "Mas"] = Field(
-            default_factory=lambda: "Project",
-            description="B 服登录方式。Project：由 M9A 项目的启动任务自己登录（上游「切换账号」仍只声明官服）；"
-            "Mas：由 MAS 完成 B 服登录——拉起 B 服客户端后处理隐私政策提示、在登录记录里选择已保存的账号，"
-            "按昵称选号并复核后，交给 M9A 公开 StartUp 任务进入游戏并继续运行，不核验 UID。Mas 需要 ADB controller 并在「游戏包名」里"
-            "填写 B 服包名（com.shenlan.m.reverse1999.bilibili），账号填登录记录里显示的完整昵称，"
-            "且不再向 M9A 下发「切换账号」。自动同意隐私提示复用全局「同意哔哩哔哩用户协议」开关（默认关闭），"
-            "未开启时登录会停下并提示手动处理。",
-        )
-
-        TaskTimeLimitOverrides: JsonDictString = Field(
-            default_factory=lambda: _M9A_TASK_TIME_LIMIT_OVERRIDES,
-            description="按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。 默认值由类属性 DEFAULT_TASK_TIME_LIMIT_OVERRIDES 决定（特调可内置几条）； 只在配置里没有这个键时生效，用户存过的值（含清空成 {}）原样保留。",
-        )
-
-    Run: RunFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=RunFields
-    )
-    UserData: ConfigCollection[M9AUserConfig] = collection(  # pyright: ignore[reportIncompatibleVariableOverride]
-        M9AUserConfig
-    )
-
-    class GameFields(MaaFWConfig.GameFields):
-        WaitTime: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            default=15, description="启动等待时间(秒)"
-        )
-
-    # 独立特调类型有意覆盖分组默认值，保留准确字段提示。
-    Game: GameFields = Field(default_factory=GameFields)  # pyright: ignore[reportIncompatibleVariableOverride]
-
-
-class MSSUserConfig(MaaFWUserConfig):
-    """MSS（MaaStellaSora / 星塔旅人）账号配置：MaaFW 账号配置再加一项计划表引用。
-
-    ``Info.PlanMode`` 是比 MaaFW 多出的唯一字段：``Fixed`` 表示悬赏试炼按任务队列里
-    用户自己配的选项跑；填了 MSS 计划表的 UID，运行前由特调钩子按当天槽位改写悬赏试炼的
-    关卡、难度与次数（见 ``app/task/MSS/flavor.py``）。
-    """
-
-    related_config: ClassVar = {}
-
-    class InfoFields(MaaFWUserConfig.InfoFields):
-        IfActivityFirst: bool = Field(
-            default_factory=lambda: True,
-            description="活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入，排在悬赏试炼之前",
-        )
-
-        PlanMode: Annotated[
-            UUID | str,
-            ref(
-                "PlanConfig",
-                default="Fixed",
-                allow_values=("Fixed",),
-                entry_types=(MSSPlanConfig,),
-                display_field="Info.Name",
-            ),
-        ] = Field(
-            default_factory=lambda: "Fixed",
-            description="悬赏试炼关卡来源：Fixed 用任务队列里配的，选了计划表就按当天槽位改",
-        )
-
-    Info: InfoFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=InfoFields
-    )
-
-
-class MSSConfig(MaaFWConfig):
-    """MSS 托管配置：MaaFW 的特调类型。
-
-    字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认托管名、账号上的计划表引用，以及运行前的队列装饰
-    （活动期先打活动、按计划表改悬赏试炼、新版爬塔放最后）。
-    """
-
-    DEFAULT_SCRIPT_NAME: ClassVar = "新 MSS 托管"
-    USER_CONFIG_CLASS: ClassVar = MSSUserConfig
-    FLAVOR: ClassVar = "app.task.MSS.flavor:FLAVOR"
-
-    class InfoFields(MaaFWConfig.InfoFields):
-        Name: str = Field(
-            default_factory=lambda: "新 MSS 托管", description="MaaFW 托管名称"
-        )
-
-    # 独立配置类型有意覆盖分组及集合，保留专项默认值与准确字段类型。
-    Info: InfoFields = Field(  # pyright: ignore[reportIncompatibleVariableOverride]
-        default_factory=InfoFields
-    )
-    UserData: ConfigCollection[MSSUserConfig] = collection(  # pyright: ignore[reportIncompatibleVariableOverride]
-        MSSUserConfig
-    )
-
-
 class GeneralUserConfig(DomainEntry):
     "通用脚本账号配置"
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
-        )
+    class DataFields(AccountRunFields): ...
 
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(AccountNameFields, AccountScriptHookFields):
         PlanMode: Annotated[
             UUID | Literal["Fixed"],
             ref(
@@ -2281,42 +1192,6 @@ class GeneralUserConfig(DomainEntry):
         ] = Field(
             default_factory=lambda: "independent",
             description="配置来源：independent 使用当前账号配置；兼容值 shared 当前仍使用该账号配置；native 使用外部脚本现有配置",
-        )
-
-        IfScriptAfterTask: bool = Field(
-            default_factory=lambda: False, description="是否在任务后执行脚本"
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            default_factory=lambda: False, description="是否在任务前执行脚本"
-        )
-
-        IfUseMasConfig: bool = Field(
-            default_factory=lambda: True, description="兼容旧版账号独立配置开关"
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            default_factory=lambda: None, description="任务后脚本路径"
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            default_factory=lambda: None, description="任务前脚本路径"
-        )
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="账号标签信息"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -2366,20 +1241,9 @@ class OkwwUserConfig(DomainEntry):
 
     OKWW_TASK_BOOK: ClassVar = {1: "日常"}
 
-    class DataFields(ConfigGroup):
+    class DataFields(AccountRunFields, AccountRunStatusFields):
         LastTaskName: Literal["", "DailyTask", "MultiAccountConfigTask"] = Field(
             default="", description="上次运行的 ok-ww 任务名称；空值沿用历史任务序号"
-        )
-
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-        )
-
-        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
-            description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
         )
 
         LastTaskIndex: Annotated[int, Field(ge=0, le=9999)] = Field(
@@ -2387,13 +1251,9 @@ class OkwwUserConfig(DomainEntry):
             default_factory=lambda: 0,
         )
 
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            description="代理次数", default_factory=lambda: 0
-        )
-
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(AccountNameFields, AccountScriptHookFields):
         PlanMode: Annotated[
             UUID | Literal["Fixed"],
             ref(
@@ -2416,48 +1276,17 @@ class OkwwUserConfig(DomainEntry):
             default_factory=lambda: "shared",
         )
 
-        Id: str = Field(description="账号", default_factory=lambda: "")
+        Id: Annotated[str, encrypted()] = Field(
+            description="账号", default_factory=lambda: ""
+        )
 
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
             description="是否启用 MAS 覆写常规配置覆盖高频任务字段",
         )
 
-        IfScriptAfterTask: bool = Field(
-            description="是否在任务后执行脚本", default_factory=lambda: False
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            description="是否在任务前执行脚本", default_factory=lambda: False
-        )
-
-        Name: WindowsNameString = Field(
-            description="账号名称", default_factory=lambda: "新账号"
-        )
-
-        Notes: str = Field(description="备注", default_factory=lambda: "无")
-
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            description="剩余天数", default_factory=lambda: -1
-        )
-
         Resource: Literal["官服", "国际服"] = Field(
-            description="游戏资源", default_factory=lambda: "官服"
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Status: bool = Field(description="账号状态", default_factory=lambda: True)
-
-        Tag: Virtual[str] = Field(
-            description="账号标签列表（JSON字符串，TagItem的dict列表）",
-            default_factory=lambda: None,
+            default_factory=lambda: "官服", description="游戏服务器"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -2578,30 +1407,17 @@ class OkNteUserConfig(DomainEntry):
         19: "影院约会",
     }
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-        )
-
-        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
-            description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
-        )
-
+    class DataFields(AccountRunFields, AccountRunStatusFields):
         LastTaskIndex: Annotated[int, Field(ge=0, le=9999)] = Field(
             description="上次运行的 ok-nte 任务序号（-t N）",
             default_factory=lambda: 0,
         )
 
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            description="代理次数", default_factory=lambda: 0
-        )
-
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(
+        AccountNameFields, AccountCredentialFields, AccountScriptHookFields
+    ):
         PlanMode: Annotated[
             UUID | Literal["Fixed"],
             ref(
@@ -2624,51 +1440,21 @@ class OkNteUserConfig(DomainEntry):
             default_factory=lambda: "shared",
         )
 
-        Id: str = Field(description="账号", default_factory=lambda: "")
+        Id: Annotated[str, encrypted()] = Field(
+            description="账号", default_factory=lambda: ""
+        )
 
         IfQuickConfig: bool = Field(
             description="是否启用覆写常规配置（与配置来源独立）",
             default_factory=lambda: True,
         )
 
-        IfScriptAfterTask: bool = Field(
-            description="是否在任务后执行脚本", default_factory=lambda: False
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            description="是否在任务前执行脚本", default_factory=lambda: False
-        )
-
-        Name: WindowsNameString = Field(
-            description="账号名称", default_factory=lambda: "新账号"
-        )
-
-        Notes: str = Field(description="备注", default_factory=lambda: "无")
-
         Password: Annotated[str, encrypted()] = Field(
             description="密码", default_factory=lambda: ""
         )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            description="剩余天数", default_factory=lambda: -1
-        )
 
         Resource: Literal["官服"] = Field(
-            description="游戏资源", default_factory=lambda: "官服"
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Status: bool = Field(description="账号状态", default_factory=lambda: True)
-
-        Tag: Virtual[str] = Field(
-            description="账号标签列表（JSON字符串，TagItem的dict列表）",
-            default_factory=lambda: None,
+            default_factory=lambda: "官服", description="游戏服务器"
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -2745,269 +1531,43 @@ class OkNteUserConfig(DomainEntry):
             return str(exc)
 
 
-class BetterGIUserConfig(DomainEntry):
-    "BetterGI 账号配置（更好的原神）"
+def _compile_strptime_format(value: str) -> str:
+    """用上游脚本同一个 strptime 编译器试一遍格式。
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-        )
+    格式写错（不认识的指令、重复命名的捕获组）要等到运行期准备阶段才炸，
+    那一炸还会把收尾一起带断，所以在写进配置时就挡住。
+    """
 
-        LastProxyStatus: Literal["未知", "成功", "失败", "维护中"] = Field(
-            description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
-        )
+    try:
+        TimeRE().compile(value)
+    except KeyError as exc:
+        raise ValueError(f"日志格式含不认识的指令 {exc}: {value}") from exc
+    except re.error as exc:
+        raise ValueError(f"日志格式无法编译（{exc}）: {value}") from exc
+    return value
 
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            description="代理次数", default_factory=lambda: 0
-        )
 
-    Data: DataFields = Field(default_factory=DataFields)
+def reject_invalid_log_formats(data: dict[str, Any]) -> str | None:
+    """保存前检查一次日志格式；返回给用户看的原因，没问题就是 None。
 
-    class InfoFields(ConfigGroup):
-        Base: Annotated[
-            Literal["shared", "independent", "native"],
-            legacy(
-                group="Info",
-                name="Mode",
-                convert=_utils_constants.normalize_base_source,
-            ),
-        ] = Field(
-            default_factory=lambda: "independent",
-            description="base 来源（shared=共享/independent=独立/native=原生）",
-        )
+    接口侧的配置更新是宽松投影（``ConfigInput``），不跑字段校验，所以要在入口
+    单独调一次；模型本身也挂了同一个校验，加载旧配置时同样会被挡住。
+    """
 
-        Id: str = Field(description="账号", default_factory=lambda: "")
-
-        IfQuickConfig: bool = Field(
-            default_factory=lambda: True,
-            description="是否启用覆写常规配置（与配置来源独立，按账号保存）",
-        )
-
-        IfScriptAfterTask: bool = Field(
-            description="是否在任务后执行脚本", default_factory=lambda: False
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            description="是否在任务前执行脚本", default_factory=lambda: False
-        )
-
-        IfUseMasConfig: bool = Field(
-            default_factory=lambda: True, description="兼容旧版账号一条龙独立配置开关"
-        )
-
-        Name: WindowsNameString = Field(
-            description="账号名称", default_factory=lambda: "新账号"
-        )
-
-        Notes: str = Field(description="备注", default_factory=lambda: "无")
-
-        Password: Annotated[str, encrypted()] = Field(
-            description="密码", default_factory=lambda: ""
-        )
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            description="剩余天数", default_factory=lambda: -1
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
-        Status: bool = Field(description="账号状态", default_factory=lambda: True)
-
-        Tag: Virtual[str] = Field(
-            description="账号标签列表（JSON字符串，TagItem的dict列表）",
-            default_factory=lambda: None,
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class NotifyFields(ConfigGroup):
-        Enabled: bool = Field(
-            default_factory=lambda: False, description="是否启用账号通知"
-        )
-
-        IfSendDropStatistics: bool = Field(
-            default_factory=lambda: True,
-            description="是否统计掉落（BGI「奖励识别」）：默认开启；开启后运行前强制打开奖励识别， 并把日志里的逐轮识别结果汇总进统计通知",
-        )
-
-        IfSendMail: bool = Field(
-            default_factory=lambda: False, description="是否发送邮件"
-        )
-
-        IfSendStatistic: bool = Field(
-            default_factory=lambda: False, description="是否发送账号统计信息"
-        )
-
-        IfServerChan: bool = Field(
-            default_factory=lambda: False, description="是否启用 Server 酱"
-        )
-
-        PushLogMode: Literal["关闭", "逐条", "汇总"] = Field(
-            default_factory=lambda: "汇总",
-            description="任务报告节点详情的推送模式（一条龙/执行层分步表）： 关闭 = 不注入；逐条 = 逐条带回时间戳；汇总 = 按状态聚合",
-        )
-
-        ServerChanKey: str = Field(
-            default_factory=lambda: "", description="Server 酱密钥"
-        )
-
-        ToAddress: str = Field(
-            default_factory=lambda: "", description="账号通知收件地址"
-        )
-
-    Notify: NotifyFields = Field(default_factory=NotifyFields)
-
-    class OneDragonFields(ConfigGroup):
-        AutoBossStrategyName: str = Field(
-            default_factory=lambda: "",
-            description="战斗策略（对应 BetterGI 一条龙的 AutoBossStrategyName，留空不覆盖） 默认「根据队伍自动选择」为 BetterGI 内置策略名",
-        )
-
-        CustomGroups: JsonListString = Field(
-            default_factory=lambda: "[]",
-            description='自定义配置组列表：JSON 数组字符串，元素为 {"name": str, "enabled": bool}',
-        )
-
-        DailyRewardPartyName: str = Field(
-            default_factory=lambda: "",
-            description="领取奖励队伍（对应 BetterGI 一条龙的 DailyRewardPartyName，留空不覆盖）",
-        )
-
-        Groups: list[str] = Field(
-            default_factory=lambda: [
-                "领取邮件",
-                "合成树脂",
-                "自动幽境危战",
-                "自动地脉花",
-                "自动首领讨伐",
-                "自动秘境",
-                "领取尘歌壶奖励",
-                "领取每日奖励",
-            ],
-            description="一条龙要执行的内置配置组（按组名，默认全部 8 组开启）",
-        )
-
-        IfUseCustomGroups: bool = Field(
-            default_factory=lambda: False,
-            description="是否管理自定义配置组（总开关；OFF 时沿 BetterGI 原生设置，自定义组原样保留）",
-        )
-
-        IfUseTeams: bool = Field(
-            default_factory=lambda: False,
-            description="「队伍配置」总开关（胶囊开关）：ON 时表格内队伍参与运行时「战斗场景」选队； OFF 时数据保留但不参与匹配（通用队伍 PartyName/AutoBossStrategyName 照旧生效）。",
-        )
-
-        PartyName: str = Field(
-            default_factory=lambda: "",
-            description="战斗队伍（对应 BetterGI 一条龙的通用 PartyName，留空不覆盖）",
-        )
-
-        Plan: str = Field(
-            default_factory=lambda: "",
-            description="一条龙执行计划（Plan）JSON 字符串：{version, steps:[{uid,kind,name,enabled,settings}]}。 战斗 4 项（自动秘境/自动地脉花/自动幽境危战/自动首领讨伐）直连执行层时由本字段 承载其 per-任务参数；右栏对应设置仅写入本字段（不落原生一条龙配置）。",
-        )
-
-        Queue: JsonListString = Field(
-            default_factory=lambda: "[]",
-            description='一条龙队列（可视化编排）：JSON 数组字符串，按执行顺序存储，元素为 {"kind": str, "name": str}（kind ∈ builtin/js/pathing/scriptgroup/custom， 内置组名命中时后端强制 builtin）。仅表达顺序与成员（含同名重复实例）， 行启停仍由 Groups / CustomGroups 承载；为空或非法时回退旧行为 （按副本 TaskOrder 相对顺序，不重排）。',
-        )
-
-        Teams: JsonListString = Field(
-            default_factory=lambda: "[]",
-            description='队伍配置表：JSON 数组字符串，数组顺序即界面展示顺序（可拖拽重排），元素为 {"name": str,            # 队伍名称（游戏内队伍名） "strategy": str,        # 战斗策略名（留空 = 跟随通用策略 AutoBossStrategyName） "scenes": {             # 战斗场景（可跨标签页任意叠加，空则本行不参与匹配） "domain": [{"region": str, "domain": str, "reward": str}],   # 秘境：地区/秘境名/奖励档 "leyline": [{"country": str, "type": str}],                  # 地脉花：地区/地脉类型 "boss": [{"region": str, "boss": str}]},                     # 首领讨伐：地区/首领名 "note": str,            # 备注 "enabled": bool}        # 启用状态 序号 0 的「通用队伍」不落本字段（直绑 PartyName / AutoBossStrategyName）。 运行期由 team_resolver 按 L1 精确匹配 + 随机选取，写入 Plan 步骤的 masTeamOverride / masStrategyOverride（最高优先级，压过每周行与步骤级字段）。',
-        )
-
-        UseExecutionLayer: bool = Field(
-            default_factory=lambda: True,
-            description="是否启用「直连执行层」：战斗 4 项由 MAS 自编排 Plan 驱动（按需求恒开，预留开关）。",
-        )
-
-    OneDragon: OneDragonFields = Field(default_factory=OneDragonFields)
-
-    class SwitchFields(ConfigGroup):
-        GamePath: FilePath = Field(
-            default_factory=lambda: None,
-            description="游戏客户端路径（账号级覆盖，可空）：官服/B服/国际服是三个互相隔离的客户端， B站账号只能登录B服客户端。留空 = 跟随 BetterGI 全局配置的游戏路径；填写后该账号运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同托管 混服账号各用各的客户端",
-        )
-
-        Resource: Literal["官服", "B服", "亚服", "欧服", "美服", "港澳台服"] = Field(
-            default_factory=lambda: "官服",
-            description="切换账号配置（BetterGI「切换账号多模式」脚本专项适配） 账号/密码复用 Info.Id / Info.Password（密码经 EncryptValidator 加密） 切换模式不再由账号配置，运行时按密码是否填写推断： 填密码 → 「账号+密码+OCR」，未填 → 「下拉列表」；B服 强制「B服切换另一个账号匹配+键鼠」。 游戏服务器（账号所在服务器：官服/B服/国际服各服务器）",
-        )
-
-        Uid: str = Field(
-            default_factory=lambda: "",
-            description="账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）",
-        )
-
-    Switch: SwitchFields = Field(default_factory=SwitchFields)
-
-    class TaskFields(ConfigGroup):
-        OneDragonConfigName: str = Field(
-            default_factory=lambda: "",
-            description="BetterGI「一条龙」配置名，对应脚本一条龙页面中已保存的配置名称",
-        )
-
-    Task: TaskFields = Field(default_factory=TaskFields)
-    Notify_CustomWebhooks: ConfigCollection[Webhook] = collection(Webhook)
-
-    def getTags(self) -> str:
-        tags = []
-        last_status = self.Data.LastProxyStatus
-        tags.append(
-            {
-                "text": f"上次：{_tag_last_status(last_status)}",
-                "color": "red" if last_status == "失败" else "green",
-            }
-        )
-        if self.Info.IfQuickConfig:
-            config_name = "MAS独立配置"
-        else:
-            config_name = self.Task.OneDragonConfigName or "未设置"
-        tags.append({"text": f"一条龙：{config_name}", "color": "orange"})
-        tags.append(_tag_remained_days(self))
-        tags.append(_tag_notes(self))
-        return json.dumps(tags, ensure_ascii=False)
-
-    @classmethod
-    def normalize_payload(cls, data):
-        data = deepcopy(data)
-        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-        switch = normalized_data.get("Switch")
-        if isinstance(switch, dict) and "Resource" not in switch:
-            if switch.get("Modes") == "B服切换另一个账号匹配+键鼠":
-                switch["Resource"] = "B服"
-            elif switch.get("GlobalAccount"):
-                server = switch.get("Servers")
-                switch["Resource"] = (
-                    _BGI_LEGACY_SERVERS_TO_RESOURCE.get(server, "亚服")
-                    if isinstance(server, str)
-                    else "亚服"
-                )
-            else:
-                switch["Resource"] = "官服"
-        normalized_data = migrate_legacy_fields(cls, normalized_data)
-        info = normalized_data.get("Info")
-        if isinstance(info, dict):
-            base = info.get("Base")
-            if base in ("shared", "independent", "native"):
-                info["IfQuickConfig"] = base != "native"
-        return normalized_data
-
-    @virtual_field("Info.Tag")
-    def compute_Info_Tag(self):
-        try:
-            return self.getTags()
-        except Exception as exc:
-            return str(exc)
+    script = data.get("Script")
+    if not isinstance(script, dict):
+        return None
+    for field, label in (
+        ("LogPathFormat", "日志路径格式"),
+        ("LogTimeFormat", "日志时间格式"),
+    ):
+        value = script.get(field)
+        if isinstance(value, str) and value:
+            try:
+                _compile_strptime_format(value)
+            except ValueError as exc:
+                return f"{label}不可用：{exc}"
+    return None
 
 
 class GeneralConfig(DomainEntry):
@@ -3018,19 +1578,6 @@ class GeneralConfig(DomainEntry):
     class GameFields(ConfigGroup):
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "", description="游戏启动参数"
-        )
-
-        EmulatorId: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        EmulatorIndex: str = Field(
-            default_factory=lambda: "-", description="模拟器索引"
         )
 
         Enabled: bool = Field(default_factory=lambda: False, description="是否启用游戏")
@@ -3064,7 +1611,7 @@ class GeneralConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -3214,11 +1761,6 @@ class OkwwConfig(DomainEntry):
             description="账号切换方式：NONE 不切换；MAS 切换（推荐）；OKWW_SINGLE 由脚本逐账号切换、分别运行和重试；OKWW 批量切换并补跑未完成账号",
         )
 
-        AccountSwitch: bool = Field(
-            default_factory=lambda: False,
-            description="运行前由 MAS 切换账号（仅日常任务且游戏配置启用时生效；用户未填手机号时不切换）",
-        )
-
         Arguments: CliArgumentString = Field(
             default_factory=lambda: "",
             description="鸣潮启动参数（直启默认补充 -krqlv=hd，可用 -krqlv=sd 或 -krqlv=uhd 覆盖，需已安装对应资源）",
@@ -3270,7 +1812,7 @@ class OkwwConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -3360,7 +1902,7 @@ class OkNteConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -3479,90 +2021,6 @@ class OkNteConfig(DomainEntry):
         return data
 
 
-class BetterGIConfig(DomainEntry):
-    "BetterGI 配置（更好的原神，原生 GUI 原生来源 + 仅一条龙任务）"
-
-    class UpdateFields(ConfigGroup):
-        TakeoverEnabled: bool = Field(
-            default=False,
-            description="运行前由 MAS 下载校验 BetterGI 官方安装包并静默更新，普通检查下载失败后沿用当前安装；运行期暂时屏蔽本体更新提示，结束恢复",
-        )
-        Channel: Literal["stable", "beta"] = Field(
-            default="stable", description="BetterGI 正式版或公测版（上游 alpha）"
-        )
-        MirrorChyanCDK: Annotated[str, encrypted()] = Field(
-            default="",
-            description="BetterGI Mirror 酱 CDK，留空使用全局 CDK，无 CDK 使用 GitHub",
-        )
-
-    Update: UpdateFields = Field(default_factory=UpdateFields)
-
-    class GameFields(ConfigGroup):
-        CloseOnFinish: bool = Field(
-            default_factory=lambda: True, description="任务结束后关闭游戏"
-        )
-
-        Controller: Literal["电脑端-前台", "电脑端-云原神", "电脑端-桌面分身"] = Field(
-            default_factory=lambda: "电脑端-前台",
-            description="控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身） ⚠️ 预留字段：当前运行时不读取（BetterGI 自行管理游戏控制），云原神 / 桌面分身 尚未开发。为将来支持而保留占位并持久化，恒为默认「电脑端-前台」，勿被判定死代码误删。",
-        )
-
-        IfAutoUpdate: bool = Field(
-            default_factory=lambda: False,
-            description="是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新",
-        )
-
-    Game: GameFields = Field(default_factory=GameFields)
-
-    class InfoFields(ConfigGroup):
-        Name: str = Field(
-            description="托管名称", default_factory=lambda: "新 BetterGI 托管"
-        )
-
-        RootPath: FolderPath = Field(
-            description="脚本根目录", default_factory=lambda: None
-        )
-
-    Info: InfoFields = Field(default_factory=InfoFields)
-
-    class RunFields(ConfigGroup):
-        AccountSwitchMethod: Literal["BGI", "MAS"] = Field(
-            default_factory=lambda: "MAS",
-            description="账号切换方式（托管级，参考 MaaEnd Run.AccountSwitchMethod）： BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。 默认值双轨：新建托管取类默认 MAS；既有托管（配置无该键）由 load 迁移固化 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。",
-        )
-
-        HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            default_factory=lambda: 120,
-            description="单账号运行总时限（分钟），包含等待和全部重试",
-        )
-
-        ProxyTimesLimit: Annotated[int, Field(ge=0, le=9999), none_as(0)] = Field(
-            description="每日代理次数限制", default_factory=lambda: 0
-        )
-
-        RunTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            description="日志超时限制", default_factory=lambda: 10
-        )
-
-        RunTimesLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
-            description="重试次数限制", default_factory=lambda: 3
-        )
-
-        UseAdmin: bool = Field(
-            default_factory=lambda: True,
-            description="是否以管理员权限启动 BetterGI。默认提权（贴近旧行为）；若 MAS 平时以非管理员 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。 MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。",
-        )
-
-    Run: RunFields = Field(default_factory=RunFields)
-    UserData: ConfigCollection[BetterGIUserConfig] = collection(BetterGIUserConfig)
-
-    @classmethod
-    def normalize_payload(cls, data):
-        data = deepcopy(data)
-        migrated_data, migrated = _migrate_bgi_account_switch_default(data)
-        return migrated_data
-
-
 class ZzzOdUserConfig(DomainEntry):
     """绝区零一条龙账号配置（zzz-od 线，MaaEnd 式字段化账号配置）
 
@@ -3573,18 +2031,7 @@ class ZzzOdUserConfig(DomainEntry):
     痕迹）。原生（native）来源不使用字段配置，直接以 zzz-od 原生配置运行。
     """
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            description="上次代理日期",
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-        )
-
-        LastProxyStatus: Literal["未知", "成功", "失败"] = Field(
-            description="上次代理状态（未知/成功/失败）", default_factory=lambda: "未知"
-        )
-
+    class DataFields(AccountRunFields, AccountRunStatusFields):
         LauncherLastGood: Annotated[
             Literal["", "原始", "集成"],
             ui(visibility=UiVisibility.HIDE),
@@ -3593,18 +2040,9 @@ class ZzzOdUserConfig(DomainEntry):
             description='智能启动器模式最近一次成功运行的启动器（""=尚未记录；下次智能优先用它）',
         )
 
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            description="代理次数", default_factory=lambda: 0
-        )
-
     Data: DataFields = Field(default_factory=DataFields)
 
     class GameFields(ConfigGroup):
-        Account: str = Field(
-            default_factory=lambda: "",
-            description="登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）",
-        )
-
         BilibiliAccountName: str = Field(
             default_factory=lambda: "", description="B服登录账号名"
         )
@@ -3652,10 +2090,6 @@ class ZzzOdUserConfig(DomainEntry):
             description="显示器序号（上游枚举原值为字符串）",
         )
 
-        Password: Annotated[str, encrypted()] = Field(
-            default_factory=lambda: "",
-            description="登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）",
-        )
         Platform: Literal["PC"] = Field(
             default_factory=lambda: "PC",
             description="游戏平台（上游枚举 GamePlatformEnum.PC 的真实值为大写 'PC'）",
@@ -3676,7 +2110,19 @@ class ZzzOdUserConfig(DomainEntry):
 
     Game: GameFields = Field(default_factory=GameFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(AccountNameFields, AccountScriptHookFields):
+        Id: Annotated[str, legacy(group="Game", name="Account"), encrypted()] = Field(
+            default_factory=lambda: "",
+            description="登录账号（手机号/邮箱；留空沿用 zzz-od 已保存的登录态）",
+        )
+
+        Password: Annotated[str, legacy(group="Game", name="Password"), encrypted()] = (
+            Field(
+                default_factory=lambda: "",
+                description="登录密码（DPAPI 加密落盘，注入/回读写 game_account.yml 时经 get/set 自动加解密）",
+            )
+        )
+
         Base: Annotated[
             Literal["shared", "independent", "native"],
             legacy(
@@ -3694,47 +2140,14 @@ class ZzzOdUserConfig(DomainEntry):
             description="是否启用覆写常规配置（已封锁，仅保留字段兼容存量数据：原生来源在 load/update 归一为关，共享/独立来源不消费本开关）",
         )
 
-        IfScriptAfterTask: bool = Field(
-            description="是否在任务后执行脚本", default_factory=lambda: False
-        )
-
-        IfScriptBeforeTask: bool = Field(
-            description="是否在任务前执行脚本", default_factory=lambda: False
-        )
-
         LauncherMode: Literal["自动", "原始", "集成"] = Field(
             default_factory=lambda: "自动",
             description="一条龙启动器选择（原生/独立两态通用）： 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）",
         )
 
-        Name: WindowsNameString = Field(
-            description="账号名称", default_factory=lambda: "新账号"
-        )
-
-        Notes: str = Field(description="备注", default_factory=lambda: "无")
-
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            description="剩余天数", default_factory=lambda: -1
-        )
-
-        ScriptAfterTask: FilePath = Field(
-            description="任务后脚本路径", default_factory=lambda: None
-        )
-
-        ScriptBeforeTask: FilePath = Field(
-            description="任务前脚本路径", default_factory=lambda: None
-        )
-
         SlotIdx: Annotated[int, Field(ge=-1, le=9999)] = Field(
             default_factory=lambda: -1,
             description="绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束， 此后配置会话与运行时注入都固定使用该槽。新槽从 MAS_SLOT_BASE（1001）起， 退到一条龙「升序找最小空号」够不到的高位段（上限 9999 与之一致放宽）",
-        )
-
-        Status: bool = Field(description="账号状态", default_factory=lambda: True)
-
-        Tag: Virtual[str] = Field(
-            description="账号标签列表（JSON字符串，TagItem的dict列表）",
-            default_factory=lambda: None,
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -3915,7 +2328,7 @@ class ZzzOdConfig(DomainEntry):
 
     Info: InfoFields = Field(default_factory=InfoFields)
 
-    class RunFields(ConfigGroup):
+    class RunFields(DesktopSessionRunFields):
         HardTimeLimit: Annotated[int, Field(ge=1, le=9999), none_as(1)] = Field(
             default_factory=lambda: 120,
             description="单账号运行总时限（分钟），包含等待和全部重试",
@@ -3943,36 +2356,14 @@ class BAAHUserConfig(DomainEntry):
 
     related_config: ClassVar = {}
 
-    class DataFields(ConfigGroup):
-        LastProxyDate: Annotated[
-            datetime, tz(_utils_constants.UTC4), ui(format="date")
-        ] = Field(
-            default_factory=lambda: datetime(2000, 1, 1, tzinfo=_utils_constants.UTC4),
-            description="上次代理日期",
-        )
-
-        ProxyTimes: Annotated[int, Field(ge=0, le=9999)] = Field(
-            default_factory=lambda: 0, description="代理次数"
-        )
+    class DataFields(AccountRunFields): ...
 
     Data: DataFields = Field(default_factory=DataFields)
 
-    class InfoFields(ConfigGroup):
+    class InfoFields(AccountNameFields):
         ActivityLineType: Literal["JP", "Globle", "CN"] = Field(
-            default_factory=lambda: "CN",
-            description="活动排期按哪个服判断，供「活动关优先」使用（Kivo 时间轴的原文拼写：JP / Globle / CN）",
-        )
-
-        Base: Annotated[
-            Literal["shared", "independent", "native"],
-            legacy(
-                group="Info",
-                name="Mode",
-                convert=_utils_constants.normalize_base_source,
-            ),
-        ] = Field(
-            default_factory=lambda: "independent",
-            description="兼容字段；BAAH 运行不消费此来源值，始终使用 Info.ConfigName 绑定的 BAAH 配置文件",
+            default="CN",
+            description="仅用于 MAS 活动日历提醒的服务器，不参与 BAAH 扫荡或任务编排",
         )
 
         ConfigName: str = Field(
@@ -3980,44 +2371,9 @@ class BAAHUserConfig(DomainEntry):
             description="默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）",
         )
 
-        IfEventFirst: bool = Field(
-            default_factory=lambda: False,
-            description="活动期间自动把「活动关卡」任务排到最前并打开",
-        )
-
         IfQuickConfig: bool = Field(
             default_factory=lambda: True,
-            description="兼容字段；BAAH 运行不消费此开关，运行期写入由配置托管、计划表及活动优先等实际选项决定",
-        )
-
-        Name: WindowsNameString = Field(
-            default_factory=lambda: "新账号", description="账号名称"
-        )
-
-        Notes: str = Field(default_factory=lambda: "无", description="备注")
-
-        RemainedDay: Annotated[int, Field(ge=-1, le=9999), none_as(-1)] = Field(
-            default_factory=lambda: -1, description="剩余天数"
-        )
-
-        StageMode: Annotated[
-            UUID | str,
-            ref(
-                "PlanConfig",
-                default="Fixed",
-                allow_values=("Fixed",),
-                entry_types=(BAAHPlanConfig,),
-                display_field="Info.Name",
-            ),
-        ] = Field(
-            default_factory=lambda: "Fixed",
-            description="关卡计划表；Fixed 表示沿用 BAAH 中的关卡配置",
-        )
-
-        Status: bool = Field(default_factory=lambda: True, description="是否启用")
-
-        Tag: Virtual[str] = Field(
-            default_factory=lambda: None, description="账号标签信息"
+            description="兼容字段；BAAH 运行不消费此开关，运行期写入仅由配置托管开关决定",
         )
 
     Info: InfoFields = Field(default_factory=InfoFields)
@@ -4054,12 +2410,6 @@ class BAAHUserConfig(DomainEntry):
         tags.append(_tag_notes(self))
         return json.dumps(tags, ensure_ascii=False)
 
-    @classmethod
-    def normalize_payload(cls, data):
-        data = deepcopy(data)
-        migrated_data, migrated = _migrate_baah_event_first(data)
-        return migrated_data
-
     @virtual_field("Info.Tag")
     def compute_Info_Tag(self):
         try:
@@ -4087,20 +2437,6 @@ class BAAHConfig(DomainEntry):
     Update: UpdateFields = Field(default_factory=UpdateFields)
 
     related_config: ClassVar = {}
-
-    class EmulatorFields(ConfigGroup):
-        Id: Annotated[
-            UUID | str,
-            ref(
-                "EmulatorConfig",
-                default="-",
-                allow_values=("-",),
-                display_field="Info.Name",
-            ),
-        ] = Field(default_factory=lambda: "-", description="模拟器 ID")
-        Index: str = Field(default_factory=lambda: "-", description="模拟器索引")
-
-    Emulator: EmulatorFields = Field(default_factory=EmulatorFields)
 
     class InfoFields(ConfigGroup):
         Name: str = Field(
@@ -4151,24 +2487,14 @@ __all__ = [
     "UserConfigType",
     "MaaEndUserConfig",
     "MaaEndConfig",
-    "SrcUserConfig",
-    "SrcConfig",
     "HSRUserConfig",
     "HSRConfig",
-    "MaaFWUserConfig",
-    "MaaFWConfig",
-    "M9AUserConfig",
-    "M9AConfig",
-    "MSSUserConfig",
-    "MSSConfig",
     "GeneralUserConfig",
     "OkwwUserConfig",
     "OkNteUserConfig",
-    "BetterGIUserConfig",
     "GeneralConfig",
     "OkwwConfig",
     "OkNteConfig",
-    "BetterGIConfig",
     "ZzzOdUserConfig",
     "ZzzOdConfig",
     "BAAHUserConfig",
@@ -4179,30 +2505,20 @@ __all__ = [
 type ScriptConfigType = (
     ScriptEntry
     | MaaEndConfig
-    | SrcConfig
     | HSRConfig
-    | MaaFWConfig
-    | M9AConfig
-    | MSSConfig
     | GeneralConfig
     | OkwwConfig
     | OkNteConfig
-    | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
 )
 type UserConfigType = (
     UserEntry
     | MaaEndUserConfig
-    | SrcUserConfig
     | HSRUserConfig
-    | MaaFWUserConfig
-    | M9AUserConfig
-    | MSSUserConfig
     | GeneralUserConfig
     | OkwwUserConfig
     | OkNteUserConfig
-    | BetterGIUserConfig
     | ZzzOdUserConfig
     | BAAHUserConfig
 )

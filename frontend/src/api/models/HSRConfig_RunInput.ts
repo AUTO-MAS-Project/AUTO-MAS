@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type HSRConfig_RunInput = {
     /**
+     * 单独启动托管时使用的 Windows 会话
+     */
+    ExecutionSession?: ('main' | 'desktop' | null);
+    /**
      * 日常任务超时限制（分钟）
      */
     DailyTimeLimit?: (number | null);

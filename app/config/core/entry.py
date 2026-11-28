@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import weakref
 from pathlib import Path
-from types import UnionType
 from typing import (
     Any,
     ClassVar,
     Iterator,
-    Literal,
     Self,
-    Union,
     cast,
-    get_args,
     get_origin,
 )
 from uuid import UUID
@@ -25,9 +20,11 @@ from pydantic import (
     Field,
     PrivateAttr,
     SerializationInfo,
+    ValidationError,
     model_serializer,
     model_validator,
 )
+from pydantic.fields import FieldInfo
 from pydantic_core.core_schema import SerializerFunctionWrapHandler
 
 from app.utils import get_logger
@@ -38,24 +35,29 @@ from ..fields import (
     RefDeleteAction,
     RefField,
     UiHintsMap,
+    UiSection,
+    UiStep,
     UiVisibility,
     UiVisibilitySpec,
     Virtual,
     is_reactive_model_field,
     is_trigger_model_field,
     is_virtual_model_field,
+    parse_field_path,
 )
-from ..fields.ann import strip_optional, unwrap_ann
 from ..fields.encrypted import EncryptedValue
 from ..fields.hints import (
     ComponentHint,
     OptionHint,
+    OptionValue,
+    TriggerUiState,
     UiTablesList,
     hint_for_field,
     migrate_legacy_fields,
     omit_masked_placeholders,
     visibility_spec_for_field,
 )
+from ..fields.ref import validate_trigger_command
 from ..shortcuts import virtual_field
 from ..signals import FieldChangeEvent
 from .collection import ConfigCollection
@@ -133,14 +135,13 @@ class ConfigEntry(ConfigNode):
     """L2 配置条目；文档形状 = 各 Group 字段顶层嵌套。"""
 
     # 类级规格（每子类独立）
+    ui_steps: ClassVar[tuple[UiStep, ...]] = ()
+    ui_sections: ClassVar[dict[str, UiSection]] = {}
     _cfg_group_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_collection_fields: ClassVar[tuple[str, ...]] = ()
     _cfg_virtual_specs: ClassVar[dict[tuple[str, str], str]] = {}
     _cfg_trigger_specs: ClassVar[dict[tuple[str, str], str]] = {}
     # (group, field) → ("bool"|"literal", 触发值元组, 闲置值)
-    _cfg_trigger_modes: ClassVar[
-        dict[tuple[str, str], tuple[str, tuple[object, ...], object]]
-    ] = {}
     _cfg_ref_specs: ClassVar[dict[tuple[str, str], RefField]] = {}
     _cfg_ui_hints: ClassVar[UiHintsMap] = {}
     _cfg_ui_tables: ClassVar[UiTablesList] = []
@@ -152,10 +153,12 @@ class ConfigEntry(ConfigNode):
         return omit_masked_placeholders(cls, migrate_legacy_fields(cls, value))
 
     class Ui(ConfigGroup):
-        """前端组件提示虚拟组：``ui.hints`` / ``ui.tables``。"""
+        """前端组件与布局提示。"""
 
         hints: Virtual[UiHintsMap] = None
         tables: Virtual[UiTablesList] = None
+        steps: Virtual[list[UiStep]] = None
+        sections: Virtual[dict[str, UiSection]] = None
 
     ui: Ui = Field(default_factory=Ui)
 
@@ -225,9 +228,6 @@ class ConfigEntry(ConfigNode):
         group_fields: list[str] = []
         collection_fields: list[str] = []
         ref_specs: dict[tuple[str, str], RefField] = {}
-        trigger_modes: dict[
-            tuple[str, str], tuple[str, tuple[object, ...], object]
-        ] = {}
         tables_by_cls: dict[type, list[str]] = {}
         ui_hints: UiHintsMap = {}
         ui_visibility: dict[tuple[str, str | None], UiVisibilitySpec] = {}
@@ -260,31 +260,13 @@ class ConfigEntry(ConfigNode):
                         )
                     if refs:
                         ref_specs[key] = refs[0]
-                    if is_trigger_model_field(sub_info):
-                        raw, _meta = unwrap_ann(sub_info.annotation)
-                        raw = strip_optional(raw)
-                        t_origin = get_origin(raw)
-                        if t_origin is Union or t_origin is UnionType:
-                            raise TypeError(
-                                f"{cls.__name__}.{fname}.{sub_name}: "
-                                "触发器须为 bool 或 Literal（可 | None），"
-                                "禁止 bool 与 Literal 混用"
-                            )
-                        if raw is bool or t_origin is bool:
-                            trigger_modes[key] = ("bool", (True,), False)
-                        elif t_origin is Literal:
-                            values = get_args(raw)
-                            if not values:
-                                raise TypeError(
-                                    f"{cls.__name__}.{fname}.{sub_name}: "
-                                    "Literal 触发器至少需要一个字面量"
-                                )
-                            trigger_modes[key] = ("literal", values, None)
-                        else:
-                            raise TypeError(
-                                f"{cls.__name__}.{fname}.{sub_name}: "
-                                f"触发器值类型须为 bool 或 Literal[...]，收到 {raw!r}"
-                            )
+                    if (
+                        is_trigger_model_field(sub_info)
+                        and sub_info.annotation != UUID | None
+                    ):
+                        raise TypeError(
+                            f"{cls.__name__}.{fname}.{sub_name} 须声明为 Trigger"
+                        )
                     vis = visibility_spec_for_field(sub_info)
                     if vis is not None:
                         if key in ui_visibility:
@@ -296,7 +278,7 @@ class ConfigEntry(ConfigNode):
                         hint_for_field(
                             sub_name,
                             sub_info,
-                            trigger_mode=trigger_modes.get(key),
+                            is_trigger=is_trigger_model_field(sub_info),
                         )
                     )
                 if group_hints:
@@ -350,7 +332,6 @@ class ConfigEntry(ConfigNode):
         cls._cfg_ref_specs = ref_specs
         cls._cfg_virtual_specs = virtual_specs
         cls._cfg_trigger_specs = trigger_specs
-        cls._cfg_trigger_modes = trigger_modes
         cls._cfg_ui_hints = ui_hints
         cls._cfg_ui_visibility = ui_visibility
         cls._cfg_ui_tables = [
@@ -362,6 +343,53 @@ class ConfigEntry(ConfigNode):
             }
             for col_cls, columns in tables_by_cls.items()
         ]
+        cls._validate_ui_flow()
+
+    @classmethod
+    def _validate_ui_flow(cls) -> None:
+        steps = {step.key for step in cls.ui_steps}
+        if len(steps) != len(cls.ui_steps):
+            raise ValueError(f"{cls.__name__}: ui_steps 的 key 重复")
+        for key, section in cls.ui_sections.items():
+            prefix, _, name = key.partition(":")
+            if prefix not in ("group", "table") or not name.strip() or ":" in name:
+                raise ValueError(
+                    f"{cls.__name__}: 分区须为 group:<Name> 或 table:<Name>，收到 {key!r}"
+                )
+            if section.step is not None and section.step not in steps:
+                raise ValueError(
+                    f"{cls.__name__}: 分区 {key!r} 引用了未知步骤 {section.step!r}"
+                )
+
+        def declared_field(path: str) -> FieldInfo:
+            group, name = parse_field_path(path)
+            if group in cls._cfg_ui_hints:
+                fields = cast(
+                    type[ConfigGroup], cls.model_fields[group].annotation
+                ).model_fields
+                if name in fields:
+                    return fields[name]
+            raise ValueError(f"{cls.__name__}: 未声明的字段路径 {path!r}")
+
+        for hints in cls._cfg_ui_hints.values():
+            for hint in hints:
+                for path in hint.get("depends_on", {}).values():
+                    declared_field(path)
+                action = hint.get("action_ref")
+                if action is not None and not is_trigger_model_field(
+                    declared_field(action)
+                ):
+                    raise ValueError(
+                        f"{cls.__name__}: action_ref {action!r} 须指向 Trigger 字段"
+                    )
+
+    @virtual_field("ui.steps")
+    def _get_ui_steps(self) -> list[UiStep]:
+        return list(self.ui_steps)
+
+    @virtual_field("ui.sections")
+    def _get_ui_sections(self) -> dict[str, UiSection]:
+        return dict(self.ui_sections)
 
     def _ui_visibility(self, group: str, field: str | None = None) -> UiVisibility:
         """同步求显隐；组级隐藏、禁用作用于子项，掩码仅用于具体字段。"""
@@ -400,18 +428,22 @@ class ConfigEntry(ConfigNode):
             for hint in hints:
                 fname = str(hint.get("field", ""))
                 vis = self._ui_visibility(gname, fname)
-                if vis == UiVisibility.HIDE:
+                trigger = (gname, fname) in type(self)._cfg_trigger_specs
+                busy = trigger and isinstance(self._resolve_field(gname, fname), UUID)
+                # 状态变化可能隐藏启动等入口，已受理的操作仍要展示到结束。
+                if vis == UiVisibility.HIDE and not busy:
                     continue
                 item = dict(hint)
                 # DISABLE / 虚拟 → 不可改；SHOW 默认可改；上锁再全量只读
-                item["editable"] = (
-                    False
-                    if locked
-                    or vis == UiVisibility.DISABLE
+                item["editable"] = not (
+                    locked
+                    or busy
+                    or vis in (UiVisibility.HIDE, UiVisibility.DISABLE)
                     or self._ui_visibility(gname) == UiVisibility.DISABLE
                     or (gname, fname) in virtuals
-                    else True
                 )
+                if trigger:
+                    item["state"] = TriggerUiState.BUSY if busy else TriggerUiState.IDLE
                 item["masked"] = vis == UiVisibility.MASKED
                 spec = type(self)._cfg_ref_specs.get((gname, fname))
                 if spec is not None:
@@ -499,11 +531,19 @@ class ConfigEntry(ConfigNode):
             self._build_workspace()
             group = getattr(self.effective, op.group)
             old = group.__dict__.get(op.field)
-            group.__pydantic_validator__.validate_assignment(
-                group, op.field, op.value, context={"entry": self}
-            )
+            try:
+                group.__pydantic_validator__.validate_assignment(
+                    group, op.field, op.value, context={"entry": self}
+                )
+            except ValidationError as exc:
+                raise ConfigAggregateError(
+                    [exc], field_path=(op.group, op.field)
+                ) from exc
             new = group.__dict__.get(op.field)
-            if use_init or old != new:
+            changed = old != new
+            if changed:
+                config_manager.mark_ui_changed(self)
+            if use_init or changed:
                 await type(self).send(
                     sender=self,
                     event=FieldChangeEvent(
@@ -532,40 +572,28 @@ class ConfigEntry(ConfigNode):
             raise DeletedNodeError(self.uid)
         if (group, field) in type(self)._cfg_virtual_specs:
             return getattr(self, type(self)._cfg_virtual_specs[(group, field)])()
-        tmode = type(self)._cfg_trigger_modes.get((group, field))
-        if tmode is not None:
-            return tmode[2]
+        if (group, field) in type(self)._cfg_trigger_specs:
+            return self.__dict__[group]._trigger_uids.get(field)
         stored = getattr(self.effective, group).__dict__.get(field)
         if isinstance(stored, EncryptedValue):
             return stored.plaintext()
         return stored
 
-    def _dispatch_trigger(self, group: str, field: str, value: object = True) -> None:
-        if not self._activation_ready:
-            raise ValueError("配置尚未完成激活，无法触发操作")
-        if self.deleted:
-            raise DeletedNodeError(self.uid)
-        handler = getattr(self, type(self)._cfg_trigger_specs[(group, field)])
-        # bool：无额外参；Literal：传入触发值
-        result = (
-            handler()
-            if type(self)._cfg_trigger_modes[(group, field)][0] == "bool"
-            else handler(value)
+    def write_trigger(
+        self,
+        group: str,
+        field: str,
+        value: bool | None,
+        *,
+        option: OptionValue | None = None,
+    ) -> UUID | None:
+        """写入配置触发器命令，返回受影响的任务 UUID。"""
+        return config_manager.submit_trigger(
+            self, group=group, field=field, value=value, option=option
         )
-        if inspect.isawaitable(result):
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            coro = (
-                result
-                if inspect.iscoroutine(result)
-                else asyncio.wait_for(result, timeout=None)
-            )
-            if loop is not None:
-                loop.create_task(coro)
-            else:
-                asyncio.run(coro)
+
+    def _apply_trigger_field(self, group: str, field: str, value: bool | None) -> None:
+        config_manager.apply_trigger_field(self, group, field, value)
 
     # ──────────────── 更新 ────────────────
 
@@ -589,6 +617,7 @@ class ConfigEntry(ConfigNode):
             raise ValueError("须先 activate")
 
         errors: list[Exception] = []
+        triggers: list[tuple[str, str, bool | None]] = []
         other_set = other.model_fields_set
         for gname in self._cfg_group_fields:
             if gname not in other_set:
@@ -601,6 +630,10 @@ class ConfigEntry(ConfigNode):
             for fname, finfo in type(dst).model_fields.items():
                 if is_virtual_model_field(finfo) or fname not in src_set:
                     continue
+                value = src.__dict__.get(fname)
+                if is_trigger_model_field(finfo):
+                    triggers.append((gname, fname, validate_trigger_command(value)))
+                    continue
                 # hide / disable：跳过（与前端不可改契约对齐；求值用热态 self）
                 if check_visibility:
                     vis = self._ui_visibility(gname, fname)
@@ -609,13 +642,20 @@ class ConfigEntry(ConfigNode):
                     ):
                         continue
                 try:
-                    setattr(dst, fname, src.__dict__.get(fname))
+                    setattr(dst, fname, value)
                 except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
         try:
             await self.commit()
         except Exception as exc:  # noqa: BLE001
             errors.append(exc)
+        if errors:
+            raise ConfigAggregateError(errors)
+        for group, name, value in triggers:
+            try:
+                self._apply_trigger_field(group, name, value)
+            except Exception as exc:
+                errors.append(exc)
         if errors:
             raise ConfigAggregateError(errors)
 
@@ -640,8 +680,13 @@ class ConfigEntry(ConfigNode):
             if col.activation_state != NodeState.INACTIVE:
                 continue
             nested = payload.get(cname)
-            if isinstance(nested, dict):
-                col._pending_payload = cast(dict[str, Any], nested)
+            if nested is not None and not isinstance(nested, dict):
+                errors.append(
+                    TypeError(f"{cname} 须为 dict，收到 {type(nested).__name__}")
+                )
+                continue
+            if nested is not None:
+                col._pending_payload = nested
             try:
                 await col.activate(regenerate_uuids=regenerate_uuids)
             except Exception as exc:  # noqa: BLE001
@@ -705,8 +750,15 @@ class ConfigEntry(ConfigNode):
         for gname in self._cfg_group_fields:
             group = cast(ConfigGroup, self.__dict__[gname])
             group_values = payload.get(gname)
-            if not isinstance(group_values, dict):
-                group_values = {}
+            if group_values is not None and not isinstance(group_values, dict):
+                error = TypeError(
+                    f"{gname} 须为 dict，收到 {type(group_values).__name__}"
+                )
+                if fail_fast:
+                    raise error
+                errors.append(error)
+                continue
+            group_values = group_values or {}
             for field_name, fld in type(group).model_fields.items():
                 if is_reactive_model_field(fld):
                     continue

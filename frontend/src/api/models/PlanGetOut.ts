@@ -2,8 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { DeclarativeConfigUi } from './DeclarativeConfigUi';
 import type { PlanConfigData } from './PlanConfigData';
 import type { PlanIndexItem } from './PlanIndexItem';
+import type { UnavailableConfigItem } from './UnavailableConfigItem';
 export type PlanGetOut = {
     /**
      * 状态码
@@ -17,6 +19,8 @@ export type PlanGetOut = {
      * 操作消息
      */
     message?: string;
+    uiSources?: Array<string>;
+    ui?: (DeclarativeConfigUi | null);
     /**
      * 计划索引列表
      */
@@ -25,5 +29,9 @@ export type PlanGetOut = {
      * 计划列表或单个计划数据
      */
     data: Record<string, PlanConfigData>;
+    /**
+     * 所属插件不可用的计划表，只在获取全部计划时给出；只能删除
+     */
+    unavailable?: Array<UnavailableConfigItem>;
 };
 

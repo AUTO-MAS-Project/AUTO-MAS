@@ -1,12 +1,16 @@
 <template>
-  <div class="managed-task-section">
-    <div class="section-header section-header--compact">
-      <h3>{{ t('core.edit.hsrTaskConfig') }}</h3>
+  <SectionCard
+    variant="plain"
+    density="compact"
+    :title="t('core.edit.hsrTaskConfig')"
+    class="managed-task-section"
+  >
+    <template #actions>
       <!-- 共享来源编辑的是共享的那份：标题旁一个标签说明，代替原先的整条提示 -->
       <a-tooltip v-if="shared" :title="t('core.edit.hsrSharedPlanHint')">
         <a-tag color="blue" class="shared-tag">{{ t('core.edit.hsrSharedPlanTag') }}</a-tag>
       </a-tooltip>
-    </div>
+    </template>
     <!-- 快照诊断合成一条：区块内最多一条提示 -->
     <a-alert
       v-if="snapshotWarnings.length"
@@ -16,13 +20,14 @@
       class="snapshot-warning"
     />
 
-    <a-spin :spinning="loading">
-      <NoData
-        v-if="!snapshot && !loading"
-        :description="t('core.edit.nativeTaskConfigurationHas')"
-      />
+    <StateView
+      :loading="loading"
+      :empty="!snapshot"
+      :empty-description="t('core.edit.nativeTaskConfigurationHas')"
+      overlay-loading
+    >
       <!-- 与 MFW 任务队列同一种布局：左边模块列表、右边所选模块的设置，两栏定高各自滚动 -->
-      <a-row v-else-if="snapshot" :gutter="24" class="module-layout">
+      <a-row v-if="snapshot" :gutter="24" class="module-layout">
         <a-col :xs="24" :lg="9" class="module-list-column">
           <div class="module-list">
             <div
@@ -96,13 +101,14 @@
           </ManagedModulePanel>
         </a-col>
       </a-row>
-    </a-spin>
-  </div>
+    </StateView>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
+import { SectionCard, StateView } from '@/components/ui'
 import {
   getHSRDroppedOverrides,
   type HSREngine,

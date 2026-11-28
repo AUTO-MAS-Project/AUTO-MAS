@@ -27,6 +27,7 @@ from typing import (
     Literal,
     Optional,
 )
+from uuid import UUID
 
 from fastapi import APIRouter, Body
 from pydantic import (
@@ -39,7 +40,7 @@ from app.config.errors import ConfigAggregateError
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Commands, Config
 from app.core.config.manager import QueueItemNotFoundError, QueueNotFoundError
-from app.models.schema import OutBase
+from app.models.schema import ConfigSnapshotOut, OutBase
 from app.utils import get_logger
 
 QueueConfig = ConfigPayload[_config_models.QueueConfig]
@@ -76,7 +77,7 @@ class QueueGetIn(BaseModel):
     )
 
 
-class QueueGetOut(OutBase):
+class QueueGetOut(ConfigSnapshotOut):
     index: List[QueueIndexItem] = Field(..., description="队列索引列表")
     data: Dict[str, QueueConfig] = Field(
         ..., description="队列数据字典, key来自于index列表的uid"
@@ -102,7 +103,7 @@ class TimeSetGetIn(QueueSetInBase):
     )
 
 
-class TimeSetGetOut(OutBase):
+class TimeSetGetOut(ConfigSnapshotOut):
     index: List[TimeSetIndexItem] = Field(..., description="时间设置索引列表")
     data: Dict[str, TimeSet] = Field(
         ..., description="时间设置数据字典, key来自于index列表的uid"
@@ -133,7 +134,7 @@ class QueueItemGetIn(QueueSetInBase):
     )
 
 
-class QueueItemGetOut(OutBase):
+class QueueItemGetOut(ConfigSnapshotOut):
     index: List[QueueItemIndexItem] = Field(..., description="队列项索引列表")
     data: Dict[str, QueueItem] = Field(
         ..., description="队列项数据字典, key来自于index列表的uid"
@@ -212,7 +213,11 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
             index=[],
             data={},
         )
-    return QueueGetOut(index=index, data=data)
+    return QueueGetOut(
+        index=index,
+        data=data,
+        uiSources=[UUID(queue.queueId) if queue.queueId else Config.QueueConfig.uid],
+    )
 
 
 @router.post(
@@ -277,7 +282,15 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
             index=[],
             data={},
         )
-    return TimeSetGetOut(index=index, data=data)
+    return TimeSetGetOut(
+        index=index,
+        data=data,
+        uiSources=[
+            UUID(time.timeSetId)
+            if time.timeSetId
+            else Config.QueueConfig[UUID(time.queueId)].TimeSet.uid
+        ],
+    )
 
 
 @router.post(
@@ -396,7 +409,15 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
             index=[],
             data={},
         )
-    return QueueItemGetOut(index=index, data=data)
+    return QueueItemGetOut(
+        index=index,
+        data=data,
+        uiSources=[
+            UUID(item.queueItemId)
+            if item.queueItemId
+            else Config.QueueConfig[UUID(item.queueId)].QueueItem.uid
+        ],
+    )
 
 
 @router.post(

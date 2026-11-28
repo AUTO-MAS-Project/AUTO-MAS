@@ -40,6 +40,8 @@ logger = get_logger("WS协议")
 # ==================== 固定路由 ID ====================
 
 ID_MAIN = "Main"
+ID_CONFIG = "Config"
+CONFIG_UI_CHANGED = "config.ui.changed"
 ID_PLUGIN = "Plugin"
 PLUGIN_CAPABILITIES_UPDATED = "plugin.capabilities.updated"
 ID_I18N = "I18n"

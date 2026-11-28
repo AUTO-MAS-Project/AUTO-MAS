@@ -4,6 +4,7 @@ import type { ScriptFrontendAdapter } from '@/plugins/scriptAdapters'
 
 /** MAA 暂随主程序编译，安装插件后开放入口；动态页面上线后迁入插件。 */
 export default {
+  pluginId: 'maa_adapter',
   type: 'MAA',
   metadata: {
     logo: maaIcon,

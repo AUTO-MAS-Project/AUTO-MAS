@@ -16,6 +16,10 @@ export type TaskRuntimeSnapshotItem = {
      */
     taskId: string;
     /**
+     * 可重跑的队列或单个托管 ID
+     */
+    targetId?: (string | null);
+    /**
      * 脚本执行模式; 循环运行的脚本同样按 AutoProxy 执行
      */
     mode: TaskMode;

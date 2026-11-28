@@ -39,7 +39,6 @@ const embeddedScriptTypes = new Set(['MaaFWConfig', 'M9AConfig', 'MSSConfig'])
 const planSelectionByScriptType = {
   MaaConfig: { field: 'StageMode', type: 'MaaPlanConfig' },
   MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
-  BAAHConfig: { field: 'StageMode', type: 'BAAHPlanConfig' },
   MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
   OkNteConfig: { field: 'PlanMode', type: 'OkNtePlanConfig' },
 }
@@ -92,6 +91,7 @@ export async function acquireRealRunLock(lockPath = defaultRealRunLockPath) {
 const configFiles = {
   ScriptConfig: 'scripts.yaml',
   EmulatorConfig: 'emulators.yaml',
+  GameConfig: 'games.yaml',
   PlanConfig: 'plans.yaml',
 }
 
@@ -245,9 +245,26 @@ export async function resolveRealTarget(sourceRoot, env) {
   if (!supportedScriptTypes.has(scriptType)) {
     throw new Error(`真实 E2E 尚未登记专项类型 ${scriptType}，请由专项作者补充适配`)
   }
-  const binding = ['GeneralConfig', 'MaaEndConfig'].includes(scriptType)
-    ? { Id: script.Game?.EmulatorId, Index: script.Game?.EmulatorIndex }
-    : script.Emulator
+  const account = collectionValue(
+    script.UserData ?? script.SubConfigsInfo?.UserData ?? {},
+    selection.userId
+  )
+  const managedBinding =
+    account?.game?.game_id && account.game.game_id !== '-' ? account.game : script.game
+  const gameId =
+    managedBinding?.game_id && managedBinding.game_id !== '-' ? managedBinding.game_id : ''
+  const games = gameId
+    ? selectEntry(await readConfig(sourceConfig, 'GameConfig'), gameId)
+    : undefined
+  const usesManagedEmulator = games && collectionValue(games, gameId)?.info?.type === 'emulator'
+  const binding = managedBinding
+    ? {
+        Id: usesManagedEmulator ? gameId : '-',
+        Index: usesManagedEmulator ? managedBinding.device_id : '-',
+      }
+    : ['GeneralConfig', 'MaaEndConfig'].includes(scriptType)
+      ? { Id: script.Game?.EmulatorId, Index: script.Game?.EmulatorIndex }
+      : script.Emulator
   const emulatorConfigId = typeof binding?.Id === 'string' && binding.Id !== '-' ? binding.Id : ''
   // 通用脚本可保留未使用的绑定；复制引用，但只为启用了模拟器游戏的目标启动实例。
   const usesEmulator =
@@ -261,7 +278,9 @@ export async function resolveRealTarget(sourceRoot, env) {
   }
   if (emulatorId) {
     if (!uuidPattern.test(emulatorId)) throw new Error('所选脚本的模拟器 ID 无效')
-    if (!/^\d+$/.test(emulatorIndex)) throw new Error('模拟器实例索引必须是数字')
+    if (!(managedBinding ? uuidPattern.test(emulatorIndex) : /^\d+$/.test(emulatorIndex))) {
+      throw new Error('模拟器设备标识无效')
+    }
     if (env.AUTO_MAS_E2E_EMULATOR_ID && env.AUTO_MAS_E2E_EMULATOR_ID !== emulatorId) {
       throw new Error('所选脚本绑定的模拟器与 E2E 目标不一致')
     }
@@ -275,6 +294,7 @@ export async function resolveRealTarget(sourceRoot, env) {
     script,
     scriptType,
     emulatorConfigId,
+    games,
     emulatorId,
     emulatorIndex,
     scriptId: selection.scriptId,
@@ -317,7 +337,9 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
   const targetConfig = path.join(dataRoot, 'config')
   await mkdir(targetConfig, { recursive: true })
   const selectedConfig = { ScriptConfig: scripts }
-  if (emulatorConfigId) {
+  if (resolved.games) {
+    selectedConfig.GameConfig = resolved.games
+  } else if (emulatorConfigId) {
     selectedConfig.EmulatorConfig = selectEntry(
       await readConfig(sourceConfig, 'EmulatorConfig'),
       emulatorConfigId
@@ -422,14 +444,30 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
 }
 
 export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
-  if (real || inPlace) return
+  if (inPlace || real) return
+  return seedPluginProfile(dataRoot, false)
+}
+
+async function seedPluginProfile(dataRoot, pluginsOnly) {
   const script = path.join(frontendRoot, 'e2e', 'fixtures', 'seed-profile.py')
-  const child = spawn('uv', ['run', '--project', repositoryRoot, '--no-sync', 'python', script], {
-    cwd: dataRoot,
-    stdio: 'inherit',
-    windowsHide: true,
-    env: { ...process.env, AUTO_MAS_ENV: 'development' },
-  })
+  const child = spawn(
+    'uv',
+    [
+      'run',
+      '--project',
+      repositoryRoot,
+      '--no-sync',
+      'python',
+      script,
+      ...(pluginsOnly ? ['--plugins-only'] : []),
+    ],
+    {
+      cwd: dataRoot,
+      stdio: 'inherit',
+      windowsHide: true,
+      env: { ...process.env, AUTO_MAS_ENV: 'development' },
+    }
+  )
   await new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', code =>
@@ -502,6 +540,9 @@ async function main() {
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
     await seedBrowserProfile(dataRoot, { real, inPlace })
+    if (real && !inPlace && process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS) {
+      await seedPluginProfile(dataRoot, true)
+    }
     // 真实模式以所选配置为准，清空未使用的模拟器变量，避免沿用上次运行的目标。
     const selectedEnv = Object.fromEntries(
       Object.entries({

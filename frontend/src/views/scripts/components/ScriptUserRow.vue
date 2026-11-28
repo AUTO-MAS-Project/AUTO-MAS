@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import { ConfirmActionButton } from '@/components/ui'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import type { ScriptListItem, ScriptListUser } from '../scriptListModel'
 import {
@@ -23,10 +24,10 @@ const props = defineProps<{
   user: ScriptListUser
   accountExpanded: boolean
   passwordExpanded: boolean
+  deleteUser: (user: ScriptListUser) => void | Promise<unknown>
 }>()
 const emit = defineEmits<{
   edit: [user: ScriptListUser]
-  delete: [user: ScriptListUser]
   toggleStatus: [user: ScriptListUser]
   toggleDisclosure: [userId: string, kind: 'account' | 'password']
 }>()
@@ -56,7 +57,7 @@ const handlePasswordClick = (user: ScriptListUser) =>
 const handleZzzOdAccountClick = (user: ScriptListUser) =>
   copyAndExpand(user, 'account', getZzzOdAccountValue(user))
 const handleEditUser = (user: ScriptListUser) => emit('edit', user)
-const handleDeleteUser = (user: ScriptListUser) => emit('delete', user)
+const handleDeleteUser = (user: ScriptListUser) => props.deleteUser(user)
 const handleToggleUserStatus = (user: ScriptListUser) => emit('toggleStatus', user)
 // 获取账号ID显示文本
 const getUserIdDisplayText = (user: ScriptListUser): string => {
@@ -143,9 +144,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             </a-tag>
           </template>
 
-          <!-- 账号标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.showAccount"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handleUserIdClick(user)"
@@ -153,9 +153,8 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
             {{ getUserIdDisplayText(user) }}
           </a-tag>
 
-          <!-- 密码标签 (HSR 不显示账号/密码) -->
           <a-tag
-            v-if="script.type === 'MAA' || script.type === 'SRC' || script.type === 'MaaEnd'"
+            v-if="user.Info.Password !== undefined"
             :color="script.type === 'MaaEnd' ? 'blue' : getServerTagColor(user.Info.Server)"
             class="clickable-tag"
             @click="handlePasswordClick(user)"
@@ -212,35 +211,32 @@ const getZzzOdAccountText = (user: ScriptListUser): string => {
       </div>
 
       <div class="user-actions">
-        <a-tooltip :title="t('core.comp.editUserConfiguration')">
-          <a-button
-            type="default"
-            size="middle"
-            class="user-action-btn"
-            @click="handleEditUser(user)"
-          >
-            <template #icon>
-              <EditOutlined />
-            </template>
-            {{ t('core.comp.edit') }}
-          </a-button>
-        </a-tooltip>
-        <a-popconfirm
+        <a-button
+          type="default"
+          size="middle"
+          class="user-action-btn"
+          @click="handleEditUser(user)"
+        >
+          <template #icon>
+            <EditOutlined />
+          </template>
+          {{ t('core.comp.edit') }}
+        </a-button>
+        <ConfirmActionButton
           :title="t('core.comp.deleteThisUser')"
           :description="t('core.comp.thisCannotBeUndone')"
           :ok-text="t('core.comp.ok')"
           :cancel-text="t('core.comp.cancel')"
-          @confirm="handleDeleteUser(user)"
+          :confirm="() => handleDeleteUser(user)"
+          tone="danger"
+          size="middle"
+          class="user-action-btn"
         >
-          <a-tooltip :title="t('core.comp.deleteUser')">
-            <a-button type="default" size="middle" danger class="user-action-btn">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              {{ t('core.comp.delete') }}
-            </a-button>
-          </a-tooltip>
-        </a-popconfirm>
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.comp.delete') }}
+        </ConfirmActionButton>
       </div>
     </div>
   </div>

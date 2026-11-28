@@ -16,7 +16,7 @@ import { bootstrapSystemNotices, disposeSystemNotices } from '@/services/systemN
 import { bootstrapTaskAnalytics, disposeTaskAnalytics } from '@/services/taskAnalytics'
 import { useBackendI18nStore } from '@/stores/backendI18n'
 import { bootstrapMcpStatus, disposeMcpStatus } from '@/composables/useMcpApi'
-import { bootstrapEmulatorAnalytics, disposeEmulatorAnalytics } from '@/composables/useEmulatorApi'
+import { bootstrapConfigUiSync, disposeConfigUiSync } from '@/services/configUiSync'
 import {
   bootstrapVirtualDisplayPrompt,
   disposeVirtualDisplayPrompt,
@@ -31,6 +31,10 @@ let registered = false
  */
 export function bootstrapRealtimeResidents(): void {
   if (!registered) {
+    registerResidentResource('config-ui', {
+      bootstrap: bootstrapConfigUiSync,
+      dispose: disposeConfigUiSync,
+    })
     registerResidentResource('mcp-status', {
       bootstrap: bootstrapMcpStatus,
       dispose: disposeMcpStatus,
@@ -38,10 +42,6 @@ export function bootstrapRealtimeResidents(): void {
     registerResidentResource('backend-i18n', {
       bootstrap: () => useBackendI18nStore().bootstrap(),
       dispose: () => useBackendI18nStore().dispose(),
-    })
-    registerResidentResource('emulator-analytics', {
-      bootstrap: bootstrapEmulatorAnalytics,
-      dispose: disposeEmulatorAnalytics,
     })
     registerResidentResource('task-analytics', {
       bootstrap: bootstrapTaskAnalytics,

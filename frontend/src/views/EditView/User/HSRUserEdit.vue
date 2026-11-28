@@ -1,49 +1,45 @@
 <template>
-  <div class="user-edit-container">
-    <UserEditHeader
-      :script-id="scriptId"
-      :script-name="scriptName"
-      :is-edit="isEdit"
-      script-edit-segment="hsr"
-      :user-id="userId"
-      @cancel="handleCancel"
-    />
+  <ConfigEditShell :max-width="1400">
+    <template #header>
+      <UserEditHeader
+        :script-id="scriptId"
+        :script-name="scriptName"
+        :is-edit="isEdit"
+        script-edit-segment="hsr"
+        :user-id="userId"
+        @cancel="handleCancel"
+      />
+    </template>
 
-    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
-        <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
-        <a-alert
-          v-if="pageWarnings.length"
-          type="warning"
-          show-icon
-          :message="pageWarnings[0]"
-          style="margin-bottom: 12px"
-        >
-          <template v-if="pageWarnings.length > 1" #description>
-            <ul class="page-warning-list">
-              <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
-            </ul>
-          </template>
-        </a-alert>
+    <template v-if="pageWarnings.length" #banner>
+      <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
+      <a-alert type="warning" show-icon :message="pageWarnings[0]">
+        <template v-if="pageWarnings.length > 1" #description>
+          <ul class="page-warning-list">
+            <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
+          </ul>
+        </template>
+      </a-alert>
+    </template>
+
+    <template #default>
+      <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
-          <div class="form-section form-section-flat">
-            <UserAccountHeading
-              :user-name="formData.Info.Name ?? ''"
-              :options="{ isEdit, logoSrc: hsrLogo }"
-            />
-            <div class="section-header">
-              <h3>{{ t('core.edit.basicInfo') }}</h3>
-              <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
-              <div class="section-header-actions">
-                <a-button size="small" @click="restoreOpen = true">
-                  <template #icon>
-                    <HistoryOutlined />
-                  </template>
-                  {{ t('core.edit.configRestoreTitle') }}
-                </a-button>
-              </div>
-            </div>
+          <UserAccountHeading
+            :user-name="formData.Info.Name ?? ''"
+            :options="{ isEdit, logoSrc: hsrLogo }"
+          />
+          <SectionCard variant="plain" :title="t('core.edit.basicInfo')">
+            <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
+            <template #actions>
+              <a-button size="small" @click="restoreOpen = true">
+                <template #icon>
+                  <HistoryOutlined />
+                </template>
+                {{ t('core.edit.configRestoreTitle') }}
+              </a-button>
+            </template>
             <!-- 与其他专项一致：用户名 / 启用 / 剩余天数一行，备注单独一行 -->
             <UserBasicInfoFields
               :name-path="['Info', 'Name']"
@@ -133,59 +129,57 @@
               alert-message=""
               @change="handleConfigModeChange"
             />
-          </div>
+          </SectionCard>
 
           <!-- 任务配置：「共享」来源编辑共享计划，「独立」来源编辑该用户自己的计划；
                模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
-          <div v-if="controlMode === 'managed'" class="control-mode-content">
-            <ManagedTaskSection
-              :snapshot="managedConfigSnapshot"
-              :task-switch="planForm.TaskSwitch"
-              :saving="isSaving"
-              :loading="managedConfigLoading"
-              :shared="planOwner === 'script'"
-              :cloud="isCloud"
-              :shown-warnings="visibleCapabilityWarnings"
-              :summaries="moduleSummaries"
-              @task-toggle="handleTaskSwitchToggle"
-              @mapping-change="handleManagedMappingChange"
-              @field-change="handleManagedFieldChange"
-              @field-reset="handleManagedFieldReset"
-              @module-reset="handleManagedModuleReset"
-              @clear-invalid-overrides="handleManagedInvalidOverridesClear"
-            >
-              <template #module-extra="{ task, engine, form }">
-                <StageConfigSection
-                  v-if="task.key === 'Daily' && dailyStageEngine"
-                  :form-data="planForm"
-                  :loading="isSaving"
-                  :daily-engine="dailyStageEngine"
-                  :engine-label="engineDisplayName(dailyStageEngine)"
-                  :build-target-label="findEnabledBuildTargetField(engine, form?.fields)?.label"
-                  :stage-options="hsrStageOptions"
-                  :stage-options-loading="hsrStageOptionsLoading"
-                  :stage-options-error="hsrStageOptionsError"
-                  @save="handleFieldSave"
-                />
-              </template>
-            </ManagedTaskSection>
-          </div>
-          <div v-else class="control-mode-content">
-            <DirectControlSection
-              :available-engines="directEngineCards"
-              :cloud="isCloud"
-              :control="formData.Control"
-              :saving="isSaving"
-              @toggle="handleDirectEngineToggle"
-            />
-          </div>
+          <ManagedTaskSection
+            v-if="controlMode === 'managed'"
+            :snapshot="managedConfigSnapshot"
+            :task-switch="planForm.TaskSwitch"
+            :saving="isSaving"
+            :loading="managedConfigLoading"
+            :shared="planOwner === 'script'"
+            :cloud="isCloud"
+            :shown-warnings="visibleCapabilityWarnings"
+            :summaries="moduleSummaries"
+            @task-toggle="handleTaskSwitchToggle"
+            @mapping-change="handleManagedMappingChange"
+            @field-change="handleManagedFieldChange"
+            @field-reset="handleManagedFieldReset"
+            @module-reset="handleManagedModuleReset"
+            @clear-invalid-overrides="handleManagedInvalidOverridesClear"
+          >
+            <template #module-extra="{ task, engine, form }">
+              <StageConfigSection
+                v-if="task.key === 'Daily' && dailyStageEngine"
+                :form-data="planForm"
+                :loading="isSaving"
+                :daily-engine="dailyStageEngine"
+                :engine-label="engineDisplayName(dailyStageEngine)"
+                :build-target-label="findEnabledBuildTargetField(engine, form?.fields)?.label"
+                :stage-options="hsrStageOptions"
+                :stage-options-loading="hsrStageOptionsLoading"
+                :stage-options-error="hsrStageOptionsError"
+                @save="handleFieldSave"
+              />
+            </template>
+          </ManagedTaskSection>
+          <DirectControlSection
+            v-else
+            :available-engines="directEngineCards"
+            :cloud="isCloud"
+            :control="formData.Control"
+            :saving="isSaving"
+            @toggle="handleDirectEngineToggle"
+          />
 
           <!-- 进度（完成态恒按用户记，共享 / 独立来源都显示；历战余响开始日在体力模块设置里） -->
-          <div v-if="formData.Info.Base !== 'native'" class="form-section">
-            <div class="section-header">
-              <h3>{{ t('core.edit.progressReset') }}</h3>
-            </div>
-
+          <SectionCard
+            v-if="formData.Info.Base !== 'native'"
+            variant="plain"
+            :title="t('core.edit.progressReset')"
+          >
             <!-- 历战余响进度 -->
             <a-row :gutter="24" align="middle">
               <a-col :span="10">
@@ -261,7 +255,7 @@
                 </a-space>
               </a-col>
             </a-row>
-          </div>
+          </SectionCard>
 
           <!-- 额外脚本组件 -->
           <ExtraScriptSection
@@ -278,48 +272,51 @@
             @save="handleFieldSave"
           />
         </a-form>
-      </a-card>
-    </ConfigLockPanel>
+      </ConfigLockPanel>
+    </template>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="HSR_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('core.edit.hsrConfigRestoreUserDesc')"
-      :script-desc="t('core.edit.hsrConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-    >
-      <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
-      <template #preview="{ raw }">
-        <NoData
-          v-if="!previewSections(raw).length"
-          :description="t('core.edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="hsr-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="hsr-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
-                {{ row.value }}
-              </a-descriptions-item>
-            </a-descriptions>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+    <template #overlay>
+      <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、HSR 原生配置在后）══ -->
+      <ConfigRestoreSection
+        v-model:open="restoreOpen"
+        :disabled="configLocked"
+        :script-name="HSR_DISPLAY_NAME"
+        :targets="restoreTargets"
+        :api="restoreApi"
+        :user-desc="t('core.edit.hsrConfigRestoreUserDesc')"
+        :script-desc="t('core.edit.hsrConfigRestoreScriptDesc')"
+        :on-restored="handleRestored"
+      >
+        <!-- mas 备份为字段侧车分区、native 备份为两引擎文件清单 -->
+        <template #preview="{ raw }">
+          <NoData
+            v-if="!previewSections(raw).length"
+            :description="t('core.edit.configRestorePreviewEmpty')"
+          />
+          <div v-else>
+            <template v-for="s in previewSections(raw)" :key="s.name">
+              <h4 class="hsr-preview-title">{{ s.label }}</h4>
+              <a-descriptions
+                v-if="s.rows && s.rows.length"
+                :column="1"
+                size="small"
+                bordered
+                class="hsr-preview-box"
+              >
+                <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                  {{ row.value }}
+                </a-descriptions-item>
+              </a-descriptions>
+            </template>
+          </div>
+        </template>
+      </ConfigRestoreSection>
+    </template>
+  </ConfigEditShell>
 </template>
 
 <script setup lang="ts">
+import { ConfigEditShell, SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -439,7 +436,7 @@ const formData = reactive<HSRUserConfigData>({
     Base: 'shared',
     // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
     // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
-    Server: 'CN-Official',
+    Resource: 'CN-Official',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -1279,49 +1276,6 @@ const loadUserData = async () => {
 </script>
 
 <style scoped>
-.user-edit-container {
-  background: var(--ant-color-bg-layout);
-}
-
-.user-edit-content {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.config-card {
-  border-radius: 12px;
-  box-shadow: none;
-}
-
-.config-card :deep(.ant-card-body) {
-  padding: 32px;
-}
-
-.config-form {
-  max-width: none;
-}
-
-.form-section {
-  margin-bottom: 12px;
-  padding: 20px 24px;
-  background: var(--ant-color-bg-container);
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 12px;
-}
-
-/* 基本信息与体力配置沿用插件版的无卡片布局；标题分隔线仍保留。 */
-.form-section-flat {
-  margin-bottom: 24px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-}
-
-.section-header {
-  margin-bottom: 12px;
-}
-
 /* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
 .hsr-preview-title {
   font-size: 15px;
@@ -1332,15 +1286,6 @@ const loadUserData = async () => {
 
 .hsr-preview-box {
   margin-bottom: 8px;
-}
-
-.section-header h3 {
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 22px;
-  background: var(--ant-color-primary);
 }
 
 .form-label {

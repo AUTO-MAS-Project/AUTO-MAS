@@ -1,8 +1,10 @@
 // 设置页持有数据，这里统一处理字段补丁、规范化回读和 Electron 同步。
-import { toRaw } from 'vue'
+import { useConfigLoader } from '@/services/configUiSync'
+import { computed, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { GlobalConfig } from '@/api'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useSettingsApi } from '@/composables/useSettingsApi'
 import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
@@ -31,7 +33,10 @@ const NORMALIZED_SETTING_KEYS = new Set([
 export function useSettingPersistence(settings: GlobalConfig, restartPolling: () => Promise<void>) {
   const { t } = useI18n()
   // loading 随保存链路一起暴露给页面，tabs 的加载态才能反映真实请求
-  const { loading, getSettings, updateSettings } = useSettingsApi()
+  const { loading: apiLoading, getSettings, updateSettings } = useSettingsApi()
+  const saveQueue = useSaveQueue()
+  const loading = computed(() => apiLoading.value || saveQueue.isSaving.value)
+  let lastSnapshot: GlobalConfig | undefined
 
   const syncConfigToElectron = async (data: GlobalConfig) => {
     try {
@@ -53,13 +58,24 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
   }
 
   // 刷新设置数据（只在后端会改写值的字段保存后才需要整份回读）
-  const refreshSettings = async () => {
-    const data = await getSettings()
+  const refreshSettings = useConfigLoader(['config', 'settings'], async read => {
+    const data = await getSettings(read)
     if (data) {
-      Object.assign(settings, data)
+      const next = structuredClone(data)
+      for (const category of Object.keys(data) as (keyof GlobalConfig)[]) {
+        const current = settings[category] as Record<string, unknown> | undefined
+        const saved = lastSnapshot?.[category] as Record<string, unknown> | undefined
+        const fresh = next[category] as Record<string, unknown> | undefined
+        if (!current || !saved || !fresh) continue
+        for (const [key, value] of Object.entries(current)) {
+          if (JSON.stringify(value) !== JSON.stringify(saved[key])) fresh[key] = value
+        }
+      }
+      lastSnapshot = data
+      Object.assign(settings, next)
       await syncConfigToElectron(data)
     }
-  }
+  })
 
   // 保存设置 - 只发送修改的字段（遵循最小原则）
   const saveSettings = async (
@@ -94,63 +110,66 @@ export function useSettingPersistence(settings: GlobalConfig, restartPolling: ()
       return
     }
     section[key] = value
+    const saved = lastSnapshot?.[category] as Record<string, unknown> | undefined
+    if (saved) saved[key] = value
     if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
   }
 
-  // 返回本次保存是否成功，供子组件在失败时跳过成功提示
-  const handleDynamicSettingChange: DynamicSettingChangeHandler = async (category, key, value) => {
-    // 只发送修改的字段
-    const changes = { [key]: value }
-    const success = await saveSettings(category, changes)
+  // 返回本次保存是否成功，供子组件在失败时跳过成功提示；统一经 setting 串行队列防乱序与竞态
+  const handleDynamicSettingChange: DynamicSettingChangeHandler = (category, key, value) =>
+    saveQueue.enqueue(async () => {
+      // 只发送修改的字段
+      const changes = { [key]: value }
+      const success = await saveSettings(category, changes)
 
-    if (!success) {
-      if (category === 'Replay') throw new Error(t('core.setting.toast.saveFailed'))
-      return false
-    }
+      if (!success) {
+        if (category === 'Replay') throw new Error(t('core.setting.toast.saveFailed'))
+        return false
+      }
 
-    if (NORMALIZED_SETTING_KEYS.has(`${category}.${key}`)) {
-      await refreshSettings()
-    } else {
-      await applyLocalSettingChange(category, key, value)
-    }
-    // 音频播放器缓存了语音设置，改了就让它下次重读
-    if (category === 'Voice') invalidateVoiceSettingsCache()
+      if (NORMALIZED_SETTING_KEYS.has(`${category}.${key}`)) {
+        await refreshSettings()
+      } else {
+        await applyLocalSettingChange(category, key, value)
+      }
+      // 音频播放器缓存了语音设置，改了就让它下次重读
+      if (category === 'Voice') invalidateVoiceSettingsCache()
 
-    if (category === 'Function' && key === 'IfEnableTelemetry') {
-      setTelemetryEnabled(Boolean(value))
-    }
+      if (category === 'Function' && key === 'IfEnableTelemetry') {
+        setTelemetryEnabled(Boolean(value))
+      }
 
-    // 处理托盘相关配置（需要额外的实时更新调用）
-    if (category === 'UI' && key === 'IfShowTray') {
-      try {
-        if (window.electronAPI?.updateTraySettings) {
-          await window.electronAPI.updateTraySettings({ [key]: value })
+      // 处理托盘相关配置（需要额外的实时更新调用）
+      if (category === 'UI' && key === 'IfShowTray') {
+        try {
+          if (window.electronAPI?.updateTraySettings) {
+            await window.electronAPI.updateTraySettings({ [key]: value })
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`更新托盘失败: ${errorMsg}`)
+          message.error(t('core.setting.toast.trayUpdateFailed'))
         }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`更新托盘失败: ${errorMsg}`)
-        message.error(t('core.setting.toast.trayUpdateFailed'))
       }
-    }
 
-    // 处理自动更新配置 - 重启更新检查轮询
-    if (category === 'Update' && key === 'IfAutoUpdate') {
-      try {
-        await restartPolling()
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.error(`重启更新检查失败: ${errorMsg}`)
-        message.error(t('core.setting.toast.updateCheckFailed'))
+      // 处理自动更新配置 - 重启更新检查轮询
+      if (category === 'Update' && key === 'IfAutoUpdate') {
+        try {
+          await restartPolling()
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`重启更新检查失败: ${errorMsg}`)
+          message.error(t('core.setting.toast.updateCheckFailed'))
+        }
       }
-    }
 
-    // 暂停状态变化时立即清掉标题栏的"检测到更新"旧提示
-    if (category === 'Update' && key === 'PauseUntil') {
-      updateInfo.value = null
-    }
+      // 暂停状态变化时立即清掉标题栏的"检测到更新"旧提示
+      if (category === 'Update' && key === 'PauseUntil') {
+        updateInfo.value = null
+      }
 
-    return true
-  }
+      return true
+    }, `${category}.${key}`)
 
   const handleSettingChange: SettingChangeHandler = handleDynamicSettingChange
 

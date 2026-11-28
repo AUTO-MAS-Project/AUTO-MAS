@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { ActiveTriggersOut } from '../models/ActiveTriggersOut';
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
@@ -17,30 +18,18 @@ import type { CoreUpgradePrecheckIn } from '../models/CoreUpgradePrecheckIn';
 import type { CoreUpgradePrecheckOut } from '../models/CoreUpgradePrecheckOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
-import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
-import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
-import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
-import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
-import type { Emulator2AvdUpdateStatusIn } from '../models/Emulator2AvdUpdateStatusIn';
-import type { Emulator2AvdUpdateStatusOut } from '../models/Emulator2AvdUpdateStatusOut';
-import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
-import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
-import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
-import type { Emulator2InstanceDeletePreviewOut } from '../models/Emulator2InstanceDeletePreviewOut';
-import type { Emulator2PathRemoveIn } from '../models/Emulator2PathRemoveIn';
-import type { Emulator2PathRemovePreviewOut } from '../models/Emulator2PathRemovePreviewOut';
-import type { Emulator2SearchIn } from '../models/Emulator2SearchIn';
-import type { Emulator2SearchOut } from '../models/Emulator2SearchOut';
-import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
-import type { EmulatorGetIn } from '../models/EmulatorGetIn';
-import type { EmulatorGetOut } from '../models/EmulatorGetOut';
-import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
-import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { FluxdownDetectOut } from '../models/FluxdownDetectOut';
 import type { FluxdownInstallIn } from '../models/FluxdownInstallIn';
 import type { FluxdownInstallOut } from '../models/FluxdownInstallOut';
 import type { FluxdownReleaseOut } from '../models/FluxdownReleaseOut';
+import type { GameBindingOptionsIn } from '../models/GameBindingOptionsIn';
+import type { GameBindingOptionsOut } from '../models/GameBindingOptionsOut';
 import type { GameCalendarActivitiesOut } from '../models/GameCalendarActivitiesOut';
+import type { GameDeviceIn } from '../models/GameDeviceIn';
+import type { GameGetIn } from '../models/GameGetIn';
+import type { GameGetOut } from '../models/GameGetOut';
+import type { GameSettingsOut } from '../models/GameSettingsOut';
+import type { GameTypesOut } from '../models/GameTypesOut';
 import type { HistoryDetailGetIn } from '../models/HistoryDetailGetIn';
 import type { HistoryDetailGetOut } from '../models/HistoryDetailGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
@@ -67,11 +56,8 @@ import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwArgumentsIn } from '../models/OkwwArgumentsIn';
 import type { OkwwArgumentsOut } from '../models/OkwwArgumentsOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
+import type { OkwwPlanConfigsOut } from '../models/OkwwPlanConfigsOut';
 import type { OkwwTaskConfigOut } from '../models/OkwwTaskConfigOut';
-import type { OperationGetIn } from '../models/OperationGetIn';
-import type { OperationListIn } from '../models/OperationListIn';
-import type { OperationListOut } from '../models/OperationListOut';
-import type { OperationOut } from '../models/OperationOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
@@ -120,6 +106,8 @@ import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
+import type { TriggerResultIn } from '../models/TriggerResultIn';
+import type { TriggerResultOut } from '../models/TriggerResultOut';
 import type { UniversalPlanStateIn } from '../models/UniversalPlanStateIn';
 import type { UniversalPlanStateOut } from '../models/UniversalPlanStateOut';
 import type { UserConfigDirIn } from '../models/UserConfigDirIn';
@@ -205,36 +193,6 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/plan',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取可选模拟器下拉框信息
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorComboxApiInfoComboxEmulatorPost(): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/emulator',
-        });
-    }
-    /**
-     * 获取可选模拟器多开实例下拉框信息
-     * @param requestBody
-     * @returns ComboBoxOut Successful Response
-     * @throws ApiError
-     */
-    public static getEmulatorDevicesComboxApiInfoComboxEmulatorDevicesPost(
-        requestBody: EmulatorDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/combox/emulator/devices',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -628,6 +586,33 @@ export class GetService {
         });
     }
     /**
+     * Get Okww Plan Configs Api
+     * 读取当天详细覆写及原生面板字段。
+     * @param planId
+     * @param day
+     * @param locale
+     * @returns OkwwPlanConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwPlanConfigsApiApiScriptsOkwwPlanConfigsGet(
+        planId: string,
+        day: string,
+        locale: 'zh_CN' | 'en_US' | 'ja_JP' = 'zh_CN',
+    ): CancelablePromise<OkwwPlanConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/plan/configs',
+            query: {
+                'plan_id': planId,
+                'day': day,
+                'locale': locale,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 从终末地客户端路径识别官方启动器路径
      * 按脚本的终末地客户端路径识别启动器 Launcher.exe（前端「自动识别」用）。
      *
@@ -708,17 +693,17 @@ export class GetService {
         });
     }
     /**
-     * 查询模拟器配置
+     * Game Binding Options
      * @param requestBody
-     * @returns EmulatorGetOut Successful Response
+     * @returns GameBindingOptionsOut Successful Response
      * @throws ApiError
      */
-    public static getEmulatorApiEmulatorGetPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorGetOut> {
+    public static gameBindingOptionsApiGamesBindingOptionsPost(
+        requestBody: GameBindingOptionsIn,
+    ): CancelablePromise<GameBindingOptionsOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/get',
+            url: '/api/games/binding/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -727,17 +712,28 @@ export class GetService {
         });
     }
     /**
-     * 查询模拟器状态
-     * @param requestBody
-     * @returns EmulatorStatusOut Successful Response
+     * Game Types
+     * @returns GameTypesOut Successful Response
      * @throws ApiError
      */
-    public static getStatusApiEmulatorStatusPost(
-        requestBody: EmulatorGetIn,
-    ): CancelablePromise<EmulatorStatusOut> {
+    public static gameTypesApiGamesTypesPost(): CancelablePromise<GameTypesOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/status',
+            url: '/api/games/types',
+        });
+    }
+    /**
+     * Get Games
+     * @param requestBody
+     * @returns GameGetOut Successful Response
+     * @throws ApiError
+     */
+    public static getGamesApiGamesGetPost(
+        requestBody?: GameGetIn,
+    ): CancelablePromise<GameGetOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -746,30 +742,17 @@ export class GetService {
         });
     }
     /**
-     * 搜索已安装的模拟器
-     * 枚举卸载表并解析主管理器路径（不依赖 ADB 设备枚举）。
-     * @returns EmulatorSearchOut Successful Response
-     * @throws ApiError
-     */
-    public static searchEmulatorsApiEmulatorEmulatorSearchPost(): CancelablePromise<EmulatorSearchOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/emulator/search',
-        });
-    }
-    /**
-     * 搜索可加入 Emulator 2.0 的模拟器
-     * 列出本机模拟器并逐条判定。不可添加的**也会列出**并给出原因枚举。
+     * Game Device Settings
      * @param requestBody
-     * @returns Emulator2SearchOut Successful Response
+     * @returns GameSettingsOut Successful Response
      * @throws ApiError
      */
-    public static searchEmulatorsApiEmulator2SearchPost(
-        requestBody?: Emulator2SearchIn,
-    ): CancelablePromise<Emulator2SearchOut> {
+    public static gameDeviceSettingsApiGamesSettingsGetPost(
+        requestBody: GameDeviceIn,
+    ): CancelablePromise<GameSettingsOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/search',
+            url: '/api/games/settings/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -778,123 +761,17 @@ export class GetService {
         });
     }
     /**
-     * 预览移除模拟器路径的影响
-     * 只读。列出会失效的设备号与受影响的脚本，供确认页使用。
+     * Device Options
      * @param requestBody
-     * @returns Emulator2PathRemovePreviewOut Successful Response
+     * @returns GameSettingsOut Successful Response
      * @throws ApiError
      */
-    public static previewRemovePathApiEmulator2PathsRemovePreviewPost(
-        requestBody: Emulator2PathRemoveIn,
-    ): CancelablePromise<Emulator2PathRemovePreviewOut> {
+    public static deviceOptionsApiGamesDeviceOptionsPost(
+        requestBody: GameDeviceIn,
+    ): CancelablePromise<GameSettingsOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/paths/remove/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询合并后的设备列表
-     * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
-     *
-     * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
-     * 既不写墓碑也不影响下次恢复。``withSettings=false`` 只取状态，给轮询用。
-     * @param requestBody
-     * @returns Emulator2DevicesOut Successful Response
-     * @throws ApiError
-     */
-    public static listDevicesApiEmulator2DevicesPost(
-        requestBody: Emulator2DevicesIn,
-    ): CancelablePromise<Emulator2DevicesOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/devices',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 预览删除实例的影响
-     * 只读。列出绑定了该设备号的脚本，供确认页使用。
-     * @param requestBody
-     * @returns Emulator2InstanceDeletePreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static previewDeleteInstanceApiEmulator2InstancesDeletePreviewPost(
-        requestBody: Emulator2InstanceDeleteIn,
-    ): CancelablePromise<Emulator2InstanceDeletePreviewOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/instances/delete/preview',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 根目录的组件状态
-     * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
-     * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
-     * @param requestBody
-     * @returns Emulator2AvdStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdStatusApiEmulator2AvdStatusPost(
-        requestBody: Emulator2AvdStatusIn,
-    ): CancelablePromise<Emulator2AvdStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/status',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 实例选项
-     * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
-     * @param requestBody
-     * @returns Emulator2AvdInstanceOptionsOut Successful Response
-     * @throws ApiError
-     */
-    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
-        requestBody: Emulator2AvdInstanceIn,
-    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/instance/options',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 查询 ModAVD 根目录的更新状态
-     * 装着的版本、最新版本、已下载好的版本、更新进度。``check`` 为 true 时（「检查更新」）先强制问一次
-     * 下载源（Mirror 酱、GitHub）最新版本，不带 CDK；查不到不算接口失败，原因写在 ``checkError``。
-     * @param requestBody
-     * @returns Emulator2AvdUpdateStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static avdUpdateStatusApiEmulator2AvdUpdateStatusPost(
-        requestBody: Emulator2AvdUpdateStatusIn,
-    ): CancelablePromise<Emulator2AvdUpdateStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator2/avd/update/status',
+            url: '/api/games/device/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1545,38 +1422,30 @@ export class GetService {
         });
     }
     /**
-     * Get Operation
-     * 按操作标识读取执行记录，记录不存在时返回未找到错误。
-     * @param requestBody
-     * @returns OperationOut Successful Response
+     * Get Active Config Triggers
+     * 读取当前占用的配置触发器字段。
+     * @returns ActiveTriggersOut Successful Response
      * @throws ApiError
      */
-    public static getOperationApiOperationsGetPost(
-        requestBody: OperationGetIn,
-    ): CancelablePromise<OperationOut> {
+    public static getActiveConfigTriggersApiConfigTriggersActiveGet(): CancelablePromise<ActiveTriggersOut> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/operations/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
+            method: 'GET',
+            url: '/api/config/triggers/active',
         });
     }
     /**
-     * List Operations
-     * 查询全部或指定配置节点的操作记录，供前端展示执行状态。
+     * Get Config Trigger Result
+     * 读取任务执行状态和近期终态。
      * @param requestBody
-     * @returns OperationListOut Successful Response
+     * @returns TriggerResultOut Successful Response
      * @throws ApiError
      */
-    public static listOperationsApiOperationsListPost(
-        requestBody: OperationListIn,
-    ): CancelablePromise<OperationListOut> {
+    public static getConfigTriggerResultApiConfigTriggersResultPost(
+        requestBody: TriggerResultIn,
+    ): CancelablePromise<TriggerResultOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/operations/list',
+            url: '/api/config/triggers/result',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

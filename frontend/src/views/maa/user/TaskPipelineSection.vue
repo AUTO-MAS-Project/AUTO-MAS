@@ -1,8 +1,6 @@
 <template>
-  <div class="form-section">
-    <div class="section-header">
-      <span class="section-note">{{ t('core.edit.annihilationDailyRunStart') }}</span>
-    </div>
+  <SectionCard variant="plain" class="task-pipeline-section">
+    <p class="section-note">{{ t('core.edit.annihilationDailyRunStart') }}</p>
 
     <a-alert
       :message="t('core.edit.annihilationDailyTasksEach')"
@@ -246,12 +244,13 @@
         @change="emitSave('Task.IfSwitchTheme', $event)"
       />
     </div>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
+import { SectionCard } from '@/components/ui'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import PipelineRow from './PipelineRow.vue'
 import StaminaPipelineSection from './StaminaPipelineSection.vue'
@@ -442,12 +441,10 @@ const greenTicketStoreSummary = computed(() => {
 </script>
 
 <style scoped>
-.section-header {
-  margin-bottom: 8px;
-  gap: 12px;
-}
-
 .section-note {
+  margin: 0 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
 }

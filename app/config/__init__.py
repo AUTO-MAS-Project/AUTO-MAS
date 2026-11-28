@@ -16,6 +16,7 @@ from .errors import (
     ConfigRemoveRejected,
     ConfigPersistenceError,
     DeletedNodeError,
+    UnresolvedEntryError,
 )
 from .core.manager import (
     ConfigManager,
@@ -26,7 +27,7 @@ from .core.manager import (
 )
 from .core.node import ConfigNode, ExportContext, LockTicket, NodeState
 from .signals import CollectionChangeEvent, FieldChangeEvent
-from .core.collection import CollectionOrderItem, ConfigCollection
+from .core.collection import CollectionOrderItem, ConfigCollection, UnresolvedEntry
 from .core.group import ConfigGroup, ConfigTableColumn
 from .core.entry import ConfigEntry
 from .core.staging import StagedOp, StageKind
@@ -43,9 +44,10 @@ from .fields import (
     Select,
     TableHint,
     Trigger,
-    TriggerDecl,
     UiHintMarker,
     UiHintsMap,
+    UiSection,
+    UiStep,
     UiTablesList,
     UiVisibility,
     Virtual,
@@ -76,7 +78,14 @@ from .types import (
     path_policy,
     tz,
 )
-from .shortcuts import collection, ref, trigger_field, ui_visibility, virtual_field
+from .shortcuts import (
+    collection,
+    ref,
+    trigger,
+    trigger_field,
+    ui_visibility,
+    virtual_field,
+)
 # isort: on
 
 __all__ = [
@@ -91,13 +100,13 @@ __all__ = [
     "ConfigManager",
     "config_manager",
     "CollectionOrderItem",
+    "UnresolvedEntry",
     "TransactionContext",
     "RootRecord",
     "PersistenceFailure",
     # 字段
     "Virtual",
     "Trigger",
-    "TriggerDecl",
     "RefField",
     "RefDeleteAction",
     "OnDeleteCallback",
@@ -106,6 +115,8 @@ __all__ = [
     "OptionHint",
     "TableHint",
     "UiHintsMap",
+    "UiSection",
+    "UiStep",
     "UiTablesList",
     "UiHintMarker",
     "UiVisibility",
@@ -128,6 +139,7 @@ __all__ = [
     "ref",
     "collection",
     "virtual_field",
+    "trigger",
     "trigger_field",
     "ui_visibility",
     # 导出
@@ -158,5 +170,6 @@ __all__ = [
     "ConfigRemoveRejected",
     "ConfigPersistenceError",
     "DeletedNodeError",
+    "UnresolvedEntryError",
     "ConfigErrorList",
 ]

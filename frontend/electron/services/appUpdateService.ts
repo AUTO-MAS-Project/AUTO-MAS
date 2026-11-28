@@ -68,7 +68,10 @@ export function parseUpdateNotes(value: unknown, current: string): ChangelogData
   }
 }
 
-async function queryRelease(input: AppUpdateSettings): Promise<Record<string, unknown>> {
+async function queryRelease(
+  input: AppUpdateSettings,
+  purpose: 'check' | 'download'
+): Promise<Record<string, unknown>> {
   // 按当前更新来源、渠道和凭据查询发行服务，校验响应并返回发行数据。
   const url = new URL('https://mirrorchyan.com/api/resources/AUTO_MAS/latest')
   const settings = input.settings
@@ -77,10 +80,12 @@ async function queryRelease(input: AppUpdateSettings): Promise<Record<string, un
     os: 'win',
     arch: 'x64',
     current_version: input.currentVersion,
-    cdk: settings.Source === 'MirrorChyan' ? (settings.MirrorChyanCDK ?? '') : '',
     channel: settings.Channel ?? 'stable',
   }))
     url.searchParams.set(key, value)
+  if (purpose === 'download' && settings.Source === 'MirrorChyan' && settings.MirrorChyanCDK) {
+    url.searchParams.set('cdk', settings.MirrorChyanCDK)
+  }
   const network = session.fromPartition(`app-update:${randomUUID()}`)
   if (settings.ProxyAddress) await network.setProxy({ proxyRules: settings.ProxyAddress })
   const response = await network.fetch(url.toString(), { signal: AbortSignal.timeout(15_000) })
@@ -103,7 +108,7 @@ export async function checkAppUpdate(input: AppUpdateSettings): Promise<AppUpdat
     .digest('hex')
   if (!input.forceCheck && checkCache?.key === key && Date.now() - checkCache.checkedAt < 3_600_000)
     return structuredClone(checkCache.response)
-  const data = await queryRelease(input)
+  const data = await queryRelease(input, 'check')
   if (typeof data.version_name !== 'string') throw new Error('发行版本信息不完整')
   const latest = normalizeAppVersion(data.version_name)
   const available = compareVersions(latest, input.currentVersion) > 0
@@ -302,7 +307,7 @@ export class AppUpdateService {
                 ? `https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/${version}/${asset}`
                 : `https://data.auto-mas.top/api/v1/files/auto-mas/Release/${version.includes('beta') ? 'beta' : 'stable'}/download`
           if (source === 'MirrorChyan') {
-            const release = await queryRelease(current)
+            const release = await queryRelease(current, 'download')
             if (
               typeof release.version_name !== 'string' ||
               normalizeAppVersion(release.version_name) !== version

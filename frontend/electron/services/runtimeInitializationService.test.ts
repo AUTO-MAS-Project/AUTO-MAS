@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
@@ -12,6 +14,15 @@ import {
 } from './runtimeBinaryService'
 import { RuntimeInitializationService } from './runtimeInitializationService'
 import { canRetryStartup } from './startupRecovery'
+import { StartupHardwareLog } from './startupHardware/localLog'
+import {
+  claimStartupAttempt,
+  clearStartupHardware,
+  finishStartupAttempt,
+  localStartupAttempt,
+  operationAttempt,
+  setupStartupHardware,
+} from './startupHardware/monitor'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -198,6 +209,63 @@ beforeEach(() => {
   alignStub.result = { status: 'current', target: { version: 'v0.1.7' } }
   alignStub.hold = null
   alignStub.throws = null
+})
+
+it('失败页更新 Runtime 时采样，更新失败可导出现场，成功后由初始化接回同一次下载', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'mas-hardware-recovery-'))
+  const log = new StartupHardwareLog(directory)
+  const reportHostFailure = vi.fn()
+  setupStartupHardware(
+    () => ({
+      log,
+      directories: [],
+      scope: 'managed',
+      acceleration: 'unknown',
+      graphics: async () => ({}),
+      reportHostFailure,
+    }),
+    () => 1
+  )
+  try {
+    finishStartupAttempt(claimStartupAttempt(), 'failure', 'backend')
+    const service = createService()
+    const transfer = () => operationAttempt()?.beginDesktopDownload(1)?.(32 * 2 ** 20, undefined)
+    const failed = await service.updateRuntimeBinary(
+      () => {},
+      undefined,
+      async () => {
+        transfer()
+        throw new Error('download interrupted')
+      }
+    )
+    expect(failed.status).toBe('failed')
+    expect(reportHostFailure).toHaveBeenCalledWith('runtime_binary', 'unknown')
+    expect(localStartupAttempt()).toBeUndefined()
+    await log.drain()
+    const rows = readFileSync(join(directory, 'startup-hardware.log'), 'utf8')
+      .trim()
+      .split('\n')
+      .map(line => JSON.parse(line))
+    expect(rows).toContainEqual(
+      expect.objectContaining({ event: '失败前15秒', stage: 'runtime_binary' })
+    )
+    const upgraded = await service.updateRuntimeBinary(
+      () => {},
+      undefined,
+      async () => {
+        transfer()
+        return { status: 'upgraded' }
+      }
+    )
+    expect(upgraded.status).toBe('upgraded')
+    expect(finishStartupAttempt(claimStartupAttempt(), 'success', 'none')).toMatchObject({
+      downloaded: '16-128MiB',
+    })
+  } finally {
+    clearStartupHardware()
+    await log.drain()
+    await rm(directory, { recursive: true, force: true })
+  }
 })
 
 // ==================== 第 0 步：Runtime 对齐 ====================

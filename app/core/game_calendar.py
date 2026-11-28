@@ -28,15 +28,11 @@ SCRIPT_CALENDAR_GAMES = {
     CLASS_BOOK[script]: game
     for script, game in {
         "MaaEnd": "endfield",
-        "SRC": "starrail",
         "HSR": "starrail",
-        "BetterGI": "genshin",
         "ZzzOd": "zenless",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
-        "M9A": "reverse1999",
         "BAAH": "bluearchive",
-        "MSS": "stellasora",
     }.items()
 }
 BAAH_CALENDAR_SERVERS = {"CN": "cn", "JP": "jp", "Globle": "global"}

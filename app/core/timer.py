@@ -360,10 +360,6 @@ class _MainTimer:
                 "诊断文件清理",
                 partial(asyncio.to_thread, Config.clean_debug_diagnostics),
             )
-            await self._run_loop_step(
-                "MaaFW 原生日志清理",
-                Config.maafw_maintenance.clean_native_debug_logs,
-            )
 
         while True:
             await self._run_loop_step("遥测日活", record_telemetry_active)
@@ -422,6 +418,14 @@ class _MainTimer:
         的重复命中由已触发记录挡住。补跑只在迟到不超过 ``TIMED_START_GRACE``
         时进行，超出的记日志放弃。星期按计划时刻所在的本地日期判定。
         """
+
+        if (
+            os.getenv("AUTO_MAS_BACKEND_REPO")
+            and os.getenv("AUTO_MAS_DEVELOPER_AUTOMATION") != "1"
+        ):
+            if startup:
+                logger.info("开发后端默认暂停队列的启动自动运行、定时运行和循环运行")
+            return
 
         now = _local_now()
         now_wall = now.replace(tzinfo=None)

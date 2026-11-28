@@ -10,7 +10,7 @@
           <template #overlay>
             <a-menu @click="onAddPlanMenu">
               <a-menu-item v-for="planType in availablePlanTypes" :key="planType.configType">
-                {{ t('core.plan.createTyped', { name: t(planType.displayNameKey) }) }}
+                {{ t('core.plan.createTyped', { name: planType.displayName }) }}
               </a-menu-item>
             </a-menu>
           </template>
@@ -20,20 +20,20 @@
           </a-button>
         </a-dropdown>
 
-        <a-popconfirm
+        <ConfirmActionButton
           v-if="planList.length > 0"
+          risk="low"
+          tone="danger"
+          size="large"
           :title="t('core.plan.deleteConfirm')"
-          :ok-text="t('core.common.confirm')"
-          :cancel-text="t('core.common.cancel')"
-          @confirm="$emit('remove-plan', activePlanId)"
+          :disabled="!activePlanId || creating"
+          :confirm="() => removePlan(activePlanId)"
         >
-          <a-button danger size="large" :disabled="!activePlanId">
-            <template #icon>
-              <DeleteOutlined />
-            </template>
-            {{ t('core.plan.deleteCurrent') }}
-          </a-button>
-        </a-popconfirm>
+          <template #icon>
+            <DeleteOutlined />
+          </template>
+          {{ t('core.plan.deleteCurrent') }}
+        </ConfirmActionButton>
       </a-space>
     </div>
   </div>
@@ -41,7 +41,7 @@
     ref="universalDialog"
     :active-plan-id="activePlanId"
     :creating="creating"
-    @create="emit('add-plan', PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
+    @create="addPlan(PLAN_CONFIG_TYPES.UNIVERSAL, { scriptId: $event })"
   />
 </template>
 
@@ -53,46 +53,43 @@ import { useI18n } from 'vue-i18n'
 import { DeleteOutlined, DownOutlined } from '@ant-design/icons-vue'
 import {
   PLAN_CONFIG_TYPES,
-  PLAN_TYPE_DESCRIPTORS,
-  type PlanConfigType,
+  getAvailablePlanTypes,
+  type PlanTypeOption,
 } from '@/utils/planTypeRegistry'
+import type { PlanListItem } from '../planList'
+import { ConfirmActionButton } from '@/components/ui'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 
 const { t } = useI18n()
 const capabilities = useScriptCapabilities(ref(true))
 const availablePlanTypes = computed(() =>
-  PLAN_TYPE_DESCRIPTORS.filter(
-    descriptor =>
-      descriptor.configType !== PLAN_CONFIG_TYPES.MAA || capabilities.types.value.includes('MAA')
-  )
+  getAvailablePlanTypes(capabilities.types.value, capabilities.provided.value)
 )
 
-interface Plan {
-  id: string
-  name: string
-  type: PlanConfigType
-}
-
 interface Props {
-  planList: Plan[]
+  planList: PlanListItem[]
   activePlanId: string
   creating?: boolean
+  removePlan: (planId: string) => void | Promise<unknown>
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
-  'add-plan': [planType: PlanConfigType, owner?: { scriptId: string }]
-  'remove-plan': [planId: string]
+  'add-plan': [plan: PlanTypeOption, owner?: { scriptId: string }]
 }>()
 
 const universalDialog = ref<InstanceType<typeof UniversalPlanCreateDialog> | null>(null)
+const addPlan = (key: string, owner?: { scriptId: string }) => {
+  const plan = availablePlanTypes.value.find(option => option.configType === key)
+  if (plan) emit('add-plan', plan, owner)
+}
 const onAddPlanMenu = ({ key }: { key: string }) => {
   if (key === PLAN_CONFIG_TYPES.UNIVERSAL) {
     void universalDialog.value?.show()
     return
   }
-  emit('add-plan', key as PlanConfigType)
+  addPlan(key)
 }
 </script>
 

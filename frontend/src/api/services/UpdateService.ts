@@ -2,12 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { ConfigUpdateOut } from '../models/ConfigUpdateOut';
+import type { GameBatchSettingsIn } from '../models/GameBatchSettingsIn';
+import type { GameDeviceUpdateIn } from '../models/GameDeviceUpdateIn';
+import type { GameSettingsIn } from '../models/GameSettingsIn';
+import type { GameSettingsOut } from '../models/GameSettingsOut';
+import type { GameUpdateIn } from '../models/GameUpdateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PlanReorderIn } from '../models/PlanReorderIn';
 import type { PlanUpdateIn } from '../models/PlanUpdateIn';
 import type { PluginCatalogUpdateIn } from '../models/PluginCatalogUpdateIn';
 import type { PluginConfigUpdateIn } from '../models/PluginConfigUpdateIn';
+import type { PluginConfigUpdateOut } from '../models/PluginConfigUpdateOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
@@ -37,7 +43,7 @@ export class UpdateService {
      */
     public static updateScriptApiScriptsUpdatePost(
         requestBody: ScriptUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/update',
@@ -75,7 +81,7 @@ export class UpdateService {
      */
     public static updateUserApiScriptsUserUpdatePost(
         requestBody: UserUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/update',
@@ -151,7 +157,7 @@ export class UpdateService {
      */
     public static updatePlanApiPlanUpdatePost(
         requestBody: PlanUpdateIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<ConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plan/update',
@@ -182,17 +188,74 @@ export class UpdateService {
         });
     }
     /**
-     * 更新模拟器项
+     * Update Game
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
-    public static updateEmulatorApiEmulatorUpdatePost(
-        requestBody: EmulatorUpdateIn,
+    public static updateGameApiGamesUpdatePost(
+        requestBody: GameUpdateIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator/update',
+            url: '/api/games/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Game Device
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static updateGameDeviceApiGamesDeviceUpdatePost(
+        requestBody: GameDeviceUpdateIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/device/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Update Game Settings
+     * @param requestBody
+     * @returns GameSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static updateGameSettingsApiGamesSettingsUpdatePost(
+        requestBody: GameSettingsIn,
+    ): CancelablePromise<GameSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/settings/update',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Batch Game Settings
+     * @param requestBody
+     * @returns GameSettingsOut Successful Response
+     * @throws ApiError
+     */
+    public static batchGameSettingsApiGamesSettingsBatchPost(
+        requestBody: GameBatchSettingsIn,
+    ): CancelablePromise<GameSettingsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/games/settings/batch',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -390,7 +453,7 @@ export class UpdateService {
     public static updatePluginConfigApiPluginConfigUpdatePost(
         requestBody: PluginConfigUpdateIn,
         locale: 'zh-CN' | 'en-US' | 'ja-JP' = 'zh-CN',
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<PluginConfigUpdateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/plugin_config/update',

@@ -1,12 +1,13 @@
 <template>
   <!-- 外部脚本更新 -->
-  <div class="form-section">
-    <div class="section-header">
-      <h3>{{ t('core.edit.hsrExternalUpdate') }}</h3>
-    </div>
+  <SectionCard
+    variant="card"
+    :title="t('core.edit.hsrExternalUpdate')"
+    :icon="CloudDownloadOutlined"
+  >
     <div class="section-hint">{{ t('core.edit.hsrUpdateSectionHint') }}</div>
     <a-row :gutter="24">
-      <a-col :xs="24" :lg="12">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -18,13 +19,12 @@
           <a-select
             v-model:value="update.AutoUpdateMode"
             :options="autoUpdateModeOptions"
-            size="large"
             style="width: 100%"
             @change="handleChange('Update', 'AutoUpdateMode', $event)"
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :lg="12">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -36,7 +36,6 @@
           <a-select
             v-model:value="update.Channel"
             :options="updateChannelOptions"
-            size="large"
             style="width: 100%"
             @change="handleChange('Update', 'Channel', $event)"
           />
@@ -45,7 +44,7 @@
     </a-row>
     <!-- 下载源按已填路径的引擎渲染；CDK 只在某个已渲染的源选了 Mirror 酱时需要 -->
     <a-row v-if="m7aPath || sraPath" :gutter="24">
-      <a-col v-if="m7aPath" :xs="24" :lg="12">
+      <a-col v-if="m7aPath" :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -57,13 +56,12 @@
           <a-select
             v-model:value="update.M7ASource"
             :options="m7aSourceOptions"
-            size="large"
             style="width: 100%"
             @change="handleChange('Update', 'M7ASource', $event)"
           />
         </a-form-item>
       </a-col>
-      <a-col v-if="sraPath" :xs="24" :lg="12">
+      <a-col v-if="sraPath" :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -75,7 +73,6 @@
           <a-select
             v-model:value="update.SRASource"
             :options="sraSourceOptions"
-            size="large"
             style="width: 100%"
             @change="handleChange('Update', 'SRASource', $event)"
           />
@@ -83,7 +80,7 @@
       </a-col>
     </a-row>
     <a-row v-if="usesMirrorChyan" :gutter="24">
-      <a-col :xs="24" :lg="12">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <FieldLabelWithHint
@@ -95,7 +92,6 @@
           <a-input-password
             v-model:value="update.MirrorChyanCDK"
             :placeholder="t('core.edit.hsrUpdateCdkPlaceholder')"
-            size="large"
             autocomplete="off"
             @blur="handleChange('Update', 'MirrorChyanCDK', update.MirrorChyanCDK)"
           />
@@ -125,7 +121,7 @@
         {{ t('core.edit.hsrUpdateNeedPath') }}
       </a-typography-text>
       <a-row v-else :gutter="24">
-        <a-col v-for="engine in updateEngines" :key="engine" :xs="24" :lg="12">
+        <a-col v-for="engine in updateEngines" :key="engine" :xs="24" :md="12">
           <div class="update-engine-card">
             <div class="update-engine-header">
               <span class="update-engine-name">{{ engineLabel(engine) }}</span>
@@ -174,7 +170,7 @@
         </a-col>
       </a-row>
     </a-form-item>
-  </div>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
@@ -182,6 +178,8 @@ import { computed, onBeforeUnmount, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
+import { CloudDownloadOutlined } from '@ant-design/icons-vue'
+import { SectionCard } from '@/components/ui'
 import {
   useHSRPluginApi,
   type HSRCapabilitySnapshot,

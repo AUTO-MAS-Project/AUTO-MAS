@@ -22,6 +22,9 @@
 
 
 import asyncio
+import os
+import secrets
+import zipfile
 from datetime import datetime
 from typing import (
     Dict,
@@ -31,7 +34,7 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import (
     BaseModel,
@@ -41,11 +44,14 @@ from starlette.background import BackgroundTask
 
 import app.core.notify.bootstrap as notify_channels
 import app.models.config as _config_models
+from app.api._error_codes import config_error_code
 from app.config.wire import ConfigInput, ConfigPayload
 from app.core import Config, Notify
+from app.core.config.upgrade_backup import UpgradeBackup
 from app.models.config import Webhook as WebhookConfig
 from app.models.notification import NotifyPayload, WebhookTargetSnapshot
 from app.models.schema import (
+    ConfigSnapshotOut,
     ObsReplayCheckOut,
     OutBase,
     VirtualDisplayCheckOut,
@@ -64,6 +70,7 @@ from app.models.schema import (
 from app.models.schema import (
     WebhookUpdateIn as SharedWebhookUpdateIn,
 )
+from app.services.common import telemetry
 from app.services.common.update import transport as _service_update_transport
 from app.utils import debug_pattern, get_logger
 
@@ -174,7 +181,7 @@ class WebhookTestIn(WebhookInBase):
     data: WebhookInput = Field(..., description="Webhook配置数据")
 
 
-class SettingGetOut(OutBase):
+class SettingGetOut(ConfigSnapshotOut):
     data: GlobalConfig = Field(..., description="全局设置数据")
 
 
@@ -232,6 +239,70 @@ class PatternDebugOut(OutBase):
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
+
+
+class UpgradeBackupDirectoryIn(BaseModel):
+    directory: str | None
+    expected: str
+
+
+class UpgradeBackupDirectoryOut(BaseModel):
+    directory: str | None
+    resolvedDirectory: str
+    defaultDirectory: str
+    cleanupPending: bool = False
+
+
+def _upgrade_backup_service(request: Request) -> UpgradeBackup:
+    token = os.environ.get("AUTO_MAS_UPGRADE_BACKUP_TOKEN", "")
+    supplied = request.headers.get("X-Auto-Mas-Upgrade-Backup", "")
+    if (
+        request.client is None
+        or request.client.host not in {"127.0.0.1", "::1"}
+        or not token
+        or not secrets.compare_digest(token.encode(), supplied.encode())
+    ):
+        raise HTTPException(status_code=403)
+    backup = getattr(request.app.state, "upgrade_backup", None)
+    if not isinstance(backup, UpgradeBackup):
+        raise HTTPException(status_code=409, detail="自动备份服务尚未就绪")
+    return backup
+
+
+@router.get(
+    "/backup/directory",
+    response_model=UpgradeBackupDirectoryOut,
+    include_in_schema=False,
+)
+async def get_upgrade_backup_directory(request: Request) -> dict[str, str | None]:
+    return await asyncio.to_thread(_upgrade_backup_service(request).directory_info)
+
+
+@router.post(
+    "/backup/directory",
+    response_model=UpgradeBackupDirectoryOut,
+    include_in_schema=False,
+)
+async def move_upgrade_backup_directory(
+    data: UpgradeBackupDirectoryIn, request: Request
+) -> dict[str, str | bool | None]:
+    backup = _upgrade_backup_service(request)
+    try:
+        cleaned = await asyncio.to_thread(
+            backup.move_directory, data.directory, expected=data.expected
+        )
+    except (OSError, ValueError, zipfile.BadZipFile) as error:
+        logger.debug("迁移自动备份目录失败：{}", error)
+        telemetry.record_count(
+            "auto_mas.upgrade_backup.directory_moves", attributes={"outcome": "failure"}
+        )
+        raise HTTPException(status_code=409, detail="无法迁移自动备份目录") from error
+    telemetry.record_count(
+        "auto_mas.upgrade_backup.directory_moves",
+        attributes={"outcome": "success" if cleaned else "cleanup_pending"},
+    )
+    info = await asyncio.to_thread(backup.directory_info)
+    return {**info, "cleanupPending": not cleaned}
 
 
 @router.post(
@@ -356,7 +427,7 @@ async def get_scripts() -> SettingGetOut:
             message=f"{type(e).__name__}: {str(e)}",
             data=GlobalConfig(**{}),
         )
-    return SettingGetOut(data=GlobalConfig(**data))
+    return SettingGetOut(data=GlobalConfig(**data), uiSources=[Config.setting.uid])
 
 
 @router.post(
@@ -378,7 +449,9 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
             f"update_script失败: {type(e).__name__}: {e}"
         )
         return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+            code=config_error_code(e),
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
     return OutBase()
 
@@ -534,7 +607,9 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
             index=[],
             data={},
         )
-    return WebhookGetOut(index=index, data=data)
+    return WebhookGetOut(
+        index=index, data=data, uiSources=[Config.setting.Notify_CustomWebhooks.uid]
+    )
 
 
 @router.post(

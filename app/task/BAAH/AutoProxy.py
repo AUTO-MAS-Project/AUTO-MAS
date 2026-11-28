@@ -33,21 +33,21 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from app.config import ConfigCollection
-from app.core import Config, Notify, Publisher
+from app.core import Notify, Publisher
 from app.core.notify.task_content import (
     build_script_statistics_payload as build_script_statistics_payload,
 )
 from app.core.ws import protocol
-from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
+from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.emulator import DeviceBase
 from app.models.notification import LocalNotice
 from app.models.schema import HistoryWrite, WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, UserItem
 from app.task.base import ScriptAutoProxyBase
-from app.tools.common.game_calendar import bluearchive as _tool_bluearchive_activity
+from app.task.game import game_device_id
+from app.task.run_flow import begin_attempt, operation, point
 from app.utils import (
     LOG_TYPE_NORMAL,
     UTC4,
@@ -60,6 +60,7 @@ from app.utils import (
 )
 from app.utils import update_files as _utils_update_files
 from app.utils.common.log import sources as log_source
+from app.utils.common.log.patterns import match_log_signs
 
 from .tools import (
     CONFIG_DIR_NAME,
@@ -68,7 +69,6 @@ from .tools import (
     ManagedConfigBackup,
     apply_managed_config,
     latest_log_file,
-    read_json,
     resolve_config_name,
     resolve_log_time_range,
     resolve_user_config_path,
@@ -89,12 +89,6 @@ logger = get_logger("BAAH 自动代理")
 ## BAAH 只输出「分:秒」，不带日期与小时
 BAAH_LOG_TIME_FORMAT = "%M:%S"
 
-## 完成任务时 BAAH 固定输出的日志文本（只在成功路径出现）
-BAAH_SUCCESS_LOG = "所有任务结束|All tasks are finished"
-
-## 运行失败时 BAAH 顶层异常处理输出的日志文本
-BAAH_ERROR_LOG = "运行出错:|Error occurred:"
-
 ## 等待日志文件生成的超时（秒）
 _LOG_FILE_WAIT_SECONDS = 60
 
@@ -105,126 +99,15 @@ _PROCESS_EXIT_WAIT_SECONDS = 10
 ## BAAH 跑完还要执行自动退出与用户配置的 POST_COMMAND，立即强杀会把后置命令截断。
 _PROCESS_GRACE_SECONDS = 60
 
-## BAAH 的「活动关卡」任务名（上游 modules/AllTask/myAllTask.py 的 TaskName.EVENT）
-BAAH_EVENT_TASK_NAME = "活动关卡"
-
-## 计划表五类关卡字段与 BAAH 配置项的对应关系。活动关卡沿用 BAAH 原生配置。
-## 键名沿用上游既有拼写
-## （SPECIAL_HIGHTEST_LEVEL 少一个 E），不要照着拼写习惯改。
-BAAH_STAGE_OPTIONS: dict[str, str] = {
-    "Wanted": "WANTED_HIGHEST_LEVEL",
-    "Special": "SPECIAL_HIGHTEST_LEVEL",
-    "Exchange": "EXCHANGE_HIGHEST_LEVEL",
-    "Hard": "HARD",
-    "Normal": "NORMAL",
-}
-
-## 活动期间关闭其他扫荡入口，咖啡馆、签到等日常任务保持原有开关。
-BAAH_NON_EVENT_RAID_TASKS = {
-    "悬赏通缉",
-    "特殊任务",
-    "学园交流会",
-    "困难关卡",
-    "普通关卡",
-    "一键扫荡",
-}
-
-
-def prioritize_event_quest(
-    task_order_group: object,
-    *,
-    enabled: bool = True,
-) -> tuple[dict[str, Any] | None, str]:
-    """有活动时只启用活动扫荡，无活动时关闭活动入口、保留其他任务开关。
-
-    只动激活那条线的 ``TASK_PIPELINE`` 与 ``TASK_ONOFF``：这两个数组按下标严格
-    配对（同一个下标是同一个任务与它的开关），所以 **务必成对搬动**，只挪一边
-    会让它后面所有任务的开关整体错位，用户看到的执行结果与界面上的勾选完全对不上。
-
-    BAAH 2.3.4 起弃用的 ``TASK_ORDER`` / ``TASK_ACTIVATE`` **不要**在这里改：只要配置里
-    有 ``TASK_ORDER_GROUP``（GUI 保存必写），这两个字段就完全不参与任务映射，改了
-    没有任何效果。
-
-    Args:
-        task_order_group: 账号配置里的 ``TASK_ORDER_GROUP`` 取值。
-        enabled: 是否处于活动期间。
-
-    Returns:
-        tuple[dict[str, Any] | None, str]: 新的 ``TASK_ORDER_GROUP`` 与一句说明；
-            结构不符合预期时第一项为 None，调用方不应做任何改动。
-    """
-
-    if not isinstance(task_order_group, dict):
-        return None, "TASK_ORDER_GROUP 不是键值对象, 未调整活动关卡顺序"
-
-    all_pipelines = task_order_group.get("ALL_PIPELINES")
-    activate_ind = task_order_group.get("ACTIVATE_IND")
-    if not isinstance(all_pipelines, list) or not all_pipelines:
-        return None, "TASK_ORDER_GROUP 里没有任务线, 未调整活动关卡顺序"
-    ## bool 是 int 的子类，ACTIVATE_IND 为 True 时会被当成下标 1，先把它挡掉
-    if (
-        not isinstance(activate_ind, int)
-        or isinstance(activate_ind, bool)
-        or not 0 <= activate_ind < len(all_pipelines)
-    ):
-        return None, f"激活任务线下标 {activate_ind!r} 不合法, 未调整活动关卡顺序"
-
-    pipeline = all_pipelines[activate_ind]
-    if not isinstance(pipeline, dict):
-        return None, "激活任务线不是键值对象, 未调整活动关卡顺序"
-
-    task_pipeline = pipeline.get("TASK_PIPELINE")
-    task_onoff = pipeline.get("TASK_ONOFF")
-    if not isinstance(task_pipeline, list) or not isinstance(task_onoff, list):
-        return None, "激活任务线缺少 TASK_PIPELINE / TASK_ONOFF, 未调整活动关卡顺序"
-
-    ## 两个数组长度不齐时以较短的为准：BAAH 读取时会把长的截断、短的补 False，
-    ## 按较短的配对才与它实际执行的任务序列一致，多出来的尾巴原样留在末尾
-    pair_count = min(len(task_pipeline), len(task_onoff))
-    note = ""
-    if len(task_pipeline) != len(task_onoff):
-        note = (
-            f"（TASK_PIPELINE {len(task_pipeline)} 项与 TASK_ONOFF "
-            f"{len(task_onoff)} 项长度不齐, 以较短的 {pair_count} 项配对）"
-        )
-
-    head_tasks: list[Any] = []
-    head_onoff: list[Any] = []
-    rest_tasks: list[Any] = []
-    rest_onoff: list[Any] = []
-    for index in range(pair_count):
-        task = task_pipeline[index]
-        if task == BAAH_EVENT_TASK_NAME and enabled:
-            head_tasks.append(task)
-            ## 排到最前的前提是它会被执行，开关必须同时打开
-            head_onoff.append(True)
-        else:
-            rest_tasks.append(task)
-            disable = task == BAAH_EVENT_TASK_NAME or (
-                enabled and task in BAAH_NON_EVENT_RAID_TASKS
-            )
-            rest_onoff.append(False if disable else task_onoff[index])
-
-    if enabled and not head_tasks:
-        ## 一条都没有就地插入：只补任务名不补开关，等于插了个不执行的任务
-        head_tasks.append(BAAH_EVENT_TASK_NAME)
-        head_onoff.append(True)
-        note += "（任务线里原本没有活动关卡, 已插入一项并打开）"
-
-    new_pipeline = dict(pipeline)
-    new_pipeline["TASK_PIPELINE"] = head_tasks + rest_tasks + task_pipeline[pair_count:]
-    new_pipeline["TASK_ONOFF"] = head_onoff + rest_onoff + task_onoff[pair_count:]
-
-    new_order_group = dict(task_order_group)
-    new_all_pipelines = list(all_pipelines)
-    new_all_pipelines[activate_ind] = new_pipeline
-    new_order_group["ALL_PIPELINES"] = new_all_pipelines
-    action = "已启用活动关卡并关闭其他扫荡任务" if enabled else "已关闭活动关卡任务"
-    return new_order_group, action + note
-
 
 class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
     """自动代理模式"""
+
+    # 成功文案只在任务结束时出现；失败文案来自 BAAH 顶层异常处理。
+    log_signs = {
+        "success": compile_log_signs("所有任务结束|All tasks are finished"),
+        "failure": compile_log_signs("运行出错:|Error occurred:"),
+    }
 
     def __init__(
         self,
@@ -247,7 +130,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
         self.check_result = "-"
-        self.run_book = False
+        self.run_complete = False
         self.managed_backup: ManagedConfigBackup | None = None
         self.process_manager: ProcessManager | None = None
         self.log_monitor: LogMonitor | None = None
@@ -338,11 +221,6 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         self.log_start_time = datetime.now().astimezone()
         self.log_start_at = time.monotonic()
 
-        ## 成功与失败关键字固定：成功文本只出现在 BAAH 的成功路径，
-        ## 失败文本是其顶层异常处理的输出
-        self.success_log = compile_log_signs(BAAH_SUCCESS_LOG, "Split")
-        self.error_log = compile_log_signs(BAAH_ERROR_LOG, "Split")
-
         ## 日志监控器不在这里构造：它把构造时刻当作补齐 %M:%S 缺失小时的基准，
         ## 而冷启模拟器与等待日志文件可能跨过整点，提前构造会把首行算成上一个
         ## 小时而整段丢弃。等定位到日志文件之后再构造（见 _run_launched）。
@@ -397,8 +275,9 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_item.set_state(status="运行")
 
         for i in range(self.script_config.Run.RunTimesLimit):
-            if self.run_book:
+            if self.run_complete:
                 break
+            begin_attempt(self, i + 1)
 
             logger.info(
                 f"账号 {self.cur_user_item.name} - 尝试次数: {i + 1}/{self.script_config.Run.RunTimesLimit}"
@@ -413,7 +292,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             await self.run_once()
 
             if self.cur_user_log.status == "Success!":
-                self.run_book = True
+                self.run_complete = True
                 await self.cur_user_item.set_state(status="完成")
                 logger.success(f"账号: {self.cur_user_uid} - BAAH 完成代理任务")
                 break
@@ -440,9 +319,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_item.set_state(status="运行")
 
         try:
-            device_info = await self.emulator_manager.open(
-                str(self.script_config.Emulator.Index)
-            )
+            with operation(self, "start_game"):
+                device_info = await self.emulator_manager.open(
+                    str(game_device_id(self.script_config))
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动模拟器失败: {e}")
             await self.handle_pre_script_error("启动模拟器失败", e)
@@ -477,126 +357,6 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             "TARGET_IP_PATH": host,
             "TARGET_PORT": int(port) if port.isdigit() else port,
         }
-
-    def _plan_stage_runtime_values(self) -> dict[str, Any]:
-        """按账号选的关卡计划表覆盖 BAAH 的五类非活动关卡配置。
-
-        ``Info.StageMode`` 为 ``Fixed`` 时**一个字节都不动**，用户在 BAAH 界面里自己配的
-        多天轮换原样保留；选了计划表才用计划表当天那一格的 key 覆盖。
-
-        计划表一天的 key 里，五个字段各有三种状态，写进 BAAH 的方式也不同：
-        缺席（字段不在 key 里）＝这一项根本不写，BAAH 沿用自己配置里的关卡与开关；
-        空数组＝今天这一类不打，直接写空数组（BAAH 用「数组长度不为 0」判断
-        要不要做，空数组会被它跳过）；有值＝按下面的单元素数组写。
-
-        **有值时这些字段都必须写成单元素数组**：BAAH 取槽位的方式是
-        ``time.localtime().tm_mday % len(数组)``（本月第几天对数组长度取模）。数组长度
-        为 1 时 ``today % 1 == 0``，永远命中第 0 项，「今天打什么」就完全由计划表决定；
-        若照抄计划表那套多天数组，1~31 号会与计划表的「周几」整体错位，每天都在打别的
-        天该打的关卡。空数组同样不能包成单元素数组：BAAH 会把那个空列表当成当天的
-        关卡列表去跑，而不是「今天不打」。
-        """
-
-        stage_mode = str(self.cur_user_config.Info.StageMode)
-        if stage_mode == "Fixed":
-            return {}
-
-        try:
-            plan = Config.PlanConfig[uuid.UUID(stage_mode)]
-        except (KeyError, ValueError) as e:
-            logger.warning(
-                f"未找到关卡计划表 {stage_mode}, 本次按 BAAH 里的关卡配置运行: {e}"
-            )
-            return {}
-
-        if not isinstance(plan, BAAHPlanConfig):
-            logger.warning(
-                f"关卡计划表 {stage_mode} 不是 BAAH 计划表"
-                f"({type(plan).__name__}), 本次按 BAAH 里的关卡配置运行"
-            )
-            return {}
-
-        try:
-            key = plan.get_current_key()
-        except (KeyError, TypeError) as e:
-            logger.warning(
-                f"关卡计划表 {stage_mode} 取不到当天关卡, "
-                f"本次按 BAAH 里的关卡配置运行: {e}"
-            )
-            return {}
-
-        if not isinstance(key, dict):
-            logger.warning(
-                f"关卡计划表 {stage_mode} 当天的 key 不是键值对象, "
-                "本次按 BAAH 里的关卡配置运行"
-            )
-            return {}
-
-        runtime_values: dict[str, Any] = {}
-        for field, option_name in BAAH_STAGE_OPTIONS.items():
-            if field not in key:
-                ## 缺席：这一项不写，不覆盖 BAAH 自己配置里的关卡与开关
-                continue
-
-            stage_value = key[field]
-            if not stage_value:
-                ## 空数组：今天不打这一类
-                runtime_values[option_name] = []
-                continue
-
-            runtime_values[option_name] = [[stage_value]]
-
-        return runtime_values
-
-    async def _stage_runtime_values(self) -> dict[str, Any]:
-        """活动优先开启时，有活动只刷活动关，无活动使用计划表。
-
-        活动关的具体关卡与次数由 BAAH 配置维护，不再从 MAS 计划表下发。
-        排期获取失败保留原有计划下发行为，不将未知状态当成没有活动。
-        """
-
-        if not bool(self.cur_user_config.Info.IfEventFirst):
-            return self._plan_stage_runtime_values()
-
-        line_type: _tool_bluearchive_activity.BlueArchiveLineType = (
-            self.cur_user_config.Info.ActivityLineType
-        )
-        running = await _tool_bluearchive_activity.has_running_activity(line_type)
-        if running is None:
-            logger.warning("未取到碧蓝档案活动排期, 本次沿用计划表或 BAAH 原生配置")
-            return self._plan_stage_runtime_values()
-
-        if running:
-            runtime_values: dict[str, Any] = {}
-        else:
-            runtime_values = {
-                **self._plan_stage_runtime_values(),
-                "EVENT_QUEST_LEVEL": [],
-            }
-            logger.info("碧蓝档案当前没有活动, 本次使用计划表或 BAAH 原生配置")
-
-        try:
-            user_config = read_json(self.user_config_path)
-        except Exception as e:
-            logger.opt(exception=True).warning(
-                f"读取 BAAH 配置失败, 本次沿用计划表或 BAAH 原生配置: {e}"
-            )
-            return self._plan_stage_runtime_values() if running else runtime_values
-
-        updated, note = prioritize_event_quest(
-            user_config.get("TASK_ORDER_GROUP"), enabled=running
-        )
-        if updated is None:
-            logger.warning(f"活动关优先已跳过，沿用计划表或 BAAH 原生配置: {note}")
-            return self._plan_stage_runtime_values() if running else runtime_values
-
-        # 确认活动任务能够启用后，才关闭其他扫荡，避免任务线异常时一项都不打。
-        if running:
-            runtime_values = {option: [] for option in BAAH_STAGE_OPTIONS.values()}
-            logger.info("碧蓝档案当前有活动, 跳过计划表并仅执行活动扫荡")
-        logger.info(note)
-        runtime_values["TASK_ORDER_GROUP"] = updated
-        return runtime_values
 
     async def run_once(self) -> None:
         """执行一次 BAAH 运行。
@@ -634,25 +394,13 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                 "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
             )
 
-        ## 关卡计划表与活动关优先是用户在账号页单独打开的开关，与「托管 BAAH
-        ## 运行配置」无关：托管没开时它们照样要在本次运行生效。两者都只在这一次
-        ## 运行里成立，所以仍然走托管项写盘、跑完由 restore_managed_config 还原
-        runtime_values = await self._stage_runtime_values()
-
+        # 仅托管启动、ADB、日志与退出；关卡、轮换和任务顺序由 BAAH 原生配置维护。
         if self.if_manage_config:
-            ## 模拟器地址属于「接管」范畴，只在开了托管时注入
-            runtime_values.update(self._emulator_runtime_values())
-
-        if not runtime_values:
-            ## 既没开托管、也没开计划表 / 活动关优先：BAAH 完全按自己的配置跑
-            logger.info("本次运行没有需要写入 BAAH 配置的取值, 跳过配置托管")
-        else:
             try:
                 self.managed_backup = apply_managed_config(
                     self.user_config_path,
-                    self.software_config_path if self.if_manage_config else None,
-                    runtime_values,
-                    include_managed=self.if_manage_config,
+                    self.software_config_path,
+                    self._emulator_runtime_values(),
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")
@@ -705,7 +453,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         launch_at = time.time()
 
         try:
-            await self.process_manager.open_process(self.baah_path, config_name)
+            with operation(self, "start_script"):
+                await self.process_manager.open_process(self.baah_path, config_name)
         except Exception as e:
             logger.opt(exception=True).warning(f"启动 BAAH 进程失败: {e}")
             await self.handle_pre_script_error("启动 BAAH 进程失败", e)
@@ -755,6 +504,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.check_log,
         )
 
+        point(self, "run")
         await self.log_monitor.start_monitor_file(
             self._resolve_log_file_path, self.log_start_time
         )
@@ -764,7 +514,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         ## 命中成功标记只说明任务跑完了，BAAH 还要执行收尾（自动退出与用户的
         ## POST_COMMAND）：先给它时间自己走完，超时才强制结束
         if self.cur_user_log.status == "Success!":
+            point(self, "run", state="succeeded", key=self._log_result_key)
             await self._wait_process_exit()
+        else:
+            point(self, "run", state="failed", key=self._log_result_key)
 
         await self.kill_managed_process()
         await asyncio.sleep(_PROCESS_EXIT_WAIT_SECONDS)
@@ -827,21 +580,23 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
         await self.cur_user_log.set_state(content=log_content)
         await self.script_info.set_log(log)
 
-        if self.success_log.search(log) is not None:
-            await self.cur_user_log.set_state(status="Success!")
+        if hit := match_log_signs(log, self.log_signs, key="success"):
+            status, key = "Success!", hit.key
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.Run.RunTimeLimit
         ):
-            await self.cur_user_log.set_state(status="脚本进程超时")
-        elif self.error_log.search(log) is not None:
-            await self.cur_user_log.set_state(status="BAAH 运行出错")
+            status, key = "脚本进程超时", "log_timeout"
+        elif hit := match_log_signs(log, self.log_signs, key="failure"):
+            status, key = "BAAH 运行出错", hit.key
         elif (
             self.process_manager is not None and await self.process_manager.is_running()
         ):
-            await self.cur_user_log.set_state(status="BAAH 正常运行中")
+            status, key = "BAAH 正常运行中", ""
         else:
             ## 进程已退出但未命中成功标记：不能确认任务完成
-            await self.cur_user_log.set_state(status="BAAH 在完成任务前退出")
+            status, key = "BAAH 在完成任务前退出", "process_exit"
+        await self.cur_user_log.set_state(status=status)
+        self._log_result_key = key
 
         logger.debug(f"BAAH 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "BAAH 正常运行中":
@@ -856,6 +611,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         try:
             logger.info(f"中止 BAAH 进程: {self.baah_path}")
+            point(self, "stop_script")
             await self.process_manager.kill()
             await process.kill_process(self.baah_path)
         except Exception as e:
@@ -908,7 +664,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             self.script_info,
             self.cur_user_item,
             failed=bool(self.cur_user_item.log_record)
-            and not self.run_book
+            and not self.run_complete
             and not self.stopped_manually,
         )
 
@@ -919,7 +675,7 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
 
         await self._restore_managed_config()
 
-        if self.run_book:
+        if self.run_complete:
             ## 与通用脚本同一套口径：当天首次成功才递减剩余天数，代理次数始终累加。
             ## 不更新的话账号标签会一直停在「任务：未代理」、剩余天数也不减
             if (
@@ -995,10 +751,10 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
             "start_time": self.user_start_time.strftime("%Y-%m-%d %H:%M:%S"),
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "user_result": (
-                "代理任务全部完成" if self.run_book else self.cur_user_item.status
+                "代理任务全部完成" if self.run_complete else self.cur_user_item.status
             ),
         }
-        success_symbol = "√" if self.run_book else "X"
+        success_symbol = "√" if self.run_complete else "X"
         title = (
             f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  "
             f"{self.cur_user_item.name} 的自动代理统计报告"
@@ -1108,6 +864,8 @@ class AutoProxyTask(ScriptAutoProxyBase[BAAHConfig, BAAHUserConfig]):
                     return pipeline.finish()
 
                 entries = await asyncio.to_thread(read)
+                for key in pipeline.matched_keys:
+                    point(self, "special", state="matched", key=key)
                 for entry in entries:
                     await self.user_state(user).append_push_log(
                         (entry.log_type, entry.text, entry.timestamp)

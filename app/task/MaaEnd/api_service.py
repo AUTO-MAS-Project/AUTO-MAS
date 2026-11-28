@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from app.config import ConfigCollection, ConfigEntry
 from app.models.config import MaaEndConfig as RuntimeMaaEndConfig
 from app.services import endfield_launcher as _service_endfield_launcher
+from app.task.client import client_executable_path
 from app.utils import BASE_INDEPENDENT, BASE_SHARED, get_logger, normalize_base_source
 from app.utils import io as _utils_io
 
@@ -105,7 +106,7 @@ class MaaEndConfigService:
         options = await asyncio.to_thread(get_loaded_maaend_options, Path(root_path))
         for user in script.UserData.values():
             user.cache_maaend_resource(options)
-        game_path = str(script.Game.Path or "").strip()
+        game_path = str(client_executable_path(script) or "").strip()
         if game_path:
             exe_path = Path(game_path)
             original = await asyncio.to_thread(self._read_resolution, exe_path)
@@ -178,7 +179,7 @@ class MaaEndConfigService:
 
     def resolve_launcher_path(self, script_id: str) -> Path:
         script = self._get_script(script_id)
-        client_exe = Path(str(script.Game.Path or "").strip())
+        client_exe = Path(str(client_executable_path(script) or "").strip())
         if not client_exe.is_file():
             raise ValueError("请先选择终末地客户端 Endfield.exe，再自动识别启动器")
         launcher_path = _service_endfield_launcher.discover_launcher_exe(client_exe)

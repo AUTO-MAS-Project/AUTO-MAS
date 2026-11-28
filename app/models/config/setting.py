@@ -70,6 +70,9 @@ class FluxdownRecord(BaseModel):
     segments: int | None = Field(default=None, description="分段数")
     proxy: str | None = Field(default=None, description="使用的代理")
     checksum: str | None = Field(default=None, description="校验信息")
+    diagnostic: dict[str, object] | None = Field(
+        default=None, description="统一下载诊断摘要（不包含凭据和原始压缩包）"
+    )
     status: str | None = Field(
         default=None,
         description="状态：success、failed、checksum_fail、fluxdown_fallback",
@@ -83,6 +86,9 @@ class GlobalConfig(DomainEntry):
 
     class PluginHostFields(ConfigGroup):
         max_operations: int = Field(default=32, ge=1, description="插件命令并发上限")
+        uninstalled: Annotated[list[str], ui(visibility=UiVisibility.HIDE)] = Field(
+            default_factory=list, description="已卸载、不再根据遗留配置补装的插件"
+        )
 
     class DownloadFields(ConfigGroup):
         max_running: int = Field(default=4, ge=1, description="统一下载并发上限")

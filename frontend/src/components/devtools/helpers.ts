@@ -1,4 +1,5 @@
-import { message, Modal } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
+import { openConfirm } from '@/composables/useConfirm'
 import { translate as t } from '@/i18n'
 import type { StorageEntry } from './types'
 
@@ -12,20 +13,12 @@ export const copyDevtoolsText = async (text: string) => {
 }
 
 export const confirmDevtoolsAction = (title: string, content: string): Promise<boolean> =>
-  new Promise(resolve => {
-    Modal.confirm({
-      title,
-      content,
-      okText: t('core.devtools.confirm'),
-      cancelText: t('core.devtools.cancel'),
-      okType: 'danger',
-      onOk: () => {
-        resolve(true)
-      },
-      onCancel: () => {
-        resolve(false)
-      },
-    })
+  openConfirm({
+    tone: 'danger',
+    title,
+    description: content,
+    okText: t('core.devtools.confirm'),
+    cancelText: t('core.devtools.cancel'),
   })
 
 export const formatBytes = (bytes: number): string =>

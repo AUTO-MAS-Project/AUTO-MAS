@@ -10,12 +10,17 @@ from enum import Enum
 CORE_PLUGIN_NAME = "auto_mas_core"
 CORE_DISTRIBUTION_NAME = "auto_mas_core"
 MARKET_GATE_TAG = "auto-mas-plugin"
+# 本地源码库：插件共用、尚未发布的库，参与依赖求解并加入导入路径，本身不是插件。
+LOCAL_LIBRARY_TAG = "auto-mas-library"
 PLUGIN_ID_TAG_PREFIX = "auto-mas-id:"
 # 插件身份会作为配置文件名，拒绝两种平台的路径及 Windows 文件名控制字符。
 PLUGIN_ID_PATTERN = re.compile(r'(?!\.{1,2}$)[^/\\:*?"<>|\s\x00-\x1f]+')
 # 包顶层 ``__init__.py`` 固定入口符号（取代 entry-points）
 PLUGIN_ATTR = "PLUGIN"
 PLUGIN_API_VERSION = "6"
+# 受控插件：神秘入口未解锁时不进入市场、不可安装，解锁后行为与普通插件一致。
+# 第三方插件按发行时的插件名登记；SignFlow 的 Token 获取插件名为 signflow_token。
+RESTRICTED_PLUGIN_NAMES = frozenset({"token_adapter", "signflow_token"})
 plugin_locale: ContextVar[str] = ContextVar("plugin_locale", default="zh-CN")
 
 

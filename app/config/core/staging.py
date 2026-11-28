@@ -20,6 +20,7 @@ class StageKind(str, Enum):
     COLLECTION_SET_ORDER = "collection_set_order"
     COLLECTION_ADD_TYPE = "collection_add_type"
     COLLECTION_REMOVE_TYPE = "collection_remove_type"
+    COLLECTION_DETACH_TYPE = "collection_detach_type"
     COLLECTION_RELOAD_TYPE = "collection_reload_type"
     COLLECTION_REPLACE_TYPE = "collection_replace_type"
 

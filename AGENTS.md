@@ -12,6 +12,7 @@
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
 - 开工就从最新的 `origin/dev` 拉分支（先 `git fetch`；fork 里是上游 `dev`），不要在旧的本地 `dev` 或旧分支上接着改——分支越旧，同步时越容易把这期间别人合入的改动整份盖掉。
 - 应用环境不再读取 `.env`：源码 Electron 与独立后端默认开发环境；打包 Electron 显式传入 `AUTO_MAS_ENV=production`。独立验证生产行为时也必须显式设置该变量；Runtime 托管状态与应用环境分别判断。
+- 本地开发边界：生产端固定 `36163`、开发端默认 `36164`（两者隔离共存，禁止触碰生产端进程）；AI 助手验证改动应走 `scripts/pr_check.py`、单元测试或自带临时端口与数据目录的隔离 `yarn e2e`，除非用户明确要求，不要在后台拉起常驻开发后端以免遗留幽灵进程（排查/清理当前仓库开发后端见 `scripts/dev_doctor.py`）。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
 - 选择验证方式或设计、新增、修改、审查测试前，必须加载 [.agents/skills/mas-testing/SKILL.md](.agents/skills/mas-testing/SKILL.md)，按可达行为和验证总成本复用检查、选择测试范围；仅运行已有测试不触发。
@@ -34,7 +35,7 @@
 ## 写作约束
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志。
-- PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。写法与补充章节见 [.agents/skills/pr](.agents/skills/pr)。
+- PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。写法见 `.github/pull_request_template.md` 与文档站。
 - 用户可见的功能或问题修复必须随 PR 新增一个更新日志碎片：在 `changelog.d/` 下新建 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>`（**必填**，键见 `changelog.d/README.md` 的项目表：14 个专项（BetterGI 的键与显示名是 `bgi`、MaaEnd 是 `end`）加 主页 / 调度 / 模拟器 / 通知 / 工具 / 设置 / 更新 / Runtime，没有兜底键，归不进的按 README 的就近表归；只有 `dev` 碎片可以不写），正文一句面向用户的话、**不超过 50 字**，**一条 PR 只放一个碎片，并必须用一句最简洁的语言概括该 PR 的意义**，将全部改动合并为一句话。可用 `python scripts/changelog.py add <分类> <项目键> "<一句话>"` 生成（`dev` 碎片项目键写 `-`）。不要改 `CHANGELOG.md`、`res/version.json` 和任何版本号，它们只由入账工作流与发版 PR 更新；正文里不要写项目名前缀、PR 号和 ` by @用户` 署名，入账时按碎片的合并提交自动补成 `【项目】做了什么 (#PR) by @作者`。
 - 碎片分类写在文件名后缀：`breaking` 破坏性变更（置顶）、`feat` 新增、`change` 变更、`remove` 移除（含弃用）、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者，不进公告）。「本次亮点」没有后缀，由维护者给碎片加一行 `highlight: true` 标出，这条就进「本次亮点」而不是原分类。`CHANGELOG.md` 由脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 编译，不要手改。
 - 可选头部行：`author: 甲, 乙` 覆盖署名（替别人提交，或多人合作的 PR 把人列全；脚本不读 Co-authored-by，多人 PR 只有这一条路）；`highlight: true` 标亮点；`beta-only: true` 表示只进公测公告、转正汇总时自动丢掉。只加减 `highlight:` / `beta-only:` 不算改别人的碎片，其余改动别人的碎片会被检查拒绝。

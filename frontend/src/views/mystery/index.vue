@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
+import { AppPage, PageHeader, SectionCard } from '@/components/ui'
 import { useMysteryStore } from '@/stores/mystery'
 import BilibiliAgreement from './BilibiliAgreement.vue'
 
@@ -14,7 +15,11 @@ const store = useMysteryStore()
 const logger = window.electronAPI.getLogger('神秘入口')
 const form = reactive({ accessCode: '' })
 const error = ref('')
-const loadFailed = ref(false)
+const loadErrorMessage = computed(() => {
+  if (store.loadError === 'DEVICE_UNAVAILABLE') return t('core.mystery.deviceUnavailable')
+  if (store.loadError === 'BACKEND_UNAVAILABLE') return t('core.mystery.backendUnavailable')
+  return t('core.mystery.loadFailed')
+})
 
 const isFeaturePage = computed(() => route.name !== 'Mystery')
 const pageTitle = computed(() =>
@@ -34,11 +39,9 @@ const back = () => {
 const openTokens = () => navigateTo('/settings/mystery/tokens')
 
 const load = async () => {
-  loadFailed.value = false
   try {
     await store.load()
   } catch (cause) {
-    loadFailed.value = true
     logger.error(`加载失败: ${cause instanceof Error ? cause.message : String(cause)}`)
   }
 }
@@ -74,23 +77,24 @@ const lock = async () => {
 </script>
 
 <template>
-  <div class="mystery-page">
-    <div class="mystery-header">
-      <div class="mystery-heading">
+  <AppPage layout="scroll">
+    <PageHeader :title="pageTitle">
+      <template #leading>
         <a-button @click="back">
           <template #icon><ArrowLeftOutlined /></template>
           {{ t(isFeaturePage ? 'core.mystery.backToOverview' : 'core.mystery.back') }}
         </a-button>
-        <h1>{{ pageTitle }}</h1>
-      </div>
-      <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
-        <template #icon><LockOutlined /></template>
-        {{ t('core.mystery.lock') }}
-      </a-button>
-    </div>
+      </template>
+      <template #actions>
+        <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
+          <template #icon><LockOutlined /></template>
+          {{ t('core.mystery.lock') }}
+        </a-button>
+      </template>
+    </PageHeader>
 
     <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
-      <a-result v-if="loadFailed" status="error" :title="t('core.mystery.loadFailed')">
+      <a-result v-if="store.loadError" status="error" :title="loadErrorMessage">
         <template #extra>
           <a-button type="primary" @click="load">{{ t('core.mystery.retry') }}</a-button>
         </template>
@@ -98,11 +102,9 @@ const lock = async () => {
       <div v-else-if="!store.initialized" class="mystery-loading">
         <a-spin />
       </div>
-      <a-card
-        v-else-if="!store.unlocked"
-        :title="t('core.mystery.unlockTitle')"
-        class="mystery-unlock"
-      >
+      <SectionCard v-else-if="!store.unlocked" class="mystery-unlock">
+        <template #title>{{ t('core.mystery.unlockTitle') }}</template>
+        <a-typography-paragraph>{{ t('core.mystery.accessCodeHint') }}</a-typography-paragraph>
         <a-form :model="form" layout="vertical" @finish="unlock">
           <a-form-item
             name="accessCode"
@@ -124,7 +126,7 @@ const lock = async () => {
             {{ t('core.mystery.unlock') }}
           </a-button>
         </a-form>
-      </a-card>
+      </SectionCard>
       <!-- 子页面共用解锁门槛，锁定或跨日后卸载正在运行的功能。 -->
       <router-view v-else-if="isFeaturePage" />
       <a-row v-else :gutter="[16, 16]">
@@ -148,46 +150,24 @@ const lock = async () => {
         </a-col>
       </a-row>
     </div>
-  </div>
+  </AppPage>
 </template>
 
 <style scoped>
-.mystery-page {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.mystery-header,
-.mystery-heading {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.mystery-header {
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.mystery-heading h1 {
-  margin: 0;
-  font-size: 24px;
-  color: var(--ant-color-text);
-}
-
-.mystery-unlock {
+.mystery-unlock.ui-section-card {
   width: 100%;
   max-width: 520px;
+  margin-bottom: 0;
+  padding: 0;
 }
 
-.mystery-unlock :deep(.ant-card-head-title) {
-  text-align: center;
+.mystery-unlock.ui-section-card :deep(.section-header h3) {
+  grid-column: 1 / -1;
+  justify-content: center;
   font-size: 20px;
 }
 
-.mystery-unlock :deep(.ant-card-body) {
+.mystery-unlock :deep(.ui-section-card-body) {
   padding: 32px;
 }
 

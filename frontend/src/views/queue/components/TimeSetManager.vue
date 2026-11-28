@@ -1,23 +1,22 @@
 <template>
-  <a-card
+  <SectionCard
+    variant="plain"
     :title="t('core.queue.time.cardTitle')"
     class="app-page-section time-set-card"
     :class="{ 'time-set-disabled': props.disabled }"
   >
-    <template #extra>
-      <a-space>
-        <a-button
-          type="primary"
-          :loading="loading"
-          :disabled="props.disabled || !props.queueId || props.queueId.trim() === ''"
-          @click="addTimeSet"
-        >
-          <template #icon>
-            <PlusOutlined />
-          </template>
-          {{ t('core.queue.time.add') }}
-        </a-button>
-      </a-space>
+    <template #actions>
+      <a-button
+        type="primary"
+        :loading="loading"
+        :disabled="props.disabled || !props.queueId || props.queueId.trim() === ''"
+        @click="addTimeSet"
+      >
+        <template #icon>
+          <PlusOutlined />
+        </template>
+        {{ t('core.queue.time.add') }}
+      </a-button>
     </template>
 
     <DraggableTableShell
@@ -62,14 +61,14 @@
         />
       </template>
     </DraggableTableShell>
-  </a-card>
+  </SectionCard>
 </template>
 
 <script setup lang="ts">
 import TimeSetRow from './TimeSetRow.vue'
 import DragHandle from '@/components/DragHandle.vue'
 import DraggableTableShell from './DraggableTableShell.vue'
-import QueueWeekdaySelect from './QueueWeekdaySelect.vue'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref, nextTick, watch } from 'vue'
 import { message } from 'ant-design-vue'
@@ -389,112 +388,6 @@ const onDragEnd = async (evt: any) => {
 }
 
 /* 时间选择器样式 */
-:deep(.ant-picker) {
-  width: 100%;
-}
-
-/* 开关样式 */
-:deep(.ant-switch) {
-  margin: 0;
-}
-
-/* 状态下拉框样式 - 使用与Plans.vue相同的config-select样式 */
-.status-select :deep(.ant-select-selector) {
-  background: transparent !important;
-  border: none !important;
-  padding: 0 6px !important;
-  min-height: 28px !important;
-  line-height: 26px !important;
-  box-shadow: none !important;
-  text-align: center;
-}
-
-.status-select :deep(.ant-select-selection-item) {
-  line-height: 26px !important;
-  color: var(--ant-color-text) !important;
-  font-weight: 500;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-selection-placeholder) {
-  line-height: 26px !important;
-  color: var(--ant-color-text-placeholder) !important;
-  padding: 0;
-  margin: 0;
-}
-
-.status-select :deep(.ant-select-clear) {
-  display: none !important;
-}
-
-.status-select :deep(.ant-select-selection-search) {
-  margin: 0 !important;
-  padding: 0;
-}
-
-.status-select :deep(.ant-select-selection-search-input) {
-  padding: 0 !important;
-  margin: 0 !important;
-  height: 26px !important;
-}
-
-.status-select:hover :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
-.status-select:focus-within :deep(.ant-select-selector),
-.status-select.ant-select-focused :deep(.ant-select-selector) {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-}
-
-.status-select :deep(.ant-select-selector):focus,
-.status-select :deep(.ant-select-selector):focus-within {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  outline: none !important;
-  cursor: default !important;
-}
-
-/* 隐藏下拉箭头或调整样式 */
-.status-select :deep(.ant-select-arrow) {
-  right: 4px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 10px;
-}
-
-.status-select :deep(.ant-select-arrow:hover) {
-  color: var(--ant-color-primary);
-}
-
-/* 自定义下拉框样式 - 增加下拉菜单宽度 */
-.status-select :deep(.ant-select-dropdown) {
-  min-width: 100px !important;
-  max-width: 150px !important;
-}
-
-.status-select :deep(.ant-select-item) {
-  padding: 8px 12px !important;
-}
-
-/* 时间显示样式 */
-.time-display {
-  font-weight: 600;
-  color: var(--ant-color-text);
-  padding: 4px 8px;
-  border-radius: 4px;
-  display: inline-block;
-  min-width: 60px;
-  text-align: center;
-}
-
-/* 时间选择器样式 - 与状态下拉框保持一致 */
 :deep(.ant-picker) {
   background: transparent !important;
   border: none !important;

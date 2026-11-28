@@ -1,50 +1,45 @@
 <!-- eslint-disable vue/no-mutating-props -- This form section edits the parent-owned reactive draft; persistence stays in the parent. -->
 <template>
-  <MaaFWFormSection :title="t('core.edit.runConfiguration')">
+  <MaaFWFormSection :title="t('core.edit.runConfiguration')" :icon="ThunderboltOutlined">
+    <ScriptExecutionSessionField />
     <a-row :gutter="24">
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.maafwRunsPerDayLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.ProxyTimesLimit"
             :min="0"
             :max="9999"
-            size="large"
             class="modern-number-input"
             style="width: 100%"
             @blur="emit('change', 'Run', 'ProxyTimesLimit', maafwConfig.Run.ProxyTimesLimit)"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.retryLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimesLimit"
             :min="1"
             :max="9999"
-            size="large"
             class="modern-number-input"
             style="width: 100%"
             @blur="emit('change', 'Run', 'RunTimesLimit', maafwConfig.Run.RunTimesLimit)"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.singleRunTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.RunTimeLimit"
             :min="1"
             :max="9999"
-            size="large"
             class="modern-number-input"
             style="width: 100%"
             @blur="emit('change', 'Run', 'RunTimeLimit', maafwConfig.Run.RunTimeLimit)"
           />
         </a-form-item>
       </a-col>
-    </a-row>
-
-    <a-row :gutter="24" class="period-task-row">
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.skipOnceDoneToday') }}</span>
@@ -52,7 +47,6 @@
           <a-select
             :value="dailyOnceTasks"
             mode="multiple"
-            size="large"
             :options="periodTaskOptions"
             :disabled="interfaceDependentDisabled"
             option-filter-prop="label"
@@ -62,7 +56,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.skipOnceDoneThis') }}</span>
@@ -70,7 +64,6 @@
           <a-select
             :value="weeklyOnceTasks"
             mode="multiple"
-            size="large"
             :options="periodTaskOptions"
             :disabled="interfaceDependentDisabled"
             option-filter-prop="label"
@@ -80,7 +73,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
+      <a-col :xs="24" :md="12">
         <a-form-item>
           <template #label>
             <span class="form-label">{{ t('core.edit.skipOnceDoneThis2') }}</span>
@@ -88,7 +81,6 @@
           <a-select
             :value="monthlyOnceTasks"
             mode="multiple"
-            size="large"
             :options="periodTaskOptions"
             :disabled="interfaceDependentDisabled"
             option-filter-prop="label"
@@ -98,23 +90,19 @@
           />
         </a-form-item>
       </a-col>
-    </a-row>
-
-    <a-row :gutter="24" class="task-time-limit-row">
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <a-form-item :label="t('core.edit.singleTaskTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.TaskTimeLimit"
             :min="0"
             :max="9999"
-            size="large"
             class="modern-number-input"
             style="width: 100%"
             @blur="emit('change', 'Run', 'TaskTimeLimit', maafwConfig.Run.TaskTimeLimit)"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :xs="24" :md="12">
         <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串；
              原地打转检测（Run.LoopGuard）的开关也在这个弹窗里 -->
         <MaaFWTaskTimeLimitField
@@ -131,17 +119,16 @@
 </template>
 
 <script setup lang="ts">
+import { ThunderboltOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
-import type {
-  MaaFWScriptRunSectionEmits,
-  MaaFWScriptRunSectionProps,
-} from '../../MaaFWFlavor/sectionContracts'
+import ScriptExecutionSessionField from '../components/ScriptExecutionSessionField.vue'
+import type { MaaFWScriptRunSectionEmits, MaaFWScriptRunSectionProps } from './sectionProps'
 import MaaFWFormSection from './MaaFWFormSection.vue'
 import MaaFWTaskTimeLimitField from './MaaFWTaskTimeLimitField.vue'
 
 const { t } = useI18n()
 
-// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+// props / 事件见 sectionProps.ts
 const props = defineProps<MaaFWScriptRunSectionProps>()
 
 const emit = defineEmits<MaaFWScriptRunSectionEmits>()
@@ -161,13 +148,5 @@ const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => 
 <style scoped>
 .modern-number-input {
   border-radius: 8px;
-}
-
-.period-task-row {
-  margin-top: 8px;
-}
-
-.task-time-limit-row {
-  margin-top: 8px;
 }
 </style>
