@@ -89,6 +89,9 @@ from app.models.config import (
     GlobalConfig,
     HSRConfig,
     HSRUserConfig,
+    MaaEndConfig,
+    MaaEndPlanConfig,
+    MaaEndUserConfig,
     OkNteConfig,
     OkNtePlanConfig,
     OkNteUserConfig,
@@ -632,7 +635,9 @@ class AppConfig:
 
         async def install_adapters_isolated() -> None:
             """专项插件一个个装：装不上只让它的托管旁挂，不挡启动。"""
-            for name, package in required_adapters.items():
+            for name, package in required.items():
+                if name in required_games:
+                    continue
                 try:
                     await install_adapter_plugin(name, package)
                 except Exception as error:  # noqa: BLE001

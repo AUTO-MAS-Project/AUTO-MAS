@@ -29,6 +29,9 @@ _ADAPTER_PLUGINS = {
     "M9AConfig": ("m9a_adapter", "auto-mas-m9a-adapter"),
     "MSSConfig": ("mss_adapter", "auto-mas-mss-adapter"),
     "MSSPlanConfig": ("mss_adapter", "auto-mas-mss-adapter"),
+    # MaaEnd 切换插件提供：旧档里的托管与计划表由适配器接手，缺插件要补装。
+    "MaaEndConfig": ("maaend_adapter", "auto-mas-maaend-adapter"),
+    "MaaEndPlanConfig": ("maaend_adapter", "auto-mas-maaend-adapter"),
 }
 # MFW 一族（通用 MFW、M9A、MSS）改由插件提供后，首次接手前备份的托管与计划表类型。
 MAAFW_FAMILY_TYPE_NAMES = frozenset(

@@ -31,6 +31,8 @@ from app.utils import io as config_io
         ("M9AConfig", "m9a_adapter", "auto-mas-m9a-adapter"),
         ("MSSConfig", "mss_adapter", "auto-mas-mss-adapter"),
         ("MSSPlanConfig", "mss_adapter", "auto-mas-mss-adapter"),
+        ("MaaEndConfig", "maaend_adapter", "auto-mas-maaend-adapter"),
+        ("MaaEndPlanConfig", "maaend_adapter", "auto-mas-maaend-adapter"),
     ],
 )
 def test_upgrade_detects_only_collection_types(
@@ -276,21 +278,28 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
-            if current and failure in {"install", "disabled", "uninstalled"}:
-                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留。
-            elif not current and failure == "install":
-                # 老格式按同一口径隔离：托管原样保留，版本停在升级前，下次启动重装插件
-                # 后再继续转换。
+            if failure == "install" or (
+                current and failure in {"disabled", "uninstalled"}
+            ):
+                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留；
+                # 老格式按同一口径隔离，版本停在升级前，下次启动重装插件后再继续转换。
                 await Config.check_data(prepare_plugins=prepare)
                 assert Config.ScriptConfig.is_unresolved(sid)
                 assert Config.PlanConfig.is_unresolved(pid)
                 if failure != "install":
+                    # 用户自己停用或卸载过的插件不再重装，托管只旁挂。
                     assert not installs
                     record = Config.plugin_registry.by_name("maa_adapter")
                     if failure == "uninstalled":
                         assert record is None
                     else:
                         assert record is not None and not record.info.enabled
+                    assert not Config.managed_configs_loaded()
+                    assert io.read_dict_file(script_file) == original_document
+                    with sqlite3.connect(Config.database_path) as db:
+                        assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
+                    return
+                # 装不上：两条格式都只隔离它的托管，并留下失败记录供启动提示。
                 assert not Config.managed_configs_loaded()
                 assert Config._adapter_plugin_failures == {"maa_adapter": "installation unavailable"}
                 with sqlite3.connect(Config.database_path) as db:
@@ -518,3 +527,90 @@ async def test_explicit_channel_does_not_trigger_migration(tmp_path):
     assert config.Update.ChannelMigrationVersion == 1
     await migrate_maa_update_channel(config, data_path=tmp_path / "data")
     assert config.Update.Channel == "beta"
+
+
+def test_cold_start_holds_legacy_maaend_without_plugin(tmp_path):
+    """旧档只带 MaaEnd 托管与计划表：缺插件要补装，装不上只隔离这几个成员。"""
+    source_root = Path(__file__).resolve().parents[2]
+    code = r"""
+import asyncio
+import json
+import sqlite3
+import sys
+from unittest.mock import AsyncMock, patch
+
+from app.core import Config, Plugin
+from app.plugin import uv
+from app.plugin.runtime import discover
+from app.utils import io
+
+script = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a101"
+plan = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a102"
+
+# 发行包安装测试不该命中开发者源码目录里的同名插件。
+source_projects = discover._source_projects
+checkout_plugins = (Config.source_path / "plugins").resolve()
+discover._source_projects = lambda: {
+    project for project in source_projects()
+    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+}
+io.write_file(Config.config_path / "scripts.yaml", {
+    "order": [{"uid": script, "type": "MaaEndConfig"}],
+    "data": {script: {"Info": {"Name": "旧 MaaEnd 托管"}}},
+})
+io.write_file(Config.config_path / "plans.yaml", {
+    "order": [{"uid": plan, "type": "MaaEndPlanConfig"}],
+    "data": {plan: {"Info": {"Name": "旧 MaaEnd 计划"}}},
+})
+with sqlite3.connect(Config.database_path) as db:
+    db.execute("CREATE TABLE version(v text)")
+    db.execute("INSERT INTO version VALUES (?)", ("v2.1",))
+
+installed = []
+
+async def install(spec, **kwargs):
+    installed.append(spec)
+    raise OSError("installation unavailable")
+
+async def prepare():
+    await Plugin.initialize()
+
+async def run():
+    with (
+        patch.object(uv, "install", install),
+        patch.object(uv, "prepare_environment", AsyncMock()),
+    ):
+        # 装不上不该抛：这条托管与计划原样保留，其它专项照常启动。
+        await Config.check_data(prepare_plugins=prepare)
+        assert installed == ["auto-mas-maaend-adapter"], installed
+        assert set(Config._adapter_plugin_failures) == {"maaend_adapter"}
+        assert Config.ScriptConfig.is_unresolved(script)
+        assert Config.PlanConfig.is_unresolved(plan)
+        with sqlite3.connect(Config.database_path) as db:
+            assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
+        saved = io.read_dict_file(Config.config_path / "scripts.yaml")
+        assert saved["data"][script]["Info"]["Name"] == "旧 MaaEnd 托管"
+        notices = json.dumps(Config.startup_notices, ensure_ascii=False)
+        assert "maaend_adapter 暂不可用" in notices, notices
+        assert "MaaEnd - 旧 MaaEnd 托管" in notices, notices
+        assert "MaaEndPlanConfig - 旧 MaaEnd 计划" in notices, notices
+        assert "原样保留" in notices, notices
+    await Plugin.shutdown()
+
+asyncio.run(run())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(source_root),
+            "PYTHONIOENCODING": "utf-8",
+            "AUTO_MAS_ENV": "development",
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
