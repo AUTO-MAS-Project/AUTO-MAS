@@ -4,8 +4,10 @@
 
 ## 启动方式
 
-1. 先正常启动一次安装版完成初始化，然后退出。
-2. 在**管理员 PowerShell** 中设置 `AUTO_MAS_BACKEND_REPO` 并启动安装版（Windows 安装版需要管理员权限，从普通终端启动会在 UAC 提权时丢失环境变量；应用不读取 `.env`）：
+1. 先正常启动一次安装版完成初始化，然后从系统托盘退出。
+2. 双击源码根目录的 `启动源码后端.cmd`，确认 Windows 的管理员提示，再选择要使用的发行版 `AUTO-MAS.exe`。
+
+也可在**管理员 PowerShell** 中手动设置 `AUTO_MAS_BACKEND_REPO` 并启动安装版。先提权能让桌面程序继承当前终端里的环境变量。
 
 ```powershell
 $env:AUTO_MAS_BACKEND_REPO = '<AUTO-MAS 源码路径>'
