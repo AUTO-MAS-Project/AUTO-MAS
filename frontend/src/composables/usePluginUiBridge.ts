@@ -50,6 +50,9 @@ export interface PluginUiEditor {
 }
 
 const source = 'auto-mas-wheel'
+const requestMethods = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
+// 这些前缀下的宿主路由优先于插件网关。
+const hostPluginNamespaces = new Set(['installation', 'options', 'registry'])
 const shortText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max
 const optionalText = (v: unknown, max: number): v is string | undefined =>
   v === undefined || shortText(v, max)
@@ -134,6 +137,22 @@ const pathSegment = (value: string) =>
     char => '%' + char.charCodeAt(0).toString(16).toUpperCase()
   )
 
+function validRequestPath(path: unknown): path is string {
+  if (typeof path !== 'string' || !path.startsWith('/') || /[\\#\p{Cc}]|\.\./u.test(path))
+    return false
+  try {
+    const pathname = decodeURIComponent(path.split('?', 1)[0]!)
+    return (
+      !/^\/(?:\/|ui(?:\/|$))/.test(pathname) &&
+      !/[\\\p{Cc}]|\.\.|%[\da-f]{2}/iu.test(pathname) &&
+      pathname === pathname.trimEnd() &&
+      !pathname.split('/').includes('.')
+    )
+  } catch {
+    return false
+  }
+}
+
 export function usePluginUiBridge(
   frame: () => HTMLIFrameElement | null,
   editor: () => PluginUiEditor,
@@ -194,7 +213,8 @@ export function usePluginUiBridge(
     const mountToken = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte =>
       byte.toString(16).padStart(2, '0')
     ).join('')
-    const { pluginName, revision, entry } = mount
+    const { pluginName, revision, entry, activationId, pageId } = mount
+    const base = OpenAPI.BASE.replace(/\/$/, '')
     const scope =
       target.kind === 'setup' ? 'script' : target.kind === 'notification' ? 'settings' : target.kind
     const envelope = { v: 1, mountToken, pluginName, target }
@@ -269,7 +289,45 @@ export function usePluginUiBridge(
         return
       }
       const writable = () => active && !editor().locked
-      if (action === 'saveConfig') {
+      if (action === 'request') {
+        const { path, body } = params
+        const method = typeof params.method === 'string' ? params.method.toUpperCase() : ''
+        if (
+          !requestMethods.has(method) ||
+          !validRequestPath(path) ||
+          (method === 'GET' && body !== undefined) ||
+          hostPluginNamespaces.has(pluginName)
+        )
+          return reject('invalid_params')
+        if (method !== 'GET' && method !== 'POST' && !writable()) return reject('read_only')
+        try {
+          // fetch 保留响应状态，并禁止重定向离开插件命名空间。
+          const response = await fetch(
+            `${base}/api/plugin/${encodeURIComponent(pluginName)}${path}`,
+            {
+              method,
+              redirect: 'error',
+              headers: {
+                'X-Plugin-Ui-Provider': pluginName,
+                'X-Plugin-Ui-Activation': activationId,
+                'X-Plugin-Ui-Page': pageId,
+                ...(body !== undefined && { 'Content-Type': 'application/json' }),
+              },
+              body: JSON.stringify(body),
+            }
+          )
+          const text = await response.text()
+          let data: unknown
+          try {
+            data = JSON.parse(text)
+          } catch {
+            data = text
+          }
+          reply({ ok: response.ok, status: response.status, data })
+        } catch {
+          reject('request_failed')
+        }
+      } else if (action === 'saveConfig') {
         const { phase, changes } = params
         if (!writable() || current.busy) return reject('read_only')
         if (
@@ -403,7 +461,7 @@ export function usePluginUiBridge(
 
     const hash = new URLSearchParams({ ...envelope, v: '1', target: JSON.stringify(target) })
     const path = [pluginName, 'ui', revision, ...entry.split('/')].map(pathSegment).join('/')
-    iframeUrl.value = `${OpenAPI.BASE.replace(/\/$/, '')}/api/plugin/${path}#${hash}`
+    iframeUrl.value = `${base}/api/plugin/${path}#${hash}`
   }
   onScopeDispose(stop)
   return { iframeUrl, frameHeight, status, start, stop, fail }

@@ -8,7 +8,6 @@
 AUTO-MAS/
 ├── app/
 ├── frontend/src/views/
-│   ├── maa/               # 待迁出的历史静态页
 │   └── whimbox/           # 待迁出的历史静态页
 └── plugins/
     ├── auto_mas_core/     # 主仓跟踪的 SDK
@@ -24,6 +23,7 @@ Runtime 运行时，用户插件装在安装根目录的 `plugins/`（源码插�
 1. **`mascore` 预设块（`HostBlock`）**：宿主现成的完整业务块（如 `game_binding`、`config_restore`、`native_session`、`webhooks`），插件只声明块名，零前端代码。
 2. **MAS 可组合组件（`DeclarativeBlock`）**：在 Python `ConfigModel` 上用 `ui()` / `select()` / `table()` 组合宿主原子控件（开关、步进器、下拉/有序多选、路径选择、表格等），零前端代码。
 3. **完全下游自定义（`PluginBlock`）**：声明式表达不了的局部复杂卡片，由插件随 wheel 交付前端产物并通过 `MountedFrontend` 挂载（参考 `src_adapter` 的 `stage.html`），必须提供 `fallbackGroups` 兜底；宿主自动提供 `./_host/panel-sdk.js` 和 `./_host/panel-base.css`，页头、配置锁、保存和离页守卫归宿主。
+   面板可通过 `panel.request(method, path, body?)` 调用本插件的 HTTP 接口。
 
 原则：
 - 按 **L1 `HostBlock` → L2 `DeclarativeBlock` → L3 `PluginBlock`** 递进选型。

@@ -85,7 +85,6 @@ export default defineConfig(({ command }) => {
       ],
       alias: {
         '@': path.resolve(__dirname, './src'),
-        '@maa': path.resolve(__dirname, './src/views/maa'),
       },
     },
     define: {
