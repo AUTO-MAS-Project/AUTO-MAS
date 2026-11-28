@@ -251,6 +251,18 @@ class GlobalConfig(DomainEntry):
 
     Function: FunctionFields = Field(default_factory=FunctionFields)
 
+    class HistoryFields(ConfigGroup):
+        VideoStorageLimitMiB: Annotated[
+            int,
+            legacy(group="Replay", name="VideoStorageLimitMiB"),
+            Field(ge=1, le=1048576),
+        ] = Field(
+            default_factory=lambda: 1024,
+            description="历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。",
+        )
+
+    History: HistoryFields = Field(default_factory=HistoryFields)
+
     class NotifyFields(ConfigGroup):
         AuthorizationCode: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "", description="邮箱授权码"
@@ -364,7 +376,9 @@ class GlobalConfig(DomainEntry):
             description="连接已运行的 OBS，在自动代理最终失败时保存回放。",
         )
 
-        VideoStorageLimitMiB: Annotated[int, Field(ge=1, le=1048576)] = Field(
+        VideoStorageLimitMiB: Annotated[
+            int, Field(ge=1, le=1048576), ui(visibility=UiVisibility.HIDE)
+        ] = Field(
             default_factory=lambda: 1024,
             description="历史视频容量上限（MiB），仅回收历史视频，不清理 OBS 原文件。",
         )

@@ -225,6 +225,8 @@ export type { GlobalConfig_download } from './models/GlobalConfig_download';
 export type { GlobalConfig_downloadInput } from './models/GlobalConfig_downloadInput';
 export type { GlobalConfig_Function } from './models/GlobalConfig_Function';
 export type { GlobalConfig_FunctionInput } from './models/GlobalConfig_FunctionInput';
+export type { GlobalConfig_History } from './models/GlobalConfig_History';
+export type { GlobalConfig_HistoryInput } from './models/GlobalConfig_HistoryInput';
 export type { GlobalConfig_Notify } from './models/GlobalConfig_Notify';
 export type { GlobalConfig_NotifyInput } from './models/GlobalConfig_NotifyInput';
 export type { GlobalConfig_plugin } from './models/GlobalConfig_plugin';

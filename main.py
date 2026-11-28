@@ -538,7 +538,7 @@ def main():
                 # 升级与历史存储是任务启动的前置条件，失败不进入后台可选初始化。
                 with startup_stage("后端/历史存储初始化"):
                     await History.initialize(
-                        video_limit_bytes=Config.setting.Replay.VideoStorageLimitMiB
+                        video_limit_bytes=Config.setting.History.VideoStorageLimitMiB
                         * 1024
                         * 1024
                     )

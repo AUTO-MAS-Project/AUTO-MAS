@@ -540,6 +540,12 @@ class AppConfig:
         self.setting.connect(
             on_video_limit,
             phase="runtime",
+            group="History",
+            field="VideoStorageLimitMiB",
+        )
+        self.setting.connect(
+            on_video_limit,
+            phase="runtime",
             group="Replay",
             field="VideoStorageLimitMiB",
         )
