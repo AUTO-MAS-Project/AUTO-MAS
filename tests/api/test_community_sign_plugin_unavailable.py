@@ -3,7 +3,8 @@
 守的是：
 - 插件服务缺失时，编排层抛的是专用异常，不是通用 RuntimeError；
 - 手动签到接口据此回 503 并原样带出安装引导，而不是 500「签到失败」；
-- 定时触发遇到同一情况只记一行警告，不让调度把这次触发当成任务失败。
+- 定时、启动等自动触发遇到同一情况只记一行警告，不让定时器把这次触发当成任务失败；
+- 队列来源（计划任务触发的签到）必须把「没有执行」交回调度层，不能混同「今日已签到」的空结果。
 
 破坏方式：把 _run_plugin_sign_in 的专用异常改回 RuntimeError、去掉 API 的
 503 分支、或在 timer 里让该异常走 task 来源的 re-raise，对应用例随即变红。
@@ -66,6 +67,18 @@ async def test_scheduled_trigger_skips_without_marking_failure(
     results = await MainTimer._execute_community_sign(source="scheduled")
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_task_trigger_keeps_missing_plugin_as_failure(
+    isolated_app_paths, no_plugin_service
+):
+    """队列来源（任务触发）插件没装时，失败要交给调度层，不能返回空结果。"""
+
+    from app.core.timer import MainTimer
+
+    with pytest.raises(CommunitySignPluginUnavailableError):
+        await MainTimer._execute_community_sign(source="task_scheduled")
 
 
 def test_unavailable_error_is_a_runtime_error():

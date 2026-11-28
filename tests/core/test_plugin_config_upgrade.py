@@ -267,9 +267,15 @@ from app.utils import io
 # 发行包安装测试不应命中开发者源码目录中的同名插件。
 source_projects = discover._source_projects
 checkout_plugins = (source / "plugins").resolve()
+# 本机 plugins/ 下用 junction 挂的其它仓库工程会被 resolve() 到仓库外，按父目录
+# 比较认不出来，因此改为先解析出 plugins/ 的直属子工程再比对。
+checkout_children = (
+    {child.resolve() for child in checkout_plugins.iterdir()}
+    if checkout_plugins.is_dir() else set()
+)
 discover._source_projects = lambda: {
     project for project in source_projects()
-    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+    if project not in checkout_children or project.name == "auto_mas_core"
 }
 
 sid = "e1821d2b-bbb8-4ac5-ad7c-e445c8324aa0"
@@ -489,9 +495,15 @@ game = "0b7d1b71-6f2f-4c22-9c1e-5f43f4b7a103"
 # 发行包安装测试不应命中开发者源码目录中的同名插件。
 source_projects = discover._source_projects
 checkout_plugins = (Config.source_path / "plugins").resolve()
+# 本机 plugins/ 下用 junction 挂的其它仓库工程会被 resolve() 到仓库外，按父目录
+# 比较认不出来，因此改为先解析出 plugins/ 的直属子工程再比对。
+checkout_children = (
+    {child.resolve() for child in checkout_plugins.iterdir()}
+    if checkout_plugins.is_dir() else set()
+)
 discover._source_projects = lambda: {
     project for project in source_projects()
-    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+    if project not in checkout_children or project.name == "auto_mas_core"
 }
 scripts = {"order": [], "data": {}}
 if kind in ("unknown_type", "mixed"):
@@ -638,9 +650,15 @@ second = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a107"
 # 只隔离装包传输，实际使用宿主启动、迁移、激活和落盘入口。
 source_projects = discover._source_projects
 checkout_plugins = (Config.source_path / "plugins").resolve()
+# 本机 plugins/ 下用 junction 挂的其它仓库工程会被 resolve() 到仓库外，按父目录
+# 比较认不出来，因此改为先解析出 plugins/ 的直属子工程再比对。
+checkout_children = (
+    {child.resolve() for child in checkout_plugins.iterdir()}
+    if checkout_plugins.is_dir() else set()
+)
 discover._source_projects = lambda: {
     project for project in source_projects()
-    if project.parent != checkout_plugins or project.name == "auto_mas_core"
+    if project not in checkout_children or project.name == "auto_mas_core"
 }
 
 def indexed(*entries):

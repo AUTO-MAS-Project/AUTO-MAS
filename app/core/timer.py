@@ -778,7 +778,12 @@ class _MainTimer:
         except CommunitySignInProgressError:
             logger.info("游戏社区签到正在执行，跳过本次触发")
         except CommunitySignPluginUnavailableError as e:
-            # 未装插件属于配置缺失而非运行故障：只留一行提示，不打整段堆栈。
+            if source in TASK_COMMUNITY_SOURCES:
+                # 任务来源的结果由任务完成回调消费：缺插件意味着本次「没有执行」，
+                # 必须作为失败终态交给调度层，不能混同「今日已签到」的空结果。
+                raise
+            # 其它自动来源（定时、启动）未装插件属于配置缺失而非运行故障：
+            # 只留一行提示，不打整段堆栈，也不让定时器以为签到失败。
             logger.warning(f"游戏社区签到未执行：{e}")
         except Exception as e:
             if source in TASK_COMMUNITY_SOURCES:
