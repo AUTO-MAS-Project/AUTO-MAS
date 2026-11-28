@@ -306,7 +306,7 @@ def _safe_json_parse(response: httpx.Response) -> dict[str, object]:
         data = response.json()
     except ValueError as exc:
         raise _RiskControlError(
-            f"API 返回非 JSON 内容，疑似被风控: {text[:100]}"
+            f"API 返回非 JSON 内容，疑似被风控（HTTP {response.status_code}）"
         ) from exc
     if not isinstance(data, dict):
         raise _RiskControlError("API 返回异常 JSON 格式，疑似被风控")
@@ -523,20 +523,53 @@ def _passport_exchange_headers(device_id: str, ds: str) -> Dict[str, str]:
     }
 
 
+class _TokenExchangeError(ValueError):
+    """换票链路错误：只保留阶段、错误类别和数值错误码，不带上游正文。"""
+
+    def __init__(
+        self,
+        stage: str,
+        category: str,
+        retcode: object | None = None,
+    ) -> None:
+        self.stage = stage
+        self.category = category
+        self.retcode = "" if retcode is None else str(retcode).strip()
+        message = f"{stage}失败: {category}"
+        if self.retcode:
+            message += f"（错误码 {self.retcode}）"
+        super().__init__(message)
+
+
+def _as_token_exchange_error(stage: str, error: Exception) -> _TokenExchangeError:
+    """把换票链路的任意异常收成固定原因，避免上游正文进入日志或签到结果。"""
+
+    if isinstance(error, _TokenExchangeError):
+        return error
+    if isinstance(error, _RiskControlError):
+        return _TokenExchangeError(stage, "上游返回空响应或非 JSON 响应")
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return _TokenExchangeError(stage, "请求超时")
+    if isinstance(error, (httpx.HTTPError, ConnectionError, OSError)):
+        return _TokenExchangeError(stage, "网络请求异常")
+    return _TokenExchangeError(stage, "换票链路异常")
+
+
 def _cookie_token_from_response(rsp: dict[str, object], stage: str) -> tuple[str, str]:
     """从派生响应里取出 cookie_token 和 uid，字段缺失按失败处理。"""
 
-    if str(rsp.get("retcode")).strip() != "0":
-        raise ValueError(f"{stage}失败: {rsp.get('message')}")
+    retcode = str(rsp.get("retcode")).strip()
+    if retcode != "0":
+        raise _TokenExchangeError(stage, "上游业务错误", retcode)
     data = rsp.get("data")
     if not isinstance(data, dict):
         # data 为 null 是上游表示"该凭据不可派生"的常见形态，按派生失败处理，
         # 而不是让 .get 在 None 上抛 AttributeError 把原因变成程序异常。
-        raise ValueError(f"{stage}失败: 返回数据格式无效")
+        raise _TokenExchangeError(stage, "返回数据格式无效")
     cookie_token = str(data.get("cookie_token") or "").strip()
     uid = str(data.get("uid") or "").strip()
     if not cookie_token:
-        raise ValueError(f"{stage}失败: 返回数据无 cookie_token")
+        raise _TokenExchangeError(stage, "返回数据无 cookie_token")
     return cookie_token, uid
 
 
@@ -561,22 +594,26 @@ async def _exchange_passport_token(
     headers = _passport_exchange_headers(device_id, _passport_exchange_ds(body))
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with create_community_client(proxy=resolved_proxy) as client:
-        response = await client.post(
-            PASSPORT_EXCHANGE_URL,
-            headers=headers,
-            content=body.encode("utf-8"),
-            timeout=30.0,
-        )
-        rsp = _safe_json_parse(response)
+    try:
+        async with create_community_client(proxy=resolved_proxy) as client:
+            response = await client.post(
+                PASSPORT_EXCHANGE_URL,
+                headers=headers,
+                content=body.encode("utf-8"),
+                timeout=30.0,
+            )
+            rsp = _safe_json_parse(response)
+    except Exception as e:
+        raise _as_token_exchange_error("通行证换票", e) from None
 
-    if str(rsp.get("retcode")).strip() != "0":
-        raise ValueError(f"通行证换票失败: {rsp.get('message')}")
+    retcode = str(rsp.get("retcode")).strip()
+    if retcode != "0":
+        raise _TokenExchangeError("通行证换票", "上游业务错误", retcode)
     data = rsp.get("data")
     token = data.get("token") if isinstance(data, dict) else None
     value = str(token.get("token") or "").strip() if isinstance(token, dict) else ""
     if not value:
-        raise ValueError("通行证换票失败: 返回数据无 token")
+        raise _TokenExchangeError("通行证换票", "返回数据无 token")
     return value
 
 
@@ -585,6 +622,7 @@ async def _derive_cookie_token_by_passport(
 ) -> tuple[str, str]:
     """passport 域的派生接口（api-takumi 判废后的同构域名）。"""
 
+    stage = "passport 派生 cookie_token"
     headers = {
         "Accept": "application/json, text/plain, */*",
         "DS": _passport_ds(),
@@ -596,15 +634,18 @@ async def _derive_cookie_token_by_passport(
         "User-Agent": "Hyperion/275 CFNetwork/1402.0.8 Darwin/22.2.0",
     }
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with create_community_client(proxy=resolved_proxy) as client:
-        response = await client.get(
-            PASSPORT_COOKIE_V2_URL,
-            headers=headers,
-            cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
-            timeout=30.0,
-        )
-        rsp = _safe_json_parse(response)
-    return _cookie_token_from_response(rsp, "派生 cookie_token")
+    try:
+        async with create_community_client(proxy=resolved_proxy) as client:
+            response = await client.get(
+                PASSPORT_COOKIE_V2_URL,
+                headers=headers,
+                cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
+                timeout=30.0,
+            )
+            rsp = _safe_json_parse(response)
+    except Exception as e:
+        raise _as_token_exchange_error(stage, e) from None
+    return _cookie_token_from_response(rsp, stage)
 
 
 async def _derive_cookie_token_by_takumi(
@@ -612,18 +653,22 @@ async def _derive_cookie_token_by_takumi(
 ) -> tuple[str, str]:
     """旧的 api-takumi 派生接口，仅作最后兜底。"""
 
+    stage = "旧版派生 cookie_token"
     headers = BASE_HEADERS.copy()
     headers["x-rpc-device_id"] = device_id
     resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with create_community_client(proxy=resolved_proxy) as client:
-        response = await client.get(
-            PASSPORT_COOKIE_URL,
-            headers=headers,
-            cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
-            timeout=30.0,
-        )
-        rsp = _safe_json_parse(response)
-    return _cookie_token_from_response(rsp, "派生 cookie_token")
+    try:
+        async with create_community_client(proxy=resolved_proxy) as client:
+            response = await client.get(
+                PASSPORT_COOKIE_URL,
+                headers=headers,
+                cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
+                timeout=30.0,
+            )
+            rsp = _safe_json_parse(response)
+    except Exception as e:
+        raise _as_token_exchange_error(stage, e) from None
+    return _cookie_token_from_response(rsp, stage)
 
 
 async def derive_miyoushe_tokens(
@@ -653,7 +698,7 @@ async def derive_miyoushe_tokens(
         if cookie_value.startswith("v2_"):
             tokens["cookie_token_v2"] = cookie_value
     except Exception as e:
-        failures.append(str(e))
+        failures.append(str(_as_token_exchange_error("通行证换票", e)))
 
     if tokens.get("cookie_token"):
         # ltoken 一起换；失败不影响签到，只用于 -100 时的兜底替换。
@@ -665,7 +710,10 @@ async def derive_miyoushe_tokens(
             if ltoken_value.startswith("v2_"):
                 tokens["ltoken_v2"] = ltoken_value
         except Exception as e:
-            logger.debug(f"通行证换票 ltoken 失败，签到继续: {e}")
+            logger.debug(
+                f"通行证换票 ltoken 失败，签到继续: "
+                f"{_as_token_exchange_error('ltoken 换票', e)}"
+            )
 
     # 2) passport 域派生
     if not tokens.get("cookie_token"):
@@ -679,7 +727,9 @@ async def derive_miyoushe_tokens(
             if uid:
                 tokens["uid"] = uid
         except Exception as e:
-            failures.append(str(e))
+            failures.append(
+                str(_as_token_exchange_error("passport 派生 cookie_token", e))
+            )
 
     # 3) 旧 takumi 域派生（兜底）
     if not tokens.get("cookie_token"):
@@ -693,7 +743,7 @@ async def derive_miyoushe_tokens(
             if uid:
                 tokens["uid"] = uid
         except Exception as e:
-            failures.append(str(e))
+            failures.append(str(_as_token_exchange_error("旧版派生 cookie_token", e)))
 
     if not tokens.get("cookie_token"):
         detail = "；".join(failures) if failures else "上游未返回 cookie_token"

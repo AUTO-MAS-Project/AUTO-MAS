@@ -20,11 +20,22 @@ class _Response:
         return self._payload
 
 
+class _RawResponse:
+    """模拟被风控或网关拦截的非 JSON 响应，正文带虚构标记。"""
+
+    def __init__(self, text: str, status_code: int = 200):
+        self.text = text
+        self.status_code = status_code
+
+    def json(self) -> object:
+        raise ValueError("not json")
+
+
 class _Client:
     """记录换票请求并返回预设响应。"""
 
-    def __init__(self, payload: dict[str, object]):
-        self.payload = payload
+    def __init__(self, payload: dict[str, object] | _Response | _RawResponse):
+        self.response = _Response(payload) if isinstance(payload, dict) else payload
         self.calls: list[dict[str, object]] = []
 
     async def __aenter__(self) -> "_Client":
@@ -40,7 +51,7 @@ class _Client:
         headers: dict[str, str],
         content: bytes,
         timeout: float,
-    ) -> _Response:
+    ) -> _Response | _RawResponse:
         body = content.decode("utf-8")
         self.calls.append(
             {
@@ -51,16 +62,16 @@ class _Client:
                 "timeout": timeout,
             }
         )
-        return _Response(self.payload)
+        return self.response
 
-    async def get(self, *args: object, **kwargs: object) -> _Response:
+    async def get(self, *args: object, **kwargs: object) -> _Response | _RawResponse:
         raise AssertionError("换票流程不应调用 GET")
 
 
 class _SequenceClient:
     """按顺序返回预设响应，用于模拟签到接口先失败后成功。"""
 
-    def __init__(self, payloads: list[dict[str, object]]):
+    def __init__(self, payloads: list[dict[str, object] | _Response | _RawResponse]):
         self.payloads = payloads
 
     async def __aenter__(self) -> "_SequenceClient":
@@ -69,8 +80,9 @@ class _SequenceClient:
     async def __aexit__(self, *args: object) -> None:
         return None
 
-    async def post(self, *args: object, **kwargs: object) -> _Response:
-        return _Response(self.payloads.pop(0))
+    async def post(self, *args: object, **kwargs: object) -> _Response | _RawResponse:
+        payload = self.payloads.pop(0)
+        return _Response(payload) if isinstance(payload, dict) else payload
 
 
 @pytest.mark.asyncio
@@ -110,6 +122,117 @@ async def test_exchange_passport_token_sends_v2_request_and_reads_nested_token(
         ).encode()
     ).hexdigest()
     assert digest == expected
+
+
+@pytest.mark.asyncio
+async def test_exchange_business_error_does_not_expose_upstream_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "FABRICATED_UPSTREAM_BUSINESS_TEXT"
+    client = _Client({"retcode": -1, "message": marker})
+    monkeypatch.setattr(
+        miyoushe,
+        "create_community_client",
+        lambda proxy=None: client,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await miyoushe._exchange_passport_token(
+            "v2_stoken",
+            "mid-value",
+            miyoushe.TOKEN_TYPE_COOKIE_TOKEN,
+            "device-id",
+        )
+
+    message = str(exc.value)
+    assert marker not in message
+    assert "-1" in message
+    assert "上游业务错误" in message
+
+
+@pytest.mark.asyncio
+async def test_exchange_non_json_error_does_not_expose_upstream_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "FABRICATED_UPSTREAM_BODY"
+    client = _Client(_RawResponse(f"<html>{marker}</html>", 403))
+    monkeypatch.setattr(
+        miyoushe,
+        "create_community_client",
+        lambda proxy=None: client,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await miyoushe._exchange_passport_token(
+            "v2_stoken",
+            "mid-value",
+            miyoushe.TOKEN_TYPE_COOKIE_TOKEN,
+            "device-id",
+        )
+
+    message = str(exc.value)
+    assert marker not in message
+    assert "非 JSON" in message
+    assert "403" not in message
+
+
+@pytest.mark.asyncio
+async def test_optional_ltoken_failure_keeps_sign_in_and_hides_upstream_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "FABRICATED_OPTIONAL_TOKEN_BODY"
+    records: list[str] = []
+
+    class _CaptureLogger:
+        def debug(self, message: str) -> None:
+            records.append(str(message))
+
+    client = _SequenceClient(
+        [
+            {"retcode": 0, "data": {"token": {"token": "v2_cookie"}}},
+            _RawResponse(f"<html>{marker}</html>", 502),
+        ]
+    )
+    monkeypatch.setattr(
+        miyoushe,
+        "create_community_client",
+        lambda proxy=None: client,
+    )
+    monkeypatch.setattr(miyoushe, "logger", _CaptureLogger())
+
+    tokens = await miyoushe.derive_miyoushe_tokens("v2_stoken", "mid", "10001")
+
+    assert tokens["cookie_token"] == "v2_cookie"
+    assert "ltoken" not in tokens
+    assert any("ltoken" in record for record in records)
+    assert all(marker not in record for record in records)
+
+
+@pytest.mark.asyncio
+async def test_derive_failure_reason_hides_all_upstream_bodies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "FABRICATED_FALLBACK_BODY"
+    client = _SequenceClient(
+        [
+            _RawResponse(f"{marker}-exchange", 403),
+            _RawResponse(f"{marker}-passport", 403),
+            _RawResponse(f"{marker}-takumi", 403),
+        ]
+    )
+    monkeypatch.setattr(
+        miyoushe,
+        "create_community_client",
+        lambda proxy=None: client,
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await miyoushe.derive_miyoushe_tokens("v2_stoken", "mid", "10001")
+
+    message = str(exc.value)
+    assert marker not in message
+    assert "派生 cookie_token 失败" in message
+    assert "非 JSON" in message
 
 
 @pytest.mark.asyncio
@@ -166,7 +289,7 @@ async def test_derive_tokens_falls_back_to_passport_then_takumi(
 
 
 @pytest.mark.asyncio
-async def test_derive_tokens_reports_all_failures(
+async def test_derive_tokens_reports_sanitized_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fail(*args: object, **kwargs: object) -> str:
@@ -176,8 +299,12 @@ async def test_derive_tokens_reports_all_failures(
     monkeypatch.setattr(miyoushe, "_derive_cookie_token_by_passport", fail)
     monkeypatch.setattr(miyoushe, "_derive_cookie_token_by_takumi", fail)
 
-    with pytest.raises(ValueError, match="上游拒绝"):
+    with pytest.raises(ValueError) as exc:
         await miyoushe.derive_miyoushe_tokens("v2_stoken", "mid", "10001")
+
+    message = str(exc.value)
+    assert "换票链路异常" in message
+    assert "上游拒绝" not in message
 
 
 def test_apply_token_updates_only_writes_cookie_fields() -> None:
