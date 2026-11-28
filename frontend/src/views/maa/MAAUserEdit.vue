@@ -5,6 +5,7 @@
         :script-id="scriptId"
         :script-name="scriptName"
         :is-edit="isEdit"
+        :user-name="formData.userName"
         :user-id="userId"
         :cancel-loading="leavingPage"
         @cancel="handleCancel"
@@ -252,6 +253,7 @@
 <script setup lang="ts">
 import { ConfigEditShell } from '@/components/ui'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useMAAAccountFields } from '@maa/user/useMAAAccountFields'
 import MAAUserEditHeader from '@maa/user/MAAUserEditHeader.vue'
 import CultivationPage from '@maa/user/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
@@ -594,48 +596,7 @@ const rules = computed(() => {
   return baseRules
 })
 
-// 同步扁平化验证字段与嵌套数据，避免同一轮更新中的旧值覆盖新草稿。
-watch(
-  () => formData.Info.Name,
-  newVal => {
-    if (formData.userName !== newVal) {
-      formData.userName = newVal || ''
-    }
-  },
-  { immediate: true, flush: 'sync' }
-)
-
-watch(
-  () => formData.Info.Id,
-  newVal => {
-    if (formData.userId !== newVal) {
-      formData.userId = newVal || ''
-    }
-  },
-  { immediate: true, flush: 'sync' }
-)
-
-// 基建配置名称和索引保持独立，不自动同步
-
-watch(
-  () => formData.userName,
-  newVal => {
-    if (formData.Info.Name !== newVal) {
-      formData.Info.Name = newVal || ''
-    }
-  },
-  { flush: 'sync' }
-)
-
-watch(
-  () => formData.userId,
-  newVal => {
-    if (formData.Info.Id !== newVal) {
-      formData.Info.Id = newVal || ''
-    }
-  },
-  { flush: 'sync' }
-)
+useMAAAccountFields(formData)
 
 const fieldSave = useMAAFieldSave({
   formData,
@@ -1410,6 +1371,13 @@ onMounted(async () => {
 <style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
+:deep(.config-edit-shell__header) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ant-color-bg-layout);
+}
+
 .cultivation-page-loading {
   display: grid;
   place-items: center;

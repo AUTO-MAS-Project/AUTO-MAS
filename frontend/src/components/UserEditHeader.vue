@@ -19,6 +19,7 @@
             </span>
           </a-breadcrumb-item>
         </a-breadcrumb>
+        <slot name="account-identity" />
       </div>
     </div>
 
