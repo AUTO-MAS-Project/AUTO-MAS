@@ -19,17 +19,16 @@ yarn playwright install chromium
 
 后续所有 E2E 命令均在 `frontend/` 下执行。除 MuMu 明确报 `WinError 740` 需要管理员 PowerShell 外，其余场景无需提权。
 
-### 在浏览器中验证本地 MaaEnd 适配器
+### 准备 MaaEnd 适配器联调环境
 
 完成上面的准备后，设置 `AUTO_MAS_E2E_PLUGIN_PROJECTS` 指向 MaaEnd 适配器源码目录，例如主仓旁的 `AUTO-MAS-MaaEnd-Adapter`。这一变量也接受包含多个插件项目的父目录。主仓 `plugins/maaend_adapter` 下已经可被宿主发现的项目会自动启用。
 
 ```powershell
 $env:AUTO_MAS_E2E_PLUGIN_PROJECTS = (Resolve-Path '../../AUTO-MAS-MaaEnd-Adapter').Path
 yarn e2e:check
-yarn e2e --grep 'MaaEnd (saves the common account fields|package mode persists)'
 ```
 
-使用发行文件验证时，把 `AUTO_MAS_E2E_MAAEND_WHEEL` 设为本地 `.whl` 文件的绝对路径，清除刚设置的源码变量，再运行同样的两个命令。若主仓的 `plugins/` 已有 MaaEnd 源码，请在没有这份源码的独立工作副本中运行 wheel 验证。准备程序会把提供的 wheel 复制到本轮临时目录并自动启用。未提供 MaaEnd 时，专测 MaaEnd 的浏览器用例会标记缺少运行条件。混合用例仍会检查其他专项。
+使用发行文件验证时，把 `AUTO_MAS_E2E_MAAEND_WHEEL` 设为本地 `.whl` 文件的绝对路径，清除刚设置的源码变量，再运行 `yarn e2e:check`。若主仓的 `plugins/` 已有 MaaEnd 源码，请在没有这份源码的独立工作副本中运行 wheel 验证。准备程序会把提供的 wheel 复制到本轮临时目录并自动启用。启动隔离应用后，可在通用插件编辑器中验证 MaaEnd 托管、账号和计划表。
 
 适配器声明的宿主开发接口版本须与当前主程序匹配。若在发版前联调这次迁移，而主程序仍标为 `v5.10.0-beta.1`，请在包含迁移改动的临时副本里，将更新日志中的当前版本标题改为 `v5.10.0-beta.2`，再从副本根目录运行 `python scripts/changelog.py sync` 和本节的依赖准备命令。
 

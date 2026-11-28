@@ -84,16 +84,6 @@ export const PLAN_TYPE_REGISTRY: Record<string, PlanTypeDescriptor> = {
       () => import('@/views/plan/tables/UniversalPlanTable.vue')
     ),
   },
-  [PLAN_CONFIG_TYPES.MAA_END]: {
-    configType: PLAN_CONFIG_TYPES.MAA_END,
-    createType: PlanCreateIn.type.MAA_END_PLAN,
-    displayNameKey: 'core.plan.type.maaEnd',
-    defaultName: '新 MaaEnd 计划表',
-    selectorTag: 'MaaEnd',
-    reloadAfterSave: false,
-    supportsSimpleView: true,
-    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
-  },
 }
 
 // ==================== 查询方法 ====================
