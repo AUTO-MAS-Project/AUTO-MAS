@@ -156,7 +156,7 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   <section
     ref="form"
     class="plugin-form"
-    :class="{ 'with-nav': cards.length >= 3 }"
+    :class="{ 'with-nav': cards.length >= 3, 'block-mode': blockMode }"
     :aria-label="t('core.plugins.settingsForm')"
   >
     <nav
@@ -217,20 +217,12 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
           :title="section.title"
           :collapsible="section.collapsible"
         >
-          <div
-            v-for="run in section.runs"
-            :key="run.hints[0]?.field"
-            :class="run.tiles ? 'declarative-switch-grid' : 'declarative-field-grid'"
-          >
+          <div class="declarative-field-grid">
             <DeclarativeField
-              v-for="hint in run.hints"
+              v-for="hint in section.group.hints"
               :key="hint.field"
               v-bind="fieldBindings(section.group.name, hint)"
-              :tile="run.tiles"
-              :class="{
-                wide: isWideField(hint),
-                'full-width': section.group.hints.length === 1 && isWideField(hint),
-              }"
+              :class="{ wide: isWideField(hint) }"
               @update:value="emit('update:value', section.group.name, hint.field ?? '', $event)"
             />
           </div>
@@ -286,6 +278,9 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   grid-template-columns: 188px minmax(0, 1fr);
   align-items: start;
   gap: 20px;
+}
+.plugin-form.with-nav,
+.plugin-form.block-mode {
   max-width: none;
 }
 .section-nav {
@@ -313,38 +308,27 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   background: var(--ant-color-fill-quaternary);
 }
 .section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   min-width: 0;
 }
-.section-list > .ant-steps {
-  margin-bottom: 16px;
+.section-list > :deep(.ui-section-card) {
+  margin-bottom: 0;
 }
-.declarative-switch-grid,
 .declarative-field-grid {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 12px;
-  padding-bottom: 12px;
-}
-.declarative-switch-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-.declarative-field-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 16px;
+  row-gap: 14px;
 }
 .declarative-field-grid .wide {
-  grid-column: span 2;
-}
-.declarative-field-grid .full-width {
   grid-column: 1 / -1;
 }
-@media (max-width: 1100px) {
-  .declarative-switch-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 1024px) {
+@container (max-width: 640px) {
   .declarative-field-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 960px) {
@@ -353,15 +337,6 @@ function fieldBindings(group: string, hint: DeclarativeHint) {
   }
   .section-nav {
     display: none;
-  }
-}
-@media (max-width: 640px) {
-  .declarative-switch-grid,
-  .declarative-field-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .declarative-field-grid .wide {
-    grid-column: 1 / -1;
   }
 }
 </style>

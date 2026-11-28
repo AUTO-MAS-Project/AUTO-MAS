@@ -53,6 +53,36 @@ describe('应用路由', () => {
     expect(router.resolve('/plugins/demo/legacy').matched).toHaveLength(0)
   }, 15000)
 
+  it('SRC 旧地址进入插件编辑器并保留参数、查询与锚点', async () => {
+    const { default: router } = await import('./index')
+    vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
+      code: 200,
+      types: ['SRC'],
+    })
+    for (const [oldPath, newPath, name] of [
+      ['/scripts/s/edit/src', '/scripts/s/edit/plugin/SRC', 'GenericScriptEdit'],
+      ['/scripts/s/users/add/src', '/scripts/s/users/add/plugin/SRC', 'GenericUserAdd'],
+      ['/scripts/s/users/u/edit/src', '/scripts/s/users/u/edit/plugin/SRC', 'GenericUserEdit'],
+    ] as const) {
+      const record = router.getRoutes().find(route => route.name === name)!
+      record.meta.skipGuard = true
+      try {
+        await router.push(`${oldPath}?from=bookmark#section`)
+        expect(router.currentRoute.value).toMatchObject({
+          name,
+          fullPath: `${newPath}?from=bookmark#section`,
+          params: {
+            scriptId: 's',
+            scriptType: 'SRC',
+            ...(name === 'GenericUserEdit' && { userId: 'u' }),
+          },
+        })
+      } finally {
+        delete record.meta.skipGuard
+      }
+    }
+  }, 15000)
+
   it('按绑定与启用状态选择静态编辑器或插件面板，保留直达地址参数', async () => {
     const { default: router } = await import('./index')
     const component = {}
@@ -150,18 +180,18 @@ describe('应用路由', () => {
       const add = genericEditorRoutes.find(route => route.name === 'GenericUserAdd')!
       router.addRoute({ ...add, meta: { ...add.meta, skipGuard: true } })
       router.addRoute({
-        path: '/src-add/:scriptId',
-        name: 'SRCUserAdd',
+        path: '/maa-add/:scriptId',
+        name: 'MAAUserAdd',
         component,
-        meta: { skipGuard: true, scriptPage: 'userAdd', scriptType: 'SRC' },
+        meta: { skipGuard: true, scriptPage: 'userAdd', scriptType: 'MAA' },
       })
       router.addRoute({
-        path: '/src-edit/:scriptId/:scriptType/:userId',
+        path: '/maa-edit/:scriptId/:scriptType/:userId',
         name: 'GenericUserEdit',
         component,
         meta: { skipGuard: true, scriptPage: 'userEdit' },
       })
-      const record = pluginRecord('SRC', PanelBinding.surface.USER)
+      const record = pluginRecord('MAA', PanelBinding.surface.USER)
       if (kind === 'blocks') {
         record.frontend.bindings = []
         record.providedScript.blockSurfaces = ['user']
@@ -177,7 +207,7 @@ describe('应用路由', () => {
       })
       vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
         code: 200,
-        types: ['SRC'],
+        types: ['MAA'],
       })
       const view = testView(defineComponent(() => () => h(RouterView)))
       view.app.use(router)
@@ -193,20 +223,20 @@ describe('应用路由', () => {
           if (kind === 'blocks' && state === PluginState.ENABLED)
             record.providedScript.blockSurfaces = ['plan']
           await router.push({
-            name: 'SRCUserAdd',
+            name: 'MAAUserAdd',
             params: { scriptId: 's' },
             query: { v: version },
           })
-          expect(router.currentRoute.value.name).toBe('SRCUserAdd')
+          expect(router.currentRoute.value.name).toBe('MAAUserAdd')
           expect(create).not.toHaveBeenCalled()
         }
         record.frontend.pages.edit.web.panelApi = 1
         if (kind === 'blocks') record.providedScript.blockSurfaces = ['user']
-        await router.push({ name: 'SRCUserAdd', params: { scriptId: 's' }, hash: '#account' })
+        await router.push({ name: 'MAAUserAdd', params: { scriptId: 's' }, hash: '#account' })
         await vi.waitFor(() =>
           expect(router.currentRoute.value).toMatchObject({
             name: 'GenericUserEdit',
-            params: { scriptId: 's', scriptType: 'SRC', userId: 'new-user' },
+            params: { scriptId: 's', scriptType: 'MAA', userId: 'new-user' },
             hash: '#account',
           })
         )

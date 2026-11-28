@@ -13,7 +13,7 @@ import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType>
+type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType | 'SRC'>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -129,6 +129,30 @@ declare module 'vue-router' {
 
 const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
+export const srcEditorRedirects: RouteRecordRaw[] = [
+  {
+    path: PAGE_ROUTES.script.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: genericPanelRoute.script,
+      params: { scriptId: to.params.id, scriptType: 'SRC' },
+    }),
+  },
+  {
+    path: PAGE_ROUTES.userAdd.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: 'GenericUserAdd',
+      params: { scriptId: to.params.scriptId, scriptType: 'SRC' },
+    }),
+  },
+  {
+    path: PAGE_ROUTES.userEdit.path(SCRIPT_METADATA.SRC.routeSuffix),
+    redirect: to => ({
+      name: genericPanelRoute.user,
+      params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType: 'SRC' },
+    }),
+  },
+]
+
 export const genericEditorRoutes: RouteRecordRaw[] = [
   {
     path: PAGE_ROUTES.userAdd.path('plugin/:scriptType'),
@@ -179,10 +203,12 @@ export function useScriptEditorNavigation() {
     const custom = kind === 'setup' ? maafwRouteName(type, 'setup') : routeNameOf(type, kind)
     const generic =
       kind === 'script'
-        ? 'GenericScriptEdit'
+        ? genericPanelRoute.script
         : kind === 'userEdit' || kind === 'user'
-          ? 'GenericUserEdit'
-          : null
+          ? genericPanelRoute.user
+          : kind === 'userAdd' && type === 'SRC'
+            ? 'GenericUserAdd'
+            : null
     if (custom !== generic && router.hasRoute(custom)) {
       void router.push({ name: custom, params, state })
       return true

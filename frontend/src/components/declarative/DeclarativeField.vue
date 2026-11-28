@@ -6,7 +6,6 @@ import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclar
 import DeclarativeControl from './DeclarativeControl.vue'
 import { createDeclarativeI18n, type DeclarativeI18nScope } from './declarativeI18n'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
-import { SwitchTile } from '@/components/ui'
 import { apiErrorMessage } from '@/utils/apiResult'
 
 const props = withDefaults(
@@ -21,7 +20,6 @@ const props = withDefaults(
     disabled?: boolean
     error?: string
     disabledReason?: string
-    tile?: boolean
     tableCell?: boolean
     retry?: () => void
     inlineAction?: {
@@ -82,19 +80,9 @@ const pick = async () => {
     :aria-label="label"
     :title="tableCell ? tip || undefined : undefined"
   >
-    <FieldLabelWithHint v-if="!tableCell && !tile" :text="label" :hint="tip" variant="form" />
+    <FieldLabelWithHint v-if="!tableCell" :text="label" :hint="tip" variant="form" />
     <div class="declarative-field-body" :class="{ 'with-action': inlineAction }">
-      <SwitchTile
-        v-if="tile && !tableCell"
-        :title="label"
-        :description="tip || undefined"
-        :checked="Boolean(value)"
-        :disabled="disabled || hint.editable === false || loading"
-        :loading="loading"
-        @change="update"
-      />
       <DeclarativeControl
-        v-else
         :compact="tableCell"
         :component="hint.component"
         :label="label"
@@ -145,6 +133,14 @@ const pick = async () => {
   gap: 6px;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.declarative-field:has(> .field-label + .declarative-field-body > .declarative-control--switch) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+}
+.declarative-field > :is(.field-error, .field-reason, .ant-btn) {
+  grid-column: 1 / -1;
 }
 .declarative-field > .ant-btn {
   justify-self: start;

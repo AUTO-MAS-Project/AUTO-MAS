@@ -75,12 +75,7 @@ const TEXT_ATTRIBUTES = new Set([
 const DEV_ONLY = /(^|\/)(devtools|OCRdev|TestRouter|UpdateDownloadDev|OverlayMaskDev)(\/|\.|$)/i
 
 // 按规则豁免的硬编码中文：游戏内容名称没有官方外文译名，翻错比不翻更糟
-const HARDCODED_ALLOWLIST = [
-  {
-    file: 'src/views/src/user/StageConfigSection.vue',
-    reason: '遗器/饰品/关卡选项，名称沿用游戏简中原名',
-  },
-]
+const HARDCODED_ALLOWLIST = []
 
 // 独立迁移要求逐键保留 dev 原译文；此旧活动序号文案暂未消费，留待单独清理评估。
 // 保留项单独展示，不将它伪装成已有源码引用，也不放宽其他死词条的检查。

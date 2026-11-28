@@ -8,6 +8,7 @@ import {
   buildScriptEditorRoutes,
   genericEditorRoutes,
   resolveScriptPanelRoute,
+  srcEditorRedirects,
 } from './scriptEditorRoutes'
 import { isBuiltinScriptType } from '@/utils/scriptMetadata'
 import {
@@ -126,6 +127,7 @@ const routes = [
   },
   ...buildScriptEditorRoutes(),
   ...genericEditorRoutes,
+  ...srcEditorRedirects,
   ...maafwRoutes.script,
   ...maafwRoutes.setup,
   ...maafwRoutes.userAdd,
@@ -345,7 +347,7 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
-// 插件页面暂随主程序编译；直达地址也须确认插件当前提供该能力。
+// 编辑入口按页面绑定选择编辑器；插件直达地址也须检查当前能力。
 router.beforeEach(async to => {
   const type = to.meta.scriptType ?? to.params.scriptType
   if (typeof type !== 'string') return

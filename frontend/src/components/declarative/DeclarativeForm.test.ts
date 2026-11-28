@@ -75,7 +75,11 @@ async function render(
           widget: 'segmented',
           options: [{ value: false }],
         },
-        { field: 'single', component: 'switch' },
+        {
+          field: 'single',
+          component: 'switch',
+          description: 'Check for updates before starting each new run.',
+        },
         { field: 'notes', widget: 'textarea' },
         {
           field: 'exe',
@@ -460,24 +464,20 @@ describe('插件声明式表格与字段反馈', () => {
     expect((await render(false, false)).html).not.toContain('<nav')
   })
 
-  it('只聚合连续开关，控件覆盖与孤立开关保留在普通栅格', async () => {
+  it('相邻与独立布尔字段均使用带标签的开关，保留字段顺序和反馈', async () => {
     const { html } = await render(false)
-    expect(
-      [...html.matchAll(/class="declarative-(field|switch)-grid"/g)].map(match => match[1])
-    ).toEqual(['field', 'switch', 'field', 'field'])
-    const grids = html.split(/class="declarative-(?:field|switch)-grid"/)
-    expect(grids[1]).toContain('value="outside"')
-    expect(grids[2]!.match(/role="switch"/g)).toHaveLength(2)
-    expect(grids[2]).toContain('switch-tile--tile')
-    expect(grids[2]).toContain('aria-checked="true"')
-    expect(grids[2]).toMatch(
-      /enabled[\s\S]*invalid switch[\s\S]*locked[\s\S]*core.plugins.readOnly/
+    const switches = html.match(/<button\b[^>]*role="switch"[^>]*>/g) ?? []
+    const control = (label: string) =>
+      switches.find(button => button.includes(`aria-label="${label}"`))
+    expect(control('enabled')).toContain('aria-checked="true"')
+    expect(control('locked')).toMatch(/\sdisabled(?:[\s>])/)
+    expect(control('single')).toContain('aria-checked="false"')
+    expect(html).toContain('aria-label="Check for updates before starting each new run."')
+    expect(html).toMatch(
+      /value="outside"[\s\S]*invalid switch[\s\S]*core.plugins.readOnly[\s\S]*ant-segmented[\s\S]*single[\s\S]*<textarea/
     )
-    expect(grids[3]).toMatch(
-      /ant-segmented[\s\S]*single[\s\S]*setting-toggle-button[\s\S]*textarea/
-    )
-    expect(grids[3]).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
-    expect(grids[3]).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
+    expect(html).toMatch(/exe[\s\S]*core.plugins.pathMustExistHint/)
+    expect(html).toMatch(/missing_dir[\s\S]*role="alert"[^>]*>missing directory</)
   })
 
   it('常规与转置表格按可见列类型定宽，单元格使用紧凑控件', async () => {

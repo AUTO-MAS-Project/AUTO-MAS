@@ -6,7 +6,6 @@ import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
 import { parseConfigTime, serializeConfigTime } from '@/utils/configDateTime'
 import { isBrowserDevelopment } from '@/utils/environment'
 import DeclarativeOrderedSelect from './DeclarativeOrderedSelect.vue'
-import SettingToggleButton from '@/components/SettingToggleButton.vue'
 
 type Option = { value?: string | number | boolean; label?: string }
 
@@ -109,19 +108,12 @@ const updateTime = (value: string | null) => {
     :class="[`declarative-control--${kind}`, { 'declarative-control--compact': compact }]"
   >
     <a-switch
-      v-if="compact && kind === 'switch'"
+      v-if="kind === 'switch'"
       :aria-label="label"
       :checked="Boolean(modelValue)"
       :disabled="disabled"
       :loading="loading"
       @update:checked="update"
-    />
-    <SettingToggleButton
-      v-else-if="kind === 'switch'"
-      :model-value="Boolean(modelValue)"
-      :disabled="disabled"
-      :loading="loading"
-      @change="update"
     />
     <a-button
       v-else-if="kind === 'button'"
@@ -175,7 +167,7 @@ const updateTime = (value: string | null) => {
       @update:value="update"
       @blur="emit('blur')"
     />
-    <div v-else-if="kind === 'path'" class="path-input-group">
+    <a-space-compact v-else-if="kind === 'path'" block :size="size">
       <a-input
         class="path-input"
         :size="size"
@@ -186,7 +178,6 @@ const updateTime = (value: string | null) => {
         @blur="emit('blur')"
       />
       <a-button
-        class="path-button"
         :size="size"
         :disabled="disabled"
         :aria-label="pathKind === 'folder' ? t('core.edit.pickDirectory') : t('core.comp.pickFile')"
@@ -195,11 +186,9 @@ const updateTime = (value: string | null) => {
         <template #icon>
           <FolderOpenOutlined />
         </template>
-        <span class="path-button-label">{{
-          pathKind === 'folder' ? t('core.edit.pickDirectory') : t('core.comp.pickFile')
-        }}</span>
+        {{ pathKind === 'folder' ? t('core.edit.pickDirectory') : t('core.comp.pickFile') }}
       </a-button>
-    </div>
+    </a-space-compact>
     <a-input-number
       v-else-if="kind === 'number'"
       :size="size"
@@ -292,10 +281,6 @@ const updateTime = (value: string | null) => {
 .declarative-control--compact > .ant-input-number {
   width: 92px;
   max-width: 100%;
-}
-
-.path-input-group {
-  display: flex;
 }
 
 .path-input {

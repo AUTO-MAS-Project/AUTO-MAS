@@ -110,7 +110,7 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
       @action="runAction"
     />
   </DefineForm>
-  <a-flex vertical gap="small">
+  <a-flex class="config-block-list" vertical :gap="16">
     <template
       v-for="(block, index) in blocks"
       :key="block.kind === 'plugin' ? block.pageId : index"
@@ -178,7 +178,7 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
       </template>
     </template>
     <a-flex justify="end" align="center" gap="small">
-      <span v-if="draft.dirtyCount.value">{{
+      <span v-if="draft.dirtyCount.value" class="unsaved-count">{{
         t('core.plugins.unsavedCount', { count: draft.dirtyCount.value })
       }}</span>
       <a-button :loading="loading" :disabled="locked || busy || loading" @click="reload">
@@ -195,3 +195,13 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
     </a-flex>
   </a-flex>
 </template>
+
+<style scoped>
+.config-block-list > :deep(:is(.game-binding-card, .webhook-manager)) {
+  margin-block: 0;
+}
+
+.unsaved-count {
+  margin-inline-end: auto;
+}
+</style>
