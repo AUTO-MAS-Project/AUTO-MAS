@@ -69,6 +69,22 @@ INFO_URL = "https://api-takumi.mihoyo.com/event/luna/info"
 PASSPORT_COOKIE_URL = (
     "https://api-takumi.mihoyo.com/auth/api/getCookieAccountInfoBySToken"
 )
+# 旧的 getCookieAccountInfoBySToken（api-takumi 域）已被上游判废，只保留兜底；
+# 现在优先走通行证换票，把 stoken_v2 + mid 换成 cookie_token_v2 / ltoken_v2。
+PASSPORT_EXCHANGE_URL = (
+    "https://passport-api.mihoyo.com/account/ma-cn-session/app/exchange"
+)
+PASSPORT_COOKIE_V2_URL = (
+    "https://passport-api.mihoyo.com/account/auth/api/getCookieAccountInfoBySToken"
+)
+PASSPORT_APP_ID = "bll8iq97cem8"
+SALT_PASSPORT_EXCHANGE = "JwYDpKvLj6MrMqqYU6jTKF17KNO2PXoS"  # 换票接口（passport 盐值）
+SALT_APP_LOGIN = "IZPgfb0dRPtBeLuFkdDznSZ6f4wWt6y2"  # passport 通用 DS
+# 通行证 token 类型：1 stoken / 2 ltoken / 4 cookie_token
+TOKEN_TYPE_STOKEN = 1
+TOKEN_TYPE_LTOKEN = 2
+TOKEN_TYPE_COOKIE_TOKEN = 4
+_PASSPORT_LIFECYCLE_ID = str(uuid.uuid4())
 
 # DS 签名 Salt（对齐 MihoyoBBSTools）
 SALT_WEB = "DlOUwIupfU6YespEUWDJmXtutuXV6owG"  # web 端 salt（游戏社区 GET 请求）
@@ -416,6 +432,7 @@ def _ensure_auth_aliases(cookies: Dict[str, str]) -> None:
         "mid_v2": "mid",
         "ltmid_v2": "mid",
         "account_mid_v2": "mid",
+        "ltoken_v2": "ltoken",
     }
     for source, target in aliases.items():
         if not cookies.get(target) and cookies.get(source):
@@ -463,59 +480,251 @@ def validate_miyoushe_cookie(cookie: str) -> None:
 # ==================== Token 派生 ====================
 
 
+def _passport_exchange_ds(body: str) -> str:
+    """生成换票接口 DS；b 必须是实际发送的 JSON 字节，服务端会原样重算。"""
+
+    timestamp = str(int(time.time()))
+    nonce = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    digest = hashlib.md5(
+        f"salt={SALT_PASSPORT_EXCHANGE}&t={timestamp}&r={nonce}&b={body}&q=".encode()
+    ).hexdigest()
+    return f"{timestamp},{nonce},{digest}"
+
+
+def _passport_ds() -> str:
+    """生成 passport 通用 DS（无 body/query）。"""
+
+    timestamp = str(int(time.time()))
+    nonce = "".join(random.choices(string.ascii_letters, k=6))
+    digest = hashlib.md5(
+        f"salt={SALT_APP_LOGIN}&t={timestamp}&r={nonce}".encode()
+    ).hexdigest()
+    return f"{timestamp},{nonce},{digest}"
+
+
+def _passport_exchange_headers(device_id: str, ds: str) -> Dict[str, str]:
+    """通行证换票请求头，与米游社 App 的换票请求保持一致。"""
+
+    return {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        "DS": ds,
+        "User-Agent": "Mozilla/5.0 (Linux; Android 12; Unspecified Device) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 "
+        "Chrome/103.0.5060.129 Mobile Safari/537.36 miHoYoBBS/2.106.2",
+        "x-rpc-app_id": PASSPORT_APP_ID,
+        "x-rpc-app_version": "2.106.2",
+        "x-rpc-client_type": "2",
+        "x-rpc-game_biz": "bbs_cn",
+        "x-rpc-sdk_version": "2.44.0",
+        "x-rpc-account_version": "2.44.0",
+        "x-rpc-device_id": device_id,
+        "x-rpc-lifecycle_id": _PASSPORT_LIFECYCLE_ID,
+    }
+
+
+def _cookie_token_from_response(rsp: dict[str, object], stage: str) -> tuple[str, str]:
+    """从派生响应里取出 cookie_token 和 uid，字段缺失按失败处理。"""
+
+    if str(rsp.get("retcode")).strip() != "0":
+        raise ValueError(f"{stage}失败: {rsp.get('message')}")
+    data = rsp.get("data")
+    if not isinstance(data, dict):
+        # data 为 null 是上游表示"该凭据不可派生"的常见形态，按派生失败处理，
+        # 而不是让 .get 在 None 上抛 AttributeError 把原因变成程序异常。
+        raise ValueError(f"{stage}失败: 返回数据格式无效")
+    cookie_token = str(data.get("cookie_token") or "").strip()
+    uid = str(data.get("uid") or "").strip()
+    if not cookie_token:
+        raise ValueError(f"{stage}失败: 返回数据无 cookie_token")
+    return cookie_token, uid
+
+
+async def _exchange_passport_token(
+    stoken: str,
+    mid: str,
+    token_type: int,
+    device_id: str,
+    proxy: str | None = None,
+) -> str:
+    """用 stoken_v2 + mid 在通行证换票接口换一个指定类型的 token。"""
+
+    body = json.dumps(
+        {
+            "dst_token_type": token_type,
+            "src_token": {"token": stoken, "token_type": TOKEN_TYPE_STOKEN},
+            "mid": mid,
+        },
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    headers = _passport_exchange_headers(device_id, _passport_exchange_ds(body))
+
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with create_community_client(proxy=resolved_proxy) as client:
+        response = await client.post(
+            PASSPORT_EXCHANGE_URL,
+            headers=headers,
+            content=body.encode("utf-8"),
+            timeout=30.0,
+        )
+        rsp = _safe_json_parse(response)
+
+    if str(rsp.get("retcode")).strip() != "0":
+        raise ValueError(f"通行证换票失败: {rsp.get('message')}")
+    data = rsp.get("data")
+    token = data.get("token") if isinstance(data, dict) else None
+    value = str(token.get("token") or "").strip() if isinstance(token, dict) else ""
+    if not value:
+        raise ValueError("通行证换票失败: 返回数据无 token")
+    return value
+
+
+async def _derive_cookie_token_by_passport(
+    stoken: str, mid: str, stuid: str, device_id: str, proxy: str | None
+) -> tuple[str, str]:
+    """passport 域的派生接口（api-takumi 判废后的同构域名）。"""
+
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "DS": _passport_ds(),
+        "x-rpc-app_id": PASSPORT_APP_ID,
+        "x-rpc-client_type": "1",
+        "x-rpc-device_id": device_id,
+        "x-rpc-game_biz": "bbs_cn",
+        "x-rpc-app_version": "2.63.1",
+        "User-Agent": "Hyperion/275 CFNetwork/1402.0.8 Darwin/22.2.0",
+    }
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with create_community_client(proxy=resolved_proxy) as client:
+        response = await client.get(
+            PASSPORT_COOKIE_V2_URL,
+            headers=headers,
+            cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
+            timeout=30.0,
+        )
+        rsp = _safe_json_parse(response)
+    return _cookie_token_from_response(rsp, "派生 cookie_token")
+
+
+async def _derive_cookie_token_by_takumi(
+    stoken: str, mid: str, stuid: str, device_id: str, proxy: str | None
+) -> tuple[str, str]:
+    """旧的 api-takumi 派生接口，仅作最后兜底。"""
+
+    headers = BASE_HEADERS.copy()
+    headers["x-rpc-device_id"] = device_id
+    resolved_proxy = proxy if proxy is not None else Config.proxy
+    async with create_community_client(proxy=resolved_proxy) as client:
+        response = await client.get(
+            PASSPORT_COOKIE_URL,
+            headers=headers,
+            cookies={"stoken": stoken, "mid": mid, "stuid": stuid},
+            timeout=30.0,
+        )
+        rsp = _safe_json_parse(response)
+    return _cookie_token_from_response(rsp, "派生 cookie_token")
+
+
+async def derive_miyoushe_tokens(
+    stoken: str,
+    mid: str,
+    stuid: str,
+    proxy: str | None = None,
+) -> dict[str, str]:
+    """用 stoken_v2 + mid 换取签到可用的凭据。
+
+    优先走通行证 V2 换票：dst_token_type=4 换 cookie_token_v2，顺带用 2 换
+    ltoken_v2。换票失败时依次回退到 passport 域和旧 takumi 域的派生接口。
+    返回的字典只含非空字段：cookie_token / cookie_token_v2 / ltoken /
+    ltoken_v2 / uid，调用方按需写回 Cookie。
+    """
+
+    device_id = _generate_device_id(stoken + mid)
+    tokens: dict[str, str] = {}
+    failures: list[str] = []
+
+    # 1) 通行证换票：旧派生通道被判废后的正路。
+    try:
+        cookie_value = await _exchange_passport_token(
+            stoken, mid, TOKEN_TYPE_COOKIE_TOKEN, device_id, proxy
+        )
+        tokens["cookie_token"] = cookie_value
+        if cookie_value.startswith("v2_"):
+            tokens["cookie_token_v2"] = cookie_value
+    except Exception as e:
+        failures.append(str(e))
+
+    if tokens.get("cookie_token"):
+        # ltoken 一起换；失败不影响签到，只用于 -100 时的兜底替换。
+        try:
+            ltoken_value = await _exchange_passport_token(
+                stoken, mid, TOKEN_TYPE_LTOKEN, device_id, proxy
+            )
+            tokens["ltoken"] = ltoken_value
+            if ltoken_value.startswith("v2_"):
+                tokens["ltoken_v2"] = ltoken_value
+        except Exception as e:
+            logger.debug(f"通行证换票 ltoken 失败，签到继续: {e}")
+
+    # 2) passport 域派生
+    if not tokens.get("cookie_token"):
+        try:
+            cookie_value, uid = await _derive_cookie_token_by_passport(
+                stoken, mid, stuid, device_id, proxy
+            )
+            tokens["cookie_token"] = cookie_value
+            if cookie_value.startswith("v2_"):
+                tokens["cookie_token_v2"] = cookie_value
+            if uid:
+                tokens["uid"] = uid
+        except Exception as e:
+            failures.append(str(e))
+
+    # 3) 旧 takumi 域派生（兜底）
+    if not tokens.get("cookie_token"):
+        try:
+            cookie_value, uid = await _derive_cookie_token_by_takumi(
+                stoken, mid, stuid, device_id, proxy
+            )
+            tokens["cookie_token"] = cookie_value
+            if cookie_value.startswith("v2_"):
+                tokens["cookie_token_v2"] = cookie_value
+            if uid:
+                tokens["uid"] = uid
+        except Exception as e:
+            failures.append(str(e))
+
+    if not tokens.get("cookie_token"):
+        detail = "；".join(failures) if failures else "上游未返回 cookie_token"
+        raise ValueError(f"派生 cookie_token 失败: {detail}")
+
+    logger.debug("成功用 stoken 换取签到凭据")
+    return tokens
+
+
 async def derive_miyoushe_cookie_token(
     stoken: str,
     mid: str,
     stuid: str,
     proxy: str | None = None,
 ) -> tuple[str, str]:
-    """从 stoken_v2 + mid 派生 cookie_token
+    """兼容旧调用方：只返回 (cookie_token, uid)。
 
-    调用 Passport API getCookieAccountInfoBySToken 获取 cookie_token。
-
-    Args:
-        stoken: stoken 值（v2 格式，v2_ 前缀）
-        mid: v2 stoken 的配套 mid 字段
-        stuid: 米游社 UID
-        proxy: 代理地址
-
-    Returns:
-        (cookie_token, uid) 元组
-
-    Raises:
-        Exception: 派生失败时抛出
+    实际换票逻辑见 derive_miyoushe_tokens，本函数仅做字段裁剪。
     """
-    headers = BASE_HEADERS.copy()
-    headers["x-rpc-device_id"] = _generate_device_id(stoken + mid)
 
-    # stoken_v2 需要搭配 mid 和 stuid
-    stoken_cookies = {
-        "stoken": stoken,
-        "mid": mid,
-        "stuid": stuid,
-    }
+    tokens = await derive_miyoushe_tokens(stoken, mid, stuid, proxy=proxy)
+    return tokens["cookie_token"], tokens.get("uid", "")
 
-    resolved_proxy = proxy if proxy is not None else Config.proxy
-    async with create_community_client(proxy=resolved_proxy) as client:
-        response = await client.get(
-            PASSPORT_COOKIE_URL,
-            headers=headers,
-            cookies=stoken_cookies,
-            timeout=30.0,
-        )
-        rsp = _safe_json_parse(response)
 
-    if rsp.get("retcode") != 0:
-        raise ValueError(f"派生 cookie_token 失败: {rsp.get('message')}")
+def _apply_token_updates(cookies: Dict[str, str], tokens: dict[str, str]) -> None:
+    """把换票得到的字段写回 Cookie，只认已知字段，避免把 uid 混进 Cookie。"""
 
-    data = rsp.get("data", {})
-    cookie_token = data.get("cookie_token", "")
-    uid = data.get("uid", "")
-    if not cookie_token:
-        raise ValueError("派生 cookie_token 失败: 返回数据无 cookie_token")
-
-    logger.debug(f"成功从 stoken 派生 cookie_token, uid={uid}")
-    return cookie_token, uid
+    for key in ("cookie_token", "cookie_token_v2", "ltoken", "ltoken_v2"):
+        value = tokens.get(key)
+        if value:
+            cookies[key] = value
 
 
 # ==================== 签到主流程 ====================
@@ -586,22 +795,22 @@ async def miyoushe_sign_in(
             effective_cookies["cookie_token"] = cookies["cookie_token_v2"]
         logger.debug("使用 cookie_token/cookie_token_v2 + UID 认证")
     elif cookies.get("stoken") and cookies.get("mid"):
-        # 策略 3: stoken_v2 + mid，派生 cookie_token
-        logger.info("缺少 cookie_token，尝试从 stoken 派生")
+        # 策略 3: stoken_v2 + mid，换票拿 cookie_token_v2
+        logger.info("缺少 cookie_token，尝试用 stoken 换票")
         try:
-            derived_token, derived_uid = await derive_miyoushe_cookie_token(
+            tokens = await derive_miyoushe_tokens(
                 cookies["stoken"],
                 cookies["mid"],
                 stuid,
                 proxy,
             )
-            effective_cookies["cookie_token"] = derived_token
-            if derived_uid:
-                _ensure_uid_aliases(effective_cookies, derived_uid)
+            _apply_token_updates(effective_cookies, tokens)
+            if tokens.get("uid"):
+                _ensure_uid_aliases(effective_cookies, tokens["uid"])
             updated_cookie = _build_cookie_str(effective_cookies)
         except Exception as e:
             reason = _log_miyoushe_exception(
-                "从 stoken 派生 cookie_token 失败",
+                "从 stoken 换取 cookie_token 失败",
                 e,
             )
             return [
@@ -1087,32 +1296,36 @@ async def _do_sign(
         # ---- -100: cookie_token 过期，尝试多种方式恢复 ----
         if retcode == -100:
             parsed = _parse_cookie(cookie)
-            has_stoken = "stoken" in parsed
-            has_v2 = "cookie_token_v2" in parsed
+            # 新版凭据只有 stoken_v2 / mid_v2，先补齐兼容别名再判断，
+            # 否则 -100 分支会误判成"没有 stoken"，直接整条失败。
+            _ensure_auth_aliases(parsed)
+            has_stoken = bool(parsed.get("stoken"))
+            has_mid = bool(parsed.get("mid"))
+            has_v2 = bool(parsed.get("cookie_token_v2"))
 
             refreshed = False
 
-            # 方式 1: 用 stoken 派生新 cookie_token
-            if has_stoken and "mid" in parsed and attempt < CAPTCHA_MAX_RETRIES:
+            # 方式 1: 用 stoken 换票刷新 cookie_token（含 cookie_token_v2）
+            if has_stoken and has_mid and attempt < CAPTCHA_MAX_RETRIES:
                 stuid = _get_stuid(parsed)
                 logger.warning(
                     f"{account} {game_cfg['name']} cookie_token 过期，"
-                    f"尝试用 stoken 刷新"
+                    f"尝试用 stoken 换票刷新"
                 )
                 try:
-                    new_token, new_uid = await derive_miyoushe_cookie_token(
+                    tokens = await derive_miyoushe_tokens(
                         parsed["stoken"],
                         parsed["mid"],
                         stuid,
                         proxy=proxy,
                     )
-                    parsed["cookie_token"] = new_token
-                    if new_uid:
-                        _ensure_uid_aliases(parsed, new_uid)
+                    _apply_token_updates(parsed, tokens)
+                    if tokens.get("uid"):
+                        _ensure_uid_aliases(parsed, tokens["uid"])
                     cookie = _build_cookie_str(parsed)
                     refreshed = True
                 except Exception as e:
-                    _log_miyoushe_exception("stoken 刷新失败", e)
+                    _log_miyoushe_exception("stoken 换票失败", e)
 
             # 方式 2: 用 cookie_token_v2 替换 cookie_token
             if not refreshed and has_v2 and attempt < CAPTCHA_MAX_RETRIES:
