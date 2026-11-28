@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import re
+from collections.abc import Collection, Iterator
 from typing import TYPE_CHECKING, Any
+
+from pydantic.alias_generators import to_snake
 
 if TYPE_CHECKING:
     from app.utils import *  # noqa: F403 - 与宿主公开工具保持同一份静态类型声明。
@@ -37,23 +39,22 @@ def get_setting(group: str, name: str, default: Any = None) -> Any:
     """读 ``Config.setting.<group>.<name>``；键名支持 PascalCase 或 snake_case。"""
     from auto_mas_core import Config
 
-    def snake(s: str) -> str:
-        """将设置名称从 PascalCase 或 camelCase 转为 snake_case，以兼容宿主配置命名。"""
-        s = s.strip()
-        if not s:
-            return s
-        s = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", s)
-        return re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", s).lower()
+    def matching_names(fields: Collection[str], key: str) -> Iterator[str]:
+        """原名优先，随后按规范化名称匹配。"""
+        if key in fields:
+            yield key
+        normalized = to_snake(key.strip())
+        yield from (
+            field for field in fields if field != key and to_snake(field) == normalized
+        )
 
-    try:
-        grp = getattr(Config.setting, group, None)
-        if grp is None:
-            grp = getattr(Config.setting, snake(group), None)
-        if grp is None:
-            return default
-        return getattr(grp, name, getattr(grp, snake(name), default))
-    except Exception:
-        return default
+    setting = Config.setting
+    for group_name in matching_names(type(setting)._cfg_group_fields, group):
+        section = getattr(setting, group_name)
+        field_name = next(matching_names(type(section).model_fields, name), None)
+        if field_name is not None:
+            return getattr(section, field_name)
+    return default
 
 
 if not TYPE_CHECKING:

@@ -26,7 +26,7 @@ from datetime import datetime, timedelta
 from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 
 from app.config import (
     ConfigCollection,
@@ -48,10 +48,11 @@ from app.config.types import (
     JsonDictString,
     UrlString,
 )
+from app.config.wire import reject_bool_as_int
 from app.utils.contracts.power import PowerSignal
 
 from .base import DomainEntry
-from .shared import local_timezone
+from .shared import local_timezone, parse_legacy_bool
 
 Weekday = Literal[
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
@@ -195,7 +196,9 @@ class QueueConfig(DomainEntry):
             default=PowerSignal.NO_ACTION, description="完成后操作"
         )
 
-        AfterAccomplishDelay: Annotated[int, Field(ge=1, le=1440)] = Field(
+        AfterAccomplishDelay: Annotated[
+            int, Field(ge=1, le=1440), BeforeValidator(reject_bool_as_int)
+        ] = Field(
             default=1,
             description="完成后操作倒计时，单位分钟，最少 1 分钟，不叠加其他等待",
         )
@@ -291,14 +294,18 @@ class QueueConfig(DomainEntry):
     def normalize_payload(cls, data):
         data = deepcopy(data)
         info_data = data.get("Info")
-        if isinstance(info_data, dict) and info_data.get("CycleEnabled") is True:
+        if not isinstance(info_data, dict):
+            return data
+        if parse_legacy_bool(info_data.get("CycleEnabled", False)):
             items = data.get("QueueItem")
             if isinstance(items, dict) and isinstance(items.get("data"), dict):
                 # 旧循环项的 Enabled 已移除；按确认迁移为删除禁用项，不能变成默认全跑。
                 disabled = {
                     uid
                     for uid, item in items["data"].items()
-                    if (item.get("Schedule") or {}).get("Enabled") is False
+                    if not parse_legacy_bool(
+                        (item.get("Schedule") or {}).get("Enabled", True)
+                    )
                 }
                 items["data"] = {
                     uid: item
@@ -310,13 +317,13 @@ class QueueConfig(DomainEntry):
                     for item in items.get("order", [])
                     if item["uid"] not in disabled
                 ]
-        if isinstance(info_data, dict) and info_data.get("AfterAccomplishDelay") == 0:
+        delay = info_data.get("AfterAccomplishDelay")
+        if delay == 0 and not isinstance(delay, bool):
             # 旧值 0 原本进入固定一分钟倒计时；迁为 1 保留该实际等待时间。
             info_data["AfterAccomplishDelay"] = 1
-        if isinstance(info_data, dict) and "StartUpMode" not in info_data:
-            StartUpEnabled = info_data.get("StartUpEnabled")
-            if isinstance(StartUpEnabled, bool):
-                info_data["StartUpMode"] = "Always" if StartUpEnabled else "Never"
+        if "StartUpMode" not in info_data and "StartUpEnabled" in info_data:
+            enabled = parse_legacy_bool(info_data["StartUpEnabled"])
+            info_data["StartUpMode"] = "Always" if enabled else "Never"
         return data
 
 

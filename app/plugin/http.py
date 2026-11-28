@@ -203,7 +203,9 @@ class HttpRegistry:
 
 def plugin_route(path: str, *, methods: list[str] | tuple[str, ...] | None = None):
     """声明相对插件前缀的路由；可叠多个 method。"""
-    method_tuple = tuple(m.upper() for m in (methods or ("GET",)))
+    method_tuple = ("GET",) if methods is None else tuple(m.upper() for m in methods)
+    if not method_tuple:
+        raise ValueError("插件 HTTP 路由至少需要一个请求方法")
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         """把请求路径和方法附加到处理函数的路由声明列表，供插件加载时收集。"""

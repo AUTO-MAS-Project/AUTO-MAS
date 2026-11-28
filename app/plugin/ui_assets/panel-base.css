@@ -1,0 +1,163 @@
+:root {
+  color-scheme: light;
+  color: var(--mas-text-primary, CanvasText);
+  font: var(--mas-font-size, 14px) / 1.55 var(--mas-font-family, system-ui, sans-serif);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body,
+fieldset,
+h2 {
+  margin: 0;
+}
+
+fieldset {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.card {
+  padding: 16px;
+  border: 1px solid var(--mas-border, GrayText);
+  border-radius: var(--mas-radius, 6px);
+  background: var(--mas-bg-base, Canvas);
+}
+
+h2 {
+  margin-block-end: 12px;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.grid > * {
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+
+@media (max-width: 580px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+label {
+  display: block;
+  margin-block-end: 4px;
+  font-weight: 600;
+}
+
+.switch-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.switch-tile input {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 22px;
+  margin: 0;
+  border: 1px solid var(--mas-border, GrayText);
+  border-radius: 22px;
+  background: var(--mas-text-secondary, GrayText);
+  cursor: inherit;
+  transition: background-color 150ms;
+}
+
+.switch-tile input:checked {
+  border-color: var(--mas-primary, Highlight);
+  background: var(--mas-primary, Highlight);
+}
+
+.switch-tile input::before {
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  width: 16px;
+  border-radius: 50%;
+  background: var(--mas-text-on-primary, white);
+  content: '';
+  transition: transform 150ms;
+}
+
+.switch-tile input:checked::before {
+  transform: translateX(22px);
+}
+
+fieldset:disabled .switch-tile {
+  cursor: default;
+  opacity: 0.55;
+}
+
+input:not([type='checkbox']),
+select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--mas-border, GrayText);
+  border-radius: var(--mas-radius, 6px);
+  background: var(--mas-bg-elevated, Canvas);
+  color: inherit;
+  font: inherit;
+}
+
+input:not([type='checkbox']):disabled,
+select:disabled {
+  background: var(--mas-disabled-bg, Canvas);
+  border-color: var(--mas-border, GrayText);
+  color: var(--mas-text-secondary, GrayText);
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--mas-primary, Highlight);
+  outline-offset: 2px;
+}
+
+.hint,
+#status {
+  color: var(--mas-text-secondary, GrayText);
+  overflow-wrap: anywhere;
+}
+
+.field-error,
+#status[data-error] {
+  color: var(--mas-danger, #b3261e);
+}
+
+.hint,
+.field-error {
+  display: block;
+  margin-block-start: 4px;
+}
+
+.hint:empty,
+.field-error:empty,
+#status:empty {
+  display: none;
+}
+
+[aria-invalid='true'] {
+  border-color: var(--mas-danger, #b3261e);
+}
+
+#status {
+  margin: 0 0 8px;
+}

@@ -44,6 +44,19 @@ _CSP_TYPES = {
 _BASE_URL = re.compile(
     r"https?://(?:[a-zA-Z0-9._-]+|\[[0-9a-fA-F:.]+\])(?::[0-9]+)?(?:/[a-zA-Z0-9._~/%-]*)?"
 )
+_HOST_ASSET_PREFIX = "_host/"
+_HOST_ASSETS_DIR = Path(__file__).resolve().parent / "ui_assets"
+_HOST_ASSET_FILES = ("panel-sdk.js", "panel-base.css")
+
+
+def _load_host_assets() -> dict[str, tuple[str, bytes]]:
+    return {
+        f"{_HOST_ASSET_PREFIX}{name}": (
+            _MIME_TYPES[Path(name).suffix.lower()],
+            (_HOST_ASSETS_DIR / name).read_bytes(),
+        )
+        for name in _HOST_ASSET_FILES
+    }
 
 
 def _relative_path(path: str) -> bool:
@@ -132,6 +145,7 @@ class MountedFrontend:
                 if (
                     not mime
                     or path.casefold() == "manifest.json"
+                    or path.casefold().startswith(_HOST_ASSET_PREFIX)
                     or not _relative_path(path)
                 ):
                     continue
@@ -144,6 +158,7 @@ class MountedFrontend:
                         self._assets[path] = (mime, file.read_bytes())
                 except OSError as error:
                     unavailable(error)
+        self._assets.update(_load_host_assets())
 
     def _read_pages(self, pages: object) -> None:
         if not isinstance(pages, dict):

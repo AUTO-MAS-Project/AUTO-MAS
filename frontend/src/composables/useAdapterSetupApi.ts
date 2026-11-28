@@ -1,5 +1,5 @@
 import { translate as t } from '@/i18n'
-import { Service, BaahService, BetterGiService, OknteService } from '@/api'
+import { Service, BaahService, OknteService } from '@/api'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 
 /** 专项独有的导入、保存和实例入口；读接口继承原客户端，不增加观测。 */
@@ -103,21 +103,6 @@ export class AdapterSetupService extends Service {
       'adapter_setup_finished',
       { script_type: 'MAA', operation_kind: 'preview', engine_kind: 'unknown' },
       () => Service.parseMaaCultivateImportApiScriptsMaaCultivateImportPost(...args),
-      apiOutcome
-    )
-}
-
-export class BetterGISetupService extends BetterGiService {
-  static override saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost = (
-    ...args: Parameters<
-      typeof BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost
-    >
-  ) =>
-    observeFeature(
-      'adapter_setup_finished',
-      { script_type: 'BetterGI', operation_kind: 'save', engine_kind: 'unknown' },
-      () =>
-        BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(...args),
       apiOutcome
     )
 }

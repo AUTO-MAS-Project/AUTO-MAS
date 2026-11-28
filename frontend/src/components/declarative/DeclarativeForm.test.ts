@@ -404,7 +404,7 @@ describe('插件声明式表格与字段反馈', () => {
       })),
     ]
     const draft = reactive({
-      Region: '',
+      Region: null as string | null,
       Limit: 0,
       Trial: false,
       Profile: 7 as number | boolean,
@@ -447,12 +447,12 @@ describe('插件声明式表格与字段反馈', () => {
     try {
       await nextTick()
       expect(urls).toEqual([])
-      await region('A')
-      await vi.waitFor(() => expect(pending.has('A')).toBe(true))
+      await region('')
+      await vi.waitFor(() => expect(pending.has('')).toBe(true))
       await region('B')
       await vi.waitFor(() => expect(pending.has('B')).toBe(true))
       expect(urls.map(url => [url.pathname, Object.fromEntries(url.searchParams)])).toEqual(
-        ['A', 'B'].map(region => [
+        ['', 'B'].map(region => [
           '/api/plugin/demo15/options/profiles',
           { region, limit: '0', trial: 'false', locale: 'en' },
         ])
@@ -467,7 +467,7 @@ describe('插件声明式表格与字段反馈', () => {
       expect(submit().props.disabled).toBe(true)
       expect(draft.Profile).toBe(7)
       await fire(view.find('select')!, 'onUpdate:value', true)
-      complete('A', [7])
+      complete('', [7])
       await vi.waitFor(() => expect(client.isFetching()).toBe(0))
       expect(view.find('select')!.props.options).toMatchObject([
         { value: true },
