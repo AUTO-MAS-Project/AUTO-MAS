@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, maaEndUnavailable, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 const adapters = [
@@ -21,6 +21,7 @@ const adapters = [
 test.describe('@account-editors', () => {
   for (const [type, segment] of adapters) {
     test(`${type} saves the common account fields and heading`, async ({ app, page }) => {
+      test.skip(type === 'MaaEnd' && maaEndUnavailable, '需要 MaaEnd 适配器源码或 wheel')
       const post = async (path: string, data: unknown) => {
         const response = await page.request.post(`${backend}${path}`, { data })
         const body = await response.json()

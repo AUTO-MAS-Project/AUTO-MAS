@@ -1,7 +1,7 @@
 import type { APIRequestContext } from '@playwright/test'
 import type { WSTaskCompletedData } from '../src/services/websocket/types'
 import { projectTaskTree } from '../src/composables/taskTreeProjection'
-import { expect, test } from './fixtures'
+import { expect, maaEndUnavailable, test } from './fixtures'
 
 const backend = `http://127.0.0.1:${process.env.AUTO_MAS_E2E_BACKEND_PORT ?? 36174}`
 const post = async (request: APIRequestContext, path: string, data: unknown) => {
@@ -140,10 +140,8 @@ for (const script of [
   { type: 'MAA', route: 'maa', heading: 'Update takeover' },
   { type: 'MaaEnd', route: 'maaend', heading: 'MaaEnd program updates' },
 ]) {
-  test(`@maa-update ${script.type} package mode persists with a risk notice and no CDK`, async ({
-    app,
-    page,
-  }) => {
+  test(`@maa-update ${script.type} package mode persists without a CDK`, async ({ app, page }) => {
+    test.skip(script.type === 'MaaEnd' && maaEndUnavailable, '需要 MaaEnd 适配器源码或 wheel')
     const created = await post(page.request, '/api/scripts/add', { type: script.type })
     await app.goto(`/scripts/${created.scriptId}/edit/${script.route}`)
     const panel = page.locator('.form-section').filter({
@@ -164,11 +162,10 @@ for (const script of [
       .getByText('Incremental update', { exact: true })
       .click()
     expect((await (await saved).json()).code).toBe(200)
-    await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
     await page.reload()
     await expect(panel.getByText('Incremental update', { exact: true })).toBeVisible()
-    await expect(panel.getByText('Incremental updates carry risks', { exact: false })).toBeVisible()
+    await expect(panel.getByPlaceholder('Empty falls back to global key')).toHaveValue('')
     await panel.scrollIntoViewIfNeeded()
-    await app.evidence('incremental-update-risk-and-persistence')
+    await app.evidence('incremental-update-persistence')
   })
 }

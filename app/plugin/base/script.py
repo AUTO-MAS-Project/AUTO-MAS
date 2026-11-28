@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, cast, get_args
 
 from app.models.config.plan import PlanEntry
 from app.models.config.plugin_script import ScriptEntry, UserEntry
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 
 DesktopSessionCheckReason = Literal["admin_required", "unsupported_config"]
+type DesktopSessionProbe = Callable[[], DesktopSessionCheckReason | None]
 DesktopSessionReason = Literal[DesktopSessionCheckReason, "plugin_unavailable"]
 FirstAccountMode = Literal["direct", "wizard"]
 
@@ -66,31 +67,50 @@ class ScriptTypeDecl:
     # 维护入口复用调度任务的锁、进程归属和停止确认。
     maintenance_expander: type[UserExpander] | None = None
     restore_pools: tuple[ConfigRestorePool, ...] = ()
-    # 同步读取当前托管配置与宿主提权状态；None 表示可用。
+    # 同步读取托管配置与提权状态，也可返回只读取资源的函数，由详情和预览在工作线程运行。
     desktop_session_check: (
-        Callable[[ScriptEntry, bool], DesktopSessionCheckReason | None] | None
+        Callable[
+            [ScriptEntry, bool], DesktopSessionCheckReason | DesktopSessionProbe | None
+        ]
+        | None
     ) = None
     first_account_mode: FirstAccountMode = "direct"
+    # 非空时，维护操作使用受托管锁保护的 default 节点，不要求存在账号。
+    maintenance_default_user_name: str | None = None
 
     def desktop_session_reason(
-        self, config: ScriptEntry, elevated: bool
-    ) -> DesktopSessionReason | None:
-        """核验自动代理模式，并在调用门返回前拦截无效结果。"""
+        self, config: ScriptEntry, elevated: bool, *, defer_io: bool = False
+    ) -> DesktopSessionCheckReason | DesktopSessionProbe | None:
+        """校验能力和返回值，详情和预览可将资源读取推迟到工作线程。"""
         if TaskMode.AUTO_PROXY not in self.supported_modes:
             return "unsupported_config"
         if self.desktop_session_check is not None:
             result = self.desktop_session_check(config, elevated)
-            if result is None or result in get_args(DesktopSessionCheckReason):
-                return result
-        elif self.desktop_session is not None:
-            result = self.desktop_session(config)
-            if isinstance(result, bool):
-                return None if result else "unsupported_config"
-        else:
-            return "unsupported_config"
-        if isinstance(result, Coroutine):
-            result.close()
-        raise ValueError("桌面分身能力检查须同步返回有效值")
+            if callable(result):
+
+                def read_reason() -> DesktopSessionCheckReason | None:
+                    return _validate_desktop_session_reason(result())
+
+                return read_reason if defer_io else read_reason()
+            return _validate_desktop_session_reason(result)
+        if self.desktop_session is not None:
+            supported = self.desktop_session(config)
+            if isinstance(supported, bool):
+                return None if supported else "unsupported_config"
+            if isinstance(supported, Coroutine):
+                supported.close()
+            raise ValueError("桌面分身能力检查须同步返回有效值")
+        return "unsupported_config"
+
+
+def _validate_desktop_session_reason(
+    result: object,
+) -> DesktopSessionCheckReason | None:
+    if result is None or result in get_args(DesktopSessionCheckReason):
+        return cast(DesktopSessionCheckReason | None, result)
+    if isinstance(result, Coroutine):
+        result.close()
+    raise ValueError("桌面分身能力检查须同步返回有效值")
 
 
 class ScriptAdapterPlugin(_AdapterPlugin):

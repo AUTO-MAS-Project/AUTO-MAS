@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 from app.models.config.script import DesktopSessionRunFields
 from app.plugin.base.script import (
     DesktopSessionCheckReason,
+    DesktopSessionProbe,
     FirstAccountMode,
     ScriptAdapterPlugin,
     ScriptTypeDecl,
@@ -72,6 +73,7 @@ __all__ = [
     "in_desktop_session",
     "request_desktop_action",
     "DesktopSessionCheckReason",
+    "DesktopSessionProbe",
     "DesktopSessionRunFields",
     "FirstAccountMode",
     "MODE_WORKERS",

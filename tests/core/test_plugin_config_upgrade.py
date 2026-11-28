@@ -16,6 +16,7 @@ from app.core.config.plugin_upgrade import (
     migrate_maa_update_channel,
     prepare_plugin_documents,
     required_adapter_plugins,
+    required_host_libraries,
 )
 from app.utils import io as config_io
 
@@ -42,6 +43,8 @@ def test_upgrade_detects_only_collection_types(
     path = tmp_path / filename
     config_io.write_file(path, {"order": [{"uid": str(uuid4()), "type": config_type}]})
     assert required_adapter_plugins(tmp_path) == {name: package}
+    if config_type == "MaaEndConfig":
+        assert required_host_libraries(tmp_path) == []
     config_io.write_file(path, {"order": [], "notes": config_type})
     assert required_adapter_plugins(tmp_path) == {}
 
@@ -150,7 +153,6 @@ def test_startup_installs_before_loading_and_commits_upgrade(
     code = r"""
 import asyncio
 import base64
-import json
 import shutil
 import sqlite3
 import sys
@@ -166,7 +168,7 @@ legacy = sys.argv[3] == "True"
 current = sys.argv[4] == "True"
 sys.path.insert(0, str(source / "plugins/auto_mas_core/src"))
 
-from app.config import config_manager
+from app.config import NodeState, config_manager
 from app.core import Config, Plugin
 from app.plugin import uv
 from app.plugin.runtime import discover
@@ -278,51 +280,38 @@ async def run():
         patch.object(config_manager, "flush", flush),
     ):
         try:
-            if failure == "install" or (
-                current and failure in {"disabled", "uninstalled"}
-            ):
-                # 已是插件化格式的数据：专项插件装不上不挡启动，托管与计划原样保留；
-                # 老格式按同一口径隔离，版本停在升级前，下次启动重装插件后再继续转换。
+            if current and failure in {"install", "disabled", "uninstalled"}:
+                # 已是插件化格式的数据，原有专项装不上仍按原策略隔离。
                 await Config.check_data(prepare_plugins=prepare)
                 assert Config.ScriptConfig.is_unresolved(sid)
                 assert Config.PlanConfig.is_unresolved(pid)
                 if failure != "install":
-                    # 用户自己停用或卸载过的插件不再重装，托管只旁挂。
                     assert not installs
                     record = Config.plugin_registry.by_name("maa_adapter")
                     if failure == "uninstalled":
                         assert record is None
                     else:
                         assert record is not None and not record.info.enabled
-                    assert not Config.managed_configs_loaded()
-                    assert io.read_dict_file(script_file) == original_document
-                    with sqlite3.connect(Config.database_path) as db:
-                        assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
-                    return
-                # 装不上：两条格式都只隔离它的托管，并留下失败记录供启动提示。
                 assert not Config.managed_configs_loaded()
-                assert Config._adapter_plugin_failures == {"maa_adapter": "installation unavailable"}
+                assert io.read_dict_file(script_file) == original_document
                 with sqlite3.connect(Config.database_path) as db:
-                    assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.2" if current else "v2.1")
-                if current:
-                    assert io.read_dict_file(script_file) == original_document
-                else:
-                    # 老格式只转换类型标签：托管、账号与计划的内容原样保留、只读旁挂。
-                    saved = io.read_dict_file(script_file)
-                    assert saved["data"][sid]["Info"]["Name"] == "原托管"
-                    assert saved["data"][sid]["users"]["data"][uid]["Info"]["Name"] == "原账号"
-                    plans = io.read_dict_file(Config.config_path / "plans.yaml")
-                    assert plans["data"][pid]["Info"]["Name"] == "原计划"
-                assert "原样保留" in json.dumps(Config.startup_notices, ensure_ascii=False)
+                    assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.2"
                 return
             try:
                 await Config.check_data(prepare_plugins=prepare)
             except OSError as exc:
-                assert failure == "flush"
-                assert str(exc) == "save unavailable"
+                if failure == "install":
+                    # 旧 YAML 仍按 dev 策略中止，不能把其他专项也改成旁挂。
+                    assert str(exc) == "installation unavailable"
+                    assert Config.ScriptConfig.activation_state == NodeState.INACTIVE
+                    assert script_file.read_bytes() == original
+                else:
+                    assert failure == "flush"
+                    assert str(exc) == "save unavailable"
                 with sqlite3.connect(Config.database_path) as db:
                     assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.2" if current else "v2.1")
                 return
+
             assert failure == "none"
             if not current:
                 backup = Config.config_path / "legacy-json/pre-upgrade"
@@ -390,8 +379,7 @@ asyncio.run(run())
 def test_cold_start_still_blocks_on_plugins_without_hold(
     tmp_path, kind, expected, quiet
 ):
-    """老格式只隔离「这一轮装不上的专项插件」的托管：没有失败记录的未识别类型、
-    以及没有旁挂区的游戏插件，装不上仍然拒绝推进版本。"""
+    """旧配置仅允许缺少 MaaEnd，混入未识别类或缺少游戏插件仍中止。"""
     source_root = Path(__file__).resolve().parents[2]
     code = r"""
 import asyncio
@@ -421,8 +409,8 @@ if kind in ("unknown_type", "mixed"):
     scripts["order"].append({"uid": ghost, "type": "GhostConfig"})
     scripts["data"][ghost] = {"Info": {"Name": "没人认领的托管"}}
 if kind == "mixed":
-    # 同一轮里另有一条专项装不上：它只该隔离自己那条，不能连 Ghost 一起放行。
-    scripts["order"].append({"uid": clash, "type": "MaaPluginConfig"})
+    # MaaEnd 装不上仍不能放行另外那条未知托管。
+    scripts["order"].append({"uid": clash, "type": "MaaEndConfig"})
     scripts["data"][clash] = {"Info": {"Name": "抢手的托管"}}
 io.write_file(Config.config_path / "scripts.yaml", scripts)
 if kind == "game_plugin":
@@ -457,7 +445,7 @@ async def run():
             assert kind in ("unknown_type", "mixed"), error
             assert __EXPECTED__ in str(error), str(error)
             if kind == "mixed":
-                assert "MaaConfig" not in str(error), str(error)
+                assert "MaaEndConfig" not in str(error), str(error)
         else:
             raise AssertionError("没装上的插件被放行了")
         finally:
@@ -529,8 +517,9 @@ async def test_explicit_channel_does_not_trigger_migration(tmp_path):
     assert config.Update.Channel == "beta"
 
 
-def test_cold_start_holds_legacy_maaend_without_plugin(tmp_path):
-    """旧档只带 MaaEnd 托管与计划表：缺插件要补装，装不上只隔离这几个成员。"""
+@pytest.mark.parametrize("version", ["v1.11", "v2.1", "v2.2"])
+def test_cold_start_holds_legacy_maaend_without_plugin(tmp_path, version):
+    """缺插件只隔离 MaaEnd，原账号、计划、队列引用及其他托管均保留。"""
     source_root = Path(__file__).resolve().parents[2]
     code = r"""
 import asyncio
@@ -542,65 +531,120 @@ from unittest.mock import AsyncMock, patch
 from app.core import Config, Plugin
 from app.plugin import uv
 from app.plugin.runtime import discover
+from app.models.config import GeneralConfig
+from app.task.general.registration import build_config_handler
 from app.utils import io
 
+Config.bind_script_config_handler(GeneralConfig, build_config_handler())
+version = sys.argv[1]
+legacy = version == "v1.11"
 script = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a101"
 plan = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a102"
+user = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a103"
+general = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a104"
+queue = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a105"
+first = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a106"
+second = "6f2b1f31-9a44-4d13-8b9e-19f7d2c3a107"
 
-# 发行包安装测试不该命中开发者源码目录里的同名插件。
+# 只隔离装包传输，实际使用宿主启动、迁移、激活和落盘入口。
 source_projects = discover._source_projects
 checkout_plugins = (Config.source_path / "plugins").resolve()
 discover._source_projects = lambda: {
     project for project in source_projects()
     if project.parent != checkout_plugins or project.name == "auto_mas_core"
 }
-io.write_file(Config.config_path / "scripts.yaml", {
-    "order": [{"uid": script, "type": "MaaEndConfig"}],
-    "data": {script: {"Info": {"Name": "旧 MaaEnd 托管"}}},
-})
-io.write_file(Config.config_path / "plans.yaml", {
-    "order": [{"uid": plan, "type": "MaaEndPlanConfig"}],
-    "data": {plan: {"Info": {"Name": "旧 MaaEnd 计划"}}},
-})
+
+def indexed(*entries):
+    index = [{"uid": uid, "type": kind} for uid, kind, _ in entries]
+    data = {uid: value for uid, _, value in entries}
+    return {"instances": index, **data} if legacy else {"order": index, "data": data}
+
+account = {"Info": {"Name": "旧 MaaEnd 账号", "SanityMode": plan}}
+accounts = {"UserData": indexed((user, "MaaEndUserConfig", account))}
+items = {"QueueItem": indexed(
+    (first, "QueueItem", {"Info": {"ScriptId": script}}),
+    (second, "QueueItem", {"Info": {"ScriptId": general}}),
+)}
+scripts = indexed(
+    (script, "MaaEndConfig", {"Info": {"Name": "旧 MaaEnd 托管"},
+        **({"SubConfigsInfo": accounts} if legacy else accounts)}),
+    (general, "GeneralConfig", {"Info": {"Name": "原通用托管"}}),
+)
+plans = indexed((plan, "MaaEndPlanConfig", {"Info": {"Name": "旧 MaaEnd 计划"}}))
+queues = indexed((queue, "QueueConfig", {"SubConfigsInfo": items} if legacy else items))
+originals = {}
+for old, new, body in (
+    ("ScriptConfig.json", "scripts.yaml", scripts),
+    ("PlanConfig.json", "plans.yaml", plans),
+    ("QueueConfig.json", "queues.yaml", queues),
+):
+    path = Config.config_path / (old if legacy else new)
+    io.write_file(path, body)
+    originals[path.name] = path.read_bytes()
 with sqlite3.connect(Config.database_path) as db:
     db.execute("CREATE TABLE version(v text)")
-    db.execute("INSERT INTO version VALUES (?)", ("v2.1",))
-
-installed = []
+    db.execute("INSERT INTO version VALUES (?)", (version,))
+if legacy:
+    # 旧历史库还用整数编号，正常启动时也要完成宿主自己的升级。
+    with sqlite3.connect(Config.data_path / "history.db") as db:
+        db.execute("CREATE TABLE records(id INTEGER PRIMARY KEY)")
 
 async def install(spec, **kwargs):
-    installed.append(spec)
+    assert spec == "auto-mas-maaend-adapter", spec
     raise OSError("installation unavailable")
 
-async def prepare():
-    await Plugin.initialize()
-
 async def run():
-    with (
-        patch.object(uv, "install", install),
-        patch.object(uv, "prepare_environment", AsyncMock()),
-    ):
-        # 装不上不该抛：这条托管与计划原样保留，其它专项照常启动。
-        await Config.check_data(prepare_plugins=prepare)
-        assert installed == ["auto-mas-maaend-adapter"], installed
-        assert set(Config._adapter_plugin_failures) == {"maaend_adapter"}
+    try:
+        with (
+            patch.object(uv, "install", install),
+            patch.object(uv, "prepare_environment", AsyncMock()),
+        ):
+            await Config.check_data(prepare_plugins=Plugin.initialize)
+        assert Config.ScriptConfig[general].Info.Name == "原通用托管"
         assert Config.ScriptConfig.is_unresolved(script)
         assert Config.PlanConfig.is_unresolved(plan)
+        assert [str(item.Info.ScriptId) for item in Config.QueueConfig[queue].QueueItem.values()] == [script, general]
         with sqlite3.connect(Config.database_path) as db:
-            assert db.execute("SELECT v FROM version").fetchone()[0] == "v2.1"
+            assert db.execute("SELECT v FROM version").fetchone()[0] == ("v2.1" if legacy else version)
+        if legacy:
+            from app.core import History
+
+            await History.initialize(video_limit_bytes=0)
+            await History.close()
         saved = io.read_dict_file(Config.config_path / "scripts.yaml")
-        assert saved["data"][script]["Info"]["Name"] == "旧 MaaEnd 托管"
+        assert [item["uid"] for item in saved["order"]] == [script, general]
+        parked = saved["data"][script]
+        assert parked["UserData"]["order"] == [{"uid": user, "type": "MaaEndUserConfig"}]
+        assert parked["UserData"]["data"][user]["Info"]["SanityMode"] == plan
+        assert parked["UserData"]["data"][user]["Info"]["Name"] == "旧 MaaEnd 账号"
+        saved_plans = io.read_dict_file(Config.config_path / "plans.yaml")
+        assert saved_plans["order"] == [{"uid": plan, "type": "MaaEndPlanConfig"}]
+        assert saved_plans["data"][plan]["Info"]["Name"] == "旧 MaaEnd 计划"
+        saved_queues = io.read_dict_file(Config.config_path / "queues.yaml")
+        saved_items = saved_queues["data"][queue]["QueueItem"]
+        assert [item["uid"] for item in saved_items["order"]] == [first, second]
+        assert [saved_items["data"][uid]["Info"]["ScriptId"] for uid in (first, second)] == [script, general]
+        if not legacy:
+            assert parked == scripts["data"][script]
+            assert saved_plans == plans
+        backup = Config.config_path / (
+            "legacy-maaend-plugin" if version == "v2.2" else "legacy-json/pre-upgrade"
+        )
+        assert {name: (backup / name).read_bytes() for name in originals} == originals
+        if legacy:
+            for name, original in originals.items():
+                assert (Config.config_path / "legacy-json" / name).read_bytes() == original
         notices = json.dumps(Config.startup_notices, ensure_ascii=False)
         assert "maaend_adapter 暂不可用" in notices, notices
-        assert "MaaEnd - 旧 MaaEnd 托管" in notices, notices
-        assert "MaaEndPlanConfig - 旧 MaaEnd 计划" in notices, notices
+        assert "旧 MaaEnd 托管" in notices and "旧 MaaEnd 计划" in notices, notices
         assert "原样保留" in notices, notices
-    await Plugin.shutdown()
+    finally:
+        await Plugin.shutdown()
 
 asyncio.run(run())
 """
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [sys.executable, "-c", code, version],
         cwd=tmp_path,
         env={
             **os.environ,
@@ -611,6 +655,6 @@ asyncio.run(run())
         capture_output=True,
         text=True,
         encoding="utf-8",
-        timeout=90,
+        timeout=45,
     )
     assert result.returncode == 0, result.stdout + result.stderr

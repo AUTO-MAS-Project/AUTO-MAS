@@ -4,7 +4,7 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'nod
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parse, stringify } from 'yaml'
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -37,10 +37,10 @@ const supportedScriptTypes = new Set([
 const embeddedScriptTypes = new Set(['MaaFWConfig', 'M9AConfig', 'MSSConfig'])
 
 const planSelectionByScriptType = {
-  MaaConfig: { field: 'StageMode', type: 'MaaPlanConfig' },
-  MaaEndConfig: { field: 'SanityMode', type: 'MaaEndPlanConfig' },
-  MSSConfig: { field: 'PlanMode', type: 'MSSPlanConfig' },
-  OkNteConfig: { field: 'PlanMode', type: 'OkNtePlanConfig' },
+  MaaConfig: { fields: ['StageMode'], type: 'MaaPlanConfig' },
+  MaaEndConfig: { fields: ['SanityMode', 'AutoEssenceMode'], type: 'MaaEndPlanConfig' },
+  MSSConfig: { fields: ['PlanMode'], type: 'MSSPlanConfig' },
+  OkNteConfig: { fields: ['PlanMode'], type: 'OkNtePlanConfig' },
 }
 
 const defaultRealRunLockPath =
@@ -124,7 +124,7 @@ const readConfig = async (directory, name) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('invalid document')
     }
-    return value
+    return { filename: path.basename(file), value }
   } catch {
     throw new Error(
       `无法读取 E2E 配置 ${path.basename(file)}：不存在、为空或格式无效。先在本机应用里配好一个用户；在 worktree 里跑时用 AUTO_MAS_E2E_TEMPLATE_ROOT 指向你的主检出目录`
@@ -132,22 +132,43 @@ const readConfig = async (directory, name) => {
   }
 }
 
-export const readRealScripts = sourceRoot =>
-  readConfig(path.join(path.resolve(sourceRoot), 'config'), 'ScriptConfig')
+export const readRealScripts = async sourceRoot =>
+  (await readConfig(path.join(path.resolve(sourceRoot), 'config'), 'ScriptConfig')).value
 
 const collectionOrder = collection => collection.order ?? collection.instances ?? []
 const collectionValue = (collection, id) => (collection.data ?? collection)[id]
 
-const selectEntry = (collection, id, expectedType) => {
-  const entry = collectionOrder(collection).find(item => item.uid === id)
-  const value = collectionValue(collection, id)
-  if (!entry || !value) throw new Error('所选 E2E 配置项不存在')
-  if (expectedType && entry.type !== expectedType) {
-    throw new Error(`所选 E2E 计划表类型不匹配，需要 ${expectedType}`)
+const selectEntries = (collection, ids, expectedType) => {
+  const remaining = new Set(ids)
+  const order = []
+  const members = []
+  for (const entry of collectionOrder(collection)) {
+    if (!remaining.delete(entry.uid)) continue
+    const value = collectionValue(collection, entry.uid)
+    if (!value) throw new Error('所选 E2E 配置项不存在')
+    if (expectedType && entry.type !== expectedType) {
+      throw new Error(`所选 E2E 计划表类型不匹配，需要 ${expectedType}`)
+    }
+    order.push(entry)
+    members.push([entry.uid, value])
   }
-  return collection.order
-    ? { order: [entry], data: { [id]: value } }
-    : { instances: [entry], [id]: value }
+  if (remaining.size) throw new Error('所选 E2E 配置项不存在')
+  const data = Object.fromEntries(members)
+  return collection.order ? { order, data } : { instances: order, ...data }
+}
+
+// 优先使用现行字段。若同一托管同时保存新旧字段，后续只保留选中的集合。
+const userCollections = script =>
+  [
+    [script, 'users'],
+    [script, 'UserData'],
+    [script?.SubConfigsInfo, 'users'],
+    [script?.SubConfigsInfo, 'UserData'],
+  ].flatMap(([owner, key]) => (owner?.[key] == null ? [] : [{ owner, key, value: owner[key] }]))
+
+const selectConfigEntries = async (directory, name, ids, expectedType) => {
+  const config = await readConfig(directory, name)
+  return { ...config, value: selectEntries(config.value, ids, expectedType) }
 }
 
 const uuidPattern = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
@@ -160,7 +181,7 @@ export const listRealCandidates = scriptConfig => {
   for (const instance of collectionOrder(scriptConfig)) {
     if (!supportedScriptTypes.has(instance.type)) continue
     const script = collectionValue(scriptConfig, instance.uid)
-    const users = script?.UserData ?? script?.SubConfigsInfo?.UserData ?? {}
+    const users = userCollections(script)[0]?.value ?? {}
     for (const entry of collectionOrder(users)) {
       const info = collectionValue(users, entry.uid)?.Info
       if (info?.Status !== true || !info.Name?.trim()) continue
@@ -206,7 +227,7 @@ const resolveRealSelection = (candidates, requested) => {
 const readPlanId = (user, field) => {
   for (const group of ['Stage', 'Info']) {
     const value = user?.[group]?.[field]
-    if (typeof value === 'string' && !['Fixed', '-', ''].includes(value)) return value
+    if (typeof value === 'string' && !['Fixed', 'Native', '-', ''].includes(value)) return value
   }
   return undefined
 }
@@ -219,7 +240,7 @@ const readPlanId = (user, field) => {
  */
 export async function resolveRealTarget(sourceRoot, env) {
   const sourceConfig = path.join(path.resolve(sourceRoot), 'config')
-  const scripts = await readRealScripts(sourceRoot)
+  const scripts = await readConfig(sourceConfig, 'ScriptConfig')
   const requested = {
     scriptId: env.AUTO_MAS_E2E_SCRIPT_ID?.trim() ?? '',
     userId: env.AUTO_MAS_E2E_USER_ID?.trim() ?? '',
@@ -228,7 +249,7 @@ export async function resolveRealTarget(sourceRoot, env) {
   const selection =
     requested.scriptId && requested.userId && requested.accountName
       ? requested
-      : resolveRealSelection(listRealCandidates(scripts), requested)
+      : resolveRealSelection(listRealCandidates(scripts.value), requested)
   const problems = []
   for (const [key, value] of [
     ['SCRIPT_ID', selection.scriptId],
@@ -239,24 +260,24 @@ export async function resolveRealTarget(sourceRoot, env) {
   if (!selection.accountName) problems.push('缺少 AUTO_MAS_E2E_ACCOUNT_NAME')
   if (problems.length > 0) throw new Error(`真实 E2E 目标配置不完整: ${problems.join('；')}`)
 
-  const selectedScripts = selectEntry(scripts, selection.scriptId)
+  const selectedScripts = selectEntries(scripts.value, [selection.scriptId])
   const script = collectionValue(selectedScripts, selection.scriptId)
   const scriptType = collectionOrder(selectedScripts)[0].type
   if (!supportedScriptTypes.has(scriptType)) {
     throw new Error(`真实 E2E 尚未登记专项类型 ${scriptType}，请由专项作者补充适配`)
   }
-  const account = collectionValue(
-    script.UserData ?? script.SubConfigsInfo?.UserData ?? {},
-    selection.userId
-  )
+  const users = selectEntries(userCollections(script)[0]?.value ?? {}, [selection.userId])
+  const account = collectionValue(users, selection.userId)
+  if (account.Info?.Name !== selection.accountName || account.Info?.Status !== true) {
+    throw new Error('所选用户名称不匹配或用户未启用')
+  }
   const managedBinding =
-    account?.game?.game_id && account.game.game_id !== '-' ? account.game : script.game
+    account.game?.game_id && account.game.game_id !== '-' ? account.game : script.game
   const gameId =
     managedBinding?.game_id && managedBinding.game_id !== '-' ? managedBinding.game_id : ''
-  const games = gameId
-    ? selectEntry(await readConfig(sourceConfig, 'GameConfig'), gameId)
-    : undefined
-  const usesManagedEmulator = games && collectionValue(games, gameId)?.info?.type === 'emulator'
+  const games = gameId ? await selectConfigEntries(sourceConfig, 'GameConfig', [gameId]) : undefined
+  const usesManagedEmulator =
+    games && collectionValue(games.value, gameId)?.info?.type === 'emulator'
   const binding = managedBinding
     ? {
         Id: usesManagedEmulator ? gameId : '-',
@@ -290,9 +311,10 @@ export async function resolveRealTarget(sourceRoot, env) {
   }
   return {
     sourceConfig,
-    scripts: selectedScripts,
+    scripts: { ...scripts, value: selectedScripts },
     script,
     scriptType,
+    users,
     emulatorConfigId,
     games,
     emulatorId,
@@ -311,19 +333,17 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
     scripts,
     script,
     scriptType,
+    users,
     emulatorConfigId,
     emulatorId,
     emulatorIndex,
     scriptId,
     userId,
   } = resolved
-  const users = selectEntry(script.UserData ?? script.SubConfigsInfo?.UserData ?? {}, userId)
+  const [selectedUsers, ...otherUsers] = userCollections(script)
+  selectedUsers.owner[selectedUsers.key] = users
+  for (const { owner, key } of otherUsers) delete owner[key]
   const user = collectionValue(users, userId)
-  if (user.Info?.Name !== resolved.accountName || user.Info?.Status !== true) {
-    throw new Error('所选用户名称不匹配或用户未启用')
-  }
-  if (script.UserData) script.UserData = users
-  else script.SubConfigsInfo.UserData = users
   // 移除所有通知配置，避免测试发送真实通知
   for (const key of Object.keys(user)) {
     if (key.includes('Notify')) delete user[key]
@@ -334,35 +354,31 @@ export async function seedRealProfile(sourceRoot, dataRoot, env) {
     }
   }
 
-  const targetConfig = path.join(dataRoot, 'config')
-  await mkdir(targetConfig, { recursive: true })
-  const selectedConfig = { ScriptConfig: scripts }
+  const selectedConfig = [scripts]
   if (resolved.games) {
-    selectedConfig.GameConfig = resolved.games
+    selectedConfig.push(resolved.games)
   } else if (emulatorConfigId) {
-    selectedConfig.EmulatorConfig = selectEntry(
-      await readConfig(sourceConfig, 'EmulatorConfig'),
-      emulatorConfigId
+    selectedConfig.push(
+      await selectConfigEntries(sourceConfig, 'EmulatorConfig', [emulatorConfigId])
     )
   }
   const planSelection = planSelectionByScriptType[scriptType]
-  const planId = planSelection ? readPlanId(user, planSelection.field) : undefined
-  if (planSelection && planId) {
-    const plans = selectEntry(
-      await readConfig(sourceConfig, 'PlanConfig'),
-      planId,
-      planSelection.type
+  const planIds = planSelection?.fields.map(field => readPlanId(user, field)).filter(Boolean)
+  if (planIds?.length) {
+    selectedConfig.push(
+      await selectConfigEntries(sourceConfig, 'PlanConfig', planIds, planSelection.type)
     )
-    selectedConfig.PlanConfig = plans
   }
-  // 保留输入格式；只复制选中条目，不把当前配置重新降为旧格式再迁移。
-  const yaml = Array.isArray(scripts.order)
-  for (const [name, value] of Object.entries(selectedConfig)) {
-    if (Array.isArray(value.order) !== yaml) {
-      throw new Error('E2E 配置迁移尚未完成，请先正常启动应用完成迁移')
-    }
+  // 以实际读取的文件名决定格式。混用 JSON 和 YAML 的数据根要先完成迁移。
+  const yaml = scripts.filename.endsWith('.yaml')
+  if (selectedConfig.some(({ filename }) => filename.endsWith('.yaml') !== yaml)) {
+    throw new Error('E2E 配置迁移尚未完成，请先正常启动应用完成迁移')
+  }
+  const targetConfig = path.join(dataRoot, 'config')
+  await mkdir(targetConfig, { recursive: true })
+  for (const { filename, value } of selectedConfig) {
     await writeFile(
-      path.join(targetConfig, yaml ? configFiles[name] : `${name}.json`),
+      path.join(targetConfig, filename),
       yaml ? stringify(value) : JSON.stringify(value, null, 2)
     )
   }
@@ -450,6 +466,19 @@ export async function seedBrowserProfile(dataRoot, { real, inPlace }) {
 
 async function seedPluginProfile(dataRoot, pluginsOnly) {
   const script = path.join(frontendRoot, 'e2e', 'fixtures', 'seed-profile.py')
+  const projects = process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS?.trim()
+  const wheel = process.env.AUTO_MAS_E2E_MAAEND_WHEEL?.trim()
+  const wheelEnv = wheel
+    ? {
+        // uv 会在别处解析依赖，文件 URL 也能保留临时目录里的空格。
+        UV_OVERRIDE: [
+          pathToFileURL(path.join(dataRoot, 'plugins', 'pypi', 'e2e-wheel-requirements.txt')).href,
+          process.env.UV_OVERRIDE,
+        ]
+          .filter(Boolean)
+          .join(' '),
+      }
+    : {}
   const child = spawn(
     'uv',
     [
@@ -465,7 +494,13 @@ async function seedPluginProfile(dataRoot, pluginsOnly) {
       cwd: dataRoot,
       stdio: 'inherit',
       windowsHide: true,
-      env: { ...process.env, AUTO_MAS_ENV: 'development' },
+      env: {
+        ...process.env,
+        AUTO_MAS_ENV: 'development',
+        AUTO_MAS_E2E_PLUGIN_PROJECTS: projects ? path.resolve(projects) : '',
+        AUTO_MAS_E2E_MAAEND_WHEEL: wheel ? path.resolve(wheel) : '',
+        ...wheelEnv,
+      },
     }
   )
   await new Promise((resolve, reject) => {
@@ -474,6 +509,16 @@ async function seedPluginProfile(dataRoot, pluginsOnly) {
       code === 0 ? resolve() : reject(new Error(`插件与历史种子写入失败: ${code}`))
     )
   })
+  const registry = parse(
+    await readFile(path.join(dataRoot, 'config', 'plugin_registry.yaml'), 'utf8')
+  )
+  const maaEndEnabled = Object.values(registry.data).some(
+    ({ info }) => info.plugin_name === 'maaend_adapter' && info.enabled
+  )
+  return {
+    AUTO_MAS_E2E_MAAEND_READY: maaEndEnabled ? '1' : '0',
+    ...wheelEnv,
+  }
 }
 
 export function parseLauncherArgs(argv, env = process.env) {
@@ -539,9 +584,13 @@ async function main() {
       }
       console.warn(`[e2e] 隔离数据根 ${dataRoot}${keepRoot ? '（跑完保留）' : '（跑完删除）'}`)
     }
-    await seedBrowserProfile(dataRoot, { real, inPlace })
-    if (real && !inPlace && process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS) {
-      await seedPluginProfile(dataRoot, true)
+    let pluginEnv = await seedBrowserProfile(dataRoot, { real, inPlace })
+    if (
+      real &&
+      !inPlace &&
+      (process.env.AUTO_MAS_E2E_PLUGIN_PROJECTS || process.env.AUTO_MAS_E2E_MAAEND_WHEEL)
+    ) {
+      pluginEnv = await seedPluginProfile(dataRoot, true)
     }
     // 真实模式以所选配置为准，清空未使用的模拟器变量，避免沿用上次运行的目标。
     const selectedEnv = Object.fromEntries(
@@ -567,6 +616,7 @@ async function main() {
         TMPDIR: tempDirectory,
         AUTO_MAS_E2E_DATA_ROOT: dataRoot,
         ...selectedEnv,
+        ...pluginEnv,
         AUTO_MAS_E2E_IN_PLACE: inPlace ? '1' : '',
         ...(real ? { PLAYWRIGHT_NO_COPY_PROMPT: '1' } : {}),
       },

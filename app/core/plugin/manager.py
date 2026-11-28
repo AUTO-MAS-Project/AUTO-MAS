@@ -18,9 +18,10 @@ import inspect
 import re
 import sys
 import weakref
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Callable, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
@@ -37,7 +38,11 @@ from app.mystery.gate import is_unlocked
 from app.plugin import uv as uv_tool
 from app.plugin.base.game import GameAdapterPlugin, GameTypeDecl
 from app.plugin.base.plugin import BasePlugin
-from app.plugin.base.script import ScriptAdapterPlugin, ScriptTypeDecl
+from app.plugin.base.script import (
+    DesktopSessionReason,
+    ScriptAdapterPlugin,
+    ScriptTypeDecl,
+)
 from app.plugin.calls import CallGate, call_context
 from app.plugin.errors import (
     PluginBusyError,
@@ -1704,8 +1709,10 @@ class _PluginManager:
             None,
         )
 
-    def desktop_session_reason(self, config, elevated: bool):
-        """在当前启用实例的调用门内查询分身能力。"""
+    def desktop_session_reason(
+        self, config, elevated: bool, *, defer_io: bool = False
+    ) -> DesktopSessionReason | Callable[[], DesktopSessionReason | None] | None:
+        """用当前实例的调用门保护能力判断与随后可能执行的资源读取。"""
         for record in self.list_plugins():
             decl = self.script_types.get(record.uid)
             if decl is None or type(config) is not decl.script_type:
@@ -1717,11 +1724,25 @@ class _PluginManager:
                 or not gate.accepting
             ):
                 break
-            try:
-                return gate.wrap(decl.desktop_session_reason)(config, elevated)
-            except Exception as error:
-                logger.opt(exception=True).warning(f"无法检查插件桌面分身能力: {error}")
-                break
+
+            def check[Result](
+                probe: Callable[[], Result],
+            ) -> Result | Literal["plugin_unavailable"]:
+                try:
+                    with gate.active_call():
+                        return probe()
+                except Exception as error:
+                    logger.opt(exception=True).warning(
+                        f"无法检查插件桌面分身能力: {error}"
+                    )
+                    return "plugin_unavailable"
+
+            reason = check(
+                partial(
+                    decl.desktop_session_reason, config, elevated, defer_io=defer_io
+                )
+            )
+            return partial(check, reason) if callable(reason) else reason
         return "plugin_unavailable"
 
     def registered_script(

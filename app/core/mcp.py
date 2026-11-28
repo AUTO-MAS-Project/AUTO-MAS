@@ -114,17 +114,43 @@ MCP_INCLUDED_OPERATIONS = (
 )
 
 
+def _declared_tool_routes(app: FastAPI) -> tuple[APIRoute, ...]:
+    return tuple(
+        route
+        for route in app.routes
+        if isinstance(route, APIRoute)
+        and (route.openapi_extra or {}).get("x-auto-mas-mcp") is True
+    )
+
+
 def included_operations(app: FastAPI) -> tuple[str, ...]:
     """合并宿主白名单与当前挂载插件明确声明的工具，不自动暴露其他插件 API。"""
     return (
         *MCP_INCLUDED_OPERATIONS,
         *(
             route.operation_id or route.unique_id
-            for route in app.routes
-            if isinstance(route, APIRoute)
-            and (route.openapi_extra or {}).get("x-auto-mas-mcp") is True
+            for route in _declared_tool_routes(app)
         ),
     )
+
+
+def _tool_schema_app(app: FastAPI) -> FastAPI:
+    """在事件循环内截取当前路由，供线程生成工具定义。"""
+    operations = set(included_operations(app))
+    schema_app = FastAPI(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        openapi_url=None,
+        routes=[
+            route
+            for route in app.routes
+            if isinstance(route, APIRoute)
+            and (route.operation_id or route.unique_id) in operations
+        ],
+    )
+    schema_app.openapi_version = app.openapi_version
+    return schema_app
 
 
 def _patch_fastapi_mcp_schema_references() -> None:
@@ -343,6 +369,8 @@ class McpService:
         self._instance: FastApiMCP | None = None
         self._client: httpx.AsyncClient | None = None
         self._routes: list[Any] = []
+        self._plugin_tool_routes: tuple[APIRoute, ...] = ()
+        self._tool_refresh_lock = asyncio.Lock()
 
     def configure(self, *, enabled: bool) -> None:
         """必要配置就绪后固定本次启动策略，不触发加载。"""
@@ -463,20 +491,8 @@ class McpService:
 
             app = self._app
             assert app is not None
-            schema_app = FastAPI(
-                title=app.title,
-                version=app.version,
-                description=app.description,
-                openapi_url=None,
-                routes=[
-                    route
-                    for route in app.routes
-                    if isinstance(route, APIRoute)
-                    and (route.operation_id or route.unique_id)
-                    in included_operations(app)
-                ],
-            )
-            schema_app.openapi_version = app.openapi_version
+            plugin_tool_routes = _declared_tool_routes(app)
+            schema_app = _tool_schema_app(app)
             self._client = httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
                 base_url="http://apiserver",
@@ -509,6 +525,8 @@ class McpService:
                 original = route.app
 
                 async def available(scope, receive, send, endpoint=original):
+                    if not self._closing and scope["method"] == "POST":
+                        await self._refresh_plugin_tools(app)
                     if self._closing:
                         await JSONResponse(
                             {"detail": "MCP service is closing"}, status_code=503
@@ -517,6 +535,7 @@ class McpService:
                         await endpoint(scope, receive, send)
 
                 route.app = available
+            self._plugin_tool_routes = plugin_tool_routes
             self._status.toolCount = len(self._instance.tools)
             self._finish("ready")
             logger.info(
@@ -548,7 +567,41 @@ class McpService:
                     logger.exception("MCP 资源清理失败，已禁止再次加载")
             await self._publish()
 
+    async def _refresh_plugin_tools(self, app: FastAPI) -> None:
+        """插件启停后刷新工具定义，沿用当前连接和请求转发客户端。"""
+        if _declared_tool_routes(app) == self._plugin_tool_routes:
+            return
+        async with self._tool_refresh_lock:
+            routes = _declared_tool_routes(app)
+            instance, client = self._instance, self._client
+            if self._closing or routes == self._plugin_tool_routes:
+                return
+            if instance is None or client is None:
+                return
+            schema_app = _tool_schema_app(app)
+
+            def build() -> FastApiMCP:
+                updated = _build_mcp(type(instance), schema_app, client)
+                _validate_mcp(updated, included_operations(schema_app))
+                return updated
+
+            try:
+                updated = await asyncio.to_thread(build)
+            except Exception:
+                logger.opt(exception=True).warning("刷新插件 MCP 工具失败")
+                return
+            if self._closing or _declared_tool_routes(app) != routes:
+                return
+            # 现有会话每次从实例读取工具和操作表，替换定义时无需重新挂载服务。
+            instance.tools = updated.tools
+            instance.operation_map = updated.operation_map
+            instance._request = updated._request
+            self._plugin_tool_routes = routes
+            self._status.toolCount = len(updated.tools)
+            self._status.revision += 1
+
     async def _release(self) -> None:
+        self._plugin_tool_routes = ()
         if self._app is not None and self._routes:
             owned = {id(route) for route in self._routes}
             self._app.router.routes[:] = [

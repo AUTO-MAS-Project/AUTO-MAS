@@ -102,7 +102,10 @@ type PlanConfigDataInput = SkipValidation[
 class PlanCreateIn(BaseModel):
     type: str = Field(
         json_schema_extra={
-            "enum": [item["create_type"] for item in _config_models.PLAN_BOOK.values()]
+            "enum": [
+                *(item["create_type"] for item in _config_models.PLAN_BOOK.values()),
+                "MaaEndPlan",
+            ]
         }
     )
     scriptId: str | None = None
