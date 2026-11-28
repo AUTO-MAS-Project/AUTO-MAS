@@ -102,8 +102,10 @@ describe('运行时专项', () => {
     openEditor('General', 'user', { scriptId: 's', userId: 'u' })
     expect(resolve().name).toBe('GeneralUserEdit')
     expect(openEditor('Demo15', 'userAdd', { scriptId: 's' })).toBe(false)
-    expect(openEditor('MaaEnd', 'script', { id: 's' })).toBe(true)
-    expect(resolve().path).toBe('/scripts/s/edit/plugin/MaaEnd')
+    for (const type of ['MaaEnd', 'ZzzOd'] as const) {
+      expect(openEditor(type, 'script', { id: 's' })).toBe(true)
+      expect(resolve().path).toBe('/scripts/s/edit/plugin/' + type)
+    }
     for (const type of PLUGIN_EDITOR_SCRIPT_TYPES) {
       expect(openEditor(type, 'userAdd', { scriptId: 's' })).toBe(true)
       expect(resolve().path).toBe('/scripts/s/users/add/plugin/' + type)

@@ -32,6 +32,10 @@ yarn e2e:check
 
 适配器声明的宿主开发接口版本须与当前主程序匹配。若在发版前联调这次迁移，而主程序仍标为 `v5.10.0-beta.1`，请在包含迁移改动的临时副本里，将更新日志中的当前版本标题改为 `v5.10.0-beta.2`，再从副本根目录运行 `python scripts/changelog.py sync` 和本节的依赖准备命令。
 
+### 准备绝区零一条龙适配器联调环境
+
+将 `AUTO_MAS_E2E_PLUGIN_PROJECTS` 指向绝区零一条龙适配器源码目录，也可使用宿主能发现的 `plugins/zzzod_adapter`。启动隔离应用后，可在通用插件编辑器中验证托管配置与账号配置。
+
 ## 隔离机制与启动入口
 
 `frontend/e2e/run.mjs` 是唯一启动入口，不要直接绕过它调用 `playwright test`。

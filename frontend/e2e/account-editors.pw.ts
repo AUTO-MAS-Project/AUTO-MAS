@@ -8,7 +8,6 @@ const adapters = [
   ['Okww', 'okww'],
   ['OkNte', 'oknte'],
   ['HSR', 'hsr'],
-  ['ZzzOd', 'zzzod'],
   ['BAAH', 'baah'],
   ['Whimbox', 'whimbox'],
 ]
@@ -16,11 +15,6 @@ const adapters = [
 test.describe('@account-editors', () => {
   for (const [type, segment] of adapters) {
     test(`${type} saves the common account fields and heading`, async ({ app, page }) => {
-      if (type === 'ZzzOd') {
-        const response = await page.request.get(`${backend}/api/scripts/types`)
-        const { types } = await response.json()
-        test.skip(!types.includes(type), '绝区零一条龙插件未启用')
-      }
       const post = async (path: string, data: unknown) => {
         const response = await page.request.post(`${backend}${path}`, { data })
         const body = await response.json()
