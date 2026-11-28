@@ -309,18 +309,9 @@ def main():
         from app.core import Notify
     with startup_stage("后端/专项能力导入"):
         from app.services import telemetry as _service_telemetry
-        from app.task.BAAH.api_service import BAAHConfigService
         from app.task.builtin_registration import build_builtin_script_capabilities
 
     with startup_stage("后端/专项能力绑定"):
-        with startup_stage("后端/专项能力绑定/BAAH 服务"):
-            baah_config_service = BAAHConfigService(
-                get_script=lambda script_id: Config.ScriptConfig[script_id],
-                template_path=Config.resource_path
-                / "templates"
-                / "BAAH"
-                / "recommended.json",
-            )
         with startup_stage("后端/专项能力绑定/构建能力注册表"):
             script_capabilities = build_builtin_script_capabilities()
 
@@ -737,7 +728,6 @@ def main():
             from app.api.desktop_session import install_control
 
             install_control(app)
-        app.state.baah_config_service = baah_config_service
 
         app.add_middleware(
             CORSMiddleware,

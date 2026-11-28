@@ -292,7 +292,9 @@ async def test_flow_detail_registry_and_options(editors, editor_client):
     }
     assert profile["component"] == "select" and "options" not in profile
     assert detail["nativeSession"] == "view"
-    assert detail["backupTargets"] == [{"key": "run", "kind": "script"}]
+    assert detail["backupTargets"] == [
+        {"key": "run", "kind": "script", "editorEvents": ["enter", "save"]}
+    ]
 
     record_id = str(Plugin.trigger_owner(script))
     registry = await post("plugin/registry/get", recordId=record_id)
@@ -350,17 +352,25 @@ async def test_editor_capabilities_follow_scope_and_supported_modes(
             restore_pools=(
                 replace(pool, key="second", editor_scope="user"),
                 pool,
-                replace(pool, key="first", kind="user", editor_scope="user"),
+                replace(
+                    pool,
+                    key="first",
+                    kind="user",
+                    editor_scope="user",
+                    editor_events=("leave",),
+                ),
                 replace(pool, key="legacy", editor_scope=None),
             ),
         ),
     )
     monkeypatch.setattr(type(user), "ui_native_session", "config")
+    monkeypatch.setattr(type(user), "ui_auto_save", True)
     detail = (await post("scripts/user/get", **user_ids))["ui"]
     assert detail["nativeSession"] is None
+    assert detail["autoSave"] is True
     assert detail["backupTargets"] == [
-        {"key": "second", "kind": "script"},
-        {"key": "first", "kind": "user"},
+        {"key": "second", "kind": "script", "editorEvents": ["enter", "save"]},
+        {"key": "first", "kind": "user", "editorEvents": ["leave"]},
     ]
     monkeypatch.setattr(type(user), "ui_native_session", "view")
     assert (await post("scripts/user/get", **user_ids))["ui"]["nativeSession"] == "view"

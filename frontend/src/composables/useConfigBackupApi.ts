@@ -85,15 +85,15 @@ export function useConfigBackupApi({ scriptId, userId, logger }: ConfigBackupApi
   }
 
   // 不缓存、不合并、不自动重试归档或恢复；每次调用对应原来的一个请求。
-  const ensure = async (target: string) =>
-    Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({ ...context(), target })
+  const ensure = async (target: string, ids = context()) =>
+    Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({ ...ids, target })
 
   /** 归档失败提示后继续编辑；需要展示专项诊断的页面自行处理 ensure 的响应。 */
-  const ensureBackup = async (target: string) => {
+  const ensureBackup = async (target: string, ids = context()) => {
     // 旧账号编辑页用空串表示账号尚未创建；托管级备份允许省略账号。
-    if (toValue(userId) === '') return
+    if (ids.userId === '') return
     try {
-      const resp = await ensure(target)
+      const resp = await ensure(target, ids)
       if (resp.code !== 200)
         throw new Error(resp.message || t('core.edit.configRestoreEnsureFailed'))
     } catch (e) {

@@ -24,6 +24,13 @@ _PLATFORM_PROCESS = (
             "build_statistics_payload",
             "app.core.notify.formats.maafw",
         ),
+        ("utils", "LogSource", "app.utils.common.log.sources"),
+        ("utils", "match_log_signs", "app.utils.common.log.patterns"),
+        (
+            "utils_common_process_operations",
+            "iter_process_info",
+            "app.utils.common.process.operations",
+        ),
         ("core_notify_lifecycle", "NotificationTaskBase", "app.core.notify.lifecycle"),
         (
             "utils_common_game_resolution",

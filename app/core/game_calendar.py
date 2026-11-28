@@ -31,7 +31,6 @@ SCRIPT_CALENDAR_GAMES = {
         "HSR": "starrail",
         "Okww": "wutheringwaves",
         "OkNte": "nte",
-        "BAAH": "bluearchive",
     }.items()
     if script in CLASS_BOOK
 }

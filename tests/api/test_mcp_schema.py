@@ -109,6 +109,10 @@ async def test_plugin_tools_follow_enable_and_disable_in_same_session(monkeypatc
     async def get_adapter_options() -> dict[str, list[str]]:
         return {"available": ["Win32"]}
 
+    # wheel 面板可以用自己的路径调用同一接口；隐藏别名不应计作另一个 MCP 工具。
+    routes = APIRouter()
+    routes.include_router(router)
+    routes.include_router(router, prefix="/api/plugin/adapter", include_in_schema=False)
     registry = HttpRegistry()
     registry.bind_app(app)
     try:
@@ -126,7 +130,11 @@ async def test_plugin_tools_follow_enable_and_disable_in_same_session(monkeypatc
                     assert {
                         tool.name for tool in (await session.list_tools()).tools
                     } == {"get_profile"}
-                    registry.mount("adapter", [], router=router, gate=CallGate())
+                    registry.mount("adapter", [], router=routes, gate=CallGate())
+                    assert module.included_operations(app) == (
+                        "get_profile",
+                        "get_adapter_options",
+                    )
                     result = await session.call_tool("get_adapter_options")
                     assert not result.isError and "Win32" in result.content[0].text
                     assert {

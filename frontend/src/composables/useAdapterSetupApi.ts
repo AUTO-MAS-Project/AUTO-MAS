@@ -1,4 +1,4 @@
-import { Service, BaahService, OknteService } from '@/api'
+import { Service, OknteService } from '@/api'
 import { apiOutcome, observeFeature } from '@/utils/featureAnalytics'
 
 /** 专项独有的导入、保存和实例入口；读接口继承原客户端，不增加观测。 */
@@ -30,23 +30,6 @@ export class AdapterSetupService extends Service {
       'adapter_setup_finished',
       { script_type: 'MAA', operation_kind: 'preview', engine_kind: 'unknown' },
       () => Service.parseMaaCultivateImportApiScriptsMaaCultivateImportPost(...args),
-      apiOutcome
-    )
-}
-
-export class BAAHSetupService extends BaahService {
-  static override createBaahRecommendedConfigApiApiScriptsBaahConfigCreateRecommendedPost = (
-    ...args: Parameters<
-      typeof BaahService.createBaahRecommendedConfigApiApiScriptsBaahConfigCreateRecommendedPost
-    >
-  ) =>
-    observeFeature(
-      'adapter_setup_finished',
-      { script_type: 'BAAH', operation_kind: 'template', engine_kind: 'unknown' },
-      () =>
-        BaahService.createBaahRecommendedConfigApiApiScriptsBaahConfigCreateRecommendedPost(
-          ...args
-        ),
       apiOutcome
     )
 }

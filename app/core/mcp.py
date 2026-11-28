@@ -88,8 +88,6 @@ MCP_INCLUDED_OPERATIONS = (
     "get_hsr_managed_config_api_api_scripts_hsr_managed_config_get",
     "get_hsr_stage_options_api_api_scripts_hsr_stage_options_get",
     "get_hsr_sra_profiles_api_api_scripts_hsr_sra_profiles_get",
-    # BAAH 原生配置名称
-    "get_baah_config_names_api_api_scripts_baah_config_names_get",
     # OK-NTE 配置字段与批量编辑
     "get_oknte_configs_list_api_scripts_oknte_configs_list_post",
     "batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post",
@@ -101,6 +99,7 @@ def _declared_tool_routes(app: FastAPI) -> tuple[APIRoute, ...]:
         route
         for route in app.routes
         if isinstance(route, APIRoute)
+        and route.include_in_schema
         and (route.openapi_extra or {}).get("x-auto-mas-mcp") is True
     )
 

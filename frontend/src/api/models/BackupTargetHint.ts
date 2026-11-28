@@ -3,6 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export type BackupTargetHint = {
+    editorEvents?: Array<'enter' | 'save' | 'leave'>;
     key: string;
     kind: BackupTargetHint.kind;
 };
