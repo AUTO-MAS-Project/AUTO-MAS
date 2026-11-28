@@ -57,6 +57,7 @@ describe('应用路由', () => {
     ['SRC', 'src', ['edit/src']],
     ['MAA', 'maa', ['edit/maa', 'cultivate/maa']],
     ['Whimbox', 'whimbox', ['edit/whimbox']],
+    ['BetterGI', 'bettergi', ['edit/bettergi']],
   ] as const)(
     '%s 旧地址进入插件编辑器并保留参数、查询与锚点',
     async (scriptType, suffix, userPaths) => {

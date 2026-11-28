@@ -8,7 +8,6 @@
 AUTO-MAS/
 ├── app/
 ├── frontend/src/views/
-│   └── bettergi/          # 待迁出的历史静态页
 └── plugins/
     ├── auto_mas_core/     # 主仓跟踪的 SDK
     └── src_adapter/       # 本地克隆的独立插件仓（.gitignore 忽略，联调基准）
@@ -27,7 +26,7 @@ Runtime 运行时，用户插件装在安装根目录的 `plugins/`（源码插�
 
 原则：
 - 按 **L1 `HostBlock` → L2 `DeclarativeBlock` → L3 `PluginBlock`** 递进选型。
-- 新增或外迁插件**不再**往主仓添加静态 `entry.ts` 或整页手写 Vue（SRC 已移出；MAA / 奇想盒 / BetterGI 随外迁逐步清理）。
+- 新增或外迁插件**不再**往主仓添加静态 `entry.ts` 或整页手写 Vue（SRC / MAA / 奇想盒 / BetterGI 已移出）。
 - 插件文案统一放在插件包 `i18n/{zh-CN,en-US,ja-JP}.json`，由宿主 `I18nManager` 解析。
 - 插件自有 HTTP 端点（如 `/api/plugin/signflow/*`）按启用状态动态挂载，不要用 `yarn openapi` 同步，在 `frontend/src/services/` 写薄封装即可。
 

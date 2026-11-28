@@ -108,6 +108,8 @@ describe('运行时专项', () => {
     expect(resolve().path).toBe('/scripts/s/users/add/plugin/MAA')
     expect(openEditor('Whimbox', 'userAdd', { scriptId: 's' })).toBe(true)
     expect(resolve().path).toBe('/scripts/s/users/add/plugin/Whimbox')
+    expect(openEditor('BetterGI', 'userAdd', { scriptId: 's' })).toBe(true)
+    expect(resolve().path).toBe('/scripts/s/users/add/plugin/BetterGI')
     openEditor('General', 'userAdd', { scriptId: 's' })
     expect(resolve().name).toBe('GeneralUserAdd')
   })
