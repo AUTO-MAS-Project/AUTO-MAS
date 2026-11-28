@@ -13,7 +13,7 @@ import type { BuiltinScriptType } from '@/types/script'
 import { SCRIPT_PLUGIN_EDITORS, type MaaFWFamilyType } from '@/plugins/scriptAdapters'
 import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 
-type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType | 'SRC'>
+type OrdinaryScriptType = Exclude<BuiltinScriptType, MaaFWFamilyType | 'SRC' | 'Whimbox'>
 type LazyPage = Extract<RouteRecordRaw, { component: unknown }>['component']
 
 const EDITOR_PAGES: Record<string, { script: LazyPage; user: LazyPage }> = {
@@ -129,29 +129,30 @@ declare module 'vue-router' {
 
 const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
-export const srcEditorRedirects: RouteRecordRaw[] = [
+const migratedEditors = ['SRC', 'Whimbox'] as const
+export const pluginEditorRedirects = migratedEditors.flatMap((scriptType): RouteRecordRaw[] => [
   {
-    path: PAGE_ROUTES.script.path(SCRIPT_METADATA.SRC.routeSuffix),
+    path: PAGE_ROUTES.script.path(SCRIPT_METADATA[scriptType].routeSuffix),
     redirect: to => ({
       name: genericPanelRoute.script,
-      params: { scriptId: to.params.id, scriptType: 'SRC' },
+      params: { scriptId: to.params.id, scriptType },
     }),
   },
   {
-    path: PAGE_ROUTES.userAdd.path(SCRIPT_METADATA.SRC.routeSuffix),
+    path: PAGE_ROUTES.userAdd.path(SCRIPT_METADATA[scriptType].routeSuffix),
     redirect: to => ({
       name: 'GenericUserAdd',
-      params: { scriptId: to.params.scriptId, scriptType: 'SRC' },
+      params: { scriptId: to.params.scriptId, scriptType },
     }),
   },
   {
-    path: PAGE_ROUTES.userEdit.path(SCRIPT_METADATA.SRC.routeSuffix),
+    path: PAGE_ROUTES.userEdit.path(SCRIPT_METADATA[scriptType].routeSuffix),
     redirect: to => ({
       name: genericPanelRoute.user,
-      params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType: 'SRC' },
+      params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType },
     }),
   },
-]
+])
 
 export const genericEditorRoutes: RouteRecordRaw[] = [
   {
@@ -206,7 +207,7 @@ export function useScriptEditorNavigation() {
         ? genericPanelRoute.script
         : kind === 'userEdit' || kind === 'user'
           ? genericPanelRoute.user
-          : kind === 'userAdd' && type === 'SRC'
+          : kind === 'userAdd' && migratedEditors.some(editor => editor === type)
             ? 'GenericUserAdd'
             : null
     if (custom !== generic && router.hasRoute(custom)) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { parseStatusTagList } from '@/composables/useStatusTag'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { DeclarativeHint, DeclarativeOption } from '@/composables/useDeclarativeOptions'
@@ -101,7 +102,16 @@ const pick = async () => {
   >
     <FieldLabelWithHint v-if="!tableCell" :text="label" :hint="tip" variant="form" />
     <div class="declarative-field-body" :class="{ 'with-action': inlineAction }">
+      <a-space v-if="hint.format === 'status-tags' && hint.editable === false" wrap>
+        <a-tag
+          v-for="(tag, index) in parseStatusTagList(typeof value === 'string' ? value : null)"
+          :key="index"
+          :color="tag.color"
+          >{{ tag.text }}</a-tag
+        >
+      </a-space>
       <DeclarativeControl
+        v-else
         :compact="tableCell"
         :component="hint.component"
         :label="label"

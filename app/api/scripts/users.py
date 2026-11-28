@@ -204,7 +204,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
         script = Config.ScriptConfig[uuid.UUID(user.scriptId)]
         user_configs = script_users(script)
         ui = (
-            config_detail_ui(
+            await config_detail_ui(
                 user_configs[user.userId],
                 data,
             )

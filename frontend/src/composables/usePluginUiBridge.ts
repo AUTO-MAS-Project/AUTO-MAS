@@ -36,6 +36,7 @@ export interface PluginUiEditor {
   locked: boolean
   busy: boolean
   groups: { name: string; hints: ComponentHint[] }[]
+  panelData?: Record<string, unknown> | null
   values: SettingsValues
   fieldErrors?: Record<string, string>
   configRevision: number
@@ -103,7 +104,7 @@ function isConfigValue(value: unknown, depth = 0): boolean {
   return isRecord(value) && Object.values(value).every(item => isConfigValue(item, depth + 1))
 }
 
-function panelConfig({ groups, values }: PluginUiEditor) {
+function panelConfig({ groups, values, panelData }: PluginUiEditor) {
   const configuredSecrets: string[] = []
   const config = Object.fromEntries(
     groups.map(({ name, hints }) => [
@@ -125,7 +126,13 @@ function panelConfig({ groups, values }: PluginUiEditor) {
       ),
     ])
   )
-  return { config: JSON.parse(JSON.stringify(config)) as SettingsValues, configuredSecrets }
+  return {
+    config: JSON.parse(JSON.stringify(config)) as SettingsValues,
+    configuredSecrets,
+    ...(panelData && {
+      panelData: JSON.parse(JSON.stringify(panelData)) as Record<string, unknown>,
+    }),
+  }
 }
 
 const pathSegment = (value: string) =>

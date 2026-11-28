@@ -321,7 +321,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             from app.core.desktop_session.lifecycle import query_task_reason
 
             entry = Config.ScriptConfig[script.scriptId]
-            ui = config_detail_ui(entry, data)
+            ui = await config_detail_ui(entry, data)
             reason = await query_task_reason(entry)
             desktop_session_supported = reason is None
         index = [

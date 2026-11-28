@@ -63,6 +63,7 @@ const blocks = computed(() =>
         return {
           kind: block.kind,
           pageId: block.pageId,
+          panelData: block.panelData,
           wheel: compatibleWheel(block.mount),
           visibleGroups: groupsFor(block.fallbackGroups),
         }
@@ -167,7 +168,9 @@ const [DefineForm, BlockForm] = createReusableTemplate<{
           v-if="block.wheel"
           :mount="block.wheel"
           :target="wheelTarget"
-          :editor="wheelEditor(locked, () => wheelFor(block.pageId), block.visibleGroups)"
+          :editor="
+            wheelEditor(locked, () => wheelFor(block.pageId), block.visibleGroups, block.panelData)
+          "
           :refresh="() => refreshWheel(() => wheelFor(block.pageId))"
         >
           <template #fallback>

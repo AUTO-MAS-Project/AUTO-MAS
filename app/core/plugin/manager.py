@@ -1856,6 +1856,10 @@ class _PluginManager:
 
         # 旧回调字段 → (插件钩子名, 转接函数)
         hooks = {
+            "validate_update": (
+                "validate_script_update",
+                gate.wrap(plugin.validate_script_update),
+            ),
             "clone_script": ("on_script_cloned", clone_script),
             "cleanup_script_files": ("on_script_removed", cleanup_script_files),
             "prepare_user_read": ("prepare_user_read", prepare_user_read),

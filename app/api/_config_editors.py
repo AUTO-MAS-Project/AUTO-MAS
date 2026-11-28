@@ -19,6 +19,9 @@ from app.models.schema import (
 )
 from app.models.task import TaskMode
 from app.plugin.frontend import MountedFrontend
+from app.utils import get_logger
+
+logger = get_logger("插件配置面板")
 
 # 托管是否进桌面分身改由全局清单管理，旧字段只为降级与已发布插件保留，不在表单里出现。
 _DEPRECATED_FIELDS = frozenset({("Run", "ExecutionSession")})
@@ -47,7 +50,7 @@ def _config_blocks(entry: ConfigEntry) -> list[ConfigBlockOut] | None:
     return projected
 
 
-def config_detail_ui(
+async def config_detail_ui(
     entry: ConfigEntry,
     documents: dict[str, dict[str, Any]],
 ) -> DeclarativeConfigUi:
@@ -82,6 +85,25 @@ def config_detail_ui(
     if registration is None or not isinstance(entry, (ScriptEntry, UserEntry)):
         return ui
     _, decl = registration
+    if decl.read_panel_data is not None:
+        for block in ui.blocks or ():
+            if not isinstance(block, PluginBlockOut) or block.mount is None:
+                continue
+            mount = block.mount
+            frontend = Plugin.validate_frontend_activation(
+                mount.pluginName, mount.activationId
+            )
+            if frontend is not None:
+                try:
+                    with frontend.gate.active_call():
+                        block.panelData = await decl.read_panel_data(
+                            entry, block.pageId
+                        )
+                except Exception:
+                    logger.exception(
+                        f"插件区块数据读取失败: {mount.pluginName}/{block.pageId}"
+                    )
+                    block.mount = None
     scope = "script" if isinstance(entry, ScriptEntry) else "user"
     ui.backupTargets = [
         BackupTargetHint(key=pool.key, kind=pool.kind)

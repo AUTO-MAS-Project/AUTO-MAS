@@ -195,7 +195,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
         raw_index, raw_data = await Config.get_plan(plan.planId)
         index = [PlanIndexItem(**_) for _ in raw_index]
         ui = (
-            config_detail_ui(Config.PlanConfig[plan.planId], raw_data)
+            await config_detail_ui(Config.PlanConfig[plan.planId], raw_data)
             if plan.planId
             else None
         )

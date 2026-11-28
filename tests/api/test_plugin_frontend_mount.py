@@ -517,6 +517,9 @@ async def test_block_only_page_projects_and_authorizes_owning_user(
     class BlockScript(ScriptEntry):
         users: ConfigCollection[BlockUser] = collection(BlockUser)
 
+    async def read_panel_data(entry, page_id):
+        return {"owner": str(entry.uid), "page": page_id}
+
     class BlockPlan(decl.plan_type):
         ui_blocks = (DeclarativeBlock(("First",)),)
 
@@ -524,7 +527,11 @@ async def test_block_only_page_projects_and_authorizes_owning_user(
         plugin,
         "decl",
         replace(
-            decl, script_type=BlockScript, user_type=BlockUser, plan_type=BlockPlan
+            decl,
+            script_type=BlockScript,
+            user_type=BlockUser,
+            plan_type=BlockPlan,
+            read_panel_data=read_panel_data,
         ),
     )
     manifest = ui_dir / "manifest.json"
@@ -556,6 +563,7 @@ async def test_block_only_page_projects_and_authorizes_owning_user(
             "kind": "plugin",
             "pageId": "stage",
             "fallbackGroups": ["info"],
+            "panelData": {"owner": str(user_id), "page": "stage"},
             "mount": {
                 "pageId": "stage",
                 "pluginName": "demo15",
@@ -568,6 +576,7 @@ async def test_block_only_page_projects_and_authorizes_owning_user(
             "kind": "plugin",
             "pageId": "missing",
             "fallbackGroups": ["notify"],
+            "panelData": None,
             "mount": None,
         },
     ]

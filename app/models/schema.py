@@ -452,6 +452,7 @@ class PluginBlockOut(BaseModel):
     kind: Literal["plugin"] = "plugin"
     pageId: str
     fallbackGroups: list[str]
+    panelData: dict[str, JsonValue] | None = None
     mount: FrontendSurfaceMount | None = None
 
 

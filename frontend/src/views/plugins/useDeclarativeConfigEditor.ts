@@ -18,7 +18,11 @@ import { useDeclarativeActions } from '@/composables/useDeclarativeActions'
 import { useDeclarativeOptions } from '@/composables/useDeclarativeOptions'
 import { useConfigQuery } from '@/services/configUiSync'
 import { ApiResponseError, apiErrorMessage, requestApi } from '@/utils/apiResult'
-import { analyticsConfigSection, beginAnalyticsOperation } from '@/utils/analytics'
+import {
+  analyticsConfigSection,
+  beginAnalyticsOperation,
+  getAnalyticsScriptType,
+} from '@/utils/analytics'
 import { pluginUiPost, type PluginUiActivation } from '@/utils/pluginUiRequests'
 import type {
   PluginUiChange,
@@ -359,7 +363,9 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
         config?.finish({
           owner_kind: selected.mode === 'setup' ? 'script' : selected.mode,
           section_kind: analyticsConfigSection(data),
-          script_type: 'unknown',
+          script_type: getAnalyticsScriptType(
+            selected.mode === 'user' ? selected.scriptId : selected.id
+          ),
           outcome,
         })
       saving.value = false
@@ -393,7 +399,8 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   function wheelEditor(
     locked: boolean,
     resolveMount: () => WheelMount | undefined = resolveSurfaceMount,
-    visibleGroups?: PluginUiEditor['groups']
+    visibleGroups?: PluginUiEditor['groups'],
+    panelData?: PluginUiEditor['panelData']
   ): PluginUiEditor {
     const selected = target.value
     const activation = resolveMount()
@@ -423,6 +430,7 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       locked: locked || !!ui.value?.locked,
       busy: busy.value || detail.isFetching.value || detail.isError.value,
       groups: panelGroups,
+      panelData,
       values: draft.values,
       ...(visibleGroups && { fieldErrors: scopedErrors(draft.errors.value) }),
       configRevision: configRevision.value,

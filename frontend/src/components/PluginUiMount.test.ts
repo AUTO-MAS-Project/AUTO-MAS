@@ -301,7 +301,8 @@ describe('wheel iframe', () => {
       )
       expect(child.replies.size).toBe(0)
       const fieldErrors = { 'Second.Count': 'Use a lower count' }
-      editor.value = { ...editor.value, fieldErrors }
+      const panelData = { stages: ['Daily'] }
+      editor.value = { ...editor.value, fieldErrors, panelData }
       await vi.waitFor(() =>
         expect(child.events).toContainEqual({
           event: 'stateChanged',
@@ -319,7 +320,7 @@ describe('wheel iframe', () => {
       const config = child.request('readConfig')
       await vi.waitFor(() => {
         expect(child.replies.get(context)?.result).toMatchObject({ fieldErrors })
-        expect(child.replies.get(config)?.result).toMatchObject({ fieldErrors })
+        expect(child.replies.get(config)?.result).toMatchObject({ fieldErrors, panelData })
       })
       editor.value = { ...editor.value, fieldErrors: {} }
       await vi.waitFor(() =>

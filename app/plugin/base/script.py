@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
+from pydantic import JsonValue
+
 from app.models.config.plan import PlanEntry
 from app.models.config.plugin_script import ScriptEntry, UserEntry
 from app.models.schema import DownloadRequest
@@ -70,6 +72,11 @@ class ScriptTypeDecl:
     ) = None
     first_account_mode: FirstAccountMode = "direct"
 
+    # 仅为编辑详情中当前插件已挂载的区块提供只读数据，不参与列表、配置保存或导出。
+    read_panel_data: (
+        Callable[[ScriptEntry | UserEntry, str], Awaitable[dict[str, JsonValue]]] | None
+    ) = None
+
     def desktop_session_reason(
         self, config: ScriptEntry, elevated: bool
     ) -> DesktopSessionReason | None:
@@ -133,6 +140,9 @@ class ScriptAdapterPlugin(_AdapterPlugin):
     # 全部经本插件的调用门执行，插件停用中调用得到 PluginBusyError；
     # 抛出的其他异常原样传给发起操作的接口。
 
+    def validate_script_update(self, data: dict[str, Any]) -> None:
+        """在路径等字段归一化前校验用户提交的托管补丁，不参与历史配置加载。"""
+
     async def on_script_cloned(self, source: ScriptEntry, target: ScriptEntry) -> None:
         """复制托管：新托管的配置已提交，宿主复制 ``data/<来源 uid>`` 之前调用。"""
 
@@ -191,6 +201,7 @@ class ScriptAdapterPlugin(_AdapterPlugin):
 
 # 宿主按名字检查子类是否覆盖，只接覆盖了的钩子。
 SCRIPT_LIFECYCLE_HOOKS: tuple[str, ...] = (
+    "validate_script_update",
     "on_script_cloned",
     "on_script_removed",
     "prepare_user_read",

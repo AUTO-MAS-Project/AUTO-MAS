@@ -44,6 +44,7 @@ _HOST_LIBRARIES = {
 }
 _MINIMUM_ADAPTER_VERSIONS = {
     "maa_adapter": Version("0.1.4"),
+    "whimbox_adapter": Version("0.2.0"),
     "mumu_adapter": Version("0.1.1"),
     "ldplayer_adapter": Version("0.1.1"),
     # 0.3 起插件之间只经宿主的服务调用；0.2.x 的专项直接导入的模块，在 0.3 的服务插件里
@@ -116,7 +117,8 @@ def required_minimum_versions(config_path: Path) -> dict[str, Version]:
     """
     return {
         name: _MINIMUM_ADAPTER_VERSIONS[name]
-        for name in required_adapter_plugins(config_path)
+        # 已安装旧版奇想盒即使还没创建托管，也需要编辑首个账号。缺包不会因此安装。
+        for name in required_adapter_plugins(config_path).keys() | {"whimbox_adapter"}
         if name in _MINIMUM_ADAPTER_VERSIONS
     }
 

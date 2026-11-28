@@ -41,7 +41,17 @@
       >
         <!-- 用户级：基本信息 + 账号 + 任务编排；载荷无字段语义时不渲染空表，
              但保留「无可展示摘要」提示（与脚本级一致的基座默认兜底） -->
-        <template v-if="target.kind === 'user'">
+        <template v-if="previewRaw?.sections?.length">
+          <section v-for="section in previewRaw.sections" :key="section.name">
+            <h4 class="preview-section-title">{{ section.label }}</h4>
+            <a-descriptions :column="1" size="small" bordered class="preview-box">
+              <a-descriptions-item v-for="row in section.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </section>
+        </template>
+        <template v-else-if="target.kind === 'user'">
           <template v-if="previewRows.length || previewData.tasks.length">
             <h4 class="preview-section-title">{{ t('core.edit.basicInfo') }}</h4>
             <a-descriptions :column="1" size="small" bordered class="preview-box">
@@ -180,6 +190,7 @@ const previewTime = computed(() => formatBackupTime(props.item.time))
 const previewLoading = ref(true)
 const previewError = ref('')
 type Preview = Awaited<ReturnType<ConfigRestoreProps['api']['preview']>> & {
+  sections?: { name: string; label: string; rows: { key: string; value: string }[] }[]
   warnings?: string[]
   restoreAllowed?: boolean
   files?: BackupFileItem[]
