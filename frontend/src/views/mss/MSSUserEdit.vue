@@ -1,19 +1,17 @@
 <template>
-  <ConfigEditShell :max-width="1400">
-    <template #header>
-      <MaaFWUserEditHeader
-        :save-status="saveStatus"
-        :save-error-message="saveErrorMessage"
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :script-route="scriptRoute"
-        :is-edit="isEdit"
-        :user-id="userIdHolder.value"
-        :leaving="leaving"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1400"
+    script-type="MSS"
+    :script-id="scriptId"
+    :script-name="scriptName || 'MFW'"
+    :script-route="scriptRoute"
+    :is-edit="isEdit"
+    :user-id="userIdHolder.value"
+    :cancel-loading="leaving"
+    :on-icon-error="handleProjectIconError"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <StateView :loading="loading">
         <a-form
@@ -143,14 +141,15 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
+import UserEditShell from '@/components/UserEditShell.vue'
 // MSS（星塔旅人 / MaaStellaSora）专属用户页：用 MFW 用户页的分节与编排层拼，与通用 MFW 用户页结构相同，
 // 只在任务队列上方多计划表下拉与活动优先开关；计划表选项在页面加载期间预取（编排层的 prepare）。
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
+import { SectionCard, StateView } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -162,7 +161,6 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import {
   BasicInfoSection,
   MaaFWQueueHeaderSection,
-  MaaFWUserEditHeader,
   TaskQueueSection,
   useMaaFWUserPage,
 } from '@/views/EditView/User/MaaFWUserEdit/pageKit'

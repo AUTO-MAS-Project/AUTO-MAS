@@ -1,16 +1,14 @@
 <template>
-  <ConfigEditShell :max-width="1200">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="baah"
-        :user-id="userId"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1200"
+    script-type="BAAH"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-form :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
@@ -193,18 +191,18 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/baah.png'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'
 import { formatConfigDate } from '@/utils/configDateTime'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'

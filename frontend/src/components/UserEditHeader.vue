@@ -19,7 +19,12 @@
             </span>
           </a-breadcrumb-item>
         </a-breadcrumb>
-        <slot name="account-identity" />
+        <AccountIdentity
+          v-if="isEdit"
+          :name="userName"
+          :logo-src="logoSrc || metadata.logo"
+          @icon-error="onIconError?.($event)"
+        />
       </div>
     </div>
 
@@ -85,55 +90,25 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+import AccountIdentity from '@/components/AccountIdentity.vue'
+import type { UserEditHeaderProps } from '@/types/userEditor'
 import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
-const props = withDefaults(
-  defineProps<{
-    /** 所属脚本 ID，用于第二级面包屑跳回脚本编辑页 */
-    scriptId: string
-    /** 脚本名称，显示在第二级面包屑 */
-    scriptName: string
-    /** true 为编辑已有用户，false 为新增用户 */
-    isEdit: boolean
-    /** 脚本编辑路由段，如 maa / hsr / oknte，拼成 /scripts/:id/edit/<segment> */
-    scriptEditSegment?: string
-    /** 脚本页命名路由；提供时优先于 scriptEditSegment */
-    scriptRoute?: RouteLocationRaw
-    /** 配置按钮文字，省略则不渲染配置按钮 */
-    configLabel?: string
-    /** 配置按钮 loading 态 */
-    configLoading?: boolean
-    /** 配置进行中，改为显示不可点击的「正在配置」 */
-    configActive?: boolean
-    /** 配置按钮禁用态 */
-    configDisabled?: boolean
-    /** 是否展示配置按钮，用于「简洁」模式下整体隐藏 */
-    configVisible?: boolean
-    /** 当前用户 ID，编辑已有用户时提供，用于渲染「配置文件夹」按钮 */
-    userId?: string
-    /** 返回按钮 loading 态，用于离开前等待保存或确认 */
-    cancelLoading?: boolean
-    /** 操作按钮尺寸，默认标准尺寸 */
-    buttonSize?: 'small' | 'middle' | 'large'
-    /** 操作按钮间距，默认中等 */
-    actionsSize?: 'small' | 'middle' | 'large'
-  }>(),
-  {
-    scriptEditSegment: undefined,
-    scriptRoute: undefined,
-    configLabel: undefined,
-    configLoading: false,
-    configActive: false,
-    configDisabled: false,
-    configVisible: true,
-    userId: undefined,
-    cancelLoading: false,
-    buttonSize: 'middle',
-    actionsSize: 'middle',
-  }
-)
+const props = withDefaults(defineProps<UserEditHeaderProps>(), {
+  scriptRoute: undefined,
+  configLabel: undefined,
+  configLoading: false,
+  configActive: false,
+  configDisabled: false,
+  configVisible: true,
+  userId: undefined,
+  cancelLoading: false,
+  buttonSize: 'middle',
+  actionsSize: 'middle',
+})
 
 const emit = defineEmits<{
   cancel: []
@@ -146,8 +121,9 @@ const showConfigButton = computed(() => Boolean(props.configLabel) && props.conf
 /** 已有用户才提供「配置文件夹」快捷入口，新增用户此时还没有配置目录 */
 const showFolderButton = computed(() => Boolean(props.userId))
 
+const metadata = computed(() => SCRIPT_METADATA[props.scriptType])
 const scriptTarget = computed<RouteLocationRaw>(
-  () => props.scriptRoute ?? `/scripts/${props.scriptId}/edit/${props.scriptEditSegment}`
+  () => props.scriptRoute ?? `/scripts/${props.scriptId}/edit/${metadata.value.routeSuffix}`
 )
 
 const { loading: folderLoading, openUserConfigFolder } = useUserApi()

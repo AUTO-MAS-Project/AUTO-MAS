@@ -1,6 +1,6 @@
 <template>
   <div class="script-edit-header">
-    <div class="header-nav">
+    <div class="header-nav" :class="{ 'header-nav--account': userName !== undefined }">
       <a-breadcrumb class="breadcrumb">
         <a-breadcrumb-item>
           <router-link to="/scripts" class="breadcrumb-link">{{
@@ -10,6 +10,7 @@
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
             <img
+              v-if="userName === undefined"
               :src="headerLogo"
               :alt="headerLogoAlt"
               class="breadcrumb-logo"
@@ -19,6 +20,7 @@
           </div>
         </a-breadcrumb-item>
       </a-breadcrumb>
+      <AccountIdentity v-if="userName !== undefined" :name="userName" :logo-src="headerLogo" />
     </div>
 
     <a-space size="middle" wrap>
@@ -47,6 +49,7 @@ import { computed } from 'vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LABELS, SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import AccountIdentity from '@/components/AccountIdentity.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { fallbackToMaaFWLogo } from '@/utils/maafwProjectIcon'
@@ -58,6 +61,7 @@ const props = defineProps<{
   scriptType: ScriptType
   /** 第二级面包屑文字，留空则用「编辑脚本」 */
   title?: string
+  userName?: string
   /** 特调描述对象中的文档与图标优先于公共登记；空文档地址隐藏入口。 */
   docUrl?: string
   logoSrc?: string
@@ -97,6 +101,14 @@ const docUrl = computed(
 
 .header-nav {
   flex: 1;
+  min-width: 0;
+}
+
+.header-nav--account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-inline-end: 12px;
 }
 
 .breadcrumb {

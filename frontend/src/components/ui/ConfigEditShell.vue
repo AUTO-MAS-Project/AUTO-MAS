@@ -15,6 +15,7 @@ withDefaults(
     error?: string | null
     loadingTip?: string
     maxWidth?: number | string
+    fixedHeader?: boolean
     /** 默认由内部 PageSurface 承载表单；若页面仍由 ConfigLockPanel + a-card 承载，可置为 false */
     surface?: boolean
   }>(),
@@ -23,6 +24,7 @@ withDefaults(
     error: null,
     loadingTip: undefined,
     maxWidth: undefined,
+    fixedHeader: false,
     surface: true,
   }
 )
@@ -33,29 +35,35 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <AppPage class="config-edit-shell" :max-width="maxWidth">
+  <AppPage
+    class="config-edit-shell"
+    :layout="fixedHeader ? 'fill' : 'scroll'"
+    :max-width="maxWidth"
+  >
     <div v-if="$slots.header" class="config-edit-shell__header">
       <slot name="header" />
     </div>
 
-    <div v-if="$slots.banner" class="config-edit-shell__banner">
-      <slot name="banner" />
-    </div>
-
-    <StateView
-      :loading="loading"
-      :error="error"
-      :empty="Boolean(error)"
-      :loading-tip="loadingTip"
-      @retry="emit('retry')"
-    >
-      <PageSurface v-if="surface" :scrollable="false" class="config-edit-shell__surface">
-        <slot />
-      </PageSurface>
-      <div v-else class="config-edit-shell__body">
-        <slot />
+    <div :class="fixedHeader ? 'config-edit-shell__scroll-area' : 'config-edit-shell__flow'">
+      <div v-if="$slots.banner" class="config-edit-shell__banner">
+        <slot name="banner" />
       </div>
-    </StateView>
+
+      <StateView
+        :loading="loading"
+        :error="error"
+        :empty="Boolean(error)"
+        :loading-tip="loadingTip"
+        @retry="emit('retry')"
+      >
+        <PageSurface v-if="surface" :scrollable="false" class="config-edit-shell__surface">
+          <slot />
+        </PageSurface>
+        <div v-else class="config-edit-shell__body">
+          <slot />
+        </div>
+      </StateView>
+    </div>
 
     <div v-if="$slots.footer" class="config-edit-shell__footer">
       <slot name="footer" />
@@ -68,6 +76,17 @@ const emit = defineEmits<{
 <style scoped>
 .config-edit-shell {
   gap: 0;
+}
+
+.config-edit-shell__flow {
+  display: contents;
+}
+
+.config-edit-shell__scroll-area {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 
 .config-edit-shell__banner {

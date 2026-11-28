@@ -17,24 +17,6 @@ import type { MaaFWQueueSource, MaaFWQueueSourceChip } from '../maafwQueueSource
 
 /** 用户页表单草稿：用户配置 + 顶部的用户名输入 */
 export type MaaFWUserFormData = MaaFWUserConfig & { userName: string }
-/** 用户页 `header`：面包屑、打开配置目录、返回（保留既有保存状态入参） */
-export interface MaaFWUserHeaderSectionProps {
-  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
-  saveErrorMessage: string
-  scriptId: string
-  scriptName: string
-  /** 面包屑回脚本页的路由目标（maafwRouteLocation(脚本类型, 'script', { id })） */
-  scriptRoute: { name: string; params: { id: string } }
-  isEdit: boolean
-  userId?: string
-  /** 点了「返回」、正在等保存完成或确认框开着：返回按钮转圈 */
-  leaving?: boolean
-}
-
-export interface MaaFWUserHeaderSectionEmits {
-  cancel: []
-}
-
 /** 用户页 `basicInfo`：账号标题、用户名、启用状态、账号密码、备注 */
 export interface MaaFWUserBasicInfoSectionProps {
   heading?: UserAccountHeadingOptions

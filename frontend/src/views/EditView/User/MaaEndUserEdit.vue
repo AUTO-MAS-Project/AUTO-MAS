@@ -1,15 +1,15 @@
 <template>
-  <ConfigEditShell :surface="false" :max-width="1200">
-    <template #header>
-      <MaaEndUserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        :user-id="userId"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :surface="false"
+    :max-width="1200"
+    script-type="MaaEnd"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-spin :spinning="loading">
         <a-form
@@ -207,11 +207,11 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -225,7 +225,6 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaEndGuiSession } from '@/composables/useMaaEndGuiSession'
 import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 
-import MaaEndUserEditHeader from '@/views/MaaEndUserEdit/MaaEndUserEditHeader.vue'
 import BasicInfoSection from '@/views/MaaEndUserEdit/BasicInfoSection.vue'
 import DailyOnceSection from '@/views/MaaEndUserEdit/DailyOnceSection.vue'
 import ConfigSourceSection from '@/views/MaaEndUserEdit/ConfigSourceSection.vue'

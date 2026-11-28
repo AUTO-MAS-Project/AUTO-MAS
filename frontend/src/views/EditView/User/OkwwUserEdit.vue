@@ -1,21 +1,19 @@
 <template>
-  <ConfigEditShell :max-width="1200">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="okww"
-        :user-id="userId"
-        :config-label="t('core.edit.configureOkww')"
-        :config-loading="okwwConfigLoading"
-        :config-active="showOkwwConfigMask"
-        :config-disabled="configActionsDisabled"
-        @config="handleOkwwConfig"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1200"
+    script-type="Okww"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :config-label="t('core.edit.configureOkww')"
+    :config-loading="okwwConfigLoading"
+    :config-active="showOkwwConfigMask"
+    :config-disabled="configActionsDisabled"
+    :user-name="formData.userName"
+    @config="handleOkwwConfig"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <StateView :loading="pageLoading">
         <UserAccountHeading
@@ -219,11 +217,12 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard, StateView } from '@/components/ui'
 import OkwwConfigSource from './components/OkwwConfigSource.vue'
 import OkwwAccountPlan from './components/OkwwAccountPlan.vue'
 import { getDefaultOkwwTaskConfig } from './components/okwwTaskConfig'
@@ -246,7 +245,6 @@ import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOkwwGuiSession } from '@/composables/useOkwwGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'

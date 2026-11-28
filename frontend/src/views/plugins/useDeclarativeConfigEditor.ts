@@ -124,6 +124,10 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
       if (!document) throw new Error(t('core.apiErrors.invalidResponse'))
       return {
         selected,
+        accountName:
+          selected.mode === 'user'
+            ? (document.Info?.Name ?? ('info' in document ? document.info?.name : '') ?? '')
+            : '',
         ui,
         uiSources,
         hasWebhooks: selected.mode === 'user' && 'Notify_CustomWebhooks' in document,
@@ -462,6 +466,12 @@ export function useDeclarativeConfigEditor(target: ComputedRef<ConfigEditorTarge
   return {
     draft,
     ui,
+    accountName: computed(() => {
+      const current = currentDetail.value
+      if (!current || current.selected.mode !== 'user') return ''
+      const name = draft.values.Info?.Name ?? draft.values.info?.name ?? current.accountName
+      return typeof name === 'string' ? name : ''
+    }),
     hasWebhooks: computed(() => currentDetail.value?.hasWebhooks),
     configUid,
     groups,

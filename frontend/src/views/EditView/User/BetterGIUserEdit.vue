@@ -1,60 +1,58 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="bettergi"
-        :user-id="userId"
-        @cancel="handleCancel"
+  <UserEditShell
+    :surface="false"
+    script-type="BetterGI"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
+    <template #extra-actions>
+      <a-tooltip
+        v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
+        placement="bottom"
       >
-        <template #extra-actions>
-          <a-tooltip
-            v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
-            placement="bottom"
-          >
-            <template #title>
-              <span style="white-space: normal">
-                {{ t('core.edit.bettergiMasConfigTooltip') }}
-              </span>
-            </template>
-            <a-button
-              type="primary"
-              ghost
-              size="middle"
-              :loading="bettergiConfigLoading"
-              :disabled="pageLoading || !userId || configLocked"
-              @click="handleBettergiConfig"
-            >
-              <template #icon>
-                <SettingOutlined />
-              </template>
-              {{ t('core.edit.bettergiConfigure') }}
-            </a-button>
-          </a-tooltip>
-          <a-button
-            v-else-if="!showBettergiConfigMask"
-            type="primary"
-            ghost
-            size="middle"
-            :loading="bettergiConfigLoading"
-            :disabled="pageLoading || !userId || configLocked"
-            @click="handleBettergiConfig"
-          >
-            <template #icon>
-              <SettingOutlined />
-            </template>
-            {{ t('core.edit.bettergiConfigure') }}
-          </a-button>
-          <a-button v-else type="default" size="middle" disabled class="configuring-button">
-            <template #icon>
-              <SettingOutlined />
-            </template>
-            {{ t('core.edit.configuring') }}
-          </a-button>
+        <template #title>
+          <span style="white-space: normal">
+            {{ t('core.edit.bettergiMasConfigTooltip') }}
+          </span>
         </template>
-      </UserEditHeader>
+        <a-button
+          type="primary"
+          ghost
+          size="middle"
+          :loading="bettergiConfigLoading"
+          :disabled="pageLoading || !userId || configLocked"
+          @click="handleBettergiConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          {{ t('core.edit.bettergiConfigure') }}
+        </a-button>
+      </a-tooltip>
+      <a-button
+        v-else-if="!showBettergiConfigMask"
+        type="primary"
+        ghost
+        size="middle"
+        :loading="bettergiConfigLoading"
+        :disabled="pageLoading || !userId || configLocked"
+        @click="handleBettergiConfig"
+      >
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        {{ t('core.edit.bettergiConfigure') }}
+      </a-button>
+      <a-button v-else type="default" size="middle" disabled class="configuring-button">
+        <template #icon>
+          <SettingOutlined />
+        </template>
+        {{ t('core.edit.configuring') }}
+      </a-button>
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
@@ -742,13 +740,13 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import accountIcon from '@/assets/bettergi.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import FieldLabelWithHint from '@/components/FieldLabelWithHint.vue'

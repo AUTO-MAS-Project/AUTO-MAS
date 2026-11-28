@@ -1,19 +1,18 @@
 <template>
-  <ConfigEditShell :max-width="1400">
-    <template #header>
-      <MaaFWUserEditHeader
-        :save-status="saveStatus"
-        :save-error-message="saveErrorMessage"
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :script-route="scriptRoute"
-        :is-edit="isEdit"
-        :user-id="userIdHolder.value"
-        :leaving="leaving"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1400"
+    script-type="MaaFW"
+    :script-id="scriptId"
+    :script-name="scriptName || 'MFW'"
+    :script-route="scriptRoute"
+    :is-edit="isEdit"
+    :user-id="userIdHolder.value"
+    :cancel-loading="leaving"
+    :on-icon-error="handleProjectIconError"
+    :user-name="formData.userName"
+    :logo-src="projectIconUrl || metadata.logo"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <StateView :loading="loading">
         <a-form
@@ -136,12 +135,13 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
+import UserEditShell from '@/components/UserEditShell.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
+import { SectionCard, StateView } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -154,7 +154,6 @@ import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
 import {
   BasicInfoSection,
   MaaFWQueueHeaderSection,
-  MaaFWUserEditHeader,
   TaskQueueSection,
   useMaaFWUserPage,
 } from './MaaFWUserEdit/pageKit'

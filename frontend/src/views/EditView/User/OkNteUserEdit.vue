@@ -1,21 +1,19 @@
 <template>
-  <ConfigEditShell :max-width="1200">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="oknte"
-        :user-id="activeUserId"
-        :config-label="t('core.edit.configureOkNte')"
-        :config-loading="oknteConfigLoading"
-        :config-active="showOknteConfigMask"
-        :config-disabled="pageLoading || !activeUserId || configLocked"
-        @config="handleOkNteConfig"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1200"
+    script-type="OkNte"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="activeUserId"
+    :config-label="t('core.edit.configureOkNte')"
+    :config-loading="oknteConfigLoading"
+    :config-active="showOknteConfigMask"
+    :config-disabled="pageLoading || !activeUserId || configLocked"
+    :user-name="formData.userName"
+    @config="handleOkNteConfig"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <StateView :loading="pageLoading">
         <UserAccountHeading
@@ -234,11 +232,12 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard, StateView } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/ok-nte.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
@@ -262,7 +261,6 @@ import { buildFieldPatch } from '@/utils/fieldPatch'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useOknteGuiSession } from '@/composables/useOknteGuiSession'
 import { useSaveQueue } from '@/composables/useSaveQueue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'

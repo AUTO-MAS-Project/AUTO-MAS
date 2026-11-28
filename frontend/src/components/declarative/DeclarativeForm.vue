@@ -93,7 +93,10 @@ const wizard = computed(() => !props.blockMode && (props.setupMode || stepItems.
 
 const form = useTemplateRef<HTMLElement>('form')
 const formId = useId()
-const getContainer = () => form.value?.closest<HTMLElement>('.plugin-settings-content') ?? window
+const getContainer = () =>
+  form.value?.closest<HTMLElement>(
+    '.plugin-settings-content, .config-edit-shell__scroll-area, .content-area'
+  ) ?? window
 function sectionTitle(name: string) {
   return i18n.value.config(`${name}.label`) ?? name
 }

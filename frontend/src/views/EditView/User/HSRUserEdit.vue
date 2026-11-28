@@ -1,16 +1,14 @@
 <template>
-  <ConfigEditShell :max-width="1400">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="hsr"
-        :user-id="userId"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1400"
+    script-type="HSR"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :user-name="formData.Info.Name ?? ''"
+    @cancel="handleCancel"
+  >
     <template v-if="pageWarnings.length" #banner>
       <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
       <a-alert type="warning" show-icon :message="pageWarnings[0]">
@@ -312,11 +310,12 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
@@ -328,7 +327,6 @@ import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import hsrLogo from '@/assets/hsr.png'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'

@@ -11,7 +11,7 @@ import WebhookManager from '@/components/WebhookManager.vue'
 import ConfigRestoreSection from '@/components/shared/ConfigRestoreSection.vue'
 import GameBindingSection from '@/components/GameBindingSection.vue'
 import ScriptEditHeader from '@/components/ScriptEditHeader.vue'
-import { SCRIPT_METADATA } from '@/utils/scriptMetadata'
+import { SCRIPT_METADATA, isBuiltinScriptType } from '@/utils/scriptMetadata'
 import { useScriptEditorNavigation } from '@/router/scriptEditorRoutes'
 import type { PluginUiActivation } from '@/utils/pluginUiRequests'
 import ConfigBlockList from './ConfigBlockList.vue'
@@ -40,6 +40,7 @@ const {
   draft,
   ui,
   hasWebhooks,
+  accountName,
   configUid,
   groups,
   surface,
@@ -202,11 +203,21 @@ defineExpose({ beforeLeave })
     </StateView>
   </DefineForm>
   <EditorForm v-if="mode === 'plan'" :locked="ui?.locked ?? false" />
-  <ConfigEditShell v-else :surface="mode === 'user'" :max-width="1040">
+  <ConfigEditShell
+    v-else
+    :fixed-header="mode === 'user'"
+    :surface="mode === 'user'"
+    :max-width="1040"
+  >
     <template #header>
       <ScriptEditHeader
         :script-type="scriptType"
-        :logo-src="SCRIPT_METADATA.General.logo"
+        :logo-src="
+          mode === 'user' && isBuiltinScriptType(scriptType)
+            ? SCRIPT_METADATA[scriptType].logo
+            : SCRIPT_METADATA.General.logo
+        "
+        :user-name="mode === 'user' ? accountName : undefined"
         :logo-alt="scriptType"
         :title="mode === 'user' ? t('core.comp.editUser') : t('core.comp.editScript')"
         @cancel="router.push({ name: 'Scripts' })"

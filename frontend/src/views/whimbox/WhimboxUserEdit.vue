@@ -1,13 +1,21 @@
 <template>
-  <ConfigEditShell :max-width="1200">
-    <template #header>
-      <WhimboxUserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        @restore="openRestoreModal"
-        @cancel="handleCancel"
-      />
+  <UserEditShell
+    :max-width="1200"
+    script-type="Whimbox"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
+    <!-- 奇想盒备份位于 WhimboxBackups，通用配置目录入口会指向空目录。 -->
+    <template #extra-actions>
+      <a-button size="middle" class="cancel-button" @click="openRestoreModal">
+        <template #icon>
+          <HistoryOutlined />
+        </template>
+        {{ t('core.edit.configRestoreTitle') }}
+      </a-button>
     </template>
 
     <template #default>
@@ -70,12 +78,14 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
+import UserEditShell from '@/components/UserEditShell.vue'
+import { HistoryOutlined } from '@ant-design/icons-vue'
 import BasicInfoRestorePreview from '@/views/whimbox/user/BasicInfoRestorePreview.vue'
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import { SectionCard } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -93,7 +103,6 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import BasicInfoSection from '@/views/whimbox/user/BasicInfoSection.vue'
 import TaskConfigSection from '@/views/whimbox/user/TaskConfigSection.vue'
-import WhimboxUserEditHeader from '@/views/whimbox/user/WhimboxUserEditHeader.vue'
 import { WHIMBOX_CONFIG_MODES } from '@/views/whimbox/user/modes'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import { useWhimboxConfigBackupApi } from './user/useWhimboxConfigBackupApi'

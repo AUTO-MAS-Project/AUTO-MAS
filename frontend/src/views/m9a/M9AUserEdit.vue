@@ -1,19 +1,17 @@
 <template>
-  <ConfigEditShell :max-width="1400">
-    <template #header>
-      <MaaFWUserEditHeader
-        :save-status="saveStatus"
-        :save-error-message="saveErrorMessage"
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :script-route="scriptRoute"
-        :is-edit="isEdit"
-        :user-id="userIdHolder.value"
-        :leaving="leaving"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1400"
+    script-type="M9A"
+    :script-id="scriptId"
+    :script-name="scriptName || 'MFW'"
+    :script-route="scriptRoute"
+    :is-edit="isEdit"
+    :user-id="userIdHolder.value"
+    :cancel-loading="leaving"
+    :on-icon-error="handleProjectIconError"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <StateView :loading="loading">
         <a-form
@@ -138,15 +136,16 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
+import UserEditShell from '@/components/UserEditShell.vue'
 // M9A（重返未来：1999）专属用户页：用 MFW 用户页的分节与编排层拼，与通用 MFW 用户页结构相同。
 // 账号绑成切号任务的目标账号；启动游戏、切换账号、关闭游戏是受管任务（由后端 app/task/M9A
 // 全权控制，不能手动加），受管任务的名单与拆用户判据在下面交给编排层处理。
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import { ConfigEditShell, SectionCard, StateView } from '@/components/ui'
+import { SectionCard, StateView } from '@/components/ui'
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -158,7 +157,6 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import {
   BasicInfoSection,
   MaaFWQueueHeaderSection,
-  MaaFWUserEditHeader,
   TaskQueueSection,
   useMaaFWUserPage,
 } from '@/views/EditView/User/MaaFWUserEdit/pageKit'

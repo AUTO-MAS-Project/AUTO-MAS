@@ -1,21 +1,19 @@
 <template>
-  <ConfigEditShell :max-width="1200">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="general"
-        :user-id="userId"
-        :config-label="t('core.edit.generalConfiguration')"
-        :config-loading="generalConfigLoading"
-        :config-active="showGeneralConfigMask"
-        :config-disabled="configLocked"
-        @config="handleGeneralConfig()"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    :max-width="1200"
+    script-type="General"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :config-label="t('core.edit.generalConfiguration')"
+    :config-loading="generalConfigLoading"
+    :config-active="showGeneralConfigMask"
+    :config-disabled="configLocked"
+    :user-name="formData.userName"
+    @config="handleGeneralConfig()"
+    @cancel="handleCancel"
+  >
     <template #default>
       <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
         <a-form
@@ -139,17 +137,17 @@
         :on-detail="handleRestoreView"
       />
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard } from '@/components/ui'
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
 import accountIcon from '@/assets/AUTO-MAS.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import { requestScriptConfigStart, stopNativeConfig } from '@/composables/useTaskApi'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'

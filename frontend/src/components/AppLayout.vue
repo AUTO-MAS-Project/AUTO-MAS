@@ -457,6 +457,16 @@ html.appearance-background-custom .app-body::before {
   padding: var(--app-page-gutter);
 }
 
+.content-area:has(> .config-edit-shell.app-page--fill) {
+  display: flex;
+  flex-direction: column;
+}
+
+.content-area > :deep(.config-edit-shell.app-page--fill) {
+  flex: 1;
+  height: auto;
+}
+
 .content-area::-webkit-scrollbar {
   display: none;
 }

@@ -3,12 +3,11 @@
 // 脚本详情）由编排层自己取，页面照常调用即可。
 // 这个文件刻意不叫 index.ts：vite 解析扩展名时 .vue 排在目录之前，按目录名引入会拿到同名的
 // MaaFWUserEdit.vue 页面本身（typecheck 却照样通过）。
-import MaaFWUserEditHeader from './MaaFWUserEditHeader.vue'
 import BasicInfoSection from './BasicInfoSection.vue'
 import MaaFWQueueHeaderSection from './MaaFWQueueHeaderSection.vue'
 import TaskQueueSection from './TaskQueueSection.vue'
 
-export { MaaFWUserEditHeader, BasicInfoSection, MaaFWQueueHeaderSection, TaskQueueSection }
+export { BasicInfoSection, MaaFWQueueHeaderSection, TaskQueueSection }
 
 export {
   useMaaFWUserPage,
@@ -20,8 +19,6 @@ export type {
   AddTaskCascaderOption,
   MaaFWUserBasicInfoSectionEmits,
   MaaFWUserBasicInfoSectionProps,
-  MaaFWUserHeaderSectionEmits,
-  MaaFWUserHeaderSectionProps,
   MaaFWQueueTemplateView,
   MaaFWUserQueueHeaderSectionEmits,
   MaaFWUserQueueHeaderSectionProps,

@@ -1,17 +1,17 @@
 <template>
-  <ConfigEditShell ref="shellRef" :surface="false">
-    <template v-if="!cultivationPage" #header>
-      <MAAUserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        :user-name="formData.userName"
-        :user-id="userId"
-        :cancel-loading="leavingPage"
-        @cancel="handleCancel"
-      />
-    </template>
-
+  <UserEditShell
+    ref="shellRef"
+    :surface="false"
+    :hide-header="cultivationPage"
+    script-type="MAA"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :cancel-loading="leavingPage"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
     <!-- 干员养成独立页面：页面壳自带页头/总览/标签页 -->
     <CultivationPage
       v-if="cultivationPage && !isInitializing"
@@ -247,14 +247,13 @@
         </template>
       </ConfigRestoreSection>
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useMAAAccountFields } from '@maa/user/useMAAAccountFields'
-import MAAUserEditHeader from '@maa/user/MAAUserEditHeader.vue'
 import CultivationPage from '@maa/user/CultivationPage.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
@@ -317,7 +316,7 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
-const shellRef = ref<InstanceType<typeof ConfigEditShell>>()
+const shellRef = ref<InstanceType<typeof UserEditShell>>()
 const isInitializing = ref(true)
 // 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
 const loading = computed(
@@ -1371,13 +1370,6 @@ onMounted(async () => {
 <style scoped src="@/styles/userEditForm.css"></style>
 
 <style scoped>
-:deep(.config-edit-shell__header) {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--ant-color-bg-layout);
-}
-
 .cultivation-page-loading {
   display: grid;
   place-items: center;

@@ -1,45 +1,43 @@
 <template>
-  <ConfigEditShell :surface="false">
-    <template #header>
-      <UserEditHeader
-        :script-id="scriptId"
-        :script-name="scriptName"
-        :is-edit="isEdit"
-        script-edit-segment="zzzod"
-        :user-id="userId"
-        @cancel="handleCancel"
+  <UserEditShell
+    :surface="false"
+    script-type="ZzzOd"
+    :script-id="scriptId"
+    :script-name="scriptName"
+    :is-edit="isEdit"
+    :user-id="userId"
+    :user-name="formData.userName"
+    @cancel="handleCancel"
+  >
+    <template #extra-actions>
+      <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
+        <a-button
+          v-if="!showZzzodConfigMask && !showZzzodViewMask"
+          type="primary"
+          ghost
+          size="middle"
+          :loading="zzzodConfigLoading"
+          :disabled="pageLoading || nativeLoading || !userId || configLocked"
+          @click="handleZzzodConfig"
+        >
+          <template #icon>
+            <SettingOutlined />
+          </template>
+          {{ t('core.edit.zzzodOpenNativeConfig') }}
+        </a-button>
+      </a-tooltip>
+      <a-button
+        v-if="showZzzodConfigMask"
+        type="default"
+        size="middle"
+        disabled
+        class="configuring-button"
       >
-        <template #extra-actions>
-          <a-tooltip :title="t('core.edit.zzzodOpenNativeConfigHint')">
-            <a-button
-              v-if="!showZzzodConfigMask && !showZzzodViewMask"
-              type="primary"
-              ghost
-              size="middle"
-              :loading="zzzodConfigLoading"
-              :disabled="pageLoading || nativeLoading || !userId || configLocked"
-              @click="handleZzzodConfig"
-            >
-              <template #icon>
-                <SettingOutlined />
-              </template>
-              {{ t('core.edit.zzzodOpenNativeConfig') }}
-            </a-button>
-          </a-tooltip>
-          <a-button
-            v-if="showZzzodConfigMask"
-            type="default"
-            size="middle"
-            disabled
-            class="configuring-button"
-          >
-            <template #icon>
-              <SettingOutlined />
-            </template>
-            {{ t('core.edit.configuring') }}
-          </a-button>
+        <template #icon>
+          <SettingOutlined />
         </template>
-      </UserEditHeader>
+        {{ t('core.edit.configuring') }}
+      </a-button>
     </template>
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
@@ -582,15 +580,15 @@
         :on-detail="handleRestoreView"
       />
     </template>
-  </ConfigEditShell>
+  </UserEditShell>
 </template>
 
 <script setup lang="ts">
-import { ConfigEditShell, SectionCard } from '@/components/ui'
+import UserEditShell from '@/components/UserEditShell.vue'
+import { SectionCard } from '@/components/ui'
 import BoundGamePathField from '@/components/BoundGamePathField.vue'
 
 import UserAccountHeading from '@/components/UserAccountHeading.vue'
-import UserEditHeader from '@/components/UserEditHeader.vue'
 import accountIcon from '@/assets/zzz-od.ico'
 import UserBasicInfoFields from '@/components/UserBasicInfoFields.vue'
 import ZzzodLaunchArgumentFields from './ZzzOdUserEdit/ZzzodLaunchArgumentFields.vue'
