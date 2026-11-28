@@ -2471,6 +2471,14 @@ app.whenReady().then(async () => {
     () => mainWindow,
     mainWindowIcon,
     () => loadConfig().language,
+    {
+      completed: () => loadConfig().desktopSessionLoginCompleted === true,
+      markCompleted: () => {
+        patchConfigFile(path.join(getAppRoot(), 'config', 'frontend_config.json'), {
+          desktopSessionLoginCompleted: true,
+        })
+      },
+    },
     () => {
       const config = loadConfig()
       return { mode: config.desktopSessionMode, resolution: config.desktopSessionResolution }

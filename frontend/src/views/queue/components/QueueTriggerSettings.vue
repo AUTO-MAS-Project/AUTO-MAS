@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import type { QueueConfig_Info, QueueUpdateIn } from '@/api'
@@ -22,19 +22,41 @@ const cyclic = ref(false)
 const after = ref(PowerSignal.NO_ACTION)
 const delay = ref<number | null>(1)
 const saving = ref(false)
+const supportsDesktop = ref<boolean>()
+onMounted(async () => {
+  try {
+    supportsDesktop.value = (await window.electronAPI.desktopSessionSupported?.()) === true
+  } catch {
+    supportsDesktop.value = false
+    message.error(t('bootstrap.desktopSession.loadTasksFailed'))
+  }
+})
+const locationOptions = computed(() => [
+  { value: 'main', label: t('bootstrap.desktopSession.mainFallbackMainGroup') },
+  {
+    value: 'desktop',
+    label: t('bootstrap.desktopSession.title'),
+    disabled: !supportsDesktop.value || after.value !== PowerSignal.NO_ACTION,
+  },
+])
 
 // 完成后操作选项。label 随语言变，必须是 computed
-const afterOptions = computed(() => [
-  { label: t('core.queue.action.NoAction'), value: PowerSignal.NO_ACTION },
-  { label: t('core.queue.action.Shutdown'), value: PowerSignal.SHUTDOWN },
-  { label: t('core.queue.action.ShutdownForce'), value: PowerSignal.SHUTDOWN_FORCE },
-  { label: t('core.queue.action.Reboot'), value: PowerSignal.REBOOT },
-  { label: t('core.queue.action.Hibernate'), value: PowerSignal.HIBERNATE },
-  { label: t('core.queue.action.Sleep'), value: PowerSignal.SLEEP },
-  { label: t('core.queue.action.KillSelf'), value: PowerSignal.KILL_SELF },
-  { label: t('core.queue.action.RestartSelf'), value: PowerSignal.RESTART_SELF },
-  { label: t('core.queue.action.Logoff'), value: PowerSignal.LOGOFF },
-])
+const afterOptions = computed(() =>
+  [
+    { label: t('core.queue.action.NoAction'), value: PowerSignal.NO_ACTION },
+    { label: t('core.queue.action.Shutdown'), value: PowerSignal.SHUTDOWN },
+    { label: t('core.queue.action.ShutdownForce'), value: PowerSignal.SHUTDOWN_FORCE },
+    { label: t('core.queue.action.Reboot'), value: PowerSignal.REBOOT },
+    { label: t('core.queue.action.Hibernate'), value: PowerSignal.HIBERNATE },
+    { label: t('core.queue.action.Sleep'), value: PowerSignal.SLEEP },
+    { label: t('core.queue.action.KillSelf'), value: PowerSignal.KILL_SELF },
+    { label: t('core.queue.action.RestartSelf'), value: PowerSignal.RESTART_SELF },
+    { label: t('core.queue.action.Logoff'), value: PowerSignal.LOGOFF },
+  ].map(option => ({
+    ...option,
+    disabled: props.info?.ExecutionSession === 'desktop' && option.value !== PowerSignal.NO_ACTION,
+  }))
+)
 
 watch(
   () => props.info,
@@ -72,7 +94,7 @@ function saveDelay() {
 <template>
   <a-form layout="vertical" class="queue-trigger-settings" :disabled="saving">
     <a-row :gutter="[24, 0]">
-      <a-col :xs="24" :sm="8" :xl="5">
+      <a-col :xs="24" :sm="8">
         <a-form-item :label="t('core.queue.runOnStart')">
           <a-select
             v-model:value="startup"
@@ -85,7 +107,7 @@ function saveDelay() {
           </a-select>
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :sm="8" :xl="5">
+      <a-col :xs="24" :sm="8">
         <a-form-item :label="t('core.queue.scheduled')">
           <SettingToggleButton
             v-model="timed"
@@ -95,7 +117,7 @@ function saveDelay() {
           />
         </a-form-item>
       </a-col>
-      <a-col :xs="24" :sm="8" :xl="5">
+      <a-col :xs="24" :sm="8">
         <a-form-item :label="t('core.queue.triggers.cycleEnabled')">
           <SettingToggleButton
             v-model="cyclic"
@@ -105,8 +127,7 @@ function saveDelay() {
           />
         </a-form-item>
       </a-col>
-      <!-- 两项始终共用原来的 9 列；隐藏延迟时由完成后操作占满。 -->
-      <a-col :xs="24" :sm="24" :xl="9" class="after-action-group">
+      <a-col :xs="24" :sm="12" class="after-action-group">
         <a-row :gutter="[16, 0]">
           <a-col :span="after === PowerSignal.NO_ACTION ? 24 : 14">
             <a-form-item>
@@ -147,6 +168,32 @@ function saveDelay() {
             </a-form-item>
           </a-col>
         </a-row>
+      </a-col>
+      <a-col :xs="24" :sm="12">
+        <a-form-item
+          html-for="queue-launch-location"
+          :label="t('bootstrap.desktopSession.queueLaunchLocation')"
+          :extra="
+            supportsDesktop === false
+              ? t('bootstrap.desktopSession.unsupported')
+              : after !== PowerSignal.NO_ACTION
+                ? t('bootstrap.desktopSession.powerAction')
+                : info?.ExecutionSession === 'desktop'
+                  ? t('bootstrap.desktopSession.queueAutoConnectHint')
+                  : undefined
+          "
+        >
+          <a-select
+            id="queue-launch-location"
+            :value="info?.ExecutionSession ?? 'main'"
+            :options="locationOptions"
+            size="large"
+            @change="
+              (value: NonNullable<QueueConfig_Info['ExecutionSession']>) =>
+                save({ Info: { ExecutionSession: value } })
+            "
+          />
+        </a-form-item>
       </a-col>
     </a-row>
   </a-form>

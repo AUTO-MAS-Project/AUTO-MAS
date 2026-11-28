@@ -93,6 +93,8 @@ export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
 
 // 系统通知（id=Main）：后端启动期攒下的通知（如 M9A 配置迁移结果），主连接建立后发一次
 export const WS_SYSTEM_NOTICE = 'system.notice'
+export const WS_DESKTOP_SESSION_LOGIN_FINISHED = 'desktop-session.login.finished'
+export const WS_DESKTOP_SESSION_LOGIN_NEEDED = 'desktop-session.login.needed'
 
 // ==================== 关键消息数据类型 ====================
 
@@ -356,6 +358,8 @@ interface WSMessageDataMap {
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
   [WS_SYSTEM_NOTICE]: WSSystemNoticeData
+  [WS_DESKTOP_SESSION_LOGIN_NEEDED]: { requestId?: string }
+  [WS_DESKTOP_SESSION_LOGIN_FINISHED]: { requestId: string; retryStartup: boolean }
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

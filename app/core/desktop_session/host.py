@@ -237,11 +237,13 @@ class Host:
     def connect(self, command: dict, password: str | None, port: int) -> None:
         account, sid = credentials.current_identity()
         path = self.root / "config" / "desktop-session" / "credentials.json"
-        credential = (
-            credentials.Credential(account, password)
-            if password is not None
-            else credentials.load(path, account)
-        )
+        if password is None:
+            credential = credentials.load(path, account)
+        elif password:
+            credential = credentials.Credential(account, password)
+        else:
+            # 用户显式选择无密码连接，使用当前 Windows 登录会话。
+            credential = None
         if credential is not None:
             started = datetime.now(UTC)
             try:
@@ -278,7 +280,17 @@ class Host:
                     "credential_warning", code=exc.code, nativeCode=exc.native_code
                 )
 
+        passwordless = password == ""
+
         def connected() -> None:
+            if passwordless and path.exists():
+                # 首次明确选择无密码且连接成功后，后续连接也跳过旧密码。
+                try:
+                    credentials.save(path, account, None)
+                except credentials.CredentialError as exc:
+                    self.report(
+                        "credential_warning", code=exc.code, nativeCode=exc.native_code
+                    )
             assert self.viewer is not None
             self.session_id = self.viewer.session_id
 

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import DesktopSessionPasswordDialog from './components/DesktopSessionPasswordDialog.vue'
+import { finishDesktopLogin, pendingDesktopLogin } from '@/composables/useDesktopSessionLogin'
 import { BlockOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 import type { GlobalConfig } from '@/api'
@@ -19,6 +21,7 @@ import type { DesktopSessionRequest } from '../../../electron/services/desktopSe
  * 分辨率与最小化方式只有 Electron 用，存在 frontend_config。
  */
 const props = defineProps<{
+  active: boolean
   settings: GlobalConfig
   handleSettingGroupChange: SettingGroupChangeHandler
 }>()
@@ -83,12 +86,92 @@ const rows = computed(() =>
   }))
 )
 
+const loginDialog = ref(false)
+const loginError = ref('')
+const pendingOpenIds = ref<string[]>()
+
+function closeLogin() {
+  loginDialog.value = false
+  loginError.value = ''
+  pendingOpenIds.value = undefined
+  finishDesktopLogin('cancelled')
+}
+
+watch(
+  [pendingDesktopLogin, () => props.active, supported],
+  ([waiting, active, available]) => {
+    if (!active) {
+      if (loginDialog.value) closeLogin()
+      return
+    }
+    if (!waiting) return
+    if (available === false) finishDesktopLogin('failed')
+    if (available) loginDialog.value = true
+  },
+  { immediate: true }
+)
+onBeforeUnmount(closeLogin)
+
+async function submitLogin(password: string) {
+  if (starting.value) return
+  const openIds = pendingOpenIds.value
+  starting.value = 'login'
+  loginError.value = ''
+  try {
+    const result = await window.electronAPI.desktopSessionConnectForTask?.({
+      password,
+      mode: mode.value,
+      resolution: resolution.value,
+      forTask: openIds === undefined,
+    })
+    if (!loginDialog.value) return
+    if (result !== 'connected') {
+      if (result === 'cancelled') closeLogin()
+      else
+        loginError.value = t(
+          result === 'credentials_rejected'
+            ? 'bootstrap.desktopSession.loginRejected'
+            : result === 'login_state_save_failed'
+              ? 'bootstrap.desktopSession.loginStateSaveFailed'
+              : result === 'preview_unavailable'
+                ? 'bootstrap.desktopSession.errors.preview_unavailable'
+                : 'bootstrap.desktopSession.startFailed'
+        )
+      return
+    }
+    loginDialog.value = false
+    finishDesktopLogin('connected')
+    pendingOpenIds.value = undefined
+    if (openIds?.length) {
+      await window.electronAPI.desktopSessionOpen?.({
+        queueIds: openIds,
+        mode: mode.value,
+        resolution: resolution.value,
+      })
+    }
+  } catch {
+    if (loginDialog.value) loginError.value = t('bootstrap.desktopSession.startFailed')
+    else message.error(t('bootstrap.desktopSession.openFailed'))
+  } finally {
+    starting.value = null
+  }
+}
+
 async function open(queueIds: string[], key: string) {
   const launch = window.electronAPI?.desktopSessionOpen
   if (!launch || supported.value !== true) return
   starting.value = key
   try {
-    await launch({ queueIds: [...queueIds], mode: mode.value, resolution: resolution.value })
+    const result = await launch({
+      queueIds: [...queueIds],
+      mode: mode.value,
+      resolution: resolution.value,
+    })
+    if (result === 'setup_required' && props.active) {
+      pendingOpenIds.value = [...queueIds]
+      loginError.value = ''
+      loginDialog.value = true
+    }
   } catch {
     message.error(text('openFailed'))
   } finally {
@@ -125,7 +208,12 @@ onMounted(async () => {
   } catch {
     // 读不到偏好时用默认参数。
   }
-  supported.value = (await window.electronAPI?.desktopSessionSupported?.()) === true
+  try {
+    supported.value = (await window.electronAPI?.desktopSessionSupported?.()) === true
+  } catch {
+    supported.value = false
+    message.error(text('loadTasksFailed'))
+  }
 })
 </script>
 
@@ -253,6 +341,16 @@ onMounted(async () => {
         </a-button>
       </div>
     </template>
+    <DesktopSessionPasswordDialog
+      v-model:open="loginDialog"
+      first-login
+      :submitting="starting === 'login'"
+      @submit="submitLogin"
+      @cancel="closeLogin"
+    >
+      <a-typography-text>{{ t('bootstrap.desktopSession.firstLoginHint') }}</a-typography-text>
+      <a-alert v-if="loginError" type="error" show-icon :message="loginError" />
+    </DesktopSessionPasswordDialog>
   </SectionCard>
 </template>
 

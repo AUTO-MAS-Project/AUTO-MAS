@@ -19,6 +19,8 @@ export interface FrontendConfig {
   settingsShowNavigation?: boolean
   /** 旧版「打开分身时一并启动」的选择；已移到后端 StartOnOpen，只在迁移时读取，原样保留以便降级。 */
   desktopSessionQueueIds?: string[]
+  /** 当前配置已成功连接过桌面分身。 */
+  desktopSessionLoginCompleted?: boolean
   /** 旧选择已并入 StartOnOpen；只在设置保存成功后置位。 */
   desktopSessionStartOnOpenMigrated?: boolean
   /** 桌面分身的分辨率；单独启动托管时自动连接也沿用它。 */

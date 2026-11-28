@@ -7,8 +7,11 @@
 import { h } from 'vue'
 import { notification } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
+import { send } from '@/services/websocket/connection'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
+  WS_DESKTOP_SESSION_LOGIN_FINISHED,
+  WS_DESKTOP_SESSION_LOGIN_NEEDED,
   WS_EMULATOR_NOTICE,
   WS_ID_EMULATOR_MANAGER,
   WS_ID_MAIN,
@@ -18,6 +21,13 @@ import {
 } from '@/services/websocket/types'
 
 let subscriptionIds: string[] = []
+// 调度器同一时间只等待一个请求。保留其 Promise，重连重投时可复用等待中的选择或最终结果。
+let scheduledLogin: { requestId: string; result: Promise<boolean> } | undefined
+
+async function promptDesktopLogin(): Promise<boolean> {
+  const { promptScheduledDesktopLogin } = await import('@/composables/useDesktopSessionLogin')
+  return (await promptScheduledDesktopLogin()) === true
+}
 
 type NoticeLevel = WSTaskNoticeData['level']
 type NoticeDescription = string | (() => ReturnType<typeof h>)
@@ -83,6 +93,22 @@ export function bootstrapSystemNotices(): void {
     subscribe({ id: WS_ID_EMULATOR_MANAGER, type: WS_EMULATOR_NOTICE }, message =>
       showNotice(t('core.emulator2.noticeTitle'), message.data)
     ),
+    subscribe({ id: WS_ID_MAIN, type: WS_DESKTOP_SESSION_LOGIN_NEEDED }, async message => {
+      const { requestId } = message.data
+      if (!requestId) {
+        await promptDesktopLogin()
+        return
+      }
+      if (scheduledLogin?.requestId !== requestId) {
+        scheduledLogin = { requestId, result: promptDesktopLogin() }
+      }
+      let retryStartup = false
+      try {
+        retryStartup = await scheduledLogin.result
+      } finally {
+        send(WS_ID_MAIN, WS_DESKTOP_SESSION_LOGIN_FINISHED, { requestId, retryStartup })
+      }
+    }),
     subscribe({ id: WS_ID_MAIN, type: WS_SYSTEM_NOTICE }, message =>
       showSystemNotice(message.data)
     ),
