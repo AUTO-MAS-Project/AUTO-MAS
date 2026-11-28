@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import type { HomeModuleKey } from '@/types/home'
 import { useCommunityActivityStore } from '@/stores/communityActivity'
+import { navigateTo } from '@/router'
 import {
   useCommunityActivityApi,
   type ActivitySnapshot,
@@ -28,7 +29,12 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('首页社区信息')
 const { querySignResult } = useCommunityActivityApi()
 const activityStore = useCommunityActivityStore()
-const { snapshots, loading, errorMessage: activityError } = storeToRefs(activityStore)
+const {
+  snapshots,
+  loading,
+  errorMessage: activityError,
+  pluginMissing,
+} = storeToRefs(activityStore)
 
 const signLoading = ref(false)
 const signError = ref(false)
@@ -122,13 +128,22 @@ onMounted(() => {
     <div v-if="selectedNote || showNoteFeedback" class="notes-memos">
       <div v-if="showNoteFeedback" class="note-feedback" role="status">
         <a-spin v-if="loading" size="small" />
-        <span>{{
-          loading ? t('core.home.activityNotes.loading') : t('core.signflow.activity.queryFailed')
-        }}</span>
-        <span v-if="!loading" class="notes-daily-hint">{{ activityError }}</span>
-        <a-button v-if="!loading" type="link" size="small" @click="refresh">{{
-          t('core.signflow.activity.refresh')
-        }}</a-button>
+        <!-- 插件没装时给出去插件市场的入口，否则首页只剩一句「查询失败」 -->
+        <template v-if="pluginMissing && !loading">
+          <span>{{ t('core.signflow.activity.pluginMissing') }}</span>
+          <a-button type="link" size="small" @click="navigateTo('/plugins/market')">{{
+            t('core.unavailableConfig.installPlugin')
+          }}</a-button>
+        </template>
+        <template v-else>
+          <span>{{
+            loading ? t('core.home.activityNotes.loading') : t('core.signflow.activity.queryFailed')
+          }}</span>
+          <span v-if="!loading" class="notes-daily-hint">{{ activityError }}</span>
+          <a-button v-if="!loading" type="link" size="small" @click="refresh">{{
+            t('core.signflow.activity.refresh')
+          }}</a-button>
+        </template>
       </div>
       <HomeActivityNoteStrip
         v-if="selectedNote"

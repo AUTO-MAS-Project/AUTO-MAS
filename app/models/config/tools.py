@@ -81,11 +81,11 @@ class SignFlowAccountGroup(DomainEntry):
 
         MiyousheDeviceFp: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",
-            description="SignFlowAccount - 米游社安卓设备指纹 (DPAPI 加密，仅用于绝区零便笺)",
+            description="SignFlowAccount - 米游社安卓设备指纹 (DPAPI 加密，供便笺插件签名使用)",
         )
         MiyousheDeviceId: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",
-            description="SignFlowAccount - 米游社安卓设备 ID (DPAPI 加密，仅用于绝区零便笺)",
+            description="SignFlowAccount - 米游社安卓设备 ID (DPAPI 加密，供便笺插件签名使用)",
         )
         MiyousheToken: Annotated[str, encrypted()] = Field(
             default_factory=lambda: "",

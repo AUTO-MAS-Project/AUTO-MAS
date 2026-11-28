@@ -1516,6 +1516,7 @@
   "core.signflow.activity.noteTasks": "Tasks and recurring",
   "core.signflow.activity.platform.miyoushe": "Miyoushe",
   "core.signflow.activity.platform.skland": "Skland",
+  "core.signflow.activity.pluginMissing": "The daily notes plugin is not enabled; install and enable it to view notes",
   "core.signflow.activity.queriedAt": "Queried at {time}",
   "core.signflow.activity.queryFailed": "Could not query daily notes",
   "core.signflow.activity.refresh": "Refresh daily notes",

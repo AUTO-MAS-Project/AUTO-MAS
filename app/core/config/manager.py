@@ -542,12 +542,6 @@ class AppConfig:
             field="VideoStorageLimitMiB",
         )
 
-        with startup_stage("后端/配置/社区订阅绑定"):
-            from app.core import Community
-
-            Community.connect_community_activity_cache(
-                self.ToolsConfig, setting=self.setting
-            )
         # 注册自启动会读写注册表, 不阻塞初始化; 持有引用避免被 GC 且异常不被静默吞掉
         self_start_task = asyncio.create_task(
             set_self_start(self.setting.Start.IfSelfStart)

@@ -24,10 +24,7 @@
 import traceback
 from datetime import datetime
 from inspect import isawaitable
-from typing import (
-    Dict,
-    Literal,
-)
+from typing import Dict
 from uuid import UUID
 
 from fastapi import APIRouter, Body
@@ -134,68 +131,6 @@ class SignFlowAccountReorderIn(BaseModel):
     """游戏社区账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
-
-
-class CommunityActivityQueryIn(BaseModel):
-    """游戏社区日常查询请求。"""
-
-    accountIds: list[str] | None = Field(
-        default=None,
-        description="指定账号组 UUID 列表；为空时查询全部已配置账号组",
-    )
-
-
-class CommunityActivityTaskOut(BaseModel):
-    """日常活动中的单项任务。"""
-
-    name: str = Field(..., description="任务名称")
-    completed: int = Field(..., description="已完成数量")
-    target: int = Field(..., description="目标数量")
-    status: str = Field(..., description="任务状态")
-    period: str = Field(default="daily", description="任务周期")
-
-
-class CommunityActivityResourceOut(BaseModel):
-    """日常活动中的可用资源。"""
-
-    name: str = Field(..., description="资源名称")
-    current: int = Field(..., description="当前数量")
-    target: int = Field(..., description="容量上限")
-    status: str = Field(..., description="资源状态")
-
-
-class CommunityActivitySnapshotOut(BaseModel):
-    """单个游戏角色的日常活动快照。"""
-
-    account: str = Field(..., description="账号组名称")
-    accountUid: str = Field(..., description="账号组 UUID")
-    game: str = Field(..., description="游戏名称")
-    platform: str = Field(..., description="社区平台名称")
-    status: Literal["success", "empty", "limited", "unavailable", "failed"] = Field(
-        ..., description="活动查询状态"
-    )
-    completed: int | None = Field(default=None, description="已完成数量")
-    target: int | None = Field(default=None, description="目标数量")
-    tasks: list[CommunityActivityTaskOut] = Field(
-        default_factory=list, description="每日任务"
-    )
-    resources: list[CommunityActivityResourceOut] = Field(
-        default_factory=list, description="可用资源"
-    )
-    reason: str = Field(default="", description="失败或受限原因")
-    updatedAt: str = Field(default="", description="查询时间")
-    roleName: str = Field(default="", description="角色名称")
-    roleUid: str = Field(default="", description="角色 UID")
-    server: str = Field(default="", description="角色区服")
-    source: str = Field(default="", description="已确认的数据来源路径")
-
-
-class CommunityActivityOut(OutBase):
-    """游戏社区日常活动查询响应。"""
-
-    data: list[CommunityActivitySnapshotOut] = Field(
-        default_factory=list, description="按账号和游戏拆分的活动快照"
-    )
 
 
 class ToolsGetOut(OutBase):
@@ -365,80 +300,6 @@ async def manual_sign_flow() -> OutBase:
             message="游戏社区签到失败，请稍后重试",
         )
     return OutBase(message="签到完成")
-
-
-@router.post(
-    "/community/activity/query",
-    tags=["Community"],
-    summary="查询游戏社区日常活跃度",
-    response_model=CommunityActivityOut,
-    status_code=200,
-)
-async def query_community_activity(
-    query: CommunityActivityQueryIn = Body(...),
-) -> CommunityActivityOut:
-    """查询游戏社区日常活动，不占用签到流程锁。"""
-
-    if Config.ToolsConfig.SignFlow.ActivityEnabled is False:
-        return CommunityActivityOut(status="success", data=[])
-
-    snapshots = ()
-    try:
-        snapshots = await Community.query_configured_community_activity(
-            query.accountIds
-        )
-    except ValueError as exc:
-        _log_community_api_error("游戏社区日常查询参数或凭据无效", exc)
-        return CommunityActivityOut(
-            code=400,
-            status="error",
-            message="游戏社区日常查询参数或凭据无效",
-        )
-    except Exception as exc:
-        _log_community_api_error("游戏社区日常查询失败", exc)
-        snapshots = Community.build_configured_community_activity_failures(
-            query.accountIds,
-        )
-        if not snapshots:
-            return CommunityActivityOut(
-                code=500,
-                status="error",
-                message="游戏社区日常查询失败，请稍后重试",
-            )
-
-    return CommunityActivityOut(
-        status="warning"
-        if any(snapshot.status != "success" for snapshot in snapshots)
-        else "success",
-        message="部分游戏日常查询失败"
-        if any(snapshot.status == "failed" for snapshot in snapshots)
-        else "",
-        data=[
-            CommunityActivitySnapshotOut(
-                account=snapshot.account,
-                accountUid=snapshot.account_uid,
-                game=snapshot.game,
-                platform=snapshot.platform,
-                status=snapshot.status,
-                completed=snapshot.completed,
-                target=snapshot.target,
-                tasks=[
-                    CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks
-                ],
-                resources=[
-                    CommunityActivityResourceOut(**dict(resource))
-                    for resource in snapshot.resources
-                ],
-                reason=snapshot.reason,
-                updatedAt=snapshot.updated_at,
-                roleName=snapshot.role_name,
-                roleUid=snapshot.role_uid,
-                server=snapshot.server,
-                source=snapshot.source,
-            )
-            for snapshot in snapshots
-        ],
-    )
 
 
 # ==================== 游戏社区账号组 CRUD ====================

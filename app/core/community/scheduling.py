@@ -20,11 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""社区工具调度策略，明确隔离签到和日常查询的执行边界。"""
+"""社区工具调度策略：签到触发来源判定与账号完成状态查询。"""
 
-import asyncio
 from collections.abc import Callable, Iterable
-from contextlib import asynccontextmanager
 from typing import Literal, Protocol
 
 CommunityTriggerSource = Literal[
@@ -49,9 +47,6 @@ def _default_credential_checker(account: object) -> bool:
 
 
 class CommunityScheduleOperations:
-    def __init__(self) -> None:
-        self._community_activity_lock = asyncio.Lock()
-
     def has_pending_community_account(
         self,
         account: object,
@@ -100,13 +95,3 @@ class CommunityScheduleOperations:
         if source == "startup":
             return bool(run_on_startup)
         return source in TASK_COMMUNITY_SOURCES
-
-    @asynccontextmanager
-    async def community_activity_flow(self):
-        """串行化社区日常查询，等待后由缓存复用结果，不占用签到流程锁。"""
-
-        await self._community_activity_lock.acquire()
-        try:
-            yield
-        finally:
-            self._community_activity_lock.release()

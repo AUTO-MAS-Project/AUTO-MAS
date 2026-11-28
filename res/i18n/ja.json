@@ -1516,6 +1516,7 @@
   "core.signflow.activity.noteTasks": "任務と定期項目",
   "core.signflow.activity.platform.miyoushe": "HoYoLAB 中国版",
   "core.signflow.activity.platform.skland": "森空島",
+  "core.signflow.activity.pluginMissing": "デイリーノートプラグインが有効になっていません。インストールと有効化の後に表示されます",
   "core.signflow.activity.queriedAt": "{time} に照会",
   "core.signflow.activity.queryFailed": "デイリーノートを取得できませんでした",
   "core.signflow.activity.refresh": "デイリーノートを更新",

@@ -20,20 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
-"""社区工具：协议、凭据、签到结果和活动采集。"""
+"""社区工具：协议、凭据与签到结果。"""
 
-from app.tools.common.community.activity.parser import parse_activity_snapshot
-from app.tools.common.community.activity.provider import (
-    CommunityActivityProvider,
-    build_community_activity_requester,
-)
-from app.tools.common.community.activity.transport import (
-    CommunityActivityRequest,
-    CommunityActivityTarget,
-    CommunityActivityTransportError,
-    build_community_activity_requests,
-    collect_community_activity,
-)
 from app.tools.common.community.contracts import CommunitySignInProgressError
 from app.tools.common.community.plugins import (
     COMMUNITY_PLUGIN_REFERENCES,
@@ -49,18 +37,10 @@ from app.tools.common.community.sign import (
 )
 
 __all__ = [
-    "parse_activity_snapshot",
     "COMMUNITY_PLUGIN_REFERENCES",
     "CommunityCapability",
     "CommunityPluginReference",
     "CommunitySignInProgressError",
-    "CommunityActivityRequest",
-    "CommunityActivityTarget",
-    "CommunityActivityTransportError",
-    "CommunityActivityProvider",
-    "build_community_activity_requester",
-    "build_community_activity_requests",
-    "collect_community_activity",
     "format_community_sign_results",
     "get_community_plugin_references",
     "get_confirmed_community_capabilities",
