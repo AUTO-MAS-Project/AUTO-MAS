@@ -133,8 +133,8 @@ declare module 'vue-router' {
 
 const genericEditor = () => import('@/views/plugins/ConfigEditor.vue')
 
-export const pluginEditorRedirects = PLUGIN_EDITOR_SCRIPT_TYPES.flatMap<RouteRecordRaw>(
-  scriptType => [
+export const pluginEditorRedirects: RouteRecordRaw[] = [
+  ...PLUGIN_EDITOR_SCRIPT_TYPES.flatMap<RouteRecordRaw>(scriptType => [
     {
       path: PAGE_ROUTES.script.path(SCRIPT_METADATA[scriptType].routeSuffix),
       redirect: to => ({
@@ -156,8 +156,15 @@ export const pluginEditorRedirects = PLUGIN_EDITOR_SCRIPT_TYPES.flatMap<RouteRec
         params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType },
       }),
     },
-  ]
-)
+  ]),
+  {
+    path: '/scripts/:scriptId/users/:userId/cultivate/maa',
+    redirect: to => ({
+      name: genericPanelRoute.user,
+      params: { scriptId: to.params.scriptId, userId: to.params.userId, scriptType: 'MAA' },
+    }),
+  },
+]
 
 export const genericEditorRoutes: RouteRecordRaw[] = [
   {

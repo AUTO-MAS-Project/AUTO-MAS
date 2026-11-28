@@ -119,6 +119,7 @@ globalThis.connectPanel = function connectPanel() {
   return {
     getContext,
     translate: keys => call('translate', { keys }),
+    request: (method, path, body) => call('request', { method, path, body }),
     saveConfig: (changes, phase = 'commit') => call('saveConfig', { changes, phase }),
     runAction: (group, field, value = true) => call('runAction', { group, field, value }),
     pickPath: options => call('pickPath', options),

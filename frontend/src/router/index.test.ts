@@ -12,7 +12,7 @@ vi.mock('vue-router', async importOriginal => {
   return { ...router, createWebHashHistory: router.createMemoryHistory }
 })
 
-const pluginRecord = (scriptType = 'MAA', surface = PanelBinding.surface.SCRIPT) => ({
+const pluginRecord = (scriptType: string, surface = PanelBinding.surface.SCRIPT) => ({
   uid: 'record',
   ui: {},
   info: { plugin_name: 'demo', state: PluginState.ENABLED },
@@ -54,11 +54,12 @@ describe('应用路由', () => {
   }, 15000)
 
   it.each([
-    ['SRC', 'src'],
-    ['Whimbox', 'whimbox'],
-  ])(
+    ['SRC', 'src', ['edit/src']],
+    ['MAA', 'maa', ['edit/maa', 'cultivate/maa']],
+    ['Whimbox', 'whimbox', ['edit/whimbox']],
+  ] as const)(
     '%s 旧地址进入插件编辑器并保留参数、查询与锚点',
-    async (scriptType, suffix) => {
+    async (scriptType, suffix, userPaths) => {
       const { default: router } = await import('./index')
       vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
         code: 200,
@@ -71,11 +72,14 @@ describe('应用路由', () => {
           `/scripts/s/users/add/plugin/${scriptType}`,
           'GenericUserAdd',
         ],
-        [
-          `/scripts/s/users/u/edit/${suffix}`,
-          `/scripts/s/users/u/edit/plugin/${scriptType}`,
-          'GenericUserEdit',
-        ],
+        ...userPaths.map(
+          path =>
+            [
+              `/scripts/s/users/u/${path}`,
+              `/scripts/s/users/u/edit/plugin/${scriptType}`,
+              'GenericUserEdit',
+            ] as const
+        ),
       ] as const) {
         const record = router.getRoutes().find(route => route.name === name)!
         record.meta.skipGuard = true
@@ -103,9 +107,9 @@ describe('应用路由', () => {
     const component = {}
     router.addRoute({
       path: '/probe/:id',
-      name: 'MAAScriptEdit',
+      name: 'WhimboxScriptEdit',
       component,
-      meta: { skipGuard: true, scriptType: 'MAA', scriptPage: 'script' },
+      meta: { skipGuard: true, scriptType: 'Whimbox', scriptPage: 'script' },
     })
     router.addRoute({
       path: '/probe/:scriptType/:scriptId',
@@ -113,14 +117,14 @@ describe('应用路由', () => {
       component,
       meta: { skipGuard: true, scriptPage: 'script' },
     })
-    const record = pluginRecord()
+    const record = pluginRecord('Whimbox')
     vi.spyOn(Service, 'getPluginRegistryApiPluginRegistryGetPost').mockResolvedValue({
       code: 200,
       data: { record },
     })
     for (const [state, version, name] of [
-      [PluginState.DISABLED, 1, 'MAAScriptEdit'],
-      [PluginState.ENABLED, 2, 'MAAScriptEdit'],
+      [PluginState.DISABLED, 1, 'WhimboxScriptEdit'],
+      [PluginState.ENABLED, 2, 'WhimboxScriptEdit'],
       [PluginState.ENABLED, 1, 'GenericScriptEdit'],
     ] as const) {
       record.info.state = state
@@ -133,9 +137,9 @@ describe('应用路由', () => {
       })
     }
     record.info.state = PluginState.DISABLED
-    await router.push('/probe/MAA/id?v=refresh')
+    await router.push('/probe/Whimbox/id?v=refresh')
     expect(router.currentRoute.value).toMatchObject({
-      name: 'MAAScriptEdit',
+      name: 'WhimboxScriptEdit',
       params: { id: 'id' },
     })
   })
@@ -195,18 +199,18 @@ describe('应用路由', () => {
       const add = genericEditorRoutes.find(route => route.name === 'GenericUserAdd')!
       router.addRoute({ ...add, meta: { ...add.meta, skipGuard: true } })
       router.addRoute({
-        path: '/maa-add/:scriptId',
-        name: 'MAAUserAdd',
+        path: '/whimbox-add/:scriptId',
+        name: 'WhimboxUserAdd',
         component,
-        meta: { skipGuard: true, scriptPage: 'userAdd', scriptType: 'MAA' },
+        meta: { skipGuard: true, scriptPage: 'userAdd', scriptType: 'Whimbox' },
       })
       router.addRoute({
-        path: '/maa-edit/:scriptId/:scriptType/:userId',
+        path: '/whimbox-edit/:scriptId/:scriptType/:userId',
         name: 'GenericUserEdit',
         component,
         meta: { skipGuard: true, scriptPage: 'userEdit' },
       })
-      const record = pluginRecord('MAA', PanelBinding.surface.USER)
+      const record = pluginRecord('Whimbox', PanelBinding.surface.USER)
       if (kind === 'blocks') {
         record.frontend.bindings = []
         record.providedScript.blockSurfaces = ['user']
@@ -222,7 +226,7 @@ describe('应用路由', () => {
       })
       vi.spyOn(GetService, 'getScriptTypesApiScriptsTypesGet').mockResolvedValue({
         code: 200,
-        types: ['MAA'],
+        types: ['Whimbox'],
       })
       const view = testView(defineComponent(() => () => h(RouterView)))
       view.app.use(router)
@@ -238,20 +242,20 @@ describe('应用路由', () => {
           if (kind === 'blocks' && state === PluginState.ENABLED)
             record.providedScript.blockSurfaces = ['plan']
           await router.push({
-            name: 'MAAUserAdd',
+            name: 'WhimboxUserAdd',
             params: { scriptId: 's' },
             query: { v: version },
           })
-          expect(router.currentRoute.value.name).toBe('MAAUserAdd')
+          expect(router.currentRoute.value.name).toBe('WhimboxUserAdd')
           expect(create).not.toHaveBeenCalled()
         }
         record.frontend.pages.edit.web.panelApi = 1
         if (kind === 'blocks') record.providedScript.blockSurfaces = ['user']
-        await router.push({ name: 'MAAUserAdd', params: { scriptId: 's' }, hash: '#account' })
+        await router.push({ name: 'WhimboxUserAdd', params: { scriptId: 's' }, hash: '#account' })
         await vi.waitFor(() =>
           expect(router.currentRoute.value).toMatchObject({
             name: 'GenericUserEdit',
-            params: { scriptId: 's', scriptType: 'MAA', userId: 'new-user' },
+            params: { scriptId: 's', scriptType: 'Whimbox', userId: 'new-user' },
             hash: '#account',
           })
         )

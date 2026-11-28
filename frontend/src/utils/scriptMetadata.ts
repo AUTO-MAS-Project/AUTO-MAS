@@ -3,6 +3,7 @@ import generalIcon from '@/assets/AUTO-MAS.ico'
 import baahIcon from '@/assets/baah.png'
 import hsrIcon from '@/assets/hsr.png'
 import { SCRIPT_ADAPTER_METADATA } from '@/plugins/scriptAdapters'
+import maaIcon from '@/assets/MAA.png'
 import maaEndIcon from '@/assets/MaaEnd.png'
 import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
@@ -87,7 +88,19 @@ export const SCRIPT_METADATA = {
     },
   },
   M9A: SCRIPT_ADAPTER_METADATA.M9A,
-  MAA: SCRIPT_ADAPTER_METADATA.MAA,
+  MAA: {
+    logo: maaIcon,
+    label: 'MAA',
+    typeTagColor: 'blue',
+    routeSuffix: 'maa',
+    createOrder: 2,
+    create: {
+      titleKey: 'core.scripts.type.MAA',
+      descriptionKey: 'plugins.maa_adapter.scripts.create.typeDesc.MAA',
+      keywords: ['maa', '明日方舟'],
+      group: 'specialized',
+    },
+  },
   SRC: {
     logo: srcIcon,
     label: 'SRC',

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { defineComponent, h, nextTick, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
-import { TriggerUiState } from '@/api'
+import { OpenAPI, TriggerUiState } from '@/api'
 import { i18nRevision } from '@/i18n'
 import type {
   PluginUiEditor,
@@ -192,6 +192,79 @@ describe('wheel iframe', () => {
           },
         })
       )
+    } finally {
+      child.close()
+      view.app.unmount()
+    }
+  })
+
+  it('posts to the mounted plugin API while the editor is locked', async () => {
+    const previousBase = OpenAPI.BASE
+    OpenAPI.BASE = 'http://mas.test/'
+    const data = [{ id: '1-7' }]
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json(data))
+    vi.stubGlobal('fetch', fetch)
+    const { view, editor } = mountWheel()
+    editor.value = { ...editor.value, locked: true }
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const body = { server: 'Official' }
+      const id = child.request('request', { method: 'POST', path: '/stages', body })
+      await vi.waitFor(() =>
+        expect(child.replies.get(id)?.result).toEqual({ ok: true, status: 200, data })
+      )
+      expect(fetch).toHaveBeenCalledExactlyOnceWith('http://mas.test/api/plugin/demo15/stages', {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Plugin-Ui-Provider': 'demo15',
+          'X-Plugin-Ui-Activation': 'active',
+          'X-Plugin-Ui-Page': 'plan',
+        },
+        body: JSON.stringify(body),
+      })
+      fetch.mockResolvedValueOnce(new Response('Stage list unavailable', { status: 404 }))
+      const missing = child.request('request', { method: 'get', path: '/stages' })
+      await vi.waitFor(() =>
+        expect(child.replies.get(missing)?.result).toEqual({
+          ok: false,
+          status: 404,
+          data: 'Stage list unavailable',
+        })
+      )
+    } finally {
+      child.close()
+      view.app.unmount()
+      OpenAPI.BASE = previousBase
+    }
+  })
+
+  it('rejects invalid methods and paths before calling the plugin API', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    const { view } = mountWheel()
+    await nextTick()
+    const child = pluginUiFrame(view.find('iframe')!)
+    try {
+      child.ready()
+      const paths = [
+        '/../other_plugin/x',
+        '/%2e%2e/other_plugin/x',
+        'http://evil.com',
+        '//other',
+        '/ui',
+        '/ui/a',
+        '/%75i/a',
+      ]
+      const ids = paths.map(path => child.request('request', { method: 'GET', path }))
+      ids.push(child.request('request', { method: 'OPTIONS', path: '/stages' }))
+      await vi.waitFor(() => {
+        for (const id of ids) expect(child.replies.get(id)?.error).toBe('invalid_params')
+      })
+      expect(fetch).not.toHaveBeenCalled()
     } finally {
       child.close()
       view.app.unmount()
